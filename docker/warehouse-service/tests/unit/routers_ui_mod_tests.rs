@@ -25,7 +25,7 @@ async fn app(
 
 macro_rules! redirect_test {
     ($test_name:ident, $uri:expr, $unauthenticated_location:expr) => {
-        #[tokio::test]
+        #[quench_test::test]
         async fn $test_name() {
             let (app, container) = app(true).await;
             let resp = app.call(support::req(Method::GET, $uri, &container)).await;
@@ -64,7 +64,7 @@ redirect_test!(
     "login"
 );
 
-#[tokio::test]
+#[quench_test::test]
 async fn root_redirects_home_when_authenticated() {
     let (app, container) = app(false).await;
     let resp = app.call(support::req(Method::GET, "/ui", &container)).await;
@@ -74,7 +74,7 @@ async fn root_redirects_home_when_authenticated() {
     assert!(location.contains("/ui/home"), "{location}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn docker_root_redirects_to_the_docker_catalog_when_authenticated() {
     let (app, container) = app(false).await;
     let resp = app
@@ -86,7 +86,7 @@ async fn docker_root_redirects_to_the_docker_catalog_when_authenticated() {
     assert!(location.contains("/ui/docker/catalog"), "{location}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn crates_root_redirects_to_the_crates_catalog_when_authenticated() {
     let (app, container) = app(false).await;
     let resp = app

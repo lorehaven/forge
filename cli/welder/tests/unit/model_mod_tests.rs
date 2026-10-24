@@ -1,10 +1,10 @@
+use quench_test::mock::matchers::{method, path};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use welder::model::switchboard_client::{self, VllmInstance};
 use welder::model::{
     ModelInstanceConfig, ModelManager, SwitchboardManager, SwitchboardModelConfig, VllmConfig,
     extract_host_port,
 };
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn config(model: &str, url: &str) -> ModelInstanceConfig {
     ModelInstanceConfig {
@@ -18,29 +18,29 @@ fn config(model: &str, url: &str) -> ModelInstanceConfig {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn extract_host_port_splits_host_colon_port() {
     let (host, port) = extract_host_port("127.0.0.1:8000").expect("valid url");
     assert_eq!(host, "127.0.0.1");
     assert_eq!(port, 8000);
 }
 
-#[test]
+#[quench_test::test]
 fn extract_host_port_rejects_missing_port() {
     assert!(extract_host_port("127.0.0.1").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn extract_host_port_rejects_extra_colons() {
     assert!(extract_host_port("127.0.0.1:8000:extra").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn extract_host_port_rejects_a_non_numeric_port() {
     assert!(extract_host_port("127.0.0.1:not-a-port").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn model_manager_register_then_get_url_finds_the_matching_model() {
     let mut manager = ModelManager::default();
     manager.register(config("llama", "127.0.0.1:9001"));
@@ -49,7 +49,7 @@ fn model_manager_register_then_get_url_finds_the_matching_model() {
     assert_eq!(manager.get_url("unknown"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn model_manager_is_port_available_reflects_a_real_bound_port() {
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
     let port = listener.local_addr().expect("addr").port();
@@ -60,13 +60,13 @@ fn model_manager_is_port_available_reflects_a_real_bound_port() {
     assert!(ModelManager::is_port_available("127.0.0.1", port));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn model_manager_initialize_is_a_no_op_with_nothing_registered() {
     let mut manager = ModelManager::default();
     manager.initialize().await.expect("nothing to initialize");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn model_manager_initialize_skips_an_instance_whose_port_is_already_in_use() {
     // Holding a real listener on the configured port makes `initialize`
     // take its "already in use, reusing existing instance" branch instead
@@ -86,7 +86,7 @@ async fn model_manager_initialize_skips_an_instance_whose_port_is_already_in_use
     drop(listener);
 }
 
-#[test]
+#[quench_test::test]
 fn vllm_config_default_is_five_minutes() {
     assert_eq!(VllmConfig::default().timeout_seconds, 300);
 }
@@ -107,7 +107,7 @@ fn switchboard_client_for(server: &MockServer) -> switchboard_client::Switchboar
     switchboard_client::SwitchboardClient::for_tests(&server.uri())
 }
 
-#[test]
+#[quench_test::test]
 fn switchboard_manager_register_then_get_url_is_none_until_resolved() {
     let server_url = "http://127.0.0.1:1".to_string();
     let client = switchboard_client::SwitchboardClient::for_tests(&server_url);
@@ -117,7 +117,7 @@ fn switchboard_manager_register_then_get_url_is_none_until_resolved() {
     assert_eq!(manager.get_url("llama"), None);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn switchboard_manager_initialize_is_a_no_op_with_nothing_registered() {
     let server_url = "http://127.0.0.1:1".to_string();
     let client = switchboard_client::SwitchboardClient::for_tests(&server_url);
@@ -125,7 +125,7 @@ async fn switchboard_manager_initialize_is_a_no_op_with_nothing_registered() {
     manager.initialize().await.expect("nothing to initialize");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn switchboard_manager_reuses_an_already_running_instance() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -155,7 +155,7 @@ async fn switchboard_manager_reuses_an_already_running_instance() {
     assert_eq!(manager.get_url("llama"), Some("10.0.0.5:8001".to_string()));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn switchboard_manager_launches_and_waits_for_a_missing_instance() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -207,7 +207,7 @@ async fn switchboard_manager_launches_and_waits_for_a_missing_instance() {
     assert_eq!(manager.get_url("llama"), Some("10.0.0.6:8002".to_string()));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn switchboard_manager_wait_for_running_surfaces_a_failed_instance() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -232,7 +232,7 @@ async fn switchboard_manager_wait_for_running_surfaces_a_failed_instance() {
     assert!(error.to_string().contains("failed to start"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn switchboard_manager_wait_for_running_gives_up_after_the_timeout() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -249,7 +249,7 @@ async fn switchboard_manager_wait_for_running_gives_up_after_the_timeout() {
     assert!(error.to_string().contains("did not become ready"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn switchboard_manager_find_running_ignores_embedding_only_instances() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

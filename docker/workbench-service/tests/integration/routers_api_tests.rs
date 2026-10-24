@@ -86,7 +86,7 @@ async fn seed_project(db: &Db, key: &str) -> project::Project {
 // Projects
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_project_rejects_empty_key_or_name() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("create_project_rejects_empty_key_or_name");
@@ -104,7 +104,7 @@ async fn create_project_rejects_empty_key_or_name() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_and_read_a_project_round_trips() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("create_and_read_a_project_round_trips");
@@ -135,7 +135,7 @@ async fn create_and_read_a_project_round_trips() {
     assert_eq!(read["key"], "WB");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn read_a_missing_project_is_404() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("read_a_missing_project_is_404");
@@ -148,7 +148,7 @@ async fn read_a_missing_project_is_404() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_projects_returns_every_project_when_auth_is_disabled() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped(
@@ -167,7 +167,7 @@ async fn list_projects_returns_every_project_when_auth_is_disabled() {
     assert_eq!(list.as_array().unwrap().len(), 2);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_project_rejects_empty_name_then_applies_a_valid_one() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped(
@@ -200,7 +200,7 @@ async fn update_project_rejects_empty_name_then_applies_a_valid_one() {
     assert_eq!(updated["name"], "Renamed");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_a_missing_project_is_404() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("update_a_missing_project_is_404");
@@ -218,7 +218,7 @@ async fn update_a_missing_project_is_404() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn remove_a_project_then_a_second_remove_is_404() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("remove_a_project_then_a_second_remove_is_404");
@@ -249,7 +249,7 @@ async fn remove_a_project_then_a_second_remove_is_404() {
 // Issues
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_issue_rejects_empty_title() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("create_issue_rejects_empty_title");
@@ -268,7 +268,7 @@ async fn create_issue_rejects_empty_title() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_list_read_update_transition_and_remove_an_issue() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("create_list_read_update_transition_and_remove_an_issue");
@@ -373,7 +373,7 @@ async fn create_list_read_update_transition_and_remove_an_issue() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn issue_actions_on_a_missing_issue_are_404() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("issue_actions_on_a_missing_issue_are_404");
@@ -410,7 +410,7 @@ async fn issue_actions_on_a_missing_issue_are_404() {
 // Labels (project-scoped, and attach/detach on an issue)
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_list_attach_and_detach_a_label() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("create_list_attach_and_detach_a_label");
@@ -514,7 +514,7 @@ async fn create_list_attach_and_detach_a_label() {
 // Comments
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_rejects_empty_body_then_lists_and_removes_a_comment() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped(
@@ -601,7 +601,7 @@ async fn create_rejects_empty_body_then_lists_and_removes_a_comment() {
 // Issue links
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn issue_link_validation_then_create_list_and_remove() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("issue_link_validation_then_create_list_and_remove");

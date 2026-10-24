@@ -45,7 +45,7 @@ const HOSTILE: [&str; 12] = [
     "名前",
 ];
 
-#[test]
+#[quench_test::test]
 fn ordinary_usernames_are_accepted() {
     for name in [
         "alice",
@@ -66,7 +66,7 @@ fn ordinary_usernames_are_accepted() {
     assert!(valid_username(&"a".repeat(64)));
 }
 
-#[test]
+#[quench_test::test]
 fn anything_that_could_be_markup_or_a_path_is_refused() {
     for name in HOSTILE {
         assert!(!valid_username(name), "{name:?}");
@@ -78,7 +78,7 @@ fn anything_that_could_be_markup_or_a_path_is_refused() {
     assert!(!valid_username("%3Cscript%3E"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn creating_an_account_with_such_a_name_is_refused_and_creates_nothing() {
     let db = db().await;
     for name in HOSTILE {
@@ -105,7 +105,7 @@ async fn creating_an_account_with_such_a_name_is_refused_and_creates_nothing() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_invited_path_applies_the_same_rule() {
     let db = db().await;
     let err = realm::create_invited(
@@ -122,7 +122,7 @@ async fn the_invited_path_applies_the_same_rule() {
     assert!(matches!(err, RealmError::UsernameInvalid));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn surrounding_space_is_still_trimmed_before_the_check() {
     let db = db().await;
     let user = realm::create(
@@ -140,7 +140,7 @@ async fn surrounding_space_is_still_trimmed_before_the_check() {
     assert_eq!(user.username, "alice");
 }
 
-#[test]
+#[quench_test::test]
 fn the_error_reports_itself_properly() {
     let err = RealmError::UsernameInvalid;
     assert_eq!(err.status(), StatusCode::BAD_REQUEST);
@@ -170,7 +170,7 @@ async fn register_app() -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>, 
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn public_registration_refuses_a_markup_username() {
     let (app, container, db) = register_app().await;
     for name in ["<img src=x onerror=alert(1)>", "a b", "zoë"] {
@@ -208,7 +208,7 @@ async fn public_registration_refuses_a_markup_username() {
     assert!(realm::list(&db).await.unwrap().is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn the_register_page_can_show_the_username_error() {
     assert_eq!(
         gatehouse_service::ui::pages::register::known_error_key("ui_admin_error_username_invalid"),
@@ -220,7 +220,7 @@ fn the_register_page_can_show_the_username_error() {
 /// The admin pages must show it as text. That is the job of the page renderer
 /// (`quench-web`), which only escapes text from 0.1.13 on - so this stays ignored
 /// until forge depends on that release (or a local `[patch]` points at the fix).
-#[tokio::test]
+#[quench_test::test]
 async fn a_hostile_legacy_username_is_shown_as_text_on_the_admin_list() {
     use gatehouse_service::test_support::auth_disabled_guard;
     use quench_auth::domain::jwt::JwtConfig;

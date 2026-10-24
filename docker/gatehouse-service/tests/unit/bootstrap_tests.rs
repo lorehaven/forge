@@ -35,7 +35,7 @@ fn clean_env() -> EnvGuard {
     EnvGuard(guard)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn seed_users_does_nothing_when_bootstrap_is_off() {
     let _guard = clean_env();
     let db = Db::connect("").await.expect("in-memory db");
@@ -46,7 +46,7 @@ async fn seed_users_does_nothing_when_bootstrap_is_off() {
     assert!(repo.read("admin").await.unwrap_or(None).is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn seed_users_creates_the_admin_account_when_enabled() {
     let _guard = clean_env();
     quench_core::env::set("AUTH_BOOTSTRAP", "true");
@@ -62,7 +62,7 @@ async fn seed_users_creates_the_admin_account_when_enabled() {
     assert!(roles.contains(&Role::Admin));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn seed_users_does_not_overwrite_an_existing_admin() {
     let _guard = clean_env();
     quench_core::env::set("AUTH_BOOTSTRAP", "true");
@@ -83,7 +83,7 @@ async fn seed_users_does_not_overwrite_an_existing_admin() {
     assert!(!admin.verify_password("second-password"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn seed_users_skips_the_tech_account_when_unset() {
     let _guard = clean_env();
     quench_core::env::set("AUTH_BOOTSTRAP", "true");
@@ -97,7 +97,7 @@ async fn seed_users_skips_the_tech_account_when_unset() {
     assert!(repo.read("tech").await.unwrap_or(None).is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn seed_users_creates_the_tech_account_when_configured() {
     let _guard = clean_env();
     quench_core::env::set("AUTH_BOOTSTRAP", "true");

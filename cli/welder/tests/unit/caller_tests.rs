@@ -39,7 +39,7 @@ impl Llm for FailingLlm {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn call_model_returns_the_joined_text_and_forwards_the_prompt() {
     let stub = Arc::new(StubLlm {
         name: "stub",
@@ -79,7 +79,7 @@ impl Llm for NoContentLlm {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn call_model_is_empty_when_the_model_returns_no_content() {
     let result = call_model(Arc::new(NoContentLlm), "hi".to_string(), 0.0, 1)
         .await
@@ -87,7 +87,7 @@ async fn call_model_is_empty_when_the_model_returns_no_content() {
     assert_eq!(result, "");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn call_model_propagates_a_model_error() {
     let error = call_model(Arc::new(FailingLlm), "hi".to_string(), 0.0, 1)
         .await

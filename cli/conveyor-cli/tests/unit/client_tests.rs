@@ -1,26 +1,26 @@
 use conveyor_cli::client::{Client, explain};
 use conveyor_cli::test_support::{ENV_LOCK, EnvGuard};
 
-#[test]
+#[quench_test::test]
 fn explain_prefers_the_error_field_from_a_json_body() {
     let status = quench_client::transport::StatusCode::BAD_REQUEST;
     let body = r#"{"error": "missing field `owner`"}"#;
     assert_eq!(explain(status, body), "missing field `owner`");
 }
 
-#[test]
+#[quench_test::test]
 fn explain_falls_back_to_the_raw_body_when_not_json() {
     let status = quench_client::transport::StatusCode::INTERNAL_SERVER_ERROR;
     assert_eq!(explain(status, "  boom  \n"), "boom");
 }
 
-#[test]
+#[quench_test::test]
 fn explain_falls_back_to_the_status_when_the_body_is_empty() {
     let status = quench_client::transport::StatusCode::NOT_FOUND;
     assert_eq!(explain(status, ""), "conveyor answered 404 Not Found");
 }
 
-#[test]
+#[quench_test::test]
 fn explain_adds_a_credentials_hint_on_401() {
     let status = quench_client::transport::StatusCode::UNAUTHORIZED;
     let body = r#"{"error": "invalid token"}"#;
@@ -30,7 +30,7 @@ fn explain_adds_a_credentials_hint_on_401() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn explain_ignores_json_without_an_error_field() {
     let status = quench_client::transport::StatusCode::BAD_REQUEST;
     let body = r#"{"detail": "nope"}"#;
@@ -39,22 +39,22 @@ fn explain_ignores_json_without_an_error_field() {
 
 // Below: `Client::for_tests_with_token` bypasses the async `new()`/login
 // flow (and its `FileConfig::load()` env-var reads) so a `Client` can be
-// pointed at a `wiremock` server directly, to exercise `get`/`post`/etc.
+// pointed at a `quench_test` mock server directly, to exercise `get`/`post`/etc.
 
-fn client_for(server: &wiremock::MockServer, token: Option<&str>) -> Client {
+fn client_for(server: &quench_test::mock::MockServer, token: Option<&str>) -> Client {
     Client::for_tests_with_token(server.uri(), token.map(str::to_string))
 }
 
-#[test]
+#[quench_test::test]
 fn url_joins_the_base_and_api_prefix() {
     let client = Client::for_tests("https://conveyor.example".to_string());
     assert_eq!(client.url("/runs"), "https://conveyor.example/api/v1/runs");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_decodes_a_successful_json_response() {
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use quench_test::mock::matchers::{method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -71,10 +71,10 @@ async fn get_decodes_a_successful_json_response() {
     assert_eq!(value["id"], 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_sends_the_bearer_token_when_present() {
-    use wiremock::matchers::{header, method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use quench_test::mock::matchers::{header, method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -92,10 +92,10 @@ async fn get_sends_the_bearer_token_when_present() {
     assert!(value.as_array().unwrap().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_surfaces_the_servers_error_message_on_failure() {
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use quench_test::mock::matchers::{method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -115,10 +115,10 @@ async fn get_surfaces_the_servers_error_message_on_failure() {
     assert!(err.to_string().contains("no such run"), "{err}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_errors_when_the_body_does_not_match_the_expected_shape() {
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use quench_test::mock::matchers::{method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
     #[derive(Debug, quench_serde::Deserialize)]
     struct Expected {
@@ -145,10 +145,10 @@ async fn get_errors_when_the_body_does_not_match_the_expected_shape() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn post_sends_the_json_body_and_decodes_the_response() {
-    use wiremock::matchers::{body_json_string, method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use quench_test::mock::matchers::{body_json_string, method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -171,10 +171,10 @@ async fn post_sends_the_json_body_and_decodes_the_response() {
     assert_eq!(value["id"], 7);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn put_and_patch_decode_successful_responses() {
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use quench_test::mock::matchers::{method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
@@ -207,10 +207,10 @@ async fn put_and_patch_decode_successful_responses() {
     assert_eq!(patch["ok"], true);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn send_empty_succeeds_on_a_bodyless_success_response() {
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use quench_test::mock::matchers::{method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
@@ -226,10 +226,10 @@ async fn send_empty_succeeds_on_a_bodyless_success_response() {
         .expect("send_empty");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn send_empty_errors_with_the_servers_message_on_failure() {
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use quench_test::mock::matchers::{method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
@@ -249,10 +249,10 @@ async fn send_empty_errors_with_the_servers_message_on_failure() {
     assert!(err.to_string().contains("forbidden"), "{err}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn stream_returns_the_raw_response_on_success() {
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use quench_test::mock::matchers::{method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -267,10 +267,10 @@ async fn stream_returns_the_raw_response_on_success() {
     assert_eq!(text, "log line\n");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn stream_errors_with_the_servers_message_on_failure() {
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use quench_test::mock::matchers::{method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -310,7 +310,7 @@ where
     body().await
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn new_requires_a_url_when_none_is_given_by_flag_env_or_file() {
     let err = isolated_from_the_real_config_file(|| async {
         Client::new(None, None, None, None, true).await
@@ -323,7 +323,7 @@ async fn new_requires_a_url_when_none_is_given_by_flag_env_or_file() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn new_succeeds_with_an_explicit_url_and_no_username() {
     let client = isolated_from_the_real_config_file(|| async {
         Client::new(
@@ -341,7 +341,7 @@ async fn new_succeeds_with_an_explicit_url_and_no_username() {
     assert!(client.token_for_tests().is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn new_requires_a_gatehouse_url_when_a_username_is_given() {
     let err = isolated_from_the_real_config_file(|| async {
         Client::new(
@@ -361,10 +361,10 @@ async fn new_requires_a_gatehouse_url_when_a_username_is_given() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn new_logs_in_and_carries_the_token_from_gatehouse() {
-    use wiremock::matchers::{body_json_string, method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use quench_test::mock::matchers::{body_json_string, method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
     let gatehouse = MockServer::start().await;
     Mock::given(method("POST"))
@@ -394,10 +394,10 @@ async fn new_logs_in_and_carries_the_token_from_gatehouse() {
     assert_eq!(client.token_for_tests(), Some("minted-token"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn new_reports_the_login_rejection_without_leaking_the_password() {
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use quench_test::mock::matchers::{method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
     let gatehouse = MockServer::start().await;
     Mock::given(method("POST"))

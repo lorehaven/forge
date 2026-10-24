@@ -41,9 +41,7 @@ async fn main() -> std::io::Result<()> {
         settings.runner,
         settings.allowed_namespaces
     );
-    let connected = cluster::connect(&settings)
-        .await
-        .unwrap_or_else(|e| panic!("cluster: {e}"));
+    let connected = cluster::connect(&settings).unwrap_or_else(|e| panic!("cluster: {e}"));
     let cluster = connected.cluster.clone();
     let fake = connected.fake.clone();
     let registry = registry::build(&settings);

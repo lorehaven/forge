@@ -1,3 +1,6 @@
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_core::bytes::Bytes;
 use quench_db::{Db, InMemoryDb};
@@ -59,7 +62,7 @@ async fn body(response: quench_http::response::Response) -> Value {
     quench_serde::json::from_slice(&bytes).expect("JSON response")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_endpoints_refuse_ephemeral_database_storage() {
     let (app, container) = app().await;
     for path in ["/api/v1/tasks", "/api/v1/projects", "/api/v1/labels"] {
@@ -74,7 +77,7 @@ async fn list_endpoints_refuse_ephemeral_database_storage() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn empty_task_and_project_names_are_rejected_before_database_access() {
     let (app, container) = app().await;
     let cases = [
@@ -107,7 +110,7 @@ async fn empty_task_and_project_names_are_rejected_before_database_access() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn syntactically_valid_writes_reach_the_postgres_requirement() {
     let (app, container) = app().await;
     let cases = [
@@ -157,7 +160,7 @@ fn enforcing() -> JwtConfig {
     config
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn identity_extraction_uses_the_gatehouse_subject() {
     use daybook_service::routers::{OptionalClaims, actor};
     use quench_http::prelude::FromRequest;
@@ -171,7 +174,7 @@ async fn identity_extraction_uses_the_gatehouse_subject() {
     assert_eq!(actor(claims.as_ref()), "alice");
 }
 
-#[test]
+#[quench_test::test]
 fn read_grant_does_not_allow_writes() {
     use daybook_service::routers::authz::can;
 
@@ -180,7 +183,7 @@ fn read_grant_does_not_allow_writes() {
     assert!(!can(Some(&claims), &enforcing(), "write"));
 }
 
-#[test]
+#[quench_test::test]
 fn write_grant_allows_writes() {
     use daybook_service::routers::authz::can;
 
@@ -188,7 +191,7 @@ fn write_grant_allows_writes() {
     assert!(can(Some(&claims), &enforcing(), "write"));
 }
 
-#[test]
+#[quench_test::test]
 fn no_claims_means_no_access_unless_auth_is_off() {
     use daybook_service::routers::authz::can;
 
@@ -196,7 +199,7 @@ fn no_claims_means_no_access_unless_auth_is_off() {
     assert!(can(None, &JwtConfig::for_tests(), "write"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_read_only_token_cannot_write() {
     let (app, container) = enforcing_app().await;
     let mut write = request(
@@ -213,7 +216,7 @@ async fn a_read_only_token_cannot_write() {
     assert_eq!(app.call(read).await.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn invalid_repeat_rules_are_rejected_before_database_access() {
     let (app, container) = app().await;
     let due = "2090-03-02T09:00:00Z";
@@ -274,7 +277,7 @@ async fn invalid_repeat_rules_are_rejected_before_database_access() {
     assert!(response.status().is_client_error());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_valid_repeat_rule_reaches_the_postgres_requirement() {
     let (app, container) = app().await;
     let response = app
@@ -291,3 +294,5 @@ async fn a_valid_repeat_rule_reaches_the_postgres_requirement() {
         .await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
+
+quench_test::main!();

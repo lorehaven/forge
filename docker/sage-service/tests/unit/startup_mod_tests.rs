@@ -5,7 +5,7 @@
 use crate::env_support::env_lock;
 use sage_service::startup::health_check_url;
 
-#[test]
+#[quench_test::test]
 fn health_check_url_defaults_to_the_in_cluster_switchboard_address() {
     let _guard = env_lock()
         .lock()
@@ -18,7 +18,7 @@ fn health_check_url_defaults_to_the_in_cluster_switchboard_address() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn health_check_url_honors_switchboard_url_and_trims_a_trailing_slash() {
     let _guard = env_lock()
         .lock()

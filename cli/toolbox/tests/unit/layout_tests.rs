@@ -18,7 +18,7 @@ fn status(
     }
 }
 
-#[test]
+#[quench_test::test]
 fn content_widths_uses_header_length_for_empty_table() {
     let widths = content_widths(&[]);
     // header text + 2 padding: "package" = 7 chars, "installed" = 9 chars, etc.
@@ -27,14 +27,14 @@ fn content_widths_uses_header_length_for_empty_table() {
     assert_eq!(widths.updatable, 11);
 }
 
-#[test]
+#[quench_test::test]
 fn content_widths_grows_to_fit_longest_package_name() {
     let statuses = vec![status("a-very-long-package-name", "bin", "1.0.0", "1.0.0")];
     let widths = content_widths(&statuses);
     assert_eq!(widths.package, "a-very-long-package-name".len() + 2);
 }
 
-#[test]
+#[quench_test::test]
 fn shrink_widths_to_fit_noop_when_already_within_budget() {
     let mut widths = content_widths(&[]);
     let before_package = widths.package;
@@ -42,7 +42,7 @@ fn shrink_widths_to_fit_noop_when_already_within_budget() {
     assert_eq!(widths.package, before_package);
 }
 
-#[test]
+#[quench_test::test]
 fn shrink_widths_to_fit_reduces_widest_columns_first() {
     let statuses = vec![status(
         "a-very-extremely-long-package-name",
@@ -75,7 +75,7 @@ fn shrink_widths_to_fit_reduces_widest_columns_first() {
     assert_eq!(widths.binary, 7);
 }
 
-#[test]
+#[quench_test::test]
 fn shrink_widths_to_fit_stops_at_minimums_and_does_not_underflow() {
     let statuses = vec![status(
         "a-very-extremely-long-package-name",
@@ -99,7 +99,7 @@ fn shrink_widths_to_fit_stops_at_minimums_and_does_not_underflow() {
     assert!(widths.installed <= 12);
 }
 
-#[test]
+#[quench_test::test]
 fn shrink_widths_to_fit_clamps_the_installed_column_once_it_is_the_widest() {
     // "no (can install)" (17 chars) makes the installed column the widest,
     // so an impossibly narrow terminal must shrink package and binary down

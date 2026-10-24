@@ -104,7 +104,7 @@ fn read_back(path: &Path) -> Package {
 
 // --- pack -----------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn packs_the_overlay_directory_without_secrets() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -145,7 +145,7 @@ fn packs_the_overlay_directory_without_secrets() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn packing_is_reproducible() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -159,7 +159,7 @@ fn packing_is_reproducible() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_fingerprint_ignores_the_build_metadata_and_nothing_else() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -206,7 +206,7 @@ fn a_fingerprint_ignores_the_build_metadata_and_nothing_else() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn reports_variables_the_package_does_not_default() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -217,7 +217,7 @@ fn reports_variables_the_package_does_not_default() {
     assert_eq!(packed.required_vars, ["API_TOKEN"]);
 }
 
-#[test]
+#[quench_test::test]
 fn appends_the_version_suffix_as_build_metadata() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -240,7 +240,7 @@ fn appends_the_version_suffix_as_build_metadata() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn version_suffix_rules() {
     assert_eq!(with_build_suffix("1.2.3", "b1").unwrap(), "1.2.3+b1");
     assert_eq!(
@@ -253,7 +253,7 @@ fn version_suffix_rules() {
     assert!(with_build_suffix("nope", "b1").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn an_explicit_namespace_in_the_manifest_is_kept() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -267,7 +267,7 @@ fn an_explicit_namespace_in_the_manifest_is_kept() {
     assert_eq!(packed.manifest.package.namespace.as_deref(), Some("chosen"));
 }
 
-#[test]
+#[quench_test::test]
 fn refuses_a_missing_or_mismatched_manifest() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -289,7 +289,7 @@ fn refuses_a_missing_or_mismatched_manifest() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn refuses_an_overlay_directory_that_cannot_be_a_package_name() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let root = dir.path().join("overlays");
@@ -308,7 +308,7 @@ fn refuses_an_overlay_directory_that_cannot_be_a_package_name() {
     assert!(format!("{err:#}").contains("DNS-1123"), "{err:#}");
 }
 
-#[test]
+#[quench_test::test]
 fn refuses_an_overlay_without_overlay_yaml() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let root = dir.path().join("overlays");
@@ -318,7 +318,7 @@ fn refuses_an_overlay_without_overlay_yaml() {
     assert!(format!("{err:#}").contains("overlay not found"), "{err:#}");
 }
 
-#[test]
+#[quench_test::test]
 fn refuses_an_include_from_outside_the_overlay_directory() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -335,7 +335,7 @@ fn refuses_an_include_from_outside_the_overlay_directory() {
     assert!(message.contains("shared/common.yaml.j2"), "{message}");
 }
 
-#[test]
+#[quench_test::test]
 fn refuses_an_include_of_a_file_that_would_not_be_packed() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -350,7 +350,7 @@ fn refuses_an_include_of_a_file_that_would_not_be_packed() {
     assert!(format!("{err:#}").contains("cannot be packed"), "{err:#}");
 }
 
-#[test]
+#[quench_test::test]
 fn includes_behind_a_condition_are_found_by_rendering() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -365,7 +365,7 @@ fn includes_behind_a_condition_are_found_by_rendering() {
 }
 
 #[cfg(unix)]
-#[test]
+#[quench_test::test]
 fn refuses_a_symlink() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -377,7 +377,7 @@ fn refuses_a_symlink() {
 
 // --- pinning --------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn pins_each_image_to_its_digest_keeping_the_tag() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -409,7 +409,7 @@ fn pins_each_image_to_its_digest_keeping_the_tag() {
     assert_eq!(deployment.replace(&format!("@{DIGEST_A}"), ""), DEPLOYMENT);
 }
 
-#[test]
+#[quench_test::test]
 fn looks_each_distinct_image_up_once() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -426,7 +426,7 @@ fn looks_each_distinct_image_up_once() {
     assert_eq!(resolver.seen.borrow().as_slice(), ["nginx:1.27", "redis:7"]);
 }
 
-#[test]
+#[quench_test::test]
 fn leaves_alone_what_it_cannot_or_need_not_pin() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -453,7 +453,7 @@ fn leaves_alone_what_it_cannot_or_need_not_pin() {
     assert!(deployment.contains(&format!("image: {already}\n")));
 }
 
-#[test]
+#[quench_test::test]
 fn pinning_preserves_line_endings_and_a_missing_final_newline() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -477,7 +477,7 @@ fn pinning_preserves_line_endings_and_a_missing_final_newline() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_failed_lookup_stops_the_pack_and_names_the_way_out() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -490,7 +490,7 @@ fn a_failed_lookup_stops_the_pack_and_names_the_way_out() {
     assert!(!out.join("demo-0.4.0.rivet").exists());
 }
 
-#[test]
+#[quench_test::test]
 fn a_resolver_that_returns_something_else_is_rejected() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -508,7 +508,7 @@ fn a_resolver_that_returns_something_else_is_rejected() {
 
 // --- values ---------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn values_accept_scalars_and_reject_the_rest() {
     let values = parse_values("A = \"x\"\nB = 3\nC = true\nD = 1.5\n").unwrap();
     assert_eq!(
@@ -538,7 +538,7 @@ fn package_with_values(values: &str) -> Package {
     builder.finish().unwrap()
 }
 
-#[test]
+#[quench_test::test]
 fn values_layer_defaults_then_env_file_then_set() {
     let package = package_with_values("A = \"default\"\nB = \"default\"\nC = \"default\"\n");
     let dir = quench_core::tmp::TempDir::new().unwrap();
@@ -566,7 +566,7 @@ fn values_layer_defaults_then_env_file_then_set() {
     assert_eq!(merged["E"], "a=b");
 }
 
-#[test]
+#[quench_test::test]
 fn a_malformed_set_or_missing_env_file_is_an_error() {
     let package = package_with_values("");
     let sets = ["no-equals".to_string()];
@@ -608,7 +608,7 @@ fn a_malformed_set_or_missing_env_file_is_an_error() {
 
 // --- requirements ---------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn requirements_gate_on_the_running_riveter() {
     let mut manifest = Manifest::new("demo", "1.0.0");
     manifest.requires.riveter = Some(">=0.3, <0.5".to_string());
@@ -621,7 +621,7 @@ fn requirements_gate_on_the_running_riveter() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn package_requirements_are_noted_not_enforced() {
     let mut manifest = Manifest::new("demo", "1.0.0");
     manifest.requires.packages = vec!["postgres >=1".to_string()];
@@ -633,7 +633,7 @@ fn package_requirements_are_noted_not_enforced() {
 
 // --- package references ---------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn parses_package_references() {
     assert_eq!(
         parse_package_ref("forge").unwrap(),
@@ -688,7 +688,7 @@ fn installed(vars: &[(&str, &str)]) -> (riveter::package::Installation, quench_c
     )
 }
 
-#[test]
+#[quench_test::test]
 fn an_installed_package_renders_from_its_scratch_tree() {
     let (installation, _keep) = installed(&[("API_TOKEN", "s3cret"), ("REGION", "eu")]);
 
@@ -730,7 +730,7 @@ fn an_installed_package_renders_from_its_scratch_tree() {
     assert_eq!(rendered.namespace.as_deref(), Some("demo-ns"));
 }
 
-#[test]
+#[quench_test::test]
 fn the_real_env_file_never_reaches_an_install() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -744,7 +744,7 @@ fn the_real_env_file_never_reaches_an_install() {
     assert_eq!(merged["REGION"], "eu");
 }
 
-#[test]
+#[quench_test::test]
 fn an_install_missing_a_variable_says_which() {
     let (installation, _keep) = installed(&[("REGION", "eu")]);
 
@@ -758,7 +758,7 @@ fn an_install_missing_a_variable_says_which() {
     assert!(message.contains("values given at install"), "{message}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_workspace_is_scoped_to_the_call_and_restored_even_on_panic() {
     assert_eq!(overlay_dir(), Path::new("overlays"));
 
@@ -786,7 +786,7 @@ fn a_workspace_is_scoped_to_the_call_and_restored_even_on_panic() {
     assert_eq!(env::output_dir(), Path::new("manifests"));
 }
 
-#[test]
+#[quench_test::test]
 fn workspaces_nest() {
     let outer = Workspace {
         overlays_dir: Some("/outer".into()),
@@ -804,7 +804,7 @@ fn workspaces_nest() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_package_file_that_is_not_valid_is_refused_with_its_path() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let path = dir.path().join("bad.rivet");
@@ -815,7 +815,7 @@ fn a_package_file_that_is_not_valid_is_refused_with_its_path() {
     assert!(read_file(&dir.path().join("missing.rivet")).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_package_built_here_passes_the_registry_limits() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -831,7 +831,7 @@ fn at(timestamp: &str) -> quench_core::time::Time {
     quench_core::time::Time::parse_rfc3339(timestamp).unwrap()
 }
 
-#[test]
+#[quench_test::test]
 fn suffix_tokens_expand_to_the_clock_and_the_commit() {
     let now = at("2026-10-02T13:55:07Z");
 
@@ -849,14 +849,14 @@ fn suffix_tokens_expand_to_the_clock_and_the_commit() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_suffix_without_tokens_passes_through() {
     let now = at("2026-10-02T13:55:07Z");
     assert_eq!(expand_suffix("b123", now, None).unwrap(), "b123");
     assert_eq!(expand_suffix("", now, None).unwrap(), "");
 }
 
-#[test]
+#[quench_test::test]
 fn suffix_tokens_that_cannot_be_expanded_are_errors_not_literals() {
     let now = at("2026-10-02T13:55:07Z");
 
@@ -870,7 +870,7 @@ fn suffix_tokens_that_cannot_be_expanded_are_errors_not_literals() {
     assert!(expand_suffix("a{timestamp", now, None).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn an_expanded_suffix_is_valid_build_metadata_and_sorts_by_time() {
     let early = expand_suffix(
         "{timestamp}.{sha}",
@@ -901,7 +901,7 @@ fn secret_overlay(body: &str) -> String {
     format!("env: demo\nresources:\n{body}")
 }
 
-#[test]
+#[quench_test::test]
 fn a_secret_made_of_placeholders_is_fine() {
     let overlay = secret_overlay(
         "  - kind: secret\n    name: db\n    string_data:\n      PASSWORD: ${DB_PASSWORD}\n      URL: postgres://u:${DB_PASSWORD}@db/app\n",
@@ -909,7 +909,7 @@ fn a_secret_made_of_placeholders_is_fine() {
     assert!(literal_secret_values(&overlay).is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn a_literal_secret_value_is_named_by_resource_and_key() {
     let overlay = secret_overlay(
         "  - kind: secret\n    name: db\n    string_data:\n      PASSWORD: hunter2\n      OK: ${FROM_ENV}\n  - kind: Secret\n    name: tls\n    data:\n      key: c2VjcmV0\n",
@@ -920,7 +920,7 @@ fn a_literal_secret_value_is_named_by_resource_and_key() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn an_escaped_placeholder_is_a_literal_and_so_is_a_non_string() {
     // `$${NAME}` stays literal text in the manifest, so it is not a placeholder.
     let overlay = secret_overlay(
@@ -932,7 +932,7 @@ fn an_escaped_placeholder_is_a_literal_and_so_is_a_non_string() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn both_spellings_of_string_data_are_checked() {
     let overlay = secret_overlay(
         "  - kind: secret\n    name: a\n    stringData:\n      K: literal\n  - kind: secret\n    name: b\n    string_data:\n      K: literal\n",
@@ -943,7 +943,7 @@ fn both_spellings_of_string_data_are_checked() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn other_kinds_and_a_secret_without_values_are_ignored() {
     let overlay = secret_overlay(
         "  - kind: configmap\n    name: c\n    data:\n      PASSWORD: not-a-secret-kind\n  - kind: secret\n    name: empty\n",
@@ -951,7 +951,7 @@ fn other_kinds_and_a_secret_without_values_are_ignored() {
     assert!(literal_secret_values(&overlay).is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn a_raw_secret_cannot_be_checked_so_it_is_refused() {
     let overlay = secret_overlay(
         "  - kind: raw\n    name: sneaky\n    manifest: |\n      apiVersion: v1\n      kind: Secret\n      stringData:\n        a: b\n",
@@ -966,7 +966,7 @@ fn a_raw_secret_cannot_be_checked_so_it_is_refused() {
     assert!(literal_secret_values(&overlay).is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn packing_refuses_an_overlay_that_writes_a_secret_into_the_package() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -983,7 +983,7 @@ fn packing_refuses_an_overlay_that_writes_a_secret_into_the_package() {
     assert!(!dir.path().join("out/demo-0.4.0.rivet").exists());
 }
 
-#[test]
+#[quench_test::test]
 fn packing_accepts_a_secret_that_is_a_placeholder() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -999,7 +999,7 @@ fn packing_accepts_a_secret_that_is_a_placeholder() {
 
 // --- variables an overlay needs -------------------------------------
 
-#[test]
+#[quench_test::test]
 fn only_values_count_as_variables_not_comments_or_escapes() {
     let rendered = "\
 # explains the escape: write `${...}` literally as `$${VAR}`
@@ -1020,7 +1020,7 @@ resources:
     );
 }
 
-#[test]
+#[quench_test::test]
 fn unparseable_overlays_fall_back_to_scanning_the_text() {
     assert_eq!(riveter::render::overlay_vars("a: [unclosed ${X}"), ["X"]);
 }
@@ -1037,7 +1037,7 @@ fn render_with_replicas(replicas: &[(&str, u32)]) -> quench_core::Result<String>
     Ok(fs::read_to_string(&rendered.path)?)
 }
 
-#[test]
+#[quench_test::test]
 fn replicas_given_at_install_win_over_the_package() {
     let stopped = render_with_replicas(&[("deployment/api", 0)]).unwrap();
     let docs: Vec<quench_serde::Value> = quench_serde::yaml::from_str_all(&stopped).unwrap();
@@ -1055,7 +1055,7 @@ fn replicas_given_at_install_win_over_the_package() {
     assert!(scaled.contains("replicas: 4"), "{scaled}");
 }
 
-#[test]
+#[quench_test::test]
 fn replicas_naming_something_the_package_does_not_declare_is_an_error() {
     let error = render_with_replicas(&[("deployment/nope", 0)])
         .unwrap_err()
@@ -1064,7 +1064,7 @@ fn replicas_naming_something_the_package_does_not_declare_is_an_error() {
     assert!(error.contains("does not declare"), "{error}");
 }
 
-#[test]
+#[quench_test::test]
 fn replicas_only_apply_to_things_that_have_replicas() {
     let error = render_with_replicas(&[("namespace/demo-ns", 0)])
         .unwrap_err()
@@ -1072,7 +1072,7 @@ fn replicas_only_apply_to_things_that_have_replicas() {
     assert!(error.contains("deployment or statefulset"), "{error}");
 }
 
-#[test]
+#[quench_test::test]
 fn replicas_flags_are_parsed_strictly() {
     use riveter::package_cmd::parse_replicas;
     let parsed = parse_replicas(&[
@@ -1093,7 +1093,7 @@ fn replicas_flags_are_parsed_strictly() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_deployment_naming_a_workload_the_overlay_lacks_is_refused_at_pack_time() {
     let dir = overlay();
     let root = dir.path().join("overlays");
@@ -1120,7 +1120,7 @@ fn a_deployment_naming_a_workload_the_overlay_lacks_is_refused_at_pack_time() {
     assert!(error.contains("does not declare"), "{error}");
 }
 
-#[test]
+#[quench_test::test]
 fn except_leaves_a_resource_out_of_an_install_and_everything_else_in() {
     let (installation, _keep) = installed(&[("API_TOKEN", "x"), ("REGION", "eu")]);
     let selector = Selector::default().except(&["deployment/api"]).unwrap();
@@ -1148,7 +1148,7 @@ fn except_leaves_a_resource_out_of_an_install_and_everything_else_in() {
     assert!(Selector::default().except(&["a/b/c"]).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn the_inventory_lists_everything_the_package_declares_with_its_real_kinds_and_namespaces() {
     let (installation, _keep) = installed(&[("API_TOKEN", "x"), ("REGION", "eu")]);
     let line = with_workspace(installation.workspace.clone(), || {

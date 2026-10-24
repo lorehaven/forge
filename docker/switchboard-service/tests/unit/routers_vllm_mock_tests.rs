@@ -30,7 +30,7 @@ fn request(model: &str) -> LaunchRequest {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn launch_then_list_then_stop_round_trips_through_the_mock_store() {
     let _guard = mock_lock().lock().await;
     let engine = MockVllmEngine;
@@ -61,7 +61,7 @@ async fn launch_then_list_then_stop_round_trips_through_the_mock_store() {
     assert!(!after_stop.iter().any(|i| i.id == launched.id));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn stopping_an_unknown_instance_errors() {
     let _guard = mock_lock().lock().await;
     let engine = MockVllmEngine;
@@ -72,7 +72,7 @@ async fn stopping_an_unknown_instance_errors() {
     assert!(err.contains("does-not-exist"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn launch_honors_an_explicit_namespace() {
     let _guard = mock_lock().lock().await;
     let engine = MockVllmEngine;
@@ -91,7 +91,7 @@ async fn launch_honors_an_explicit_namespace() {
         .expect("cleanup: the instance we just launched is there to stop");
 }
 
-#[test]
+#[quench_test::test]
 fn launch_request_reads_max_num_seqs_and_defaults_to_none() {
     let with: LaunchRequest = quench_serde::json::from_str(
         r#"{"model":"m","host":"0.0.0.0","port":8000,"quantization":null,

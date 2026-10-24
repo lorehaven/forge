@@ -12,7 +12,7 @@ use riveter::image_updates::{
 };
 use std::fs;
 
-#[test]
+#[quench_test::test]
 fn discover_images_finds_image_lines_across_nested_templates_and_skips_bad_refs() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let nested = dir.path().join("prod");
@@ -45,7 +45,7 @@ fn discover_images_finds_image_lines_across_nested_templates_and_skips_bad_refs(
     );
 }
 
-#[test]
+#[quench_test::test]
 fn discover_images_is_empty_for_a_directory_with_no_templates() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let occurrences = discover_images(dir.path()).unwrap();
@@ -65,7 +65,7 @@ fn occurrence(path: &std::path::Path, original: &str, tag: &str) -> ImageOccurre
     }
 }
 
-#[test]
+#[quench_test::test]
 fn apply_updates_rewrites_only_the_matching_image_line() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let template = dir.path().join("app.yaml.j2");
@@ -89,19 +89,19 @@ fn apply_updates_rewrites_only_the_matching_image_line() {
     assert!(rewritten.ends_with('\n'));
 }
 
-#[test]
+#[quench_test::test]
 fn apply_updates_with_no_candidates_is_a_no_op() {
     apply_updates(&[]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn find_updates_with_no_occurrences_returns_nothing() {
     let (updates, messages) = find_updates(Vec::new(), &RegistryAuth::default());
     assert!(updates.is_empty());
     assert!(messages.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn find_updates_skips_a_floating_tag_without_any_network_call() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let occ = occurrence(&dir.path().join("app.yaml.j2"), "nginx:latest", "latest");
@@ -115,7 +115,7 @@ fn find_updates_skips_a_floating_tag_without_any_network_call() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn print_rows_and_print_results_do_not_panic_on_empty_or_populated_input() {
     print_rows("Title", &[]);
     print_rows(

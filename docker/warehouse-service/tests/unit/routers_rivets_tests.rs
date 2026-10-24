@@ -57,7 +57,7 @@ async fn call(
     app.call(support::req(method, path, container)).await
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn every_route_reports_not_found_when_disabled() {
     let _rivets = WithRivets::disabled();
     let (app, container) = setup().await;
@@ -76,7 +76,7 @@ async fn every_route_reports_not_found_when_disabled() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn publish_then_read_back() {
     let rivets = WithRivets::new();
     let (app, container) = setup().await;
@@ -131,7 +131,7 @@ async fn publish_then_read_back() {
     drop(rivets);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn build_metadata_versions_round_trip_through_the_url() {
     let _rivets = WithRivets::new();
     let (app, container) = setup().await;
@@ -151,7 +151,7 @@ async fn build_metadata_versions_round_trip_through_the_url() {
     assert_eq!(support::body_bytes(resp).await.as_ref(), bytes.as_slice());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn republishing_a_version_is_a_conflict_and_changes_nothing() {
     let _rivets = WithRivets::new();
     let (app, container) = setup().await;
@@ -185,7 +185,7 @@ async fn republishing_a_version_is_a_conflict_and_changes_nothing() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn rejects_an_archive_that_disagrees_with_the_url() {
     let rivets = WithRivets::new();
     let (app, container) = setup().await;
@@ -218,7 +218,7 @@ fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     files
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn rejects_garbage_and_a_corrupted_archive() {
     let rivets = WithRivets::new();
     let (app, container) = setup().await;
@@ -245,7 +245,7 @@ async fn rejects_garbage_and_a_corrupted_archive() {
     drop(rivets);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn rejects_an_invalid_name_or_version_in_the_url() {
     let _rivets = WithRivets::new();
     let (app, container) = setup().await;
@@ -265,7 +265,7 @@ async fn rejects_an_invalid_name_or_version_in_the_url() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn rejects_an_upload_over_the_size_limit() {
     let rivets = WithRivets::new();
     quench_core::env::set("RIVET_MAX_BYTES", "16");
@@ -277,7 +277,7 @@ async fn rejects_an_upload_over_the_size_limit() {
     drop(rivets);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn latest_follows_semver_and_skips_yanked_versions() {
     let _rivets = WithRivets::new();
     let (app, container) = setup().await;
@@ -329,7 +329,7 @@ async fn latest_follows_semver_and_skips_yanked_versions() {
     assert_eq!(body["version"], "0.10.0");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn latest_download_serves_the_resolved_version() {
     let _rivets = WithRivets::new();
     let (app, container) = setup().await;
@@ -348,7 +348,7 @@ async fn latest_download_serves_the_resolved_version() {
     assert_eq!(support::body_bytes(resp).await.as_ref(), newest.as_slice());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unknown_packages_and_versions_are_not_found() {
     let _rivets = WithRivets::new();
     let (app, container) = setup().await;
@@ -367,7 +367,7 @@ async fn unknown_packages_and_versions_are_not_found() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn lists_versions_newest_first_and_a_catalog_of_latest() {
     let _rivets = WithRivets::new();
     let (app, container) = setup().await;
@@ -421,7 +421,7 @@ async fn lists_versions_newest_first_and_a_catalog_of_latest() {
     assert_eq!(support::json_body(resp).await.as_array().unwrap().len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_invalid_name_lists_nothing() {
     let _rivets = WithRivets::new();
     let (app, container) = setup().await;

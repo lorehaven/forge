@@ -1,7 +1,7 @@
 use rivet_package::Manifest;
 use rivet_package::manifest::{is_valid_name, parse_package_requirement};
 
-#[test]
+#[quench_test::test]
 fn parses_a_minimal_manifest() {
     let m = Manifest::parse("[package]\nname = \"forge\"\nversion = \"0.4.0\"\n").unwrap();
     assert_eq!(m.package.name, "forge");
@@ -9,13 +9,13 @@ fn parses_a_minimal_manifest() {
     assert!(m.requires.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn accepts_build_metadata_in_the_version() {
     let m = Manifest::parse("[package]\nname = \"forge\"\nversion = \"0.4.0+b123\"\n").unwrap();
     assert_eq!(m.version().unwrap().build.as_str(), "b123");
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_bad_names_and_versions() {
     for source in [
         "[package]\nname = \"Forge\"\nversion = \"1.0.0\"\n",
@@ -28,13 +28,13 @@ fn rejects_bad_names_and_versions() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_unknown_package_keys_so_typos_surface() {
     let source = "[package]\nname = \"forge\"\nversion = \"1.0.0\"\nnamspace = \"x\"\n";
     assert!(Manifest::parse(source).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn validates_requirements() {
     let ok = "[package]\nname = \"a\"\nversion = \"1.0.0\"\n[requires]\nriveter = \">=0.3\"\npackages = [\"postgres >=1\", \"redis\"]\n";
     let m = Manifest::parse(ok).unwrap();
@@ -50,21 +50,21 @@ fn validates_requirements() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn package_requirement_without_a_constraint_matches_any_version() {
     let (name, req) = parse_package_requirement("redis").unwrap();
     assert_eq!(name, "redis");
     assert!(req.matches(&quench_core::version::Version::new(9, 9, 9)));
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_a_multiline_description() {
     let mut m = Manifest::new("a", "1.0.0");
     m.package.description = Some("one\ntwo".to_string());
     assert!(m.validate().is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn round_trips_through_toml() {
     let mut m = Manifest::new("forge", "0.4.0+b1");
     m.package.namespace = Some("forge".to_string());
@@ -75,7 +75,7 @@ fn round_trips_through_toml() {
     assert_eq!(Manifest::parse(&text).unwrap(), m);
 }
 
-#[test]
+#[quench_test::test]
 fn name_rule_matches_dns_1123_labels() {
     assert!(is_valid_name("a"));
     assert!(is_valid_name("media-2"));
@@ -87,7 +87,7 @@ fn name_rule_matches_dns_1123_labels() {
 
 const HEADER: &str = "[package]\nname = \"ml\"\nversion = \"1.0.0\"\n";
 
-#[test]
+#[quench_test::test]
 fn deployments_are_declared_and_survive_a_round_trip() {
     let source = format!(
         "{HEADER}\n\
@@ -116,14 +116,14 @@ fn deployments_are_declared_and_survive_a_round_trip() {
     assert_eq!(again, manifest);
 }
 
-#[test]
+#[quench_test::test]
 fn a_manifest_without_deployments_is_unchanged() {
     let manifest = Manifest::parse(HEADER).unwrap();
     assert!(manifest.deployments.is_empty());
     assert!(!manifest.to_toml().unwrap().contains("deployment"));
 }
 
-#[test]
+#[quench_test::test]
 fn bad_deployments_are_refused_with_the_reason() {
     let bad = |body: &str| {
         Manifest::parse(&format!("{HEADER}\n[[deployment]]\n{body}"))

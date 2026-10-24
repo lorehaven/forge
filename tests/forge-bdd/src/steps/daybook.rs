@@ -2,7 +2,7 @@
 //! in-memory DB adapter. Postgres CRUD/ownership behavior lives in the
 //! daybook-service integration suite.
 use crate::world::ForgeWorld;
-use cucumber::{given, when};
+use quench_test_bdd::{given, when};
 
 #[given("daybook API is available")]
 async fn available(world: &mut ForgeWorld) {
@@ -38,7 +38,7 @@ async fn authenticated_with_audience(world: &mut ForgeWorld, audience: String) {
 }
 
 #[when(expr = "an authenticated Daybook POST is sent to {string} with body:")]
-async fn authenticated_post(world: &mut ForgeWorld, path: String, step: &cucumber::gherkin::Step) {
+async fn authenticated_post(world: &mut ForgeWorld, path: String, step: &quench_test_bdd::Step) {
     let body = step.docstring().expect("step must have a docstring");
     let url = format!("{}{path}", world.daybook_url);
     let mut request = world

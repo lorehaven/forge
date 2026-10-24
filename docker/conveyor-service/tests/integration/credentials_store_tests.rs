@@ -68,7 +68,7 @@ async fn repo_under(
     .expect("register the repository")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_repo_credential_round_trips_through_resolve() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_repo_credential_round_trips_through_resolve");
@@ -100,7 +100,7 @@ async fn a_repo_credential_round_trips_through_resolve() {
     assert_eq!(resolved.token, "a-real-token");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_token_is_not_readable_from_the_table() {
     let Some((db, _guard)) = database().await else {
         return skipped("the_token_is_not_readable_from_the_table");
@@ -133,7 +133,7 @@ async fn the_token_is_not_readable_from_the_table() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn writing_again_replaces_whatever_was_there() {
     let Some((db, _guard)) = database().await else {
         return skipped("writing_again_replaces_whatever_was_there");
@@ -174,7 +174,7 @@ async fn writing_again_replaces_whatever_was_there() {
     assert_eq!(resolved.token, "second-value");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_repos_own_credential_wins_over_its_projects() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_repos_own_credential_wins_over_its_projects");
@@ -208,7 +208,7 @@ async fn a_repos_own_credential_wins_over_its_projects() {
     assert_eq!(resolved.token, "repo-value");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_projects_credential_covers_a_repo_with_none_of_its_own() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_projects_credential_covers_a_repo_with_none_of_its_own");
@@ -232,7 +232,7 @@ async fn a_projects_credential_covers_a_repo_with_none_of_its_own() {
     assert_eq!(resolved.username, "project-bot");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_nearer_project_wins_over_a_further_ancestor() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_nearer_project_wins_over_a_further_ancestor");
@@ -270,7 +270,7 @@ async fn a_nearer_project_wins_over_a_further_ancestor() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn one_repos_credential_is_invisible_to_another() {
     let Some((db, _guard)) = database().await else {
         return skipped("one_repos_credential_is_invisible_to_another");
@@ -297,7 +297,7 @@ async fn one_repos_credential_is_invisible_to_another() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_repo_with_no_credential_anywhere_resolves_to_none() {
     // Not an error, unlike a pipeline secret nobody set: a repository with no
     // credential is assumed public, and the clone is attempted unauthenticated
@@ -315,7 +315,7 @@ async fn a_repo_with_no_credential_anywhere_resolves_to_none() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn resolving_without_a_key_returns_none_rather_than_an_error() {
     // A deployment that has never set CONVEYOR_CREDENTIAL_KEY builds every
     // public repository perfectly well.
@@ -332,7 +332,7 @@ async fn resolving_without_a_key_returns_none_rather_than_an_error() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn showing_never_carries_the_token() {
     let Some((db, _guard)) = database().await else {
         return skipped("showing_never_carries_the_token");
@@ -359,7 +359,7 @@ async fn showing_never_carries_the_token() {
     assert!(!rendered.contains("a-secret-token-value"), "{rendered}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_token_too_short_is_refused() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_token_too_short_is_refused");
@@ -378,7 +378,7 @@ async fn a_token_too_short_is_refused() {
     assert!(matches!(error, CredentialError::TooShort), "{error:?}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn material_with_a_control_character_is_refused() {
     let Some((db, _guard)) = database().await else {
         return skipped("material_with_a_control_character_is_refused");
@@ -397,7 +397,7 @@ async fn material_with_a_control_character_is_refused() {
     assert!(matches!(error, CredentialError::BadMaterial), "{error:?}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_name_that_is_not_a_valid_identifier_is_refused() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_name_that_is_not_a_valid_identifier_is_refused");
@@ -418,7 +418,7 @@ async fn a_name_that_is_not_a_valid_identifier_is_refused() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn deleting_removes_it() {
     let Some((db, _guard)) = database().await else {
         return skipped("deleting_removes_it");
@@ -441,7 +441,7 @@ async fn deleting_removes_it() {
     assert!(store::show(&db, &scope).await.expect("show").is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn deleting_a_repository_takes_its_credential_with_it() {
     let Some((db, _guard)) = database().await else {
         return skipped("deleting_a_repository_takes_its_credential_with_it");
@@ -466,7 +466,7 @@ async fn deleting_a_repository_takes_its_credential_with_it() {
     assert!(store::show(&db, &scope).await.expect("show").is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_all_returns_every_credential_across_every_scope() {
     let Some((db, _guard)) = database().await else {
         return skipped("list_all_returns_every_credential_across_every_scope");

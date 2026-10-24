@@ -8,6 +8,7 @@ homepage = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
 publish = false
+autotests = false
 
 [lib]
 name = "forge_ui"
@@ -17,3 +18,11 @@ path = "src/lib.rs"
 quench-core = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
+
+[[test]]
+name = "components_tests"
+path = "tests/components_tests.rs"
+harness = false
+
+[dev-dependencies]
+quench-test = { workspace = true }

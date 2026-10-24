@@ -1,6 +1,8 @@
 //! Postgres-backed API behavior. Set `DAYBOOK_TEST_DATABASE_URL` to a throwaway
 //! database with the daybook and auth modules installed to run these tests.
 #![allow(dead_code)]
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
 
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_core::bytes::Bytes;
@@ -154,7 +156,7 @@ async fn delete_alice(app: &Arc<dyn Endpoint>, container: &Arc<Container>, uri: 
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn inbox_project_completion_and_crud_round_trip() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping API CRUD: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -212,7 +214,7 @@ async fn inbox_project_completion_and_crud_round_trip() {
     assert_eq!(remaining[0]["id"], inbox_task["id"]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn task_and_project_data_are_isolated_by_gatehouse_subject() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping owner isolation: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -271,7 +273,7 @@ async fn task_and_project_data_are_isolated_by_gatehouse_subject() {
     assert_eq!(body(response).await.as_array().unwrap().len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn missing_records_and_invalid_payloads_have_stable_http_statuses() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping API errors: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -327,7 +329,7 @@ async fn create_label(
     body(response).await
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[allow(clippy::too_many_lines)]
 async fn reminders_and_labels_round_trip_and_filter_across_lists() {
     let Some((db, _guard)) = database().await else {
@@ -453,7 +455,7 @@ async fn reminders_and_labels_round_trip_and_filter_across_lists() {
     assert_eq!(tasks[0]["label_ids"], json!([]));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn labels_are_private_unique_and_validated() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping label rules: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -579,7 +581,7 @@ async fn put_task(
 // Far-future due dates, so "the first occurrence after now" is the one after the due date no matter
 // when the test runs.
 
-#[tokio::test]
+#[quench_test::test]
 async fn completing_a_repeating_task_rolls_it_forward_and_moves_its_reminder() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping recurrence roll: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -618,7 +620,7 @@ async fn completing_a_repeating_task_rolls_it_forward_and_moves_its_reminder() {
     assert_eq!(open[0]["due_at"], "2090-03-16T09:00:00Z");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_ordinary_task_still_completes_normally() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping plain completion: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -630,7 +632,7 @@ async fn an_ordinary_task_still_completes_normally() {
     assert_eq!(done["recurrence"], Value::Null);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reopening_a_repeating_task_does_not_roll_it() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping reopen: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -651,7 +653,7 @@ async fn reopening_a_repeating_task_does_not_roll_it() {
     assert_eq!(saved["is_completed"], false);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_monthly_task_on_the_31st_is_not_dragged_to_the_28th_for_good() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping month-end anchor: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -687,7 +689,7 @@ async fn a_monthly_task_on_the_31st_is_not_dragged_to_the_28th_for_good() {
     assert_eq!(next["due_at"], "2090-05-15T12:00:00Z");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_rule_is_evaluated_in_its_own_time_zone() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping time zone: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -713,7 +715,7 @@ async fn the_rule_is_evaluated_in_its_own_time_zone() {
     assert_eq!(due, "2090-10-30T08:00:00Z");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn after_completion_counts_from_the_day_it_is_done() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping after-completion: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -738,7 +740,7 @@ async fn after_completion_counts_from_the_day_it_is_done() {
     assert_eq!((civil.hour, civil.minute), (9, 0));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn removing_the_rule_makes_it_an_ordinary_task_again() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping rule removal: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -769,7 +771,7 @@ async fn removing_the_rule_makes_it_an_ordinary_task_again() {
     assert_eq!(done["is_completed"], true);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_all_day_due_date_is_stored_as_a_date_and_rolls_by_dates() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping all-day: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -826,7 +828,7 @@ async fn an_all_day_due_date_is_stored_as_a_date_and_rolls_by_dates() {
     assert_eq!(rolled["remind_at"], "2090-03-08T08:00:00Z");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn all_day_means_nothing_without_a_date_and_can_be_switched_off() {
     let Some((db, _guard)) = database().await else {
         return eprintln!("skipping all-day rules: DAYBOOK_TEST_DATABASE_URL is not set");
@@ -857,3 +859,5 @@ async fn all_day_means_nothing_without_a_date_and_can_be_switched_off() {
     assert_eq!(timed["due_all_day"], false);
     assert_eq!(timed["due_at"], "2090-03-02T17:45:00Z");
 }
+
+quench_test::main!();

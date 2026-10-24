@@ -3,7 +3,7 @@
 use quench_serde::json;
 use switchboard_service::routers::models::types::*;
 
-#[test]
+#[quench_test::test]
 fn test_context_serialization_roundtrip() {
     let contexts = vec![
         (Context::Size512, json!(512)),
@@ -22,14 +22,14 @@ fn test_context_serialization_roundtrip() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn test_context_deserialization_from_string() {
     let json_str = json!("4096");
     let deserialized: Context = quench_serde::from_value(&json_str).unwrap();
     assert_eq!(deserialized, Context::Size4096);
 }
 
-#[test]
+#[quench_test::test]
 fn test_model_deserialization_with_numeric_context() {
     let model_json = json!({
         "source": "HF",
@@ -50,26 +50,26 @@ fn test_model_deserialization_with_numeric_context() {
     assert_eq!(model.name, "test-model");
 }
 
-#[test]
+#[quench_test::test]
 fn context_invalid_type_is_rejected() {
     let err = quench_serde::from_value::<Context>(&json!(true)).unwrap_err();
     assert!(err.to_string().contains("invalid context type"));
 }
 
-#[test]
+#[quench_test::test]
 fn context_invalid_value_is_rejected() {
     let err = quench_serde::from_value::<Context>(&json!("999")).unwrap_err();
     assert!(err.to_string().contains("invalid context value"));
 }
 
-#[test]
+#[quench_test::test]
 fn context_as_usize_matches_the_advertised_size() {
     assert_eq!(Context::Size512.as_usize(), 512);
     assert_eq!(Context::Size131072.as_usize(), 131_072);
     assert_eq!(Context::ALL.as_usize(), 131_072);
 }
 
-#[test]
+#[quench_test::test]
 fn context_display_matches_serialization() {
     for ctx in Context::ALL_VALUES {
         assert_eq!(ctx.to_string(), ctx.as_usize().to_string());
@@ -77,7 +77,7 @@ fn context_display_matches_serialization() {
     assert_eq!(Context::ALL.to_string(), "ALL");
 }
 
-#[test]
+#[quench_test::test]
 fn quant_aliases_deserialize_to_the_same_variant() {
     let dashed: Quant = quench_serde::from_value(&json!("Q8_0")).unwrap();
     let compact: Quant = quench_serde::from_value(&json!("Q80")).unwrap();
@@ -88,47 +88,47 @@ fn quant_aliases_deserialize_to_the_same_variant() {
     assert_eq!(lower, Quant::FP16);
 }
 
-#[test]
+#[quench_test::test]
 fn quant_bytes_per_weight_covers_every_variant() {
     assert!((Quant::FP16.bytes_per_weight() - 2.0).abs() < 1e-6);
     assert!((Quant::Q2K.bytes_per_weight() - 0.35).abs() < 1e-6);
     assert!((Quant::ALL.bytes_per_weight() - 0.0).abs() < 1e-6);
 }
 
-#[test]
+#[quench_test::test]
 fn quant_rank_orders_higher_fidelity_above_lower() {
     assert!(Quant::FP16.rank() > Quant::Q80.rank());
     assert!(Quant::Q80.rank() > Quant::Q2K.rank());
     assert_eq!(Quant::ALL.rank(), 0);
 }
 
-#[test]
+#[quench_test::test]
 fn quant_display_uses_debug_formatting() {
     assert_eq!(Quant::FP16.to_string(), "FP16");
     assert_eq!(format!("{}", Quant::Q4KM), "Q4KM");
 }
 
-#[test]
+#[quench_test::test]
 fn model_filters_accept_type_alias_for_source() {
     let filters: ModelFilters = quench_serde::from_value(&json!({ "type": "GGUF" })).unwrap();
     assert_eq!(filters.source.as_deref(), Some("GGUF"));
     assert!(filters.search.is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn model_filters_accept_numeric_context() {
     let filters: ModelFilters = quench_serde::from_value(&json!({ "context": 4096 })).unwrap();
     assert_eq!(filters.context, Some(json!(4096)));
 }
 
-#[test]
+#[quench_test::test]
 fn delete_model_request_round_trips() {
     let request: DeleteModelRequest =
         quench_serde::from_value(&json!({ "path": "/mnt/dev/quantized/model.gguf" })).unwrap();
     assert_eq!(request.path, "/mnt/dev/quantized/model.gguf");
 }
 
-#[test]
+#[quench_test::test]
 fn running_model_serializes_every_field() {
     let running = RunningModel {
         id: "id-1".to_string(),
@@ -142,7 +142,7 @@ fn running_model_serializes_every_field() {
     assert_eq!(value["endpoint"], "http://localhost:8000");
 }
 
-#[test]
+#[quench_test::test]
 fn model_estimate_round_trips_through_json() {
     let estimate = ModelEstimate {
         quant: Quant::Q4KM,

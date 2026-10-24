@@ -23,7 +23,7 @@ pub fn default_token_name(host: &str) -> String {
 
 pub fn login_command(args: &LoginArgs) -> Result<()> {
     let dir = std::env::current_dir().context("finding the working directory")?;
-    dotenvy::dotenv().ok();
+    quench_core::dotenv::load().ok();
     let stored = gatehouse_auth::load(TOOL, &dir)?.map(|stored| stored.gatehouse_url);
     let url = args
         .gatehouse_url

@@ -4,7 +4,7 @@ use crate::support::{database, skipped};
 use quench_db::prelude::Database;
 use workbench_service::domain::realm_users;
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_user_with_a_display_name_is_labeled_by_it_not_the_username() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_user_with_a_display_name_is_labeled_by_it_not_the_username");
@@ -27,7 +27,7 @@ async fn a_user_with_a_display_name_is_labeled_by_it_not_the_username() {
     assert_eq!(named.label(), "Named Person");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_user_with_no_display_name_falls_back_to_their_username() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_user_with_no_display_name_falls_back_to_their_username");

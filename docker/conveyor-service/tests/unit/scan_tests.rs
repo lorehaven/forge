@@ -2,7 +2,7 @@ use conveyor_service::scan::{
     CheckKind, CheckResult, parse_audit, parse_coverage, parse_lint, parse_machete, strip_ansi,
 };
 
-#[test]
+#[quench_test::test]
 fn strips_sgr_sequences() {
     assert_eq!(
         strip_ansi("\u{1b}[33mwarning\u{1b}[0m: unused"),
@@ -11,7 +11,7 @@ fn strips_sgr_sequences() {
     assert_eq!(strip_ansi("plain text"), "plain text");
 }
 
-#[test]
+#[quench_test::test]
 fn parses_clean_lint() {
     assert!(parse_lint(&["Checking foo v0.1.0", "Finished"]).is_none());
 }
@@ -20,7 +20,7 @@ fn parses_clean_lint() {
 /// `warning:`/`error:` shape (e.g. anvil's own "N modules scanned"
 /// summary) must not have its log tail treated as findings - that
 /// previously made a clean run's chip show the line count instead of 0.
-#[test]
+#[quench_test::test]
 fn passed_check_with_unparseable_output_has_no_findings() {
     let result = CheckResult {
         kind: CheckKind::Lint,
@@ -36,7 +36,7 @@ fn passed_check_with_unparseable_output_has_no_findings() {
     assert!(result.findings.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn failed_check_with_unparseable_output_falls_back_to_log_tail() {
     let result = CheckResult {
         kind: CheckKind::Lint,
@@ -53,7 +53,7 @@ fn failed_check_with_unparseable_output_falls_back_to_log_tail() {
     assert_eq!(result.findings[0].title, "thread panicked");
 }
 
-#[test]
+#[quench_test::test]
 fn parses_lint_warnings_with_location() {
     let lines = [
         r#"{"reason":"compiler-message","message":{"level":"warning","message":"unused variable: `x`","spans":[{"file_name":"src/main.rs","line_start":10,"column_start":9,"is_primary":true}]}}"#,
@@ -68,7 +68,7 @@ fn parses_lint_warnings_with_location() {
     assert_eq!(findings[1].location, None);
 }
 
-#[test]
+#[quench_test::test]
 fn parses_error_level_lint_diagnostics() {
     let lines = [
         r#"{"reason":"compiler-message","message":{"level":"error","message":"mismatched types","code":{"code":"E0308"},"spans":[]}}"#,
@@ -79,7 +79,7 @@ fn parses_error_level_lint_diagnostics() {
     assert_eq!(findings[0].severity.as_deref(), Some("error"));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_lint_recognises_a_clean_build_and_ignores_notes() {
     let lines = [
         r#"{"reason":"compiler-artifact"}"#,
@@ -91,7 +91,7 @@ fn parse_lint_recognises_a_clean_build_and_ignores_notes() {
     assert!(findings.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn parses_clean_machete() {
     let lines = [r#"{"findings":[]}"#];
     let (headline, findings) = parse_machete(&lines).expect("should parse");
@@ -99,7 +99,7 @@ fn parses_clean_machete() {
     assert!(findings.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn parses_machete_findings() {
     let lines = [
         r#"{"findings":[{"package":"foo","manifest":"./crates/foo/Cargo.toml","unused":["serde_yaml","once_cell"]}]}"#,
@@ -111,12 +111,12 @@ fn parses_machete_findings() {
     assert_eq!(findings[1].title, "once_cell");
 }
 
-#[test]
+#[quench_test::test]
 fn parse_machete_is_none_for_output_that_is_not_its_json() {
     assert!(parse_machete(&["Analyzing dependencies of crates in this directory..."]).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn parses_clean_audit() {
     let lines = [r#"{"vulnerabilities":{"found":false,"count":0,"list":[]},"warnings":{}}"#];
     let (headline, findings) = parse_audit(&lines).expect("should parse");
@@ -124,7 +124,7 @@ fn parses_clean_audit() {
     assert!(findings.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn parses_audit_findings_with_all_fields() {
     let lines = [concat!(
         r#"{"vulnerabilities":{"found":true,"count":1,"list":[{"#,
@@ -151,7 +151,7 @@ fn parses_audit_findings_with_all_fields() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn parses_vulnerabilities_and_warnings_together() {
     let lines = [concat!(
         r#"{"vulnerabilities":{"found":true,"count":1,"list":[{"#,
@@ -170,12 +170,12 @@ fn parses_vulnerabilities_and_warnings_together() {
     assert_eq!(findings[1].severity.as_deref(), Some("unmaintained"));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_audit_is_none_for_output_that_is_not_its_json() {
     assert!(parse_audit(&["Fetching advisory database..."]).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn parses_coverage_table_and_skips_fully_covered_files() {
     let lines = [
         "Filename                      Regions    Missed Regions     Cover   Functions  Missed Functions  Executed       Lines      Missed Lines     Cover    Branches   Missed Branches     Cover",
@@ -202,7 +202,7 @@ fn parses_coverage_table_and_skips_fully_covered_files() {
     assert_eq!(findings[1].severity.as_deref(), Some("95.00%"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_coverage_report_with_no_recognisable_rows_does_not_parse() {
     assert!(parse_coverage(&["error: no coverage data found"]).is_none());
 }

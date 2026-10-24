@@ -3,7 +3,7 @@ use quench_db::{Db, InMemoryDb};
 use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::artifacts;
 
-#[tokio::test]
+#[quench_test::test]
 async fn platform_versions_reports_not_found_when_disabled() {
     artifacts::register_routes();
     let container = support::container_builder()
@@ -23,7 +23,7 @@ async fn platform_versions_reports_not_found_when_disabled() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn program_versions_reports_not_found_when_disabled() {
     artifacts::register_routes();
     let container = support::container_builder()
@@ -43,7 +43,7 @@ async fn program_versions_reports_not_found_when_disabled() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn catalog_reports_not_found_when_disabled() {
     artifacts::register_routes();
     let container = support::container_builder()

@@ -48,7 +48,7 @@ fn refs(kind: &str, name: &str) -> ResourceRef {
 
 // --- depends_on ------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn an_overlay_without_depends_on_is_not_reordered() {
     let text = "resources:\n  - {kind: service, name: b}\n  - {kind: deployment, name: a}\n  - {kind: ingress, name: c}\n";
     assert_eq!(
@@ -57,7 +57,7 @@ fn an_overlay_without_depends_on_is_not_reordered() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_resource_moves_after_what_it_depends_on_and_nothing_else_moves() {
     let text = "resources:
   - {kind: deployment, name: web, depends_on: [job/migrate]}
@@ -77,7 +77,7 @@ fn a_resource_moves_after_what_it_depends_on_and_nothing_else_moves() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn ties_are_broken_by_the_order_the_overlay_is_written_in() {
     let text = "resources:
   - {kind: deployment, name: c, depends_on: [deployment/a]}
@@ -90,7 +90,7 @@ fn ties_are_broken_by_the_order_the_overlay_is_written_in() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn chains_and_diamonds_resolve() {
     let text = "resources:
   - {kind: deployment, name: app, depends_on: [deployment/api, deployment/worker]}
@@ -109,7 +109,7 @@ fn chains_and_diamonds_resolve() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_dependency_may_name_its_kind_in_any_case_or_plural() {
     let text = "resources:
   - {kind: Deployment, name: web, depends_on: [JOB/Migrate]}
@@ -122,7 +122,7 @@ fn a_dependency_may_name_its_kind_in_any_case_or_plural() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn an_unknown_dependency_names_both_resources() {
     let err = ordered("resources:\n  - {kind: deployment, name: web, depends_on: [job/nope]}\n")
         .unwrap_err();
@@ -132,13 +132,13 @@ fn an_unknown_dependency_names_both_resources() {
     assert!(message.contains("does not declare"), "{message}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_dependency_on_itself_is_refused() {
     let err = ordered("resources:\n  - {kind: job, name: x, depends_on: [job/x]}\n").unwrap_err();
     assert!(err.to_string().contains("depends_on itself"), "{err}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_cycle_is_refused_and_every_resource_in_it_is_named() {
     let text = "resources:
   - {kind: deployment, name: a, depends_on: [deployment/b]}
@@ -153,7 +153,7 @@ fn a_cycle_is_refused_and_every_resource_in_it_is_named() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn malformed_depends_on_is_refused_with_the_resource_named() {
     for bad in [
         "depends_on: job/x",
@@ -169,7 +169,7 @@ fn malformed_depends_on_is_refused_with_the_resource_named() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn dependencies_are_ordered_after_variables_are_expanded() {
     // The foundry Job's name carries the release, which is a variable - and other resources name it.
     let overlay = "env: demo
@@ -199,7 +199,7 @@ fn gate(text: &str, kind: &str) -> quench_core::Result<Option<(WaitFor, Option<u
     gate_of(&yaml(text), &refs(kind, "x"))
 }
 
-#[test]
+#[quench_test::test]
 fn a_job_can_wait_for_completion_and_a_workload_for_readiness() {
     assert_eq!(
         gate("{wait: complete}", "job").unwrap(),
@@ -220,7 +220,7 @@ fn a_job_can_wait_for_completion_and_a_workload_for_readiness() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_gate_may_set_its_own_timeout() {
     assert_eq!(
         gate("{wait: complete, wait_timeout: 900}", "job").unwrap(),
@@ -228,13 +228,13 @@ fn a_gate_may_set_its_own_timeout() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn no_wait_means_no_gate() {
     assert_eq!(gate("{}", "job").unwrap(), None);
     assert_eq!(gate("{wait: null}", "job").unwrap(), None);
 }
 
-#[test]
+#[quench_test::test]
 fn a_wait_that_does_not_fit_its_kind_is_refused_with_the_right_one_suggested() {
     let message = gate("{wait: complete}", "deployment")
         .unwrap_err()
@@ -249,7 +249,7 @@ fn a_wait_that_does_not_fit_its_kind_is_refused_with_the_right_one_suggested() {
     assert!(gate("{wait: complete}", "cronjob").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn bad_wait_values_are_refused() {
     assert!(
         gate("{wait: soon}", "job")
@@ -273,7 +273,7 @@ fn bad_wait_values_are_refused() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn gates_are_collected_in_overlay_order() {
     let data = yaml(
         "resources:
@@ -288,7 +288,7 @@ fn gates_are_collected_in_overlay_order() {
     assert_eq!((gates[1].1, gates[1].2), (WaitFor::Complete, Some(60)));
 }
 
-#[test]
+#[quench_test::test]
 fn job_state_is_read_from_its_conditions() {
     assert_eq!(parse_job_state("True||"), JobState::Complete);
     assert_eq!(parse_job_state("true||\n"), JobState::Complete);
@@ -346,7 +346,7 @@ fn workspace(overlay: &str) -> (quench_core::tmp::TempDir, Workspace) {
     (dir, workspace)
 }
 
-#[test]
+#[quench_test::test]
 fn a_render_with_gates_is_split_into_a_manifest_per_phase() {
     let (_dir, ws) = workspace(GATED);
     let rendered = with_workspace(ws, || {
@@ -386,7 +386,7 @@ fn a_render_with_gates_is_split_into_a_manifest_per_phase() {
     assert_eq!(rendered.resource_count, 5);
 }
 
-#[test]
+#[quench_test::test]
 fn a_render_with_no_gates_has_no_phases() {
     let (_dir, ws) = workspace(
         "env: demo\nnamespace_name: demo\nresources:\n  - kind: deployment\n    name: a\n    image: nginx\n",
@@ -398,7 +398,7 @@ fn a_render_with_no_gates_has_no_phases() {
     assert!(rendered.phases.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn only_the_gates_of_selected_resources_split_a_render() {
     let (_dir, ws) = workspace(GATED);
     let rendered = with_workspace(ws, || {
@@ -498,7 +498,7 @@ fn apply(
     })
 }
 
-#[test]
+#[quench_test::test]
 fn an_apply_stops_at_each_gate_before_the_next_phase_goes_out() {
     let (_dir, ws) = workspace(GATED);
     with_cluster("True||", None, |cluster| {
@@ -531,7 +531,7 @@ fn an_apply_stops_at_each_gate_before_the_next_phase_goes_out() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_job_that_fails_stops_the_apply_and_says_what_was_and_was_not_applied() {
     let (_dir, ws) = workspace(GATED);
     with_cluster(
@@ -565,7 +565,7 @@ fn a_job_that_fails_stops_the_apply_and_says_what_was_and_was_not_applied() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_job_that_never_finishes_times_out_naming_the_knob() {
     let overlay = GATED.replace("wait_timeout: 60", "wait_timeout: 1");
     let (_dir, ws) = workspace(&overlay);
@@ -588,7 +588,7 @@ fn a_job_that_never_finishes_times_out_naming_the_knob() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn the_apply_timeout_is_the_default_for_a_gate_that_sets_none() {
     // The db gate has no wait_timeout of its own, so `--timeout` applies to it.
     let (_dir, ws) = workspace(GATED);
@@ -613,7 +613,7 @@ fn the_apply_timeout_is_the_default_for_a_gate_that_sets_none() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_failed_apply_in_a_phase_says_which_phase_and_that_it_may_be_partial() {
     let (_dir, ws) = workspace(GATED);
     with_cluster("True||", Some("phase-2"), |cluster| {
@@ -638,7 +638,7 @@ fn a_failed_apply_in_a_phase_says_which_phase_and_that_it_may_be_partial() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn no_wait_applies_the_whole_ordered_manifest_in_one_go() {
     let (_dir, ws) = workspace(GATED);
     with_cluster("||", None, |cluster| {
@@ -657,7 +657,7 @@ fn no_wait_applies_the_whole_ordered_manifest_in_one_go() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_dry_run_applies_the_whole_manifest_client_side_and_waits_for_nothing() {
     let (_dir, ws) = workspace(GATED);
     with_cluster("||", None, |cluster| {
@@ -672,7 +672,7 @@ fn a_dry_run_applies_the_whole_manifest_client_side_and_waits_for_nothing() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn an_overlay_without_gates_is_applied_in_one_go_as_before() {
     let (_dir, ws) = workspace(
         "env: demo\nnamespace_name: demo\nresources:\n  - kind: namespace\n    immutable: true\n  - kind: deployment\n    name: a\n    image: nginx\n",
@@ -695,7 +695,7 @@ use riveter::repl::create_namespace_if_missing;
 
 const WITH_NAMESPACE: &str = "env: demo\nnamespace_name: demo\nresources:\n  - kind: namespace\n    immutable: true\n  - kind: deployment\n    name: a\n    image: nginx\n";
 
-#[test]
+#[quench_test::test]
 fn a_missing_namespace_is_created_with_only_the_namespace() {
     let (_dir, ws) = workspace(WITH_NAMESPACE);
     with_cluster_and_namespace("absent", "||", None, |cluster| {
@@ -710,7 +710,7 @@ fn a_missing_namespace_is_created_with_only_the_namespace() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn an_existing_namespace_is_left_alone() {
     let (_dir, ws) = workspace(WITH_NAMESPACE);
     with_cluster_and_namespace("present", "||", None, |cluster| {
@@ -719,7 +719,7 @@ fn an_existing_namespace_is_left_alone() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn an_unreachable_cluster_is_not_mistaken_for_a_missing_namespace() {
     let (_dir, ws) = workspace(WITH_NAMESPACE);
     with_cluster_and_namespace("unreachable", "||", None, |cluster| {
@@ -731,7 +731,7 @@ fn an_unreachable_cluster_is_not_mistaken_for_a_missing_namespace() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn an_overlay_that_declares_no_namespace_is_left_for_the_apply_to_report_on() {
     let (_dir, ws) = workspace(
         "env: demo\nnamespace_name: demo\nresources:\n  - kind: deployment\n    name: a\n    image: nginx\n",

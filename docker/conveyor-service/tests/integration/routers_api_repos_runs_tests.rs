@@ -81,7 +81,7 @@ async fn seed_repo(db: &Db, project_id: &str) -> conveyor_service::domain::Repo 
 // repos
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn register_rejects_an_unknown_provider() {
     let Some((db, _guard)) = database().await else {
         return skipped("register_rejects_an_unknown_provider");
@@ -93,7 +93,7 @@ async fn register_rejects_an_unknown_provider() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn register_creates_a_repo_when_valid() {
     let Some((db, _guard)) = database().await else {
         return skipped("register_creates_a_repo_when_valid");
@@ -105,7 +105,7 @@ async fn register_creates_a_repo_when_valid() {
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_reports_every_registered_repo() {
     let Some((db, _guard)) = database().await else {
         return skipped("list_reports_every_registered_repo");
@@ -122,7 +122,7 @@ async fn list_reports_every_registered_repo() {
     assert_eq!(body.as_array().expect("array").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn read_reports_not_found_for_an_unknown_id() {
     let Some((db, _guard)) = database().await else {
         return skipped("read_reports_not_found_for_an_unknown_id");
@@ -135,7 +135,7 @@ async fn read_reports_not_found_for_an_unknown_id() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn read_returns_a_known_repo() {
     let Some((db, _guard)) = database().await else {
         return skipped("read_returns_a_known_repo");
@@ -154,7 +154,7 @@ async fn read_returns_a_known_repo() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_rejects_an_empty_name() {
     let Some((db, _guard)) = database().await else {
         return skipped("update_rejects_an_empty_name");
@@ -174,7 +174,7 @@ async fn update_rejects_an_empty_name() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_applies_a_valid_partial_change() {
     let Some((db, _guard)) = database().await else {
         return skipped("update_applies_a_valid_partial_change");
@@ -198,7 +198,7 @@ async fn update_applies_a_valid_partial_change() {
     assert_eq!(body["owner"], "tests");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn set_enabled_toggles_the_flag() {
     let Some((db, _guard)) = database().await else {
         return skipped("set_enabled_toggles_the_flag");
@@ -220,7 +220,7 @@ async fn set_enabled_toggles_the_flag() {
     assert_eq!(body["enabled"], false);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn remove_deletes_a_known_repo_then_404s_on_retry() {
     let Some((db, _guard)) = database().await else {
         return skipped("remove_deletes_a_known_repo_then_404s_on_retry");
@@ -252,7 +252,7 @@ async fn remove_deletes_a_known_repo_then_404s_on_retry() {
 // runs
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_list_is_empty_with_no_runs_queued() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_list_is_empty_with_no_runs_queued");
@@ -265,7 +265,7 @@ async fn runs_list_is_empty_with_no_runs_queued() {
     assert!(body.as_array().expect("array").is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_list_scoped_to_an_unknown_repo_is_not_found() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_list_scoped_to_an_unknown_repo_is_not_found");
@@ -282,7 +282,7 @@ async fn runs_list_scoped_to_an_unknown_repo_is_not_found() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_list_reports_a_queued_run_scoped_to_its_repo() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_list_reports_a_queued_run_scoped_to_its_repo");
@@ -317,7 +317,7 @@ async fn runs_list_reports_a_queued_run_scoped_to_its_repo() {
     assert_eq!(body.as_array().expect("array").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_read_reports_not_found_for_an_unknown_run() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_read_reports_not_found_for_an_unknown_run");
@@ -330,7 +330,7 @@ async fn runs_read_reports_not_found_for_an_unknown_run() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_read_returns_the_run_with_jobs_and_artifacts() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_read_returns_the_run_with_jobs_and_artifacts");
@@ -366,7 +366,7 @@ async fn runs_read_returns_the_run_with_jobs_and_artifacts() {
     assert_eq!(body["artifacts"].as_array().unwrap().len(), 0);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_cancel_reports_not_found_for_an_unknown_run() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_cancel_reports_not_found_for_an_unknown_run");
@@ -383,7 +383,7 @@ async fn runs_cancel_reports_not_found_for_an_unknown_run() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_cancel_accepts_a_queued_run() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_cancel_accepts_a_queued_run");
@@ -416,7 +416,7 @@ async fn runs_cancel_accepts_a_queued_run() {
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn job_logs_reports_not_found_for_an_unknown_job() {
     let Some((db, _guard)) = database().await else {
         return skipped("job_logs_reports_not_found_for_an_unknown_job");

@@ -48,20 +48,20 @@ fn in_temp_cwd_with_no_env<T>(body: impl FnOnce() -> T) -> T {
     result
 }
 
-#[test]
+#[quench_test::test]
 fn prompt_falls_back_to_unset_without_a_configured_environment() {
     in_temp_cwd_with_no_env(|| {
         assert!(prompt().contains("unset"), "{}", prompt());
     });
 }
 
-#[test]
+#[quench_test::test]
 fn print_block_and_error_do_not_panic() {
     print_block("some help text\nacross lines");
     error("something went wrong");
 }
 
-#[test]
+#[quench_test::test]
 fn repl_help_overview_and_unknown_topic_do_not_panic() {
     repl_help(None);
     repl_help(Some("targets"));
@@ -70,31 +70,31 @@ fn repl_help_overview_and_unknown_topic_do_not_panic() {
     repl_help(Some("not-a-real-topic"));
 }
 
-#[test]
+#[quench_test::test]
 fn handle_repl_command_on_empty_input_continues() {
     assert!(!handle_repl_command("").unwrap());
     assert!(!handle_repl_command("   ").unwrap());
 }
 
-#[test]
+#[quench_test::test]
 fn handle_repl_command_help_continues() {
     assert!(!handle_repl_command("help").unwrap());
     assert!(!handle_repl_command("h apply").unwrap());
 }
 
-#[test]
+#[quench_test::test]
 fn handle_repl_command_exit_variants_signal_exit() {
     assert!(handle_repl_command("exit").unwrap());
     assert!(handle_repl_command("quit").unwrap());
     assert!(handle_repl_command("q").unwrap());
 }
 
-#[test]
+#[quench_test::test]
 fn handle_repl_command_unknown_command_continues() {
     assert!(!handle_repl_command("frobnicate").unwrap());
 }
 
-#[test]
+#[quench_test::test]
 fn handle_repl_command_env_needing_commands_error_without_a_configured_environment() {
     in_temp_cwd_with_no_env(|| {
         for cmd in ["list", "render", "diff", "prune", "apply", "delete"] {
@@ -104,7 +104,7 @@ fn handle_repl_command_env_needing_commands_error_without_a_configured_environme
     });
 }
 
-#[test]
+#[quench_test::test]
 fn handle_repl_command_env_list_and_show_work_without_a_current_environment() {
     in_temp_cwd_with_no_env(|| {
         // `env list` and `env show` don't need a *set* current env the way
@@ -117,14 +117,14 @@ fn handle_repl_command_env_list_and_show_work_without_a_current_environment() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn announce_target_with_a_pinned_context_does_not_shell_out() {
     // `kube_context: Some(..)` short-circuits before `current_kube_context`
     // is ever called - nothing here touches a process.
     announce_target("prod", &empty_rendered(Some("prod-cluster".to_string())));
 }
 
-#[test]
+#[quench_test::test]
 fn announce_target_without_a_pinned_context_reads_the_local_kubeconfig() {
     // No `kube_context` set falls through to `current_kube_context()`,
     // which only runs `kubectl config current-context` - a local,
@@ -160,7 +160,7 @@ fn in_temp_cwd_with_env<T>(env: &str, body: impl FnOnce() -> T) -> T {
     result
 }
 
-#[test]
+#[quench_test::test]
 fn handle_repl_command_list_prints_the_configured_environment_s_resources() {
     in_temp_cwd_with_env("golden", || {
         assert!(!handle_repl_command("list").unwrap());
@@ -168,7 +168,7 @@ fn handle_repl_command_list_prints_the_configured_environment_s_resources() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn handle_repl_command_render_writes_manifests_for_the_configured_environment() {
     in_temp_cwd_with_env("golden", || {
         assert!(!handle_repl_command("render").unwrap());
@@ -176,7 +176,7 @@ fn handle_repl_command_render_writes_manifests_for_the_configured_environment() 
     });
 }
 
-#[test]
+#[quench_test::test]
 fn current_kube_context_does_not_panic() {
     // Whatever this machine's kubeconfig says (probably nothing) - just
     // confirm the read-only lookup completes without panicking.

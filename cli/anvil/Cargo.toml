@@ -10,6 +10,7 @@ homepage = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
 readme = { workspace = true }
+autotests = false
 
 [[bin]]
 name = "anvil"
@@ -25,14 +26,19 @@ workspace = true
 [dependencies]
 quench-serde = { workspace = true }
 quench-core = { workspace = true }
-clap = { workspace = true }
-crossterm = { workspace = true }
+quench-args = { workspace = true }
 gatehouse-auth = { workspace = true }
 quench-cli = { workspace = true }
-toml_edit = { workspace = true }
-walkdir = { workspace = true }
-which = { workspace = true }
 
 [dev-dependencies]
-assert_cmd = { workspace = true }
-predicates = { workspace = true }
+quench-test = { workspace = true }
+
+[[test]]
+name = "cli_tests"
+path = "tests/cli_tests.rs"
+harness = false
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false

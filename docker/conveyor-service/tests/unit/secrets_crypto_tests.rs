@@ -9,7 +9,7 @@ fn key() -> SecretKey {
     SecretKey::parse("CONVEYOR_SECRET_KEY", HEX_KEY).expect("a 32-byte hex key")
 }
 
-#[test]
+#[quench_test::test]
 fn a_value_survives_a_round_trip() {
     let key = key();
     let (nonce, ciphertext) = key
@@ -22,7 +22,7 @@ fn a_value_survives_a_round_trip() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn the_ciphertext_does_not_contain_the_plaintext() {
     let (_, ciphertext) = key()
         .seal("global:TOKEN", "a-recognisable-value")
@@ -31,7 +31,7 @@ fn the_ciphertext_does_not_contain_the_plaintext() {
     assert!(!rendered.contains("a-recognisable-value"));
 }
 
-#[test]
+#[quench_test::test]
 fn sealing_the_same_value_twice_gives_different_ciphertext() {
     // A fresh nonce per write. Without one, two repositories with the same
     // token would be visibly identical in the table.
@@ -43,7 +43,7 @@ fn sealing_the_same_value_twice_gives_different_ciphertext() {
     assert_ne!(first, second);
 }
 
-#[test]
+#[quench_test::test]
 fn a_value_sealed_for_one_scope_will_not_open_in_another() {
     // The point of binding scope and name into the associated data: a row
     // copied from one repository to another by somebody with write access to
@@ -56,14 +56,14 @@ fn a_value_sealed_for_one_scope_will_not_open_in_another() {
     assert!(key.open("global:TOKEN", &nonce, &ciphertext).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_value_will_not_open_under_a_different_name() {
     let key = key();
     let (nonce, ciphertext) = key.seal("repo:alpha:TOKEN", "a token").expect("seal");
     assert!(key.open("repo:alpha:OTHER", &nonce, &ciphertext).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn another_key_cannot_open_it() {
     let (nonce, ciphertext) = key().seal("global:TOKEN", "a token").expect("seal");
     let other = SecretKey::parse("CONVEYOR_SECRET_KEY", &"ab".repeat(32)).expect("another key");
@@ -74,7 +74,7 @@ fn another_key_cannot_open_it() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn a_tampered_ciphertext_is_rejected() {
     // Poly1305 is what makes this a detection rather than a garbled plaintext.
     let key = key();
@@ -84,7 +84,7 @@ fn a_tampered_ciphertext_is_rejected() {
     assert!(key.open("global:TOKEN", &nonce, &ciphertext).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_tampered_nonce_is_rejected() {
     let key = key();
     let (mut nonce, ciphertext) = key.seal("global:TOKEN", "a token").expect("seal");
@@ -93,7 +93,7 @@ fn a_tampered_nonce_is_rejected() {
     assert!(key.open("global:TOKEN", &nonce, &ciphertext).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_nonce_of_the_wrong_length_is_rejected_rather_than_panicking() {
     let key = key();
     let (_, ciphertext) = key.seal("global:TOKEN", "a token").expect("seal");
@@ -103,7 +103,7 @@ fn a_nonce_of_the_wrong_length_is_rejected_rather_than_panicking() {
     assert!(key.open("global:TOKEN", &[0u8; 64], &ciphertext).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_value_round_trips() {
     // The store refuses one, but the cipher should not be the thing that
     // decides that.
@@ -112,7 +112,7 @@ fn an_empty_value_round_trips() {
     assert_eq!(key.open("global:TOKEN", &nonce, &ciphertext).unwrap(), "");
 }
 
-#[test]
+#[quench_test::test]
 fn a_value_with_awkward_bytes_round_trips() {
     let key = key();
     let value = "line\nbreak\ttab \u{1F511} ünïcödé";
@@ -127,13 +127,13 @@ fn a_value_with_awkward_bytes_round_trips() {
 // Keys
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_hex_key_is_accepted() {
     assert!(SecretKey::parse("CONVEYOR_SECRET_KEY", HEX_KEY).is_ok());
     assert!(SecretKey::parse("CONVEYOR_SECRET_KEY", &format!("  {HEX_KEY}  ")).is_ok());
 }
 
-#[test]
+#[quench_test::test]
 fn a_base64_key_is_accepted() {
     // Both are things people paste out of a password manager.
     let bytes = quench_core::hex::decode(HEX_KEY).expect("hex");
@@ -141,7 +141,7 @@ fn a_base64_key_is_accepted() {
     assert!(SecretKey::parse("CONVEYOR_SECRET_KEY", &encoded).is_ok());
 }
 
-#[test]
+#[quench_test::test]
 fn a_key_of_the_wrong_length_is_refused() {
     assert!(matches!(
         SecretKey::parse("CONVEYOR_SECRET_KEY", "00112233"),
@@ -150,7 +150,7 @@ fn a_key_of_the_wrong_length_is_refused() {
     assert!(SecretKey::parse("CONVEYOR_SECRET_KEY", &"ab".repeat(64)).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_key_that_is_neither_hex_nor_base64_is_refused() {
     assert!(matches!(
         SecretKey::parse("CONVEYOR_SECRET_KEY", "this is not a key at all!!!"),
@@ -158,7 +158,7 @@ fn a_key_that_is_neither_hex_nor_base64_is_refused() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn hex_and_base64_of_the_same_bytes_produce_the_same_key() {
     let bytes = quench_core::hex::decode(HEX_KEY).expect("hex");
     let encoded = quench_core::base64::STANDARD.encode(&bytes);
@@ -175,7 +175,7 @@ fn hex_and_base64_of_the_same_bytes_produce_the_same_key() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn from_env_reads_the_secret_key_variable_by_name() {
     // `from_env()` is `from_env_named("CONVEYOR_SECRET_KEY")` under a fixed
     // name; this pins that down so the two cannot drift apart.

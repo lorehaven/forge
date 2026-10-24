@@ -34,14 +34,14 @@ fn body(extra: &quench_serde::Value) -> Vec<u8> {
     payload.to_string().into_bytes()
 }
 
-#[test]
+#[quench_test::test]
 fn a_signed_delivery_is_accepted() {
     let generic = GenericProvider::new();
     let payload = body(&json!({}));
     assert!(generic.verify(&signed(&payload), &payload, SECRET));
 }
 
-#[test]
+#[quench_test::test]
 fn a_delivery_signed_with_another_secret_is_rejected() {
     let generic = GenericProvider::new();
     let payload = body(&json!({}));
@@ -55,7 +55,7 @@ fn a_delivery_signed_with_another_secret_is_rejected() {
     assert!(!generic.verify(&headers, &payload, SECRET));
 }
 
-#[test]
+#[quench_test::test]
 fn generic_does_not_accept_githubs_header() {
     // Each provider reads its own, so a delivery aimed at one cannot be
     // replayed against the other.
@@ -71,7 +71,7 @@ fn generic_does_not_accept_githubs_header() {
     assert!(!generic.verify(&headers, &payload, SECRET));
 }
 
-#[test]
+#[quench_test::test]
 fn a_minimal_payload_becomes_a_push() {
     let generic = GenericProvider::new();
     let payload = body(&json!({}));
@@ -89,7 +89,7 @@ fn a_minimal_payload_becomes_a_push() {
     assert!(!event.from_fork);
 }
 
-#[test]
+#[quench_test::test]
 fn the_event_kind_can_be_named() {
     let generic = GenericProvider::new();
     let payload = body(&json!({ "event": "pull_request" }));
@@ -98,21 +98,21 @@ fn the_event_kind_can_be_named() {
     assert_eq!(event.trigger, Trigger::PullRequest);
 }
 
-#[test]
+#[quench_test::test]
 fn an_unknown_event_kind_is_an_error() {
     let generic = GenericProvider::new();
     let payload = body(&json!({ "event": "wat" }));
     assert!(generic.parse(&signed(&payload), &payload).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_payload_missing_a_required_field_is_an_error() {
     let generic = GenericProvider::new();
     let payload = br#"{"owner":"me"}"#;
     assert!(generic.parse(&HeaderMap::new(), payload).is_err());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reporting_a_status_is_a_no_op_rather_than_a_failure() {
     // A repository registered as `generic` is one conveyor has no API for.
     // Failing every run's final step over that would be wrong.
@@ -144,7 +144,7 @@ async fn reporting_a_status_is_a_no_op_rather_than_a_failure() {
 // Status mapping
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_skipped_run_reads_as_success() {
     // Nothing ran, so nothing is wrong. A pull request whose pipeline excluded
     // every stage should not be blocked by a red mark.
@@ -154,7 +154,7 @@ fn a_skipped_run_reads_as_success() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_cancelled_run_reads_as_an_error_rather_than_a_failure() {
     // The code was never shown to be broken; somebody stopped the build.
     assert_eq!(
@@ -163,7 +163,7 @@ fn a_cancelled_run_reads_as_an_error_rather_than_a_failure() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn the_remaining_statuses_map_as_they_read() {
     assert_eq!(
         CommitState::from_status(Status::Queued),
@@ -187,7 +187,7 @@ fn the_remaining_statuses_map_as_they_read() {
 // The registry
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn providers_resolve_by_the_name_a_webhook_arrives_on() {
     let providers = Providers::from_env();
 
@@ -202,7 +202,7 @@ fn providers_resolve_by_the_name_a_webhook_arrives_on() {
     assert!(providers.by_name("gitlab").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn each_provider_reports_its_own_name() {
     let providers = Providers::from_env();
     assert_eq!(providers.get(Provider::GitHub).name(), "github");

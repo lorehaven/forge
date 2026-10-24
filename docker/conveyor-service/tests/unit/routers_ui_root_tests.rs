@@ -41,7 +41,7 @@ fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) 
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn root_redirects_to_login_when_there_is_no_session_and_auth_is_enabled() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;
@@ -61,7 +61,7 @@ async fn root_redirects_to_login_when_there_is_no_session_and_auth_is_enabled() 
     assert!(location.contains("login"), "{location}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn root_slash_redirects_home_when_auth_is_disabled() {
     let config = JwtConfig::for_tests();
     assert!(!config.auth_enabled, "for_tests should default auth off");

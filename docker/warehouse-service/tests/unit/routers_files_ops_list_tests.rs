@@ -5,7 +5,7 @@ use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::files;
 use warehouse_service::routers::files::ops::list::list_path;
 
-#[tokio::test]
+#[quench_test::test]
 async fn storages_reports_not_found_when_file_storage_is_disabled() {
     // `FEATURE_FILES_ENABLED` is unset in this sandbox, and the flag is a
     // `LazyLock` fixed for the whole test binary, so this is the one branch
@@ -25,7 +25,7 @@ async fn storages_reports_not_found_when_file_storage_is_disabled() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn entries_reports_not_found_when_file_storage_is_disabled() {
     files::register_routes();
     let container = support::container_builder()
@@ -46,7 +46,7 @@ async fn entries_reports_not_found_when_file_storage_is_disabled() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[test]
+#[quench_test::test]
 fn list_path_ascending_carries_only_the_prefix() {
     assert_eq!(
         list_path("backups", "photos/2026", false),
@@ -54,7 +54,7 @@ fn list_path_ascending_carries_only_the_prefix() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn list_path_descending_also_carries_desc_true() {
     assert_eq!(
         list_path("backups", "photos/2026", true),
@@ -62,7 +62,7 @@ fn list_path_descending_also_carries_desc_true() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn list_path_encodes_a_prefix_with_reserved_characters() {
     assert_eq!(
         list_path("backups", "a b&c", false),

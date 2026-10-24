@@ -1,6 +1,6 @@
+use quench_test::mock::matchers::{method, path};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use welder::model::switchboard_client::{LaunchInstanceRequest, SwitchboardClient, VllmInstance};
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn instance(status: &str, task: Option<&str>) -> VllmInstance {
     VllmInstance {
@@ -12,7 +12,7 @@ fn instance(status: &str, task: Option<&str>) -> VllmInstance {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn is_chat_capable_excludes_embed_and_embedding_tasks() {
     assert!(instance("running", None).is_chat_capable());
     assert!(!instance("running", Some("embed")).is_chat_capable());
@@ -20,7 +20,7 @@ fn is_chat_capable_excludes_embed_and_embedding_tasks() {
     assert!(instance("running", Some("generate")).is_chat_capable());
 }
 
-#[test]
+#[quench_test::test]
 fn is_running_and_is_failed_check_the_status_string() {
     assert!(instance("running", None).is_running());
     assert!(!instance("starting", None).is_running());
@@ -28,12 +28,12 @@ fn is_running_and_is_failed_check_the_status_string() {
     assert!(!instance("running", None).is_failed());
 }
 
-#[test]
+#[quench_test::test]
 fn address_joins_host_and_port() {
     assert_eq!(instance("running", None).address(), "10.0.0.1:8000");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_instances_parses_the_response_body() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -51,7 +51,7 @@ async fn list_instances_parses_the_response_body() {
     assert_eq!(instances[0].model, "llama");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_instances_reports_a_non_success_response_as_an_error() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -69,7 +69,7 @@ async fn list_instances_reports_a_non_success_response_as_an_error() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn launch_instance_parses_the_created_instance() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

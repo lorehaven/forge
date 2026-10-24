@@ -63,7 +63,7 @@ async fn run_to_end(gantry: &Gantry, plan_id: &str) -> State {
         .state
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_swap_deletes_one_side_and_applies_the_other_from_the_package() {
     let (cluster, _, gantry) = rig();
     let (plan, _) = deployments::plan(
@@ -116,7 +116,7 @@ async fn a_swap_deletes_one_side_and_applies_the_other_from_the_package() {
     assert!(find("trainer").is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_upgrade_moves_what_is_there_and_leaves_a_stopped_deployment_alone() {
     let (cluster, _, gantry) = rig();
     // Training is stopped for real: deleted.
@@ -143,7 +143,7 @@ async fn an_upgrade_moves_what_is_there_and_leaves_a_stopped_deployment_alone() 
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_simulated_operation_has_a_log_in_the_runners_style() {
     let (_, _, gantry) = rig();
     let (plan, _) = deployments::plan(&gantry, "inference", &Request::Stop, "ana")
@@ -165,7 +165,7 @@ async fn a_simulated_operation_has_a_log_in_the_runners_style() {
     assert!(log.trim_end().ends_with("GANTRY-RESULT: ok"), "{log}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_install_leaves_a_record_of_what_the_package_declares() {
     let (_, _, gantry) = rig();
     let (plan, _) = planner::plan(&gantry, "ml", None, "ana").await.unwrap();
@@ -181,7 +181,7 @@ async fn an_install_leaves_a_record_of_what_the_package_declares() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_step_that_cannot_happen_fails_the_operation_with_the_reason() {
     let (cluster, _, gantry) = rig();
     let (plan, _) = deployments::plan(&gantry, "inference", &Request::Stop, "ana")
@@ -201,7 +201,7 @@ async fn a_step_that_cannot_happen_fails_the_operation_with_the_reason() {
     assert!(gantry.store.deployment_states().await.unwrap().is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn simulating_is_only_allowed_with_the_fake_cluster() {
     let get = |pairs: &'static [(&'static str, &'static str)]| {
         Settings::from_lookup(move |k| {
@@ -223,7 +223,7 @@ fn simulating_is_only_allowed_with_the_fake_cluster() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn the_fake_cluster_can_start_from_a_seed_file() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let path = dir.path().join("seed.json");

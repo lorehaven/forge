@@ -51,7 +51,7 @@ fn job_in(id: &str, stage: &str, name: &str, needs: &[&str], status: Status) -> 
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_moving_run_asks_again() {
     let html = state_block(&run(Status::Running), None, 3).render();
 
@@ -62,7 +62,7 @@ fn a_moving_run_asks_again() {
     assert!(html.contains("/runs/run-1/state?jobs=3"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_queued_run_asks_again_too() {
     // The gap this closes: a run sits queued while it is checked out, and its
     // jobs do not exist yet. Stopping here would leave the page empty forever.
@@ -72,7 +72,7 @@ fn a_queued_run_asks_again_too() {
     assert!(html.contains("?jobs=0"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_resting_run_stops_asking() {
     for status in [
         Status::Success,
@@ -89,7 +89,7 @@ fn a_resting_run_stops_asking() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn the_polled_part_of_a_job_is_separable_from_its_log() {
     let block = job_block(&job(Status::Running)).render();
 
@@ -124,7 +124,7 @@ fn the_polled_part_of_a_job_is_separable_from_its_log() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_running_job_reports_how_long_it_has_been_going() {
     let html = job_state(&job(Status::Running)).render();
     assert!(html.contains("so far"), "got: {html}");
@@ -134,7 +134,7 @@ fn a_running_job_reports_how_long_it_has_been_going() {
 // Restart
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_failed_or_cancelled_run_offers_a_restart() {
     for status in [Status::Failed, Status::Cancelled] {
         let html = state_block(&run(status), None, 1).render();
@@ -145,7 +145,7 @@ fn a_failed_or_cancelled_run_offers_a_restart() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_run_that_did_not_fail_offers_no_restart() {
     for status in [
         Status::Queued,
@@ -161,7 +161,7 @@ fn a_run_that_did_not_fail_offers_no_restart() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_reused_job_says_so() {
     let mut reused = job(Status::Success);
     reused.reused_from_run = Some("run-0".to_string());
@@ -176,7 +176,7 @@ fn a_reused_job_says_so() {
 // The job graph
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn independent_stages_share_the_first_level() {
     // `lint` and `test` both need nothing, so they belong in the same row -
     // the row a concurrent run actually executes together.
@@ -190,7 +190,7 @@ fn independent_stages_share_the_first_level() {
     assert!(!html.contains("job-graph-connector"), "got: {html}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_stage_that_needs_another_sits_in_a_later_level_after_a_connector() {
     let html = jobs_block(&[
         job_in("job-1", "build", "cargo", &[], Status::Success),
@@ -209,7 +209,7 @@ fn a_stage_that_needs_another_sits_in_a_later_level_after_a_connector() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_stage_that_needs_two_others_lands_after_the_deeper_one() {
     // `deploy` needs both `build` (level 0) and `sign` (level 1, since it
     // needs `build` too) - it belongs at level 2, not level 1.
@@ -237,20 +237,20 @@ fn artifact(name: &str) -> Artifact {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn jobs_block_carries_the_swap_target_id_and_every_job() {
     let html = jobs_block(&[job(Status::Success), job(Status::Failed)]).render();
     assert!(html.contains(r#"id="run-jobs""#));
     assert_eq!(html.matches("class=\"job\"").count(), 2);
 }
 
-#[test]
+#[quench_test::test]
 fn jobs_block_is_still_the_swap_target_with_no_jobs_at_all() {
     let html = jobs_block(&[]).render();
     assert!(html.contains(r#"id="run-jobs""#));
 }
 
-#[test]
+#[quench_test::test]
 fn artifacts_block_is_present_but_empty_with_no_artifacts_yet() {
     // Always rendered (per the doc comment on `artifacts_block`) so an
     // out-of-band swap later has something to replace.
@@ -258,7 +258,7 @@ fn artifacts_block_is_present_but_empty_with_no_artifacts_yet() {
     assert!(html.contains(r#"id="run-artifacts""#));
 }
 
-#[test]
+#[quench_test::test]
 fn artifacts_block_lists_every_artifact_once_they_exist() {
     let html = artifacts_block(&[artifact("thing"), artifact("other-thing")]).render();
     assert!(html.contains(r#"id="run-artifacts""#));

@@ -2,14 +2,14 @@
 
 use sage_service::tools::*;
 
-#[test]
+#[quench_test::test]
 fn test_tool_definitions_valid_json() {
     let defs = get_tool_definitions_for_prompt();
     let parsed: Result<quench_serde::Value, _> = quench_serde::json::from_str(&defs);
     assert!(parsed.is_ok(), "Tool definitions should be valid JSON");
 }
 
-#[test]
+#[quench_test::test]
 fn extract_rich_text_keeps_tables_lists_and_json_ld_and_drops_chrome() {
     use sage_service::tools::web_fetch::extract_rich_text;
     let html = r#"<html><head><title>Results 2026</title>
@@ -36,7 +36,7 @@ fn extract_rich_text_keeps_tables_lists_and_json_ld_and_drops_chrome() {
     assert!(!text.contains("Footer text"));
 }
 
-#[test]
+#[quench_test::test]
 fn extract_rich_text_truncates_on_char_boundary_and_rejects_empty_pages() {
     use sage_service::tools::web_fetch::extract_rich_text;
     let long = format!(

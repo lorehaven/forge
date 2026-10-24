@@ -15,24 +15,11 @@ name = "forge-bdd"
 path = "src/main.rs"
 
 [dependencies]
-base64 = { workspace = true }
-chrono = { workspace = true }
-clap = { workspace = true }
-cucumber = { workspace = true, features = ["output-json"] }
-dotenvy = { workspace = true }
-futures-util = { workspace = true }
-hex = { workspace = true }
-hmac = { workspace = true }
-http-body-util = "0.1"
-hyper = { version = "1", features = ["full"] }
-hyper-util = { version = "0.1", features = ["tokio", "server", "server-auto"] }
-jsonwebtoken = { workspace = true }
-regex = { workspace = true }
-reqwest = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-sha2 = { workspace = true }
 tokio = { workspace = true }
+quench-args = { workspace = true }
+quench-client = { workspace = true }
+quench-core = { workspace = true }
+quench-http = { workspace = true }
 quench-crypto = { workspace = true }
-urlencoding = { workspace = true }
-uuid = { workspace = true }
+quench-serde = { workspace = true }
+quench-test-bdd = { workspace = true }

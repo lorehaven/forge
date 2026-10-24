@@ -3,13 +3,10 @@ use crate::routers::vllm::{
     LaunchRequest, VllmInstance, cpu_image, cpu_kvcache_space_gib, device_launch_args,
     is_cpu_device, task_launch_args,
 };
-use k8s_openapi::api::core::v1::{Pod, Service};
-use k8s_openapi::jiff;
-use kube::Client;
-use kube::api::{Api, DeleteParams, ListParams, PostParams};
 use quench_core::async_trait;
 use quench_core::time::Time;
-use quench_serde::json;
+use quench_k8s::{Api, ApiResource, Client, DeleteParams, ListParams, Object, PostParams};
+use quench_serde::{Value, json};
 use std::hash::{Hash, Hasher};
 
 /// Creates valid Kubernetes names for vLLM model instances.
@@ -76,34 +73,29 @@ pub fn is_restorable(status: &str) -> bool {
 }
 
 /// A pod that is still coming up (not yet Ready, not stuck forever).
-fn is_loading(pod: &Pod) -> bool {
-    let age = pod
-        .metadata
-        .creation_timestamp
-        .as_ref()
-        .map_or(0, |t| jiff::Timestamp::now().as_second() - t.0.as_second());
+fn is_loading(pod: &Value) -> bool {
+    let age = Object(pod)
+        .creation_timestamp()
+        .map_or(0, |t| Time::now().timestamp() - t.timestamp());
     pod_status(pod) == "starting" && age < LOADING_TIMEOUT_SECS
 }
 
 /// The restart count the replacement pod carries: one more than the old pod's, unless it ran long
 /// enough to count as stable.
-fn next_restart_count(pod: &Pod) -> u32 {
-    let previous = pod
-        .metadata
-        .annotations
-        .as_ref()
-        .and_then(|a| a.get(RESTART_ANNOTATION))
+fn next_restart_count(pod: &Value) -> u32 {
+    let previous = Object(pod)
+        .annotation(RESTART_ANNOTATION)
         .and_then(|v| v.parse::<u32>().ok())
         .unwrap_or(0);
     let ran_secs = pod
-        .status
-        .as_ref()
-        .and_then(|s| s.container_statuses.as_ref())
-        .and_then(|c| c.first())
-        .and_then(|c| c.state.as_ref())
-        .and_then(|s| s.terminated.as_ref())
+        .pointer("/status/containerStatuses/0/state/terminated")
         .and_then(|t| {
-            Some(t.finished_at.as_ref()?.0.as_second() - t.started_at.as_ref()?.0.as_second())
+            let moment = |field: &str| {
+                Time::parse_rfc3339(t.get(field)?.as_str()?)
+                    .ok()
+                    .map(|time| time.timestamp())
+            };
+            Some(moment("finishedAt")? - moment("startedAt")?)
         })
         .unwrap_or(0);
     if ran_secs >= STABLE_RUN_SECS {
@@ -113,36 +105,24 @@ fn next_restart_count(pod: &Pod) -> u32 {
     }
 }
 
-fn new_pod_port(pod: &Pod) -> u16 {
-    pod.metadata
-        .labels
-        .as_ref()
-        .and_then(|l| l.get("vllm-port"))
+fn new_pod_port(pod: &Value) -> u16 {
+    Object(pod)
+        .label("vllm-port")
         .and_then(|p| p.parse().ok())
         .unwrap_or(8000)
-}
-
-/// kube's objects are serde types and quench's `Value` is not: the JSON text is the bridge.
-fn to_kube<T: k8s_openapi::serde::de::DeserializeOwned>(
-    value: &quench_serde::Value,
-) -> Result<T, serde_json::Error> {
-    serde_json::from_str(&value.to_string())
-}
-
-fn from_kube<T: k8s_openapi::serde::Serialize>(object: &T) -> Result<quench_serde::Value, String> {
-    let text = serde_json::to_string(object).map_err(|e| e.to_string())?;
-    quench_serde::json::from_str(&text).map_err(|e| e.to_string())
 }
 
 /// A fresh pod with the old one's spec, labels and annotations. Scheduler- and
 /// admission-injected fields are dropped so the API server can fill them in again.
 ///
 /// # Errors
-/// When the old pod's spec cannot be turned back into a pod.
-pub fn restored_pod(old: &Pod, restarts: u32) -> Result<Pod, String> {
-    let mut spec = from_kube(&old.spec.clone().unwrap_or_default())
-        .map_err(|e| format!("Failed to serialize pod spec: {e}"))?;
-    let injected = |name: &quench_serde::Value| {
+/// When the old pod has no spec to restore.
+pub fn restored_pod(old: &Value, restarts: u32) -> Result<Value, String> {
+    let mut spec = old
+        .get("spec")
+        .cloned()
+        .ok_or_else(|| "Failed to serialize pod spec: the pod has none".to_string())?;
+    let injected = |name: &Value| {
         name.as_str()
             .is_some_and(|n| n.starts_with("kube-api-access-"))
     };
@@ -159,23 +139,25 @@ pub fn restored_pod(old: &Pod, restarts: u32) -> Result<Pod, String> {
             }
         }
     }
-    let mut annotations = old.metadata.annotations.clone().unwrap_or_default();
-    annotations.insert(RESTART_ANNOTATION.to_string(), restarts.to_string());
-    to_kube(&json!({
+    let mut annotations: std::collections::BTreeMap<&str, &str> =
+        Object(old).annotations().collect();
+    let restarts = restarts.to_string();
+    annotations.insert(RESTART_ANNOTATION, &restarts);
+    let labels: std::collections::BTreeMap<&str, &str> = Object(old).labels().collect();
+    Ok(json!({
         "apiVersion": "v1",
         "kind": "Pod",
         "metadata": {
-            "name": old.metadata.name,
-            "labels": old.metadata.labels,
+            "name": Object(old).name(),
+            "labels": labels,
             "annotations": annotations,
         },
         "spec": spec,
     }))
-    .map_err(|e| format!("Failed to build restored pod: {e}"))
 }
 
 /// Polls until the pod is gone (it is already terminal, so this is quick).
-async fn wait_gone(pods: &Api<Pod>, name: &str) -> Result<(), String> {
+async fn wait_gone(pods: &Api, name: &str) -> Result<(), String> {
     for _ in 0..60 {
         if pods
             .get_opt(name)
@@ -196,13 +178,8 @@ pub struct KubernetesVllmEngine {
 }
 
 impl KubernetesVllmEngine {
-    pub async fn new() -> Result<Self, String> {
-        // kube builds its TLS stack on rustls, which wants a crypto provider chosen once per process;
-        // nothing else in the service installs one.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let client = Client::try_default()
-            .await
-            .map_err(|e| format!("Failed to create kube client: {e}"))?;
+    pub fn new() -> Result<Self, String> {
+        let client = Client::infer().map_err(|e| format!("Failed to create kube client: {e}"))?;
 
         let namespace = std::env::var("VLLM_K8S_NAMESPACE")
             .ok()
@@ -229,29 +206,28 @@ const INTERRUPTED_REASONS: [&str; 3] = ["Shutdown", "Terminated", "UnexpectedAdm
 /// pod could not be admitted) are what a machine reboot leaves behind; both are restorable, unlike
 /// a genuine `Failed` crash, which the reaper removes.
 #[must_use]
-pub fn pod_status(pod: &Pod) -> &str {
+pub fn pod_status(pod: &Value) -> &str {
     let ready = pod
-        .status
-        .as_ref()
-        .and_then(|s| s.conditions.as_ref())
+        .pointer("/status/conditions")
+        .and_then(Value::as_array)
         .is_some_and(|conds| {
-            conds
-                .iter()
-                .any(|c| c.type_ == "Ready" && c.status == "True")
+            conds.iter().any(|c| {
+                c.get("type").and_then(Value::as_str) == Some("Ready")
+                    && c.get("status").and_then(Value::as_str) == Some("True")
+            })
         });
 
-    if pod.metadata.deletion_timestamp.is_some() {
+    if Object(pod).deletion_timestamp().is_some() {
         return "terminating";
     }
-    match pod.status.as_ref().and_then(|s| s.phase.as_deref()) {
+    match pod.pointer("/status/phase").and_then(Value::as_str) {
         Some("Running") if ready => "running",
         Some("Running" | "Pending") => "starting",
         Some("Succeeded") => "completed",
         Some("Failed")
             if pod
-                .status
-                .as_ref()
-                .and_then(|s| s.reason.as_deref())
+                .pointer("/status/reason")
+                .and_then(Value::as_str)
                 .is_some_and(|r| INTERRUPTED_REASONS.contains(&r)) =>
         {
             "interrupted"
@@ -262,39 +238,30 @@ pub fn pod_status(pod: &Pod) -> &str {
 }
 
 /// An annotation's value, unless it is absent or empty.
-fn annotation(
-    annotations: &std::collections::BTreeMap<String, String>,
-    key: &str,
-) -> Option<String> {
-    annotations.get(key).filter(|v| !v.is_empty()).cloned()
+fn annotation(pod: &Value, key: &str) -> Option<String> {
+    Object(pod)
+        .annotation(key)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string)
 }
 
 /// The instance a managed pod stands for, read back from its labels and annotations.
-fn instance_from_pod(pod: &Pod) -> VllmInstance {
-    let name = pod.metadata.name.clone().unwrap_or_default();
-    let namespace = pod
-        .metadata
-        .namespace
-        .clone()
-        .unwrap_or_else(|| "default".to_string());
-    let labels = pod.metadata.labels.clone().unwrap_or_default();
-    let annotations = pod.metadata.annotations.clone().unwrap_or_default();
+fn instance_from_pod(pod: &Value) -> VllmInstance {
+    let meta = Object(pod);
+    let name = meta.name().unwrap_or_default().to_string();
+    let namespace = meta.namespace().unwrap_or("default").to_string();
 
-    let model = annotations
-        .get("vllm-model")
-        .cloned()
-        .or_else(|| labels.get("vllm-model").map(|m| m.replace("--", "/")))
+    let model = meta
+        .annotation("vllm-model")
+        .map(str::to_string)
+        .or_else(|| meta.label("vllm-model").map(|m| m.replace("--", "/")))
         .unwrap_or_default();
-    let port = labels
-        .get("vllm-port")
+    let port = meta
+        .label("vllm-port")
         .and_then(|p| p.parse::<u16>().ok())
         .unwrap_or(8000);
-
-    let started_at = pod
-        .metadata
-        .creation_timestamp
-        .as_ref()
-        .map_or_else(jiff::Timestamp::now, |t| t.0);
+    let parsed = |key: &str| meta.annotation(key);
+    let flag = |key: &str| meta.annotation(key) == Some("true");
 
     VllmInstance {
         id: format!("pod:{namespace}:{name}"),
@@ -302,27 +269,17 @@ fn instance_from_pod(pod: &Pod) -> VllmInstance {
         namespace,
         model,
         port,
-        quantization: annotation(&annotations, "vllm-quantization"),
-        dtype: annotation(&annotations, "vllm-dtype"),
-        limit_mm_per_prompt: annotation(&annotations, "vllm-limit-mm-per-prompt"),
-        max_model_len: annotations
-            .get("vllm-max-model-len")
-            .and_then(|v| v.parse::<u32>().ok()),
-        gpu_memory_utilization: annotations
-            .get("vllm-gpu-memory-utilization")
+        quantization: annotation(pod, "vllm-quantization"),
+        dtype: annotation(pod, "vllm-dtype"),
+        limit_mm_per_prompt: annotation(pod, "vllm-limit-mm-per-prompt"),
+        max_model_len: parsed("vllm-max-model-len").and_then(|v| v.parse::<u32>().ok()),
+        gpu_memory_utilization: parsed("vllm-gpu-memory-utilization")
             .and_then(|v| v.parse::<f32>().ok()),
-        enable_prefix_caching: annotations
-            .get("vllm-enable-prefix-caching")
-            .is_some_and(|v| v == "true"),
-        enable_tool_calling: annotations
-            .get("vllm-enable-tool-calling")
-            .is_some_and(|v| v == "true"),
-        task: annotation(&annotations, "vllm-task"),
-        device: annotation(&annotations, "vllm-device"),
-        started_at: Time::from_unix_nanos(
-            started_at.as_second(),
-            started_at.subsec_nanosecond().cast_unsigned(),
-        ),
+        enable_prefix_caching: flag("vllm-enable-prefix-caching"),
+        enable_tool_calling: flag("vllm-enable-tool-calling"),
+        task: annotation(pod, "vllm-task"),
+        device: annotation(pod, "vllm-device"),
+        started_at: meta.creation_timestamp().unwrap_or_else(Time::now),
         status: pod_status(pod).to_string(),
         log_path: None, // K8s logs are accessed differently
         last_error: None,
@@ -702,22 +659,32 @@ fn parse_instance_id(id: &str, default_namespace: &str) -> Result<(String, Strin
         .ok_or_else(|| format!("Invalid instance id for kubernetes: {id}"))
 }
 
+impl KubernetesVllmEngine {
+    fn pods(&self, namespace: &str) -> Api {
+        self.client.namespaced(&ApiResource::pod(), namespace)
+    }
+
+    fn services(&self, namespace: &str) -> Api {
+        self.client.namespaced(&ApiResource::service(), namespace)
+    }
+}
+
 #[async_trait]
 impl VllmEngine for KubernetesVllmEngine {
     async fn list_instances(&self) -> Result<Vec<VllmInstance>, String> {
-        let pods: Api<Pod> = Api::all(self.client.clone());
+        let pods = self.client.api(&ApiResource::pod());
         let lp = ListParams::default().labels(MANAGED_SELECTOR);
         let pod_list = pods
             .list(&lp)
             .await
             .map_err(|e| format!("Failed to list pods: {e}"))?;
 
-        Ok(pod_list.iter().map(instance_from_pod).collect())
+        Ok(pod_list.items.iter().map(instance_from_pod).collect())
     }
 
     async fn launch_instance(&self, req: LaunchRequest) -> Result<VllmInstance, String> {
         let namespace = req.namespace.as_deref().unwrap_or(&self.namespace);
-        let pods: Api<Pod> = Api::namespaced(self.client.clone(), namespace);
+        let pods = self.pods(namespace);
 
         let gpu_resource_key = env_or("VLLM_K8S_GPU_RESOURCE", "amd.com/gpu");
         let is_amd = gpu_resource_key.to_lowercase().contains("amd")
@@ -734,26 +701,19 @@ impl VllmEngine for KubernetesVllmEngine {
         } = launch_mounts(cpu, is_amd);
         let container = container_manifest(&req, cpu, is_amd, &gpu_resource_key, &volume_mounts);
 
-        let p: Pod = to_kube(&pod_manifest(&req, &pod_name, &container, &volumes))
-            .map_err(|e| format!("Failed to deserialize pod manifest: {e}"))?;
-
         let pp = PostParams::default();
         let pod = pods
-            .create(&pp, &p)
+            .create(&pod_manifest(&req, &pod_name, &container, &volumes), &pp)
             .await
             .map_err(|e| format!("Failed to create pod in namespace {namespace}: {e}"))?;
 
-        let pod_uid = pod.metadata.uid.as_deref().unwrap_or_default();
-        let s: Service = to_kube(&service_manifest(&pod_name, pod_uid, req.port))
-            .map_err(|e| format!("Failed to deserialize service manifest: {e}"))?;
-
-        let services: Api<Service> = Api::namespaced(self.client.clone(), namespace);
-        services
-            .create(&pp, &s)
+        let pod_uid = Object(&pod).uid().unwrap_or_default();
+        self.services(namespace)
+            .create(&service_manifest(&pod_name, pod_uid, req.port), &pp)
             .await
             .map_err(|e| format!("Failed to create service in namespace {namespace}: {e}"))?;
 
-        let name = pod.metadata.name.clone().unwrap_or_default();
+        let name = Object(&pod).name().unwrap_or_default();
         Ok(VllmInstance {
             id: format!("pod:{namespace}:{name}"),
             namespace: namespace.to_string(),
@@ -777,14 +737,14 @@ impl VllmEngine for KubernetesVllmEngine {
     }
 
     async fn restore_next(&self) -> Result<Option<String>, String> {
-        let pods: Api<Pod> = Api::all(self.client.clone());
+        let pods = self.client.api(&ApiResource::pod());
         let lp = ListParams::default().labels(MANAGED_SELECTOR);
         let mut list = pods
             .list(&lp)
             .await
             .map_err(|e| format!("Failed to list pods: {e}"))?
             .items;
-        list.sort_by(|a, b| a.metadata.name.cmp(&b.metadata.name));
+        list.sort_by(|a, b| Object(a).name().cmp(&Object(b).name()));
 
         // One at a time: the GPU cannot hold two models loading at once.
         if list.iter().any(is_loading) {
@@ -794,8 +754,8 @@ impl VllmEngine for KubernetesVllmEngine {
             return Ok(None);
         };
 
-        let name = old.metadata.name.clone().unwrap_or_default();
-        let namespace = old.metadata.namespace.clone().unwrap_or_default();
+        let name = Object(old).name().unwrap_or_default().to_string();
+        let namespace = Object(old).namespace().unwrap_or_default().to_string();
         let restarts = next_restart_count(old);
         if restarts > MAX_RESTORES {
             // Leave it visible as `completed` rather than looping on a model that never stays up.
@@ -808,8 +768,8 @@ impl VllmEngine for KubernetesVllmEngine {
         let new_pod = restored_pod(old, restarts)?;
         let port = new_pod_port(old);
 
-        let pods: Api<Pod> = Api::namespaced(self.client.clone(), &namespace);
-        let services: Api<Service> = Api::namespaced(self.client.clone(), &namespace);
+        let pods = self.pods(&namespace);
+        let services = self.services(&namespace);
         let _ = services.delete(&name, &DeleteParams::default()).await;
         pods.delete(&name, &DeleteParams::default())
             .await
@@ -817,17 +777,16 @@ impl VllmEngine for KubernetesVllmEngine {
         wait_gone(&pods, &name).await?;
 
         let created = pods
-            .create(&PostParams::default(), &new_pod)
+            .create(&new_pod, &PostParams::default())
             .await
             .map_err(|e| format!("Failed to recreate pod {name}: {e}"))?;
-        let uid = created.metadata.uid.as_deref().unwrap_or_default();
-        let svc: Service = to_kube(&service_manifest(&name, uid, port))
-            .map_err(|e| format!("Failed to deserialize service manifest: {e}"))?;
+        let uid = Object(&created).uid().unwrap_or_default();
+        let svc = service_manifest(&name, uid, port);
         // The old service may still be terminating; retry briefly rather than leave the pod unreachable.
         for _ in 0..10 {
-            match services.create(&PostParams::default(), &svc).await {
+            match services.create(&svc, &PostParams::default()).await {
                 Ok(_) => break,
-                Err(kube::Error::Api(e)) if e.code == 409 => {
+                Err(e) if e.is_conflict() => {
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
                 Err(e) => return Err(format!("Failed to recreate service {name}: {e}")),
@@ -839,9 +798,9 @@ impl VllmEngine for KubernetesVllmEngine {
     async fn stop_instance(&self, id: String) -> Result<(), String> {
         let (namespace, name) = parse_instance_id(&id, &self.namespace)?;
 
-        let pods: Api<Pod> = Api::namespaced(self.client.clone(), &namespace);
         let dp = DeleteParams::default();
-        pods.delete(&name, &dp)
+        self.pods(&namespace)
+            .delete(&name, &dp)
             .await
             .map_err(|e| format!("Failed to delete pod {name} in namespace {namespace}: {e}"))?;
 

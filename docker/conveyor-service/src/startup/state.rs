@@ -48,7 +48,7 @@ impl AppState {
                 .await
                 .expect("session store unavailable"),
             db: db_wrapper.db.clone(),
-            executor: Executor(crate::executors::build(config.executor).await),
+            executor: Executor(crate::executors::build(config.executor)),
             providers: Arc::new(Providers::from_env()),
             config,
         };

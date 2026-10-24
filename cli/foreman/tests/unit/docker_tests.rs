@@ -18,17 +18,17 @@ fn nonexistent(name: &str) -> Container {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn is_running_is_false_for_a_container_that_does_not_exist() {
     assert!(!is_running(&nonexistent("is-running")));
 }
 
-#[test]
+#[quench_test::test]
 fn status_reports_not_running_without_panicking() {
     status(&nonexistent("status-missing"));
 }
 
-#[test]
+#[quench_test::test]
 fn status_reports_running_with_an_address_without_panicking() {
     let mut container = nonexistent("status-with-address");
     container.address = Some("localhost:5432".to_string());
@@ -37,19 +37,19 @@ fn status_reports_running_with_an_address_without_panicking() {
     status(&container);
 }
 
-#[test]
+#[quench_test::test]
 fn stop_reports_not_running_for_a_container_that_does_not_exist() {
     stop(&nonexistent("stop-missing"));
 }
 
-#[test]
+#[quench_test::test]
 fn container_name_defaults_to_name_when_unset() {
     let mut container = nonexistent("default-name");
     container.container_name = None;
     assert_eq!(container.container_name(), "default-name");
 }
 
-#[test]
+#[quench_test::test]
 fn container_name_uses_the_override_when_set() {
     let container = nonexistent("has-override");
     assert_eq!(
@@ -58,7 +58,7 @@ fn container_name_uses_the_override_when_set() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn require_docker_agrees_with_whether_docker_is_actually_on_path() {
     // Some dev sandboxes have a real docker daemon on PATH; the CI build
     // image (`ci/rust-builder`) deliberately does not - it only compiles and
@@ -83,21 +83,21 @@ fn require_docker_agrees_with_whether_docker_is_actually_on_path() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn wait_until_ready_with_no_readiness_probe_succeeds_immediately() {
     // `container.ready` is empty, so this never shells out to `docker exec`
     // at all - it just prints the ready message and returns.
     wait_until_ready(&nonexistent("wait-no-probe")).expect("no probe configured");
 }
 
-#[test]
+#[quench_test::test]
 fn wait_until_ready_with_an_address_and_no_probe_reports_it() {
     let mut container = nonexistent("wait-no-probe-with-address");
     container.address = Some("localhost:5432".to_string());
     wait_until_ready(&container).expect("no probe configured");
 }
 
-#[test]
+#[quench_test::test]
 fn wait_until_ready_times_out_when_the_probe_never_succeeds() {
     // `docker exec` against a container that does not exist always fails,
     // so this reliably exercises the "did not become ready" bail branch -

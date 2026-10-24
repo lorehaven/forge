@@ -313,10 +313,9 @@ fn collect_files(dir: &Path) -> Result<Collected> {
     let mut files = BTreeMap::new();
     let mut excluded = Vec::new();
 
-    let walker = walkdir::WalkDir::new(dir)
+    let walker = quench_core::fs::Walk::new(dir)
         .follow_links(false)
         .sort_by_file_name()
-        .into_iter()
         .filter_entry(|entry| {
             entry.depth() == 0 || entry.file_type().is_file() || !is_hidden(entry.file_name())
         });
@@ -562,7 +561,7 @@ pub fn defaults_from<'a>(
 /// The variables `secrets.yaml` provides, opened with the configured key (none if there is no such file).
 pub fn secret_variables(
     secrets: Option<&str>,
-    identities: Option<&[age::x25519::Identity]>,
+    identities: Option<&[quench_crypto::age::Identity]>,
 ) -> Result<HashMap<String, String>> {
     secrets.map_or_else(
         || Ok(HashMap::new()),
@@ -723,7 +722,7 @@ pub struct InstallValues<'a> {
     /// `KEY=value` overrides.
     pub sets: &'a [String],
     /// The key that opens the package's `secrets.yaml`, if one is configured.
-    pub identities: Option<&'a [age::x25519::Identity]>,
+    pub identities: Option<&'a [quench_crypto::age::Identity]>,
 }
 
 // A key is not printed, not even by accident in a debug dump: only how many there are.

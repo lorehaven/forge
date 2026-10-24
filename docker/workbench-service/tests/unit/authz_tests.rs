@@ -14,14 +14,14 @@ fn claims_with(scope: &str) -> Claims {
     )
 }
 
-#[test]
+#[quench_test::test]
 fn blanket_grant_covers_every_project() {
     let claims = claims_with("workbench:read");
     assert!(can_on_project_claims(&claims, "any-project", "read"));
     assert!(!can_on_project_claims(&claims, "any-project", "write"));
 }
 
-#[test]
+#[quench_test::test]
 fn scoped_grant_covers_only_its_project() {
     let claims = claims_with("workbench:project:p1:write");
     assert!(can_on_project_claims(&claims, "p1", "write"));
@@ -29,7 +29,7 @@ fn scoped_grant_covers_only_its_project() {
     assert!(!can_on_project_claims(&claims, "p2", "write"));
 }
 
-#[test]
+#[quench_test::test]
 fn granted_project_ids_extracts_only_matching_action() {
     let claims = claims_with(
         "workbench:project:p1:read workbench:project:p2:write workbench:project:p3:read",
@@ -39,13 +39,13 @@ fn granted_project_ids_extracts_only_matching_action() {
     assert_eq!(ids, vec!["p1".to_string(), "p3".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn no_grant_means_no_access() {
     let claims = claims_with("");
     assert!(!can_on_project_claims(&claims, "p1", "read"));
 }
 
-#[test]
+#[quench_test::test]
 fn admin_wildcard_covers_everything() {
     let claims = claims_with("admin");
     assert!(can_on_project_claims(&claims, "p1", "write"));

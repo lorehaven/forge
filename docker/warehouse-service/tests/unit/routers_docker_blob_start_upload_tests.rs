@@ -13,7 +13,7 @@ async fn app() -> (
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_an_invalid_repository_name() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -27,7 +27,7 @@ async fn handle_rejects_an_invalid_repository_name() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_starts_a_regular_upload_and_creates_the_staging_file() {
     let storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -49,7 +49,7 @@ async fn handle_starts_a_regular_upload_and_creates_the_staging_file() {
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_a_cross_repo_mount_with_an_invalid_digest() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -63,7 +63,7 @@ async fn handle_rejects_a_cross_repo_mount_with_an_invalid_digest() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_mounts_an_existing_blob_from_another_repository() {
     let storage = support::WithDockerStorageRoot::new();
     let hex = DIGEST.strip_prefix("sha256:").unwrap();
@@ -85,7 +85,7 @@ async fn handle_mounts_an_existing_blob_from_another_repository() {
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_falls_back_to_a_regular_upload_when_the_mount_target_does_not_exist() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;

@@ -43,7 +43,7 @@ async fn body_text(resp: quench_http::response::Response) -> String {
     String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn stop_instance_is_forbidden_without_the_stop_permission() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;
@@ -58,7 +58,7 @@ async fn stop_instance_is_forbidden_without_the_stop_permission() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn stop_instance_succeeds_and_returns_the_confirm_stop_markup() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = false;
@@ -76,7 +76,7 @@ async fn stop_instance_succeeds_and_returns_the_confirm_stop_markup() {
     assert!(html.contains("confirm-stop-instance-modal"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn stop_instance_maps_a_not_found_error_to_404() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = false;
@@ -91,7 +91,7 @@ async fn stop_instance_maps_a_not_found_error_to_404() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn stop_instance_maps_any_other_error_to_500() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = false;

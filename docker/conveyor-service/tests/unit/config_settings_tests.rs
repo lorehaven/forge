@@ -8,13 +8,13 @@
 use conveyor_service::config::settings::positive;
 use conveyor_service::config::{ConveyorConfig, ExecutorKind};
 
-#[test]
+#[quench_test::test]
 fn executor_defaults_to_native() {
     assert_eq!(ExecutorKind::default(), ExecutorKind::Native);
     assert_eq!(ConveyorConfig::default().executor, ExecutorKind::Native);
 }
 
-#[test]
+#[quench_test::test]
 fn executor_parses_what_it_renders() {
     for kind in [
         ExecutorKind::Native,
@@ -25,7 +25,7 @@ fn executor_parses_what_it_renders() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn executor_accepts_the_obvious_abbreviation_and_ignores_case() {
     assert_eq!(ExecutorKind::parse("k8s"), ExecutorKind::Kubernetes);
     assert_eq!(
@@ -34,38 +34,38 @@ fn executor_accepts_the_obvious_abbreviation_and_ignores_case() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn an_unset_or_unknown_executor_falls_back_to_native() {
     assert_eq!(ExecutorKind::parse(""), ExecutorKind::Native);
     assert_eq!(ExecutorKind::parse("docker"), ExecutorKind::Native);
 }
 
-#[test]
+#[quench_test::test]
 fn forks_are_not_buildable_by_default() {
     // The native executor would run a fork's pipeline with this service's
     // privileges. If this default ever flips, that happens silently.
     assert!(!ConveyorConfig::default().allow_fork_pr);
 }
 
-#[test]
+#[quench_test::test]
 fn tags_are_not_built_by_default() {
     // A run is for a branch. A tag push that no pipeline asked for would otherwise cost a queued run,
     // a clone and a skipped row each time; building tags is an opt-in for a pipeline that uses `on.tag`.
     assert!(!ConveyorConfig::default().build_tags);
 }
 
-#[test]
+#[quench_test::test]
 fn positive_keeps_the_default_when_unset() {
     assert_eq!(positive("CONVEYOR_TEST_UNSET_KEY", 7), 7);
 }
 
-#[test]
+#[quench_test::test]
 fn positive_reads_a_valid_value() {
     quench_core::env::set("CONVEYOR_TEST_VALID", "12");
     assert_eq!(positive("CONVEYOR_TEST_VALID", 7), 12);
 }
 
-#[test]
+#[quench_test::test]
 fn positive_rejects_zero() {
     // Zero workers, or a zero-second timeout, is a service that silently does
     // nothing - worse than one that reports a bad configuration.
@@ -73,7 +73,7 @@ fn positive_rejects_zero() {
     assert_eq!(positive("CONVEYOR_TEST_ZERO", 7), 7);
 }
 
-#[test]
+#[quench_test::test]
 fn positive_rejects_garbage_and_negatives() {
     quench_core::env::set("CONVEYOR_TEST_GARBAGE", "lots");
     assert_eq!(positive("CONVEYOR_TEST_GARBAGE", 7), 7);
@@ -82,7 +82,7 @@ fn positive_rejects_garbage_and_negatives() {
     assert_eq!(positive("CONVEYOR_TEST_NEGATIVE", 7), 7);
 }
 
-#[test]
+#[quench_test::test]
 fn positive_tolerates_surrounding_whitespace() {
     quench_core::env::set("CONVEYOR_TEST_PADDED", "  4  ");
     assert_eq!(positive("CONVEYOR_TEST_PADDED", 7), 4);

@@ -1,7 +1,7 @@
 use anvil::commands::login::*;
 use gatehouse_auth::Credentials;
 
-#[test]
+#[quench_test::test]
 fn registry_token_var_follows_cargos_naming() {
     assert_eq!(registry_token_var("ennor"), "CARGO_REGISTRIES_ENNOR_TOKEN");
     assert_eq!(
@@ -10,19 +10,19 @@ fn registry_token_var_follows_cargos_naming() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn default_token_name_mentions_the_host() {
     assert_eq!(default_token_name("forge-1"), "anvil on forge-1");
 }
 
-#[test]
+#[quench_test::test]
 fn registry_token_env_is_none_without_a_secret_file() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let result = registry_token_env("ennor", dir.path(), |_| false).unwrap();
     assert!(result.is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn registry_token_env_defers_to_a_token_already_in_the_environment() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     gatehouse_auth::save(
@@ -42,7 +42,7 @@ fn registry_token_env_defers_to_a_token_already_in_the_environment() {
     assert!(result.is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn registry_token_env_reports_an_unreachable_gatehouse() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     gatehouse_auth::save(

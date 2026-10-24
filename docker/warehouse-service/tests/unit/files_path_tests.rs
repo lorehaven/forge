@@ -18,7 +18,7 @@ fn refused(path: &str) -> PathError {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn plain_names_are_kept_as_written() {
     assert_eq!(accepted("thing"), PathBuf::from("thing"));
     assert_eq!(
@@ -27,13 +27,13 @@ fn plain_names_are_kept_as_written() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_leading_dot_slash_is_dropped_rather_than_refused() {
     assert_eq!(accepted("./thing"), PathBuf::from("thing"));
     assert_eq!(accepted("./a/./b"), PathBuf::from("a/b"));
 }
 
-#[test]
+#[quench_test::test]
 fn parent_components_are_refused_wherever_they_appear() {
     assert_eq!(refused(".."), PathError::Traversal);
     assert_eq!(refused("../etc/passwd"), PathError::Traversal);
@@ -45,13 +45,13 @@ fn parent_components_are_refused_wherever_they_appear() {
     assert_eq!(refused("a/../../a/b"), PathError::Traversal);
 }
 
-#[test]
+#[quench_test::test]
 fn absolute_paths_are_refused() {
     assert_eq!(refused("/etc/passwd"), PathError::Absolute);
     assert_eq!(refused("/"), PathError::Absolute);
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_path_is_refused_rather_than_meaning_the_root() {
     assert_eq!(refused(""), PathError::Empty);
     assert_eq!(refused("   "), PathError::Empty);
@@ -60,7 +60,7 @@ fn an_empty_path_is_refused_rather_than_meaning_the_root() {
     assert_eq!(refused("./"), PathError::Empty);
 }
 
-#[test]
+#[quench_test::test]
 fn nul_and_control_bytes_are_refused() {
     // The interesting one: everything before the NUL passes any textual check,
     // and the syscall then opens `thing`.
@@ -70,7 +70,7 @@ fn nul_and_control_bytes_are_refused() {
     assert_eq!(refused("thing\x7f"), PathError::Invalid);
 }
 
-#[test]
+#[quench_test::test]
 fn names_that_merely_look_alarming_are_allowed() {
     // `..` is a path component, not a substring. A file legitimately called
     // `..thing` or `a..b` is not traversal and refusing it would be wrong.
@@ -79,19 +79,19 @@ fn names_that_merely_look_alarming_are_allowed() {
     assert_eq!(accepted("...."), PathBuf::from("...."));
 }
 
-#[test]
+#[quench_test::test]
 fn spaces_and_unicode_survive() {
     assert_eq!(accepted("a file.txt"), PathBuf::from("a file.txt"));
     assert_eq!(accepted("ünïcødé/ok"), PathBuf::from("ünïcødé/ok"));
 }
 
-#[test]
+#[quench_test::test]
 fn repeated_separators_collapse() {
     assert_eq!(accepted("a//b"), PathBuf::from("a/b"));
     assert_eq!(accepted("a///b//c"), PathBuf::from("a/b/c"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_trailing_separator_does_not_change_the_target() {
     assert_eq!(accepted("a/b/"), PathBuf::from("a/b"));
 }

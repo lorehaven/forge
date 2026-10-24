@@ -1,6 +1,6 @@
 use crate::world::ForgeWorld;
-use chrono::Utc;
-use cucumber::{given, when};
+use quench_core::time::Time;
+use quench_test_bdd::{given, when};
 
 #[given(expr = "a crate {string} version {string} is published")]
 #[when(expr = "a crate {string} version {string} is published")]
@@ -9,7 +9,7 @@ async fn publish_crate(world: &mut ForgeWorld, name: String, version: String) {
         || name.contains("test-owners")
         || name.contains("test-index")
     {
-        let suffix = Utc::now().timestamp_nanos_opt().unwrap_or(0);
+        let suffix = Time::now().timestamp_millis();
         let n = format!("{}-{}", name, suffix);
         // crate names must be <= 64 chars
         if n.len() > 64 {
@@ -30,7 +30,7 @@ async fn publish_crate(world: &mut ForgeWorld, name: String, version: String) {
         rb = rb.bearer_auth(token);
     }
 
-    let metadata = serde_json::json!({
+    let metadata = quench_serde::json!({
         "name": unique_name,
         "vers": version,
         "deps": [],
@@ -39,7 +39,7 @@ async fn publish_crate(world: &mut ForgeWorld, name: String, version: String) {
         "description": "test crate"
     });
 
-    let metadata_str = serde_json::to_string(&metadata).unwrap();
+    let metadata_str = quench_serde::json::to_string(&metadata);
     let metadata_len = metadata_str.len() as u32;
 
     let crate_data = b"mock crate content";
@@ -106,7 +106,7 @@ async fn send_put_request_with_token(world: &mut ForgeWorld, path: String) {
 async fn send_put_request_with_token_and_body(
     world: &mut ForgeWorld,
     path: String,
-    step: &cucumber::gherkin::Step,
+    step: &quench_test_bdd::Step,
 ) {
     let body = step.docstring().expect("Step must have a docstring");
     let url = resolve_crate_path(world, path);
@@ -129,7 +129,7 @@ async fn send_put_request_with_token_and_body(
 async fn send_delete_request_with_token_and_body(
     world: &mut ForgeWorld,
     path: String,
-    step: &cucumber::gherkin::Step,
+    step: &quench_test_bdd::Step,
 ) {
     let body = step.docstring().expect("Step must have a docstring");
     let url = resolve_crate_path(world, path);
@@ -153,7 +153,7 @@ async fn publish_crate_no_token(world: &mut ForgeWorld, name: String, version: S
     let url = format!("{}/api/v1/crates/new", world.warehouse_url);
     let rb = world.client.put(&url); // No token
 
-    let metadata = serde_json::json!({
+    let metadata = quench_serde::json!({
         "name": name,
         "vers": version,
         "deps": [],
@@ -162,7 +162,7 @@ async fn publish_crate_no_token(world: &mut ForgeWorld, name: String, version: S
         "description": "test crate"
     });
 
-    let metadata_str = serde_json::to_string(&metadata).unwrap();
+    let metadata_str = quench_serde::json::to_string(&metadata);
     let metadata_len = metadata_str.len() as u32;
 
     let crate_data = b"mock crate content";
@@ -184,7 +184,7 @@ async fn publish_crate_no_token(world: &mut ForgeWorld, name: String, version: S
 }
 
 #[when("a crate is published with invalid metadata:")]
-async fn publish_crate_invalid_metadata(world: &mut ForgeWorld, step: &cucumber::gherkin::Step) {
+async fn publish_crate_invalid_metadata(world: &mut ForgeWorld, step: &quench_test_bdd::Step) {
     let metadata_str = step.docstring().expect("Step must have a docstring");
     let url = format!("{}/api/v1/crates/new", world.warehouse_url);
     let mut rb = world.client.put(&url);

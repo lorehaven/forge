@@ -14,7 +14,7 @@ fn call(args: quench_serde::Value) -> ToolCall {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn get_definition_declares_the_four_operations() {
     let def = sage_service::tools::file_ops::get_definition();
     assert_eq!(def.name, "file_ops");
@@ -24,7 +24,7 @@ fn get_definition_declares_the_four_operations() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn read_returns_the_files_contents() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     std::fs::write(dir.path().join("hello.txt"), "hello world").expect("write fixture");
@@ -40,7 +40,7 @@ async fn read_returns_the_files_contents() {
     assert_eq!(result.content, "hello world");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn read_reports_a_missing_file() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -55,7 +55,7 @@ async fn read_reports_a_missing_file() {
     assert!(result.content.contains("Failed to read file"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn write_then_read_round_trips() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -77,7 +77,7 @@ async fn write_then_read_round_trips() {
     assert_eq!(read_result.content, "written content");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn write_without_content_is_rejected() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -92,7 +92,7 @@ async fn write_without_content_is_rejected() {
     assert!(result.content.contains("Missing 'content'"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_enumerates_directory_entries() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     std::fs::write(dir.path().join("a.txt"), "a").expect("write a");
@@ -110,7 +110,7 @@ async fn list_enumerates_directory_entries() {
     assert!(result.content.contains("subdir/"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn exists_reports_true_and_false_correctly() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     std::fs::write(dir.path().join("present.txt"), "x").expect("write fixture");
@@ -132,7 +132,7 @@ async fn exists_reports_true_and_false_correctly() {
     assert!(absent.content.contains("does not exist"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unknown_operation_is_rejected() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -147,7 +147,7 @@ async fn unknown_operation_is_rejected() {
     assert!(result.content.contains("Unknown operation"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn missing_operation_argument_is_rejected() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -159,7 +159,7 @@ async fn missing_operation_argument_is_rejected() {
     assert!(result.content.contains("Missing 'operation'"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn missing_path_argument_is_rejected() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -171,7 +171,7 @@ async fn missing_path_argument_is_rejected() {
     assert!(result.content.contains("Missing 'path'"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn non_string_operation_is_rejected() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -183,7 +183,7 @@ async fn non_string_operation_is_rejected() {
     assert!(result.content.contains("Invalid operation"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn non_string_path_is_rejected() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -197,7 +197,7 @@ async fn non_string_path_is_rejected() {
     assert!(result.content.contains("Invalid path"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn non_string_content_on_write_is_rejected() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -215,7 +215,7 @@ async fn non_string_content_on_write_is_rejected() {
 
 // --- Path confinement: the security-relevant surface ---
 
-#[tokio::test]
+#[quench_test::test]
 async fn absolute_paths_are_rejected() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -230,7 +230,7 @@ async fn absolute_paths_are_rejected() {
     assert!(result.content.contains("Access denied"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn parent_directory_traversal_is_rejected() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -246,7 +246,7 @@ async fn parent_directory_traversal_is_rejected() {
     assert!(result.content.contains("Access denied"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn nul_byte_in_path_is_rejected() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -261,7 +261,7 @@ async fn nul_byte_in_path_is_rejected() {
     assert!(result.content.contains("Access denied"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn tilde_in_path_is_rejected() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let executor = FileOpsExecutor::new(dir.path().to_string_lossy().to_string());
@@ -276,7 +276,7 @@ async fn tilde_in_path_is_rejected() {
     assert!(result.content.contains("Access denied"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_new_files_nonexistent_path_is_still_confined_via_its_parent() {
     // `write` targets a file that doesn't exist yet, so `is_safe`'s
     // canonicalize falls through to checking the parent directory instead.
@@ -294,7 +294,7 @@ async fn a_new_files_nonexistent_path_is_still_confined_via_its_parent() {
     assert!(!result.is_error);
 }
 
-#[test]
+#[quench_test::test]
 fn from_env_defaults_to_current_directory() {
     let _guard = env_lock()
         .lock()
@@ -306,7 +306,7 @@ fn from_env_defaults_to_current_directory() {
     let _default_executor = FileOpsExecutor::default();
 }
 
-#[test]
+#[quench_test::test]
 fn from_env_honors_file_ops_base_path() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let _guard = env_lock()

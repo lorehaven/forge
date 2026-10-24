@@ -17,22 +17,22 @@ fn package(publish: Option<Vec<String>>) -> WorkspacePackage {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn publish_disabled_is_true_only_for_an_explicit_empty_list() {
     assert!(package(Some(Vec::new())).publish_disabled());
 }
 
-#[test]
+#[quench_test::test]
 fn publish_disabled_is_false_when_unrestricted() {
     assert!(!package(None).publish_disabled());
 }
 
-#[test]
+#[quench_test::test]
 fn publish_disabled_is_false_when_restricted_to_specific_registries() {
     assert!(!package(Some(vec!["ennor".to_string()])).publish_disabled());
 }
 
-#[test]
+#[quench_test::test]
 fn relative_dir_strips_the_workspace_root_regardless_of_nesting_depth() {
     // Forge's own convention: packages nested under docker/<service>/.
     let nested = package(None);
@@ -54,13 +54,13 @@ fn relative_dir_strips_the_workspace_root_regardless_of_nesting_depth() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn relative_dir_errors_when_the_package_is_not_under_the_given_root() {
     let pkg = package(None);
     assert!(pkg.relative_dir(Path::new("/somewhere/else")).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn cargo_metadata_runs_real_cargo_and_returns_this_workspace() {
     // Shells out to real `cargo metadata` with no explicit `--manifest-path`
     // - see `stable_cwd_lock`'s docs.
@@ -72,7 +72,7 @@ fn cargo_metadata_runs_real_cargo_and_returns_this_workspace() {
     assert!(metadata["workspace_root"].is_string());
 }
 
-#[test]
+#[quench_test::test]
 fn workspace_root_reads_the_field_as_a_path() {
     let metadata = json!({ "workspace_root": "/some/workspace" });
     assert_eq!(
@@ -81,7 +81,7 @@ fn workspace_root_reads_the_field_as_a_path() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn workspace_root_errors_when_the_field_is_missing() {
     let metadata = json!({});
     assert!(workspace_root(&metadata).is_err());
@@ -117,7 +117,7 @@ fn fixture_metadata() -> quench_serde::Value {
     })
 }
 
-#[test]
+#[quench_test::test]
 fn workspace_packages_only_includes_workspace_members_and_reads_their_fields() {
     let metadata = fixture_metadata();
     let packages = workspace_packages(&metadata).expect("resolves");
@@ -139,13 +139,13 @@ fn workspace_packages_only_includes_workspace_members_and_reads_their_fields() {
     assert!(pkg_b.publish_disabled());
 }
 
-#[test]
+#[quench_test::test]
 fn workspace_packages_errors_when_packages_field_is_missing() {
     let metadata = json!({ "workspace_members": [] });
     assert!(workspace_packages(&metadata).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn workspace_packages_is_empty_when_workspace_members_is_missing() {
     let mut metadata = fixture_metadata();
     metadata
@@ -156,7 +156,7 @@ fn workspace_packages_is_empty_when_workspace_members_is_missing() {
     assert!(packages.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_package_finds_this_very_crate_in_the_real_workspace() {
     // `resolve_package` shells out to real `cargo metadata` with no explicit
     // `--manifest-path` - see `stable_cwd_lock`'s docs.
@@ -168,7 +168,7 @@ fn resolve_package_finds_this_very_crate_in_the_real_workspace() {
     assert!(pkg.manifest.ends_with("Cargo.toml"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_package_errors_for_a_name_not_in_the_workspace() {
     let _guard = stable_cwd_lock()
         .lock()

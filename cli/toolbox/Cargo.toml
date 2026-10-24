@@ -10,6 +10,7 @@ homepage = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
 readme = { workspace = true }
+autotests = false
 
 [[bin]]
 name = "forge-toolbox"
@@ -21,6 +22,13 @@ path = "src/lib.rs"
 
 [dependencies]
 quench-core = { workspace = true }
-clap = { workspace = true }
-crossterm = { workspace = true }
+quench-args = { workspace = true }
 quench-cli = { workspace = true }
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dev-dependencies]
+quench-test = { workspace = true }

@@ -2,12 +2,15 @@
 //! unless `WAREHOUSE_TEST_DATABASE_URL` points at one with the warehouse module installed
 //! (`foundry-service apply -i warehouse`).
 
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
 use quench_core::tmp::TempDir;
 use quench_db::prelude::{Database, Db};
 use warehouse_service::domain::storage::{self, NewStorage, StorageUpdate};
 use warehouse_service::domain::storage_file;
 
-#[tokio::test]
+#[quench_test::test]
 #[allow(clippy::too_many_lines)]
 async fn storages_files_blobs_and_the_sync_log_round_trip() {
     let Ok(url) = std::env::var("WAREHOUSE_TEST_DATABASE_URL") else {
@@ -133,3 +136,5 @@ async fn storages_files_blobs_and_the_sync_log_round_trip() {
     assert!(storage::delete(&db, &name).await.unwrap());
     assert!(storage::read(&db, &name).await.unwrap().is_none());
 }
+
+quench_test::main!();

@@ -14,14 +14,14 @@ fn publish(storage: &WithStorageRoot, name: &str, version: &str) {
 // parse_semver / compare_versions
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn parse_semver_reads_major_minor_patch() {
     assert_eq!(parse_semver("1.2.3").unwrap().0, 1);
     assert_eq!(parse_semver("1.2.3").unwrap().1, 2);
     assert_eq!(parse_semver("1.2.3").unwrap().2, 3);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_semver_strips_build_metadata() {
     assert_eq!(
         parse_semver("1.2.3+build.5").unwrap(),
@@ -29,14 +29,14 @@ fn parse_semver_strips_build_metadata() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn parse_semver_rejects_malformed_versions() {
     assert!(parse_semver("1.2").is_none());
     assert!(parse_semver("a.b.c").is_none());
     assert!(parse_semver("1.2.3.4").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn compare_versions_orders_semver_numerically_not_lexicographically() {
     assert_eq!(
         compare_versions("1.2.0", "1.10.0"),
@@ -44,7 +44,7 @@ fn compare_versions_orders_semver_numerically_not_lexicographically() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn compare_versions_places_a_release_above_its_prerelease() {
     assert_eq!(
         compare_versions("1.0.0-beta", "1.0.0"),
@@ -52,7 +52,7 @@ fn compare_versions_places_a_release_above_its_prerelease() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn compare_versions_falls_back_to_lexicographic_order_for_non_semver() {
     assert_eq!(compare_versions("latest", "stable"), "latest".cmp("stable"));
 }
@@ -61,13 +61,13 @@ fn compare_versions_falls_back_to_lexicographic_order_for_non_semver() {
 // find_max_version
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn find_max_version_is_none_without_any_version_directories() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     assert_eq!(find_max_version(dir.path()).await, None);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn find_max_version_picks_the_highest_semver_directory() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     for version in ["1.0.0", "2.0.0", "1.5.0"] {
@@ -79,7 +79,7 @@ async fn find_max_version_picks_the_highest_semver_directory() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn find_max_version_ignores_files_only_directories() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(dir.path().join("owners.json"), b"[]").unwrap();
@@ -103,7 +103,7 @@ async fn app() -> (
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_an_empty_query() {
     let _storage = WithStorageRoot::new();
     let (app, container) = app().await;
@@ -114,7 +114,7 @@ async fn handle_rejects_an_empty_query() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_finds_crates_whose_name_contains_the_query_case_insensitively() {
     let storage = WithStorageRoot::new();
     publish(&storage, "my-http-client", "1.0.0");
@@ -139,7 +139,7 @@ async fn handle_finds_crates_whose_name_contains_the_query_case_insensitively() 
     assert_eq!(body["meta"]["total"], 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_paginates_results() {
     let storage = WithStorageRoot::new();
     for name in ["match-a", "match-b", "match-c"] {
@@ -161,7 +161,7 @@ async fn handle_paginates_results() {
     assert_eq!(body["meta"]["total"], 3);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_skips_a_crate_directory_with_no_version_subdirectories() {
     let storage = WithStorageRoot::new();
     std::fs::create_dir_all(storage.dir.path().join("match-empty")).unwrap();

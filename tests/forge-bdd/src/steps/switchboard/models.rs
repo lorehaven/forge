@@ -1,11 +1,11 @@
 use crate::world::ForgeWorld;
-use cucumber::{then, when};
+use quench_test_bdd::{then, when};
 
 #[when(expr = "POST request is sent to {string} with body:")]
 async fn send_post_request_with_body(
     world: &mut ForgeWorld,
     path: String,
-    step: &cucumber::gherkin::Step,
+    step: &quench_test_bdd::Step,
 ) {
     let body = step.docstring().expect("Step must have a docstring");
     let url = format!("{}{}", world.switchboard_url, path);

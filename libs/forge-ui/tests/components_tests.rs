@@ -1,6 +1,9 @@
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
 use forge_ui::*;
 
-#[test]
+#[quench_test::test]
 fn user_menu_offers_profile_and_logout() {
     let html = user_menu("/ui/account", "/ui/logout").render();
     assert!(html.contains("href=\"/ui/account\""));
@@ -9,14 +12,14 @@ fn user_menu_offers_profile_and_logout() {
     assert!(html.contains("ui_logout"));
 }
 
-#[test]
+#[quench_test::test]
 fn user_menu_swaps_the_icon_for_the_avatar_once_it_loads() {
     let html = user_menu("/gatehouse/ui/account", "/ui/logout").render();
     assert!(html.contains("src=\"/gatehouse/ui/account/avatar\""));
     assert!(html.contains("has-avatar"));
 }
 
-#[test]
+#[quench_test::test]
 fn stylesheet_has_tokens_both_themes_and_mobile_rules() {
     let css = stylesheet(&[]);
     assert!(css.contains("--fui-brand-600"));
@@ -24,13 +27,13 @@ fn stylesheet_has_tokens_both_themes_and_mobile_rules() {
     assert!(css.contains("@media (max-width: 1023.98px)"));
 }
 
-#[test]
+#[quench_test::test]
 fn stylesheet_appends_service_rules_last() {
     let css = stylesheet(&[quench_web::prelude::CssRule::new(".svc-x").property("color", "red")]);
     assert!(css.rfind(".svc-x").unwrap() > css.rfind(".fui-btn").unwrap());
 }
 
-#[test]
+#[quench_test::test]
 fn button_variants_map_to_classes() {
     let html = button_el(Variant::Danger, "k").render();
     assert!(html.contains("fui-btn-danger"));
@@ -42,7 +45,7 @@ fn button_variants_map_to_classes() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn alert_error_has_alert_role() {
     assert!(
         alert(Tone::Error, txt("x"))
@@ -51,7 +54,7 @@ fn alert_error_has_alert_role() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn page_header_renders_crumbs_and_actions() {
     let html = PageHeader::new("title")
         .crumb(txt("Home"), Some("/h"))
@@ -64,7 +67,7 @@ fn page_header_renders_crumbs_and_actions() {
     assert!(html.contains("fui-page-actions"));
 }
 
-#[test]
+#[quench_test::test]
 fn modal_wires_open_and_close() {
     assert_eq!(open_modal("m"), "fuiOpenModal('m')");
     let html = modal("m", "t", txt("b"), None).render();
@@ -72,7 +75,7 @@ fn modal_wires_open_and_close() {
     assert!(html.contains("fuiCloseModal"));
 }
 
-#[test]
+#[quench_test::test]
 fn table_can_opt_into_stacking() {
     assert!(
         table_el(&["a"], vec![], true)
@@ -85,3 +88,5 @@ fn table_can_opt_into_stacking() {
             .contains("fui-table-stack")
     );
 }
+
+quench_test::main!();

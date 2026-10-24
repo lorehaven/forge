@@ -74,7 +74,7 @@ fn issues(set: &SchemaSet, doc: &Value) -> Vec<String> {
 
 // --- reading a CRD -----------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn reads_names_scope_and_only_served_versions() {
     let schema = CrdSchema::from_crd(&crd(
         "example.io",
@@ -98,7 +98,7 @@ fn reads_names_scope_and_only_served_versions() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_crd_with_no_served_schema_is_an_error() {
     let none = crd("example.io", "Widget", &[("v1", false, widget_schema())]);
     let err = CrdSchema::from_crd(&none).unwrap_err();
@@ -109,7 +109,7 @@ fn a_crd_with_no_served_schema_is_an_error() {
     assert!(CrdSchema::from_crd(&broken).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn stripping_keeps_fields_that_are_named_like_annotations() {
     // `default`, `title`, `description` and `example` are legitimate field names; as keys of a
     // `properties` map they are fields, not documentation, and must survive.
@@ -152,7 +152,7 @@ fn stripping_keeps_fields_that_are_named_like_annotations() {
     assert_eq!(set.check(&doc), Outcome::Valid);
 }
 
-#[test]
+#[quench_test::test]
 fn cel_rules_are_counted_not_evaluated() {
     let schema = json!({
         "type": "object",
@@ -175,7 +175,7 @@ fn cel_rules_are_counted_not_evaluated() {
 
 // --- normalising -------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn objects_that_list_properties_are_closed() {
     let n = normalize(
         &json!({"type": "object", "properties": {"a": {"type": "object", "properties": {"b": {"type": "string"}}}}}),
@@ -184,7 +184,7 @@ fn objects_that_list_properties_are_closed() {
     assert_eq!(n["properties"]["a"]["additionalProperties"], false);
 }
 
-#[test]
+#[quench_test::test]
 fn objects_that_may_hold_anything_stay_open() {
     let free = normalize(&json!({"type": "object"}));
     assert!(free.get("additionalProperties").is_none());
@@ -205,7 +205,7 @@ fn objects_that_may_hold_anything_stay_open() {
     assert_eq!(map["additionalProperties"], json!({"type": "string"}));
 }
 
-#[test]
+#[quench_test::test]
 fn combinator_branches_are_not_closed() {
     // A branch lists only the properties it constrains; closing it would reject everything else.
     let n = normalize(&json!({
@@ -218,7 +218,7 @@ fn combinator_branches_are_not_closed() {
     assert!(n["oneOf"][1].get("additionalProperties").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn int_or_string_and_nullable_are_translated() {
     let n =
         normalize(&json!({"x-kubernetes-int-or-string": true, "type": "string", "pattern": "^a"}));
@@ -234,7 +234,7 @@ fn int_or_string_and_nullable_are_translated() {
     assert_eq!(n["anyOf"][1], json!({"type": "null"}));
 }
 
-#[test]
+#[quench_test::test]
 fn keywords_json_schema_lacks_are_removed() {
     let n = normalize(&json!({
         "type": "integer", "minimum": 1, "exclusiveMinimum": true, "format": "int64",
@@ -249,7 +249,7 @@ fn keywords_json_schema_lacks_are_removed() {
 
 // --- checking documents ------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_conforming_document_is_valid() {
     let doc = widget(json!({
         "size": 3, "mode": "fast", "port": 8080, "note": null, "tags": ["a"],
@@ -262,7 +262,7 @@ fn a_conforming_document_is_valid() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn documents_without_a_schema_are_skipped() {
     let set = widgets();
     assert_eq!(
@@ -281,19 +281,19 @@ fn documents_without_a_schema_are_skipped() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn an_unknown_field_is_an_error_with_a_suggestion() {
     let found = issues(&widgets(), &widget(json!({"size": 1, "mdoe": "fast"})));
     assert_eq!(found, ["spec: unknown field `mdoe` (did you mean `mode`?)"]);
 }
 
-#[test]
+#[quench_test::test]
 fn a_swap_of_two_letters_is_one_edit() {
     let found = issues(&widgets(), &widget(json!({"size": 1, "tgas": []})));
     assert!(found[0].contains("did you mean `tags`"), "{found:?}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_name_nothing_like_a_field_gets_no_suggestion() {
     let found = issues(
         &widgets(),
@@ -302,7 +302,7 @@ fn a_name_nothing_like_a_field_gets_no_suggestion() {
     assert_eq!(found, ["spec: unknown field `completely-unrelated`"]);
 }
 
-#[test]
+#[quench_test::test]
 fn several_unknown_fields_are_reported_together_without_guessing() {
     let found = issues(&widgets(), &widget(json!({"size": 1, "aaa": 1, "bbb": 2})));
     assert_eq!(found.len(), 1, "{found:?}");
@@ -310,7 +310,7 @@ fn several_unknown_fields_are_reported_together_without_guessing() {
     assert!(!found[0].contains("did you mean"));
 }
 
-#[test]
+#[quench_test::test]
 fn types_required_fields_enums_and_minimums_are_enforced() {
     let set = widgets();
     assert!(issues(&set, &widget(json!({"size": "big"})))[0].contains("spec.size"));
@@ -325,7 +325,7 @@ fn types_required_fields_enums_and_minimums_are_enforced() {
     assert!(issues(&set, &widget(json!({"size": 1, "port": 1.5})))[0].contains("spec.port"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_missing_top_level_field_is_reported_at_the_document() {
     let doc = json!({"apiVersion": "example.io/v1", "kind": "Widget", "metadata": {"name": "w"}});
     let found = issues(&widgets(), &doc);
@@ -339,7 +339,7 @@ fn a_missing_top_level_field_is_reported_at_the_document() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_version_the_crd_does_not_serve_is_named_with_those_it_does() {
     let doc = json!({"apiVersion": "example.io/v7", "kind": "Widget", "metadata": {"name": "w"}, "spec": {"size": 1}});
     let found = issues(&widgets(), &doc);
@@ -351,7 +351,7 @@ fn a_version_the_crd_does_not_serve_is_named_with_those_it_does() {
     assert!(found[0].contains("serves: v1"));
 }
 
-#[test]
+#[quench_test::test]
 fn each_served_version_is_checked_against_its_own_schema() {
     let v1 = widget_schema();
     let mut v2 = widget_schema();
@@ -376,7 +376,7 @@ fn each_served_version_is_checked_against_its_own_schema() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn repeated_checks_of_one_kind_agree() {
     // The compiled validator is cached; the second answer must be the first's.
     let set = widgets();
@@ -388,7 +388,7 @@ fn repeated_checks_of_one_kind_agree() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn core_group_documents_have_an_empty_group() {
     let schema = CrdSchema::from_crd(&crd("", "Thing", &[("v1", true, json!({"type": "object", "properties": {"kind": {"type": "string"}, "apiVersion": {"type": "string"}, "spec": {"type": "object", "properties": {"a": {"type": "string"}}}}}))])).unwrap();
     let mut set = SchemaSet::empty();
@@ -399,7 +399,7 @@ fn core_group_documents_have_an_empty_group() {
 
 // --- holding schemas ---------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_cached_schema_replaces_a_bundled_one_of_the_same_kind() {
     let mut set = bundled().unwrap();
     let before = set
@@ -425,7 +425,7 @@ fn a_cached_schema_replaces_a_bundled_one_of_the_same_kind() {
     assert_ne!(held.0.versions, before);
 }
 
-#[test]
+#[quench_test::test]
 fn load_dir_reads_schemas_ignores_a_missing_directory_and_refuses_junk() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let mut set = SchemaSet::empty();
@@ -456,7 +456,7 @@ fn load_dir_reads_schemas_ignores_a_missing_directory_and_refuses_junk() {
     assert!(format!("{err:#}").contains("junk.json"), "{err:#}");
 }
 
-#[test]
+#[quench_test::test]
 fn the_list_is_sorted_by_group_then_kind() {
     let mut set = SchemaSet::empty();
     for (group, kind) in [("z.io", "A"), ("a.io", "B"), ("a.io", "A")] {
@@ -480,7 +480,7 @@ fn the_list_is_sorted_by_group_then_kind() {
 
 // --- the bundle --------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn the_bundle_holds_exactly_the_crds_riveter_has_templates_for() {
     let set = bundled().unwrap();
     let held: Vec<String> = set.list().iter().map(|(s, _)| s.crd_name()).collect();
@@ -500,7 +500,7 @@ fn the_bundle_holds_exactly_the_crds_riveter_has_templates_for() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn every_bundled_schema_compiles_and_rejects_a_typo() {
     let set = bundled().unwrap();
     for (schema, _) in set.list() {
@@ -522,7 +522,7 @@ fn every_bundled_schema_compiles_and_rejects_a_typo() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_certificate_is_checked_against_the_real_cert_manager_schema() {
     let set = bundled().unwrap();
     let good = json!({
@@ -539,7 +539,7 @@ fn a_certificate_is_checked_against_the_real_cert_manager_schema() {
 
 // --- paths -------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn json_pointers_read_as_field_paths() {
     assert_eq!(display_path(""), "");
     assert_eq!(display_path("/spec"), "spec");
@@ -558,7 +558,7 @@ fn env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-#[test]
+#[quench_test::test]
 fn the_cache_directory_follows_the_documented_precedence() {
     let _guard = env_lock()
         .lock()

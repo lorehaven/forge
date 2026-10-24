@@ -8,7 +8,7 @@ use welder::engine::executor::{
 };
 use welder::llm::{Content, Llm, LlmRequest, LlmResponse};
 
-#[test]
+#[quench_test::test]
 fn extract_json_from_raw_object() {
     assert_eq!(
         extract_json(r#"{"action":"final"}"#),
@@ -16,7 +16,7 @@ fn extract_json_from_raw_object() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn extract_json_from_fenced_block() {
     let raw = "```json\n{\"action\":\"final\",\"content\":\"hi\"}\n```";
     assert_eq!(
@@ -25,29 +25,29 @@ fn extract_json_from_fenced_block() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn extract_json_from_surrounding_prose() {
     let raw = "Sure, here it is: {\"action\":\"final\"} - hope that helps!";
     assert_eq!(extract_json(raw), Some(r#"{"action":"final"}"#.to_string()));
 }
 
-#[test]
+#[quench_test::test]
 fn extract_json_returns_none_without_braces() {
     assert_eq!(extract_json("no json here"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn first_sentence_splits_on_terminator() {
     assert_eq!(first_sentence("Do the thing. Then stop."), "Do the thing");
     assert_eq!(first_sentence("No terminator here"), "No terminator here");
 }
 
-#[test]
+#[quench_test::test]
 fn truncate_for_history_leaves_short_text_untouched() {
     assert_eq!(truncate_for_history("short"), "short");
 }
 
-#[test]
+#[quench_test::test]
 fn truncate_for_history_truncates_long_text() {
     let long = "a".repeat(MAX_TOOL_OUTPUT_CHARS + 500);
     let result = truncate_for_history(&long);
@@ -55,14 +55,14 @@ fn truncate_for_history_truncates_long_text() {
     assert!(result.contains("truncated"));
 }
 
-#[test]
+#[quench_test::test]
 fn cap_history_leaves_short_history_untouched() {
     let mut history = "short history".to_string();
     cap_history(&mut history);
     assert_eq!(history, "short history");
 }
 
-#[test]
+#[quench_test::test]
 fn cap_history_trims_from_the_front() {
     let mut history = "a".repeat(MAX_HISTORY_CHARS + 1000);
     cap_history(&mut history);
@@ -70,7 +70,7 @@ fn cap_history_trims_from_the_front() {
     assert!(history.starts_with("...[earlier tool output truncated]"));
 }
 
-#[test]
+#[quench_test::test]
 fn has_extension_matches_case_insensitively() {
     assert!(has_extension("main.rs", "rs"));
     assert!(has_extension("Main.RS", "rs"));
@@ -78,25 +78,25 @@ fn has_extension_matches_case_insensitively() {
     assert!(!has_extension("no-extension", "rs"));
 }
 
-#[test]
+#[quench_test::test]
 fn detect_tech_stack_recognizes_rust_by_manifest_and_extension() {
     let files = vec!["Cargo.toml".to_string(), "src/main.rs".to_string()];
     assert_eq!(detect_tech_stack(&files), vec!["rust".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn detect_tech_stack_recognizes_node_by_lockfile_and_extension() {
     let files = vec!["package.json".to_string(), "src/index.ts".to_string()];
     assert_eq!(detect_tech_stack(&files), vec!["node".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn detect_tech_stack_is_case_insensitive_on_manifest_names() {
     let files = vec!["CARGO.TOML".to_string()];
     assert_eq!(detect_tech_stack(&files), vec!["rust".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn detect_tech_stack_returns_sorted_unique_matches_for_a_mixed_repo() {
     let files = vec![
         "Cargo.toml".to_string(),
@@ -112,34 +112,34 @@ fn detect_tech_stack_returns_sorted_unique_matches_for_a_mixed_repo() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn detect_tech_stack_is_empty_for_an_unrecognized_repo() {
     let files = vec!["README.md".to_string(), "LICENSE".to_string()];
     assert!(detect_tech_stack(&files).is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn default_allowlist_for_stack_always_includes_the_common_commands() {
     let allowlist = default_allowlist_for_stack(&["rust".to_string()]);
     assert!(allowlist.contains(&"git status".to_string()));
     assert!(allowlist.contains(&"ls".to_string()));
 }
 
-#[test]
+#[quench_test::test]
 fn default_allowlist_for_stack_adds_tech_specific_commands() {
     let allowlist = default_allowlist_for_stack(&["rust".to_string()]);
     assert!(allowlist.contains(&"cargo test".to_string()));
     assert!(!allowlist.contains(&"npm run".to_string()));
 }
 
-#[test]
+#[quench_test::test]
 fn default_allowlist_for_stack_combines_multiple_detected_techs() {
     let allowlist = default_allowlist_for_stack(&["rust".to_string(), "node".to_string()]);
     assert!(allowlist.contains(&"cargo test".to_string()));
     assert!(allowlist.contains(&"npm run".to_string()));
 }
 
-#[test]
+#[quench_test::test]
 fn default_allowlist_for_stack_allows_every_known_tech_when_nothing_was_detected() {
     // Unknown tech: better to over-allow than to block a legitimate command
     // just because preindexing couldn't identify the stack.
@@ -179,14 +179,14 @@ impl Llm for NoopLlm {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_run_cmd_allowlist_prefers_an_explicit_configured_allowlist() {
     let node = agent_node(vec!["make deploy".to_string()]);
     let resolved = resolve_run_cmd_allowlist(&node, Some(&["Cargo.toml".to_string()]));
     assert_eq!(resolved, vec!["make deploy".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_run_cmd_allowlist_falls_back_to_detected_stack_when_unconfigured() {
     let node = agent_node(Vec::new());
     let resolved = resolve_run_cmd_allowlist(&node, Some(&["Cargo.toml".to_string()]));
@@ -194,7 +194,7 @@ fn resolve_run_cmd_allowlist_falls_back_to_detected_stack_when_unconfigured() {
     assert!(!resolved.contains(&"npm run".to_string()));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_run_cmd_allowlist_with_no_index_falls_back_to_every_known_tech() {
     let node = agent_node(Vec::new());
     let resolved = resolve_run_cmd_allowlist(&node, None);
@@ -253,7 +253,7 @@ fn leaf_node(model: Arc<dyn Llm>, tools: Vec<String>) -> AgentNode {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_with_no_children_or_tools_returns_the_model_s_reply_directly() {
     let mut agents = HashMap::new();
     agents.insert(
@@ -267,7 +267,7 @@ async fn execute_with_no_children_or_tools_returns_the_model_s_reply_directly() 
     assert_eq!(result, "the final answer");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_errors_when_the_named_agent_is_missing() {
     let agents: HashMap<String, AgentNode> = HashMap::new();
     let err = execute("does-not-exist", "hi".to_string(), &agents, 0)
@@ -276,7 +276,7 @@ async fn execute_errors_when_the_named_agent_is_missing() {
     assert!(err.to_string().contains("Agent not found"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_routes_to_the_delegate_the_model_names() {
     let mut agents = HashMap::new();
     let mut root = leaf_node(ScriptedLlm::new(["I'll delegate to child"]), Vec::new());
@@ -293,7 +293,7 @@ async fn execute_routes_to_the_delegate_the_model_names() {
     assert_eq!(result, "child's answer");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_falls_back_to_self_when_no_delegate_name_matches() {
     let mut agents = HashMap::new();
     let mut root = leaf_node(
@@ -325,7 +325,7 @@ fn with_temp_cwd() -> (
     (guard, original, dir)
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[allow(clippy::await_holding_lock)] // single test process; the guard also restores cwd on drop
 async fn execute_with_tools_runs_a_tool_then_returns_the_final_answer() {
     let (_guard, original, dir) = with_temp_cwd();
@@ -348,7 +348,7 @@ async fn execute_with_tools_runs_a_tool_then_returns_the_final_answer() {
     assert_eq!(result.unwrap(), "listed it");
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[allow(clippy::await_holding_lock)] // single test process; the guard also restores cwd on drop
 async fn execute_with_tools_passes_through_unparseable_model_output() {
     let (_guard, original, dir) = with_temp_cwd();
@@ -368,7 +368,7 @@ async fn execute_with_tools_passes_through_unparseable_model_output() {
     assert_eq!(result.unwrap(), "not json at all");
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[allow(clippy::await_holding_lock)] // single test process; the guard also restores cwd on drop
 async fn execute_with_tools_rejects_a_tool_not_in_the_allowed_list_then_gives_up() {
     let (_guard, original, dir) = with_temp_cwd();
@@ -393,7 +393,7 @@ async fn execute_with_tools_rejects_a_tool_not_in_the_allowed_list_then_gives_up
     assert!(output.contains("not in allowed tools"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[allow(clippy::await_holding_lock)] // single test process; the guard also restores cwd on drop
 async fn execute_with_tools_treats_an_unrecognized_action_as_a_history_entry_and_continues() {
     let (_guard, original, dir) = with_temp_cwd();
@@ -419,7 +419,7 @@ async fn execute_with_tools_treats_an_unrecognized_action_as_a_history_entry_and
     assert_eq!(result.unwrap(), "ok now");
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[allow(clippy::await_holding_lock)] // single test process; the guard also restores cwd on drop
 async fn execute_with_tools_preindexes_the_project_when_index_project_is_an_allowed_tool() {
     let (_guard, original, dir) = with_temp_cwd();

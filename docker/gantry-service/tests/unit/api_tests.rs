@@ -18,7 +18,7 @@ async fn app(
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn info_names_the_service_and_reports_everything_allowed_when_auth_is_off() {
     let (app, container) = app(false).await;
     let resp = app
@@ -36,7 +36,7 @@ async fn info_names_the_service_and_reports_everything_allowed_when_auth_is_off(
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn info_reports_only_what_the_token_grants() {
     let (app, container) = app(true).await;
     let claims = Claims::for_audiences(

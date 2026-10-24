@@ -5,7 +5,7 @@ fn globals() -> BTreeMap<String, String> {
     BTreeMap::from([("host".to_string(), "localhost".to_string())])
 }
 
-#[test]
+#[quench_test::test]
 fn expands_globals_and_locals() {
     let globals = globals();
     let scope = Scope::new(&globals).with("port", "8443");
@@ -15,14 +15,14 @@ fn expands_globals_and_locals() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn locals_win_over_globals() {
     let globals = globals();
     let scope = Scope::new(&globals).with("host", "127.0.0.1");
     assert_eq!(scope.expand("${host}").unwrap(), "127.0.0.1");
 }
 
-#[test]
+#[quench_test::test]
 fn a_lone_dollar_is_literal() {
     let globals = globals();
     let scope = Scope::new(&globals);
@@ -32,7 +32,7 @@ fn a_lone_dollar_is_literal() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn unknown_names_are_an_error() {
     let globals = globals();
     let scope = Scope::new(&globals);
@@ -45,13 +45,13 @@ fn unknown_names_are_an_error() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn unterminated_braces_are_an_error() {
     let globals = globals();
     assert!(Scope::new(&globals).expand("${host").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn reads_a_quoted_dotenv_value() {
     let dir = std::env::temp_dir().join("foreman-vars-test");
     std::fs::create_dir_all(&dir).unwrap();

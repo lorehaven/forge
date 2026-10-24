@@ -3,6 +3,11 @@
 
 use crate::domain::settings::{ClusterMode, Settings};
 use quench_core::async_trait;
+use quench_k8s::{
+    Api, ApiGroup, ApiResource, Client, Config, DeleteParams, Discovery, ListParams, LogParams,
+    Object, PostParams, Scope,
+};
+use quench_serde::Value;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -198,7 +203,7 @@ pub struct Connected {
     pub fake: Option<std::sync::Arc<FakeCluster>>,
 }
 
-pub async fn connect(settings: &Settings) -> Result<Connected, ClusterError> {
+pub fn connect(settings: &Settings) -> Result<Connected, ClusterError> {
     Ok(match settings.cluster {
         ClusterMode::None => {
             let fake = std::sync::Arc::new(FakeCluster::new());
@@ -211,7 +216,7 @@ pub async fn connect(settings: &Settings) -> Result<Connected, ClusterError> {
             }
         }
         ClusterMode::InCluster | ClusterMode::Kubeconfig => Connected {
-            cluster: std::sync::Arc::new(KubeCluster::connect(settings).await?),
+            cluster: std::sync::Arc::new(KubeCluster::connect(settings)?),
             fake: None,
         },
     })
@@ -220,55 +225,49 @@ pub async fn connect(settings: &Settings) -> Result<Connected, ClusterError> {
 // ---------------------------------------------------------------- kube
 
 pub struct KubeCluster {
-    client: kube::Client,
-    discovery: tokio::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<kube::Discovery>)>>,
+    client: Client,
+    discovery: tokio::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<Discovery>)>>,
+}
+
+fn kube_error(error: &quench_k8s::Error) -> ClusterError {
+    ClusterError::Kube(error.to_string())
+}
+
+/// A count in the object, or `default` when the field is missing.
+fn count(object: &Value, pointer: &str, default: i64) -> i64 {
+    object
+        .pointer(pointer)
+        .and_then(Value::as_i64)
+        .unwrap_or(default)
 }
 
 impl KubeCluster {
-    pub async fn connect(settings: &Settings) -> Result<Self, ClusterError> {
-        // kube builds its TLS stack on rustls, which wants a crypto provider chosen once per process.
-        // The database layer happens to install one first in the service; this must not depend on that.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-
-        let config = match (settings.cluster, &settings.kube_context) {
-            (ClusterMode::Kubeconfig, Some(context)) => {
-                kube::Config::from_kubeconfig(&kube::config::KubeConfigOptions {
-                    context: Some(context.clone()),
-                    ..Default::default()
-                })
-                .await
-                .map_err(|e| ClusterError::Kube(e.to_string()))?
-            }
-            _ => kube::Config::infer()
-                .await
-                .map_err(|e| ClusterError::Kube(e.to_string()))?,
+    pub fn connect(settings: &Settings) -> Result<Self, ClusterError> {
+        let context = match (settings.cluster, &settings.kube_context) {
+            (ClusterMode::Kubeconfig, Some(context)) => Some(context.as_str()),
+            _ => None,
         };
-        let client =
-            kube::Client::try_from(config).map_err(|e| ClusterError::Kube(e.to_string()))?;
+        let config = Config::infer_with_context(context).map_err(|e| kube_error(&e))?;
+        let client = Client::new(config).map_err(|e| kube_error(&e))?;
         Ok(Self {
             client,
             discovery: tokio::sync::Mutex::new(None),
         })
     }
 
-    fn jobs(&self, namespace: &str) -> kube::Api<k8s_openapi::api::batch::v1::Job> {
-        kube::Api::namespaced(self.client.clone(), namespace)
+    fn jobs(&self, namespace: &str) -> Api {
+        self.client.namespaced(&ApiResource::job(), namespace)
     }
 
     /// What kinds the cluster has. Asking costs a round of requests, so it is kept for a minute.
-    async fn discovery(&self) -> Result<std::sync::Arc<kube::Discovery>, ClusterError> {
+    async fn discovery(&self) -> Result<std::sync::Arc<Discovery>, ClusterError> {
         let mut cached = self.discovery.lock().await;
         if let Some((at, found)) = cached.as_ref()
             && at.elapsed() < Duration::from_secs(60)
         {
             return Ok(found.clone());
         }
-        let found = std::sync::Arc::new(
-            kube::Discovery::new(self.client.clone())
-                .run()
-                .await
-                .map_err(|e| ClusterError::Kube(e.to_string()))?,
-        );
+        let found = std::sync::Arc::new(self.client.discover().await.map_err(|e| kube_error(&e))?);
         *cached = Some((std::time::Instant::now(), found.clone()));
         drop(cached);
         Ok(found)
@@ -278,135 +277,111 @@ impl KubeCluster {
 #[async_trait]
 impl Cluster for KubeCluster {
     async fn create_job(&self, spec: &JobSpec) -> Result<(), ClusterError> {
-        let job: k8s_openapi::api::batch::v1::Job =
-            serde_json::from_str(&quench_serde::json::to_string(&spec.manifest()))
-                .map_err(|e| ClusterError::Kube(format!("the Job manifest is invalid: {e}")))?;
         match self
             .jobs(&spec.namespace)
-            .create(&kube::api::PostParams::default(), &job)
+            .create(&spec.manifest(), &PostParams::default())
             .await
         {
             Ok(_) => Ok(()),
-            Err(kube::Error::Api(status)) if status.code == 409 => Ok(()),
-            Err(error) => Err(ClusterError::Kube(error.to_string())),
+            Err(error) if error.is_conflict() => Ok(()),
+            Err(error) => Err(kube_error(&error)),
         }
     }
 
     async fn job_status(&self, namespace: &str, name: &str) -> Result<JobStatus, ClusterError> {
         let job = match self.jobs(namespace).get(name).await {
             Ok(job) => job,
-            Err(kube::Error::Api(status)) if status.code == 404 => return Ok(JobStatus::Absent),
-            Err(error) => return Err(ClusterError::Kube(error.to_string())),
+            Err(error) if error.is_not_found() => return Ok(JobStatus::Absent),
+            Err(error) => return Err(kube_error(&error)),
         };
-        let Some(status) = job.status else {
+        if job.get("status").is_none() {
             return Ok(JobStatus::Active);
-        };
-        if status.succeeded.unwrap_or(0) > 0 {
+        }
+        if count(&job, "/status/succeeded", 0) > 0 {
             return Ok(JobStatus::Succeeded);
         }
-        let failed = status
-            .conditions
-            .unwrap_or_default()
+        let failed = job
+            .pointer("/status/conditions")
+            .and_then(Value::as_array)
             .into_iter()
-            .find(|condition| condition.type_ == "Failed" && condition.status == "True");
-        Ok(match failed {
-            Some(condition) => JobStatus::Failed(
-                condition
-                    .message
-                    .or(condition.reason)
-                    .unwrap_or_else(|| "the Job failed".to_string()),
-            ),
-            None => JobStatus::Active,
-        })
+            .flatten()
+            .find(|condition| {
+                let field = |name: &str| condition.get(name).and_then(Value::as_str);
+                field("type") == Some("Failed") && field("status") == Some("True")
+            });
+        Ok(failed.map_or(JobStatus::Active, |condition| {
+            JobStatus::Failed(
+                ["message", "reason"]
+                    .iter()
+                    .find_map(|field| condition.get(*field)?.as_str())
+                    .unwrap_or("the Job failed")
+                    .to_string(),
+            )
+        }))
     }
 
     async fn job_log(&self, namespace: &str, name: &str) -> Result<String, ClusterError> {
-        let pods: kube::Api<k8s_openapi::api::core::v1::Pod> =
-            kube::Api::namespaced(self.client.clone(), namespace);
+        let pods = self.client.namespaced(&ApiResource::pod(), namespace);
         let list = pods
-            .list(&kube::api::ListParams::default().labels(&format!("job-name={name}")))
+            .list(&ListParams::default().labels(&format!("job-name={name}")))
             .await
-            .map_err(|e| ClusterError::Kube(e.to_string()))?;
+            .map_err(|e| kube_error(&e))?;
         let Some(pod) = list
             .items
-            .into_iter()
-            .max_by_key(|pod| pod.metadata.creation_timestamp.clone())
+            .iter()
+            .max_by_key(|pod| Object(pod).creation_timestamp())
         else {
             return Ok(String::new());
         };
-        let pod_name = pod.metadata.name.unwrap_or_default();
-        pods.logs(&pod_name, &kube::api::LogParams::default())
+        let pod_name = Object(pod).name().unwrap_or_default();
+        pods.logs(pod_name, &LogParams::default())
             .await
-            .map_err(|e| ClusterError::Kube(e.to_string()))
+            .map_err(|e| kube_error(&e))
     }
 
     async fn delete_job(&self, namespace: &str, name: &str) -> Result<(), ClusterError> {
-        let params = kube::api::DeleteParams::background();
+        let params = DeleteParams::background();
         match self.jobs(namespace).delete(name, &params).await {
             Ok(_) => Ok(()),
-            Err(kube::Error::Api(status)) if status.code == 404 => Ok(()),
-            Err(error) => Err(ClusterError::Kube(error.to_string())),
+            Err(error) if error.is_not_found() => Ok(()),
+            Err(error) => Err(kube_error(&error)),
         }
     }
 
     async fn list_workloads(&self, namespaces: &[String]) -> Result<Vec<Workload>, ClusterError> {
-        use k8s_openapi::api::apps::v1::{DaemonSet, Deployment, StatefulSet};
-
-        let params = kube::api::ListParams::default().labels(PACKAGE_LABEL);
+        let params = ListParams::default().labels(PACKAGE_LABEL);
         let scopes: Vec<Option<&str>> = if namespaces.is_empty() {
             vec![None]
         } else {
             namespaces.iter().map(|n| Some(n.as_str())).collect()
         };
-        let kube_error = |e: kube::Error| ClusterError::Kube(e.to_string());
+        let kinds = [
+            ("deployment", ApiResource::deployment()),
+            ("statefulset", ApiResource::stateful_set()),
+            ("daemonset", ApiResource::daemon_set()),
+        ];
 
         let mut found = Vec::new();
         for scope in scopes {
-            let api = |client: kube::Client| -> (
-                kube::Api<Deployment>,
-                kube::Api<StatefulSet>,
-                kube::Api<DaemonSet>,
-            ) {
-                match scope {
-                    Some(ns) => (
-                        kube::Api::namespaced(client.clone(), ns),
-                        kube::Api::namespaced(client.clone(), ns),
-                        kube::Api::namespaced(client, ns),
-                    ),
-                    None => (
-                        kube::Api::all(client.clone()),
-                        kube::Api::all(client.clone()),
-                        kube::Api::all(client),
-                    ),
+            for (kind, resource) in &kinds {
+                let api = scope.map_or_else(
+                    || self.client.api(resource),
+                    |ns| self.client.namespaced(resource, ns),
+                );
+                for item in api.list(&params).await.map_err(|e| kube_error(&e))?.items {
+                    let (desired, ready) = if *kind == "daemonset" {
+                        (
+                            count(&item, "/status/desiredNumberScheduled", 0),
+                            count(&item, "/status/numberReady", 0),
+                        )
+                    } else {
+                        (
+                            count(&item, "/spec/replicas", 1),
+                            count(&item, "/status/readyReplicas", 0),
+                        )
+                    };
+                    found.extend(workload(kind, &item, desired, ready));
                 }
-            };
-            let (deployments, statefulsets, daemonsets) = api(self.client.clone());
-
-            for item in deployments.list(&params).await.map_err(kube_error)? {
-                let ready = item
-                    .status
-                    .as_ref()
-                    .and_then(|s| s.ready_replicas)
-                    .unwrap_or(0);
-                let desired = item.spec.as_ref().and_then(|s| s.replicas).unwrap_or(1);
-                found.extend(workload("deployment", &item.metadata, desired, ready));
-            }
-            for item in statefulsets.list(&params).await.map_err(kube_error)? {
-                let ready = item
-                    .status
-                    .as_ref()
-                    .and_then(|s| s.ready_replicas)
-                    .unwrap_or(0);
-                let desired = item.spec.as_ref().and_then(|s| s.replicas).unwrap_or(1);
-                found.extend(workload("statefulset", &item.metadata, desired, ready));
-            }
-            for item in daemonsets.list(&params).await.map_err(kube_error)? {
-                let ready = item.status.as_ref().map_or(0, |s| s.number_ready);
-                let desired = item
-                    .status
-                    .as_ref()
-                    .map_or(0, |s| s.desired_number_scheduled);
-                found.extend(workload("daemonset", &item.metadata, desired, ready));
             }
         }
         found.sort_by(|a, b| {
@@ -414,52 +389,51 @@ impl Cluster for KubeCluster {
         });
         Ok(found)
     }
+
     async fn list_resources(
         &self,
         namespaces: &[String],
     ) -> Result<Vec<LiveResource>, ClusterError> {
-        use futures_util::StreamExt;
+        use quench_core::stream::StreamExt;
 
         let discovery = self.discovery().await?;
-        let params = kube::api::ListParams::default().labels(PACKAGE_LABEL);
+        let params = ListParams::default().labels(PACKAGE_LABEL);
 
         let mut kinds = Vec::new();
         for group in discovery.groups() {
             for (resource, capabilities) in group.recommended_resources() {
-                if !capabilities.supports_operation(kube::discovery::verbs::LIST)
+                if !capabilities.supports_operation("list")
                     || SKIPPED_KINDS.contains(&resource.kind.as_str())
                     || resource.kind == "Secret"
                 {
                     continue;
                 }
-                kinds.push((resource, capabilities));
+                kinds.push(resource.clone());
             }
         }
 
         // One list per kind, a few at a time. A kind this account may not list answers 403 and is simply
         // not shown: what the service is allowed to see is a decision made by its Role, not here.
         let client = self.client.clone();
-        let results: Vec<Vec<LiveResource>> = futures_util::stream::iter(kinds)
-            .map(|(resource, capabilities)| {
+        let results: Vec<Vec<LiveResource>> = quench_core::stream::iter(kinds)
+            .map(|resource| {
                 let client = client.clone();
                 let params = params.clone();
                 async move {
-                    // `all` covers a cluster-scoped kind and every namespace of a namespaced one.
-                    let _ = capabilities;
-                    let api: kube::Api<kube::api::DynamicObject> =
-                        kube::Api::all_with(client, &resource);
-                    match api.list(&params).await {
+                    // Without a namespace this covers a cluster-scoped kind and every namespace of a
+                    // namespaced one.
+                    match client.api(&resource).list(&params).await {
                         Ok(list) => list
                             .items
-                            .into_iter()
-                            .filter_map(|object| live_resource(&resource, &object))
+                            .iter()
+                            .filter_map(|object| live_resource(&resource, object))
                             .collect(),
                         Err(_) => Vec::new(),
                     }
                 }
             })
             .buffer_unordered(8)
-            .collect()
+            .collect_vec()
             .await;
 
         let mut found: Vec<LiveResource> = results
@@ -495,27 +469,19 @@ impl Cluster for KubeCluster {
         let discovery = self.discovery().await?;
         let (resource, capabilities) = discovery
             .groups()
-            .flat_map(kube::discovery::ApiGroup::recommended_resources)
+            .iter()
+            .flat_map(ApiGroup::recommended_resources)
             .find(|(resource, _)| {
                 resource.kind.eq_ignore_ascii_case(kind)
-                    && api_version.is_none_or(|v| v == resource.api_version)
+                    && api_version.is_none_or(|v| v == resource.api_version())
             })
             .ok_or_else(|| ClusterError::Kube(format!("the cluster has no kind {kind}")))?;
 
-        let api: kube::Api<kube::api::DynamicObject> = match (capabilities.scope, namespace) {
-            (kube::discovery::Scope::Namespaced, Some(ns)) => {
-                kube::Api::namespaced_with(self.client.clone(), ns, &resource)
-            }
-            _ => kube::Api::all_with(self.client.clone(), &resource),
+        let api = match (&capabilities.scope, namespace) {
+            (Scope::Namespaced, Some(ns)) => self.client.namespaced(resource, ns),
+            _ => self.client.api(resource),
         };
-        let object = api
-            .get(name)
-            .await
-            .map_err(|e| ClusterError::Kube(e.to_string()))?;
-        // kube's typed objects are serde types, quench's `Value` is not: the JSON text is the bridge.
-        let text = serde_json::to_string(&object).map_err(|e| ClusterError::Kube(e.to_string()))?;
-        let mut value: quench_serde::Value =
-            quench_serde::json::from_str(&text).map_err(|e| ClusterError::Kube(e.to_string()))?;
+        let mut value = api.get(name).await.map_err(|e| kube_error(&e))?;
         clean_for_editing(&mut value);
         quench_serde::yaml::to_string(&value).map_err(|e| ClusterError::Kube(e.to_string()))
     }
@@ -534,75 +500,44 @@ const SKIPPED_KINDS: [&str; 9] = [
     "ComponentStatus",
 ];
 
-fn live_resource(
-    resource: &kube::api::ApiResource,
-    object: &kube::api::DynamicObject,
-) -> Option<LiveResource> {
-    let meta = &object.metadata;
-    let package = meta.labels.as_ref()?.get(PACKAGE_LABEL)?.clone();
-    let annotations = meta.annotations.as_ref();
-    let spec_replicas = object
-        .data
-        .pointer("/spec/replicas")
-        .and_then(serde_json::Value::as_i64);
-    let ready_replicas = object
-        .data
-        .pointer("/status/readyReplicas")
-        .and_then(serde_json::Value::as_i64);
+fn live_resource(resource: &ApiResource, object: &Value) -> Option<LiveResource> {
+    let meta = Object(object);
+    let package = meta.label(PACKAGE_LABEL)?.to_string();
     let ready = match resource.kind.as_str() {
         "Deployment" | "StatefulSet" => Some(format!(
             "{}/{}",
-            ready_replicas.unwrap_or(0),
-            spec_replicas.unwrap_or(1)
+            count(object, "/status/readyReplicas", 0),
+            count(object, "/spec/replicas", 1)
         )),
         "DaemonSet" => Some(format!(
             "{}/{}",
-            object
-                .data
-                .pointer("/status/numberReady")
-                .and_then(serde_json::Value::as_i64)
-                .unwrap_or(0),
-            object
-                .data
-                .pointer("/status/desiredNumberScheduled")
-                .and_then(serde_json::Value::as_i64)
-                .unwrap_or(0)
+            count(object, "/status/numberReady", 0),
+            count(object, "/status/desiredNumberScheduled", 0)
         )),
         "Job" => Some(
-            if object
-                .data
-                .pointer("/status/succeeded")
-                .and_then(serde_json::Value::as_i64)
-                .unwrap_or(0)
-                > 0
-            {
-                "done".to_string()
-            } else if object
-                .data
-                .pointer("/status/failed")
-                .and_then(serde_json::Value::as_i64)
-                .unwrap_or(0)
-                > 0
-            {
-                "failed".to_string()
+            if count(object, "/status/succeeded", 0) > 0 {
+                "done"
+            } else if count(object, "/status/failed", 0) > 0 {
+                "failed"
             } else {
-                "running".to_string()
-            },
+                "running"
+            }
+            .to_string(),
         ),
         _ => None,
     };
     Some(LiveResource {
-        api_version: Some(resource.api_version.clone()),
+        api_version: Some(resource.api_version()),
         kind: resource.kind.clone(),
-        name: meta.name.clone()?,
-        namespace: meta.namespace.clone(),
+        name: meta.name()?.to_string(),
+        namespace: meta.namespace().map(str::to_string),
         package,
-        version: annotations.and_then(|a| a.get(VERSION_ANNOTATION)).cloned(),
+        version: meta.annotation(VERSION_ANNOTATION).map(str::to_string),
         ready,
-        edited: annotations.is_some_and(|a| a.contains_key(EDITED_ANNOTATION)),
-        owned: meta
-            .owner_references
-            .as_ref()
+        edited: meta.annotation(EDITED_ANNOTATION).is_some(),
+        owned: object
+            .pointer("/metadata/ownerReferences")
+            .and_then(Value::as_array)
             .is_some_and(|owners| !owners.is_empty()),
     })
 }
@@ -631,24 +566,16 @@ fn clean_for_editing(value: &mut quench_serde::Value) {
     }
 }
 
-fn workload(
-    kind: &str,
-    meta: &k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta,
-    desired: i32,
-    ready: i32,
-) -> Option<Workload> {
+fn workload(kind: &str, object: &Value, desired: i64, ready: i64) -> Option<Workload> {
+    let meta = Object(object);
     Some(Workload {
         kind: kind.to_string(),
-        name: meta.name.clone()?,
-        namespace: meta.namespace.clone()?,
-        package: meta.labels.as_ref()?.get(PACKAGE_LABEL)?.clone(),
-        version: meta
-            .annotations
-            .as_ref()
-            .and_then(|a| a.get(VERSION_ANNOTATION))
-            .cloned(),
-        desired,
-        ready,
+        name: meta.name()?.to_string(),
+        namespace: meta.namespace()?.to_string(),
+        package: meta.label(PACKAGE_LABEL)?.to_string(),
+        version: meta.annotation(VERSION_ANNOTATION).map(str::to_string),
+        desired: i32::try_from(desired).unwrap_or(i32::MAX),
+        ready: i32::try_from(ready).unwrap_or(i32::MAX),
     })
 }
 

@@ -17,7 +17,7 @@ fn live_sender() -> SmtpSender {
     SmtpSender::new(config).expect("sender")
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[ignore = "needs a real SMTP server (LIVE_* variables)"]
 async fn live_login_is_accepted() {
     // Connects, verifies the certificate, logs in, hangs up - sends nothing.
@@ -26,7 +26,7 @@ async fn live_login_is_accepted() {
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[ignore = "sends a real email (LIVE_* variables)"]
 async fn live_verification_email_is_accepted() {
     let to = std::env::var("LIVE_SMTP_TO").expect("LIVE_SMTP_TO must be set");

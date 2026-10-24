@@ -17,7 +17,7 @@ fn row(client_id: &str, secret: &str, redirect_uris: Vec<String>) -> ClientRow {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn hash_secret_is_deterministic_and_not_the_plaintext() {
     let a = hash_secret("s3cret");
     let b = hash_secret("s3cret");
@@ -25,19 +25,19 @@ fn hash_secret_is_deterministic_and_not_the_plaintext() {
     assert_ne!(a, "s3cret");
 }
 
-#[test]
+#[quench_test::test]
 fn hash_secret_differs_for_different_input() {
     assert_ne!(hash_secret("one"), hash_secret("two"));
 }
 
-#[test]
+#[quench_test::test]
 fn secret_matches_only_the_original_plaintext() {
     let row = row("client-a", "correct-secret", vec![]);
     assert!(row.secret_matches("correct-secret"));
     assert!(!row.secret_matches("wrong-secret"));
 }
 
-#[test]
+#[quench_test::test]
 fn redirect_uri_matches_only_a_registered_uri() {
     let row = row(
         "client-a",
@@ -48,7 +48,7 @@ fn redirect_uri_matches_only_a_registered_uri() {
     assert!(!row.redirect_uri_matches("https://evil.test/callback"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn redirect_base_url_reads_ui_url_and_trims_the_home_suffix() {
     let _guard = env_lock().lock().await;
     quench_core::env::set("CONVEYOR_UI_URL", "https://conveyor.example.test/ui/home");
@@ -59,7 +59,7 @@ async fn redirect_base_url_reads_ui_url_and_trims_the_home_suffix() {
     quench_core::env::remove("CONVEYOR_UI_URL");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn redirect_base_url_falls_back_to_the_plain_url_var() {
     let _guard = env_lock().lock().await;
     quench_core::env::remove("WORKBENCH_UI_URL");
@@ -71,7 +71,7 @@ async fn redirect_base_url_falls_back_to_the_plain_url_var() {
     quench_core::env::remove("WORKBENCH_URL");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn redirect_base_url_is_none_when_neither_var_is_set() {
     let _guard = env_lock().lock().await;
     quench_core::env::remove("NOTHING_HERE_UI_URL");
@@ -79,7 +79,7 @@ async fn redirect_base_url_is_none_when_neither_var_is_set() {
     assert_eq!(redirect_base_url("nothing-here"), None);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn redirect_base_url_uppercases_and_converts_dashes_to_underscores() {
     let _guard = env_lock().lock().await;
     quench_core::env::set("MY_SERVICE_NAME_UI_URL", "https://my-service.example.test");
@@ -90,7 +90,7 @@ async fn redirect_base_url_uppercases_and_converts_dashes_to_underscores() {
     quench_core::env::remove("MY_SERVICE_NAME_UI_URL");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn upsert_creates_then_updates_the_same_client() {
     let db = Db::connect("").await.expect("in-memory db");
     let repo = db.repository::<ClientRow>();
@@ -108,7 +108,7 @@ async fn upsert_creates_then_updates_the_same_client() {
     assert_eq!(updated.secret_hash, hash_secret("second-secret"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn seed_clients_skips_entries_whose_secret_env_is_unset() {
     let _guard = env_lock().lock().await;
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
@@ -135,7 +135,7 @@ async fn seed_clients_skips_entries_whose_secret_env_is_unset() {
     quench_core::env::remove("CLIENTS_CONFIG");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn seed_clients_seeds_an_entry_with_a_configured_secret() {
     let _guard = env_lock().lock().await;
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");

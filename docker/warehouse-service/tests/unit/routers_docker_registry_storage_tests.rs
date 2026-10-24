@@ -31,7 +31,7 @@ fn write_tag(
 
 const DIGEST: &str = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-#[test]
+#[quench_test::test]
 fn list_repositories_is_empty_on_a_fresh_storage_root() {
     let storage = WithStorageRoot::new();
     std::fs::create_dir_all(storage.dir.path()).unwrap();
@@ -39,7 +39,7 @@ fn list_repositories_is_empty_on_a_fresh_storage_root() {
     drop(storage);
 }
 
-#[test]
+#[quench_test::test]
 fn list_repositories_finds_every_repo_with_a_tags_directory_and_skips_reserved_names() {
     let storage = WithStorageRoot::new();
     write_tag(&storage, "my/repo", "latest", DIGEST, None);
@@ -57,7 +57,7 @@ fn list_repositories_finds_every_repo_with_a_tags_directory_and_skips_reserved_n
     drop(storage);
 }
 
-#[test]
+#[quench_test::test]
 fn list_tags_for_repository_rejects_an_invalid_name() {
     let _storage = WithStorageRoot::new();
     assert_eq!(
@@ -66,7 +66,7 @@ fn list_tags_for_repository_rejects_an_invalid_name() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn list_tags_for_repository_reports_not_found_without_a_tags_directory() {
     let _storage = WithStorageRoot::new();
     assert_eq!(
@@ -75,7 +75,7 @@ fn list_tags_for_repository_reports_not_found_without_a_tags_directory() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn list_tags_for_repository_lists_every_tag_newest_semver_first() {
     let storage = WithStorageRoot::new();
     write_tag(&storage, "my/repo", "1.0.0", DIGEST, None);
@@ -86,7 +86,7 @@ fn list_tags_for_repository_lists_every_tag_newest_semver_first() {
     assert_eq!(tags, vec!["2.0.0", "1.5.0", "1.0.0"]);
 }
 
-#[test]
+#[quench_test::test]
 fn list_tag_metadata_reads_size_and_media_type_from_the_manifest() {
     let storage = WithStorageRoot::new();
     let manifest = r#"{"mediaType": "application/vnd.oci.image.manifest.v1+json"}"#;
@@ -103,7 +103,7 @@ fn list_tag_metadata_reads_size_and_media_type_from_the_manifest() {
     assert_eq!(items[0].size_bytes, Some(manifest.len() as u64));
 }
 
-#[test]
+#[quench_test::test]
 fn list_tag_metadata_tolerates_a_tag_with_no_manifest_on_disk() {
     let storage = WithStorageRoot::new();
     write_tag(&storage, "my/repo", "dangling", DIGEST, None);
@@ -114,7 +114,7 @@ fn list_tag_metadata_tolerates_a_tag_with_no_manifest_on_disk() {
     assert_eq!(items[0].size_bytes, None);
 }
 
-#[test]
+#[quench_test::test]
 fn compare_tags_desc_orders_semver_tags_above_non_semver_ones_by_string() {
     let mut tags = [
         "latest".to_string(),
@@ -131,7 +131,7 @@ fn compare_tags_desc_orders_semver_tags_above_non_semver_ones_by_string() {
     assert!(v1_10 < v1_2);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_version_tag_accepts_major_minor_patch_with_optional_suffix() {
     assert_eq!(
         parse_version_tag("1.2.3"),
@@ -153,7 +153,7 @@ fn parse_version_tag_accepts_major_minor_patch_with_optional_suffix() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn parse_version_tag_rejects_malformed_versions() {
     assert_eq!(parse_version_tag("latest"), None);
     assert_eq!(parse_version_tag("1.2"), None);
@@ -161,7 +161,7 @@ fn parse_version_tag_rejects_malformed_versions() {
     assert_eq!(parse_version_tag("a.b.c"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn compare_version_tags_desc_orders_newest_first_and_unsuffixed_above_suffixed() {
     let v1 = VersionTag {
         major: 1,
@@ -198,7 +198,7 @@ fn compare_version_tags_desc_orders_newest_first_and_unsuffixed_above_suffixed()
     );
 }
 
-#[test]
+#[quench_test::test]
 fn detect_media_type_reads_the_field_or_returns_none() {
     assert_eq!(
         detect_media_type(br#"{"mediaType": "application/json"}"#),

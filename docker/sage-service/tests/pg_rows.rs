@@ -1,6 +1,9 @@
 //! The raw-SQL row helpers against a real database (any Postgres works; the test makes its own temp table).
 //! Skipped unless `SAGE_TEST_DATABASE_URL` is set.
 
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
 use quench_pg::{PgArray, Pool, ToSql};
 use quench_serde::Deserialize;
 use sage_service::domain::rows;
@@ -12,7 +15,7 @@ struct Item {
     note: Option<String>,
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn rows_read_into_structs_and_tuples() {
     let Ok(url) = std::env::var("SAGE_TEST_DATABASE_URL") else {
         return;
@@ -117,3 +120,5 @@ async fn rows_read_into_structs_and_tuples() {
         .await
         .unwrap();
 }
+
+quench_test::main!();

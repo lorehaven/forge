@@ -31,7 +31,7 @@ fn patch(
     support::raw_req(Method::PATCH, path, &[], body, container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_an_invalid_repository_name() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -45,7 +45,7 @@ async fn handle_rejects_an_invalid_repository_name() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_for_an_unknown_upload() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -59,7 +59,7 @@ async fn handle_reports_not_found_for_an_unknown_upload() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_an_empty_chunk() {
     let storage = support::WithDockerStorageRoot::new();
     start_upload(&storage, "upload-1", b"");
@@ -71,7 +71,7 @@ async fn handle_rejects_an_empty_chunk() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_appends_a_chunk_and_reports_the_new_range() {
     let storage = support::WithDockerStorageRoot::new();
     let path = start_upload(&storage, "upload-1", b"hello");
@@ -93,7 +93,7 @@ async fn handle_appends_a_chunk_and_reports_the_new_range() {
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_streams_a_large_chunk_onto_the_upload_file() {
     let storage = support::WithDockerStorageRoot::new();
     let path = start_upload(&storage, "upload-1", b"head:");

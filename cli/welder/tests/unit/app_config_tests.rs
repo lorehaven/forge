@@ -23,7 +23,7 @@ fn in_dir<T>(dir: &std::path::Path, body: impl FnOnce() -> T) -> T {
     result
 }
 
-#[test]
+#[quench_test::test]
 fn backend_config_default_is_ollama_on_the_standard_port() {
     let config = BackendConfig::default();
     assert_eq!(config.kind, "ollama");
@@ -33,13 +33,13 @@ fn backend_config_default_is_ollama_on_the_standard_port() {
     assert!(config.switchboard_tls_verify);
 }
 
-#[test]
+#[quench_test::test]
 fn config_default_wraps_backend_default() {
     let config = Config::default();
     assert_eq!(config.backend.kind, "ollama");
 }
 
-#[test]
+#[quench_test::test]
 fn is_verbose_true_when_welder_debug_env_is_set() {
     let _guard = welder_debug_lock()
         .lock()
@@ -51,7 +51,7 @@ fn is_verbose_true_when_welder_debug_env_is_set() {
     quench_core::env::remove("WELDER_DEBUG");
 }
 
-#[test]
+#[quench_test::test]
 fn load_defaults_when_no_config_file_is_present() {
     let _guard = welder_debug_lock()
         .lock()
@@ -62,7 +62,7 @@ fn load_defaults_when_no_config_file_is_present() {
     assert_eq!(config.backend.kind, "ollama");
 }
 
-#[test]
+#[quench_test::test]
 fn load_parses_an_existing_config_file() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let welder_dir = dir.path().join(".welder");
@@ -81,7 +81,7 @@ fn load_parses_an_existing_config_file() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn load_falls_back_to_defaults_on_invalid_toml() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let welder_dir = dir.path().join(".welder");

@@ -1,13 +1,11 @@
 use super::store::get_store;
 use super::{Context, GGUF_ROOTS, HF_ROOTS, Model, ModelEstimate, ModelType, Quant};
-use gguf::GGUFMetadataValue;
-use regex::Regex;
+use quench_core::fs::Walk;
+use quench_regex::Regex;
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::Read;
 use std::path::Path;
 use std::sync::LazyLock;
-use walkdir::WalkDir;
 
 static SHARD_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"-\d+-of-\d+").expect("Invalid shard regex"));
@@ -112,7 +110,7 @@ fn read_hf_config(config_path: &Path) -> Option<ScannedModel> {
 
 /// Every model under `root`, found by its `config.json`.
 fn scan_hf_root(root: &str) -> Vec<ScannedModel> {
-    WalkDir::new(root)
+    Walk::new(root)
         .into_iter()
         .filter_map(Result::ok)
         .filter(|entry| entry.file_name() == "config.json")
@@ -223,7 +221,7 @@ pub async fn fetch_gguf_models() -> Vec<Model> {
         let seen_clone = seen.clone();
         let models_batch = tokio::task::spawn_blocking(move || {
             let mut batch = Vec::new();
-            for entry in WalkDir::new(&root).into_iter().filter_map(Result::ok) {
+            for entry in Walk::new(&root).into_iter().filter_map(Result::ok) {
                 let path = entry.path();
                 let path_str = path.to_string_lossy().into_owned();
 
@@ -288,7 +286,7 @@ pub fn get_on_disk_model_paths() -> HashSet<String> {
     let mut on_disk_paths = HashSet::new();
 
     for root in HF_ROOTS.iter() {
-        for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
+        for entry in Walk::new(root).into_iter().filter_map(Result::ok) {
             if entry.file_name() == "config.json"
                 && let Some(model_dir) = entry.path().ancestors().nth(3)
             {
@@ -298,7 +296,7 @@ pub fn get_on_disk_model_paths() -> HashSet<String> {
     }
 
     for root in GGUF_ROOTS.iter() {
-        for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
+        for entry in Walk::new(root).into_iter().filter_map(Result::ok) {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("gguf") {
                 let filename = entry.file_name().to_string_lossy().to_string();
@@ -427,52 +425,28 @@ pub fn infer_params_from_name(name: &str) -> Option<f64> {
 
 #[must_use]
 pub fn infer_architecture(path: &str) -> Option<(usize, usize, usize)> {
-    let mut file = File::open(path).ok()?;
+    let file = File::open(path).ok()?;
+    // Only the header and metadata are read; the weights that follow are never touched.
+    let header =
+        quench_convert::gguf::read(file, &quench_convert::gguf::Options::default()).ok()?;
+    let metadata = header.get("metadata")?.as_object()?;
 
-    // Read only the GGUF header + metadata region (1MB, down from 16MB).
-    let mut bytes = vec![0u8; 1024 * 1024];
+    let find = |suffix: &str| {
+        metadata
+            .iter()
+            .find(|(key, _)| key.ends_with(suffix))
+            .and_then(|(_, value)| match value {
+                quench_serde::Value::UInt(v) => usize::try_from(*v).ok(),
+                quench_serde::Value::Int(v) => usize::try_from(*v).ok(),
+                _ => None,
+            })
+    };
 
-    let read = file.read(&mut bytes).ok()?;
-    bytes.truncate(read);
-
-    let gguf = gguf::GGUFFile::read(&bytes).ok()??;
-
-    let metadata = &gguf.header.metadata;
-
-    let layers = metadata
-        .iter()
-        .find(|kv| kv.key.ends_with(".block_count"))
-        .and_then(|kv| match &kv.value {
-            GGUFMetadataValue::Uint32(v) => usize::try_from(*v).ok(),
-            GGUFMetadataValue::Uint64(v) => usize::try_from(*v).ok(),
-            GGUFMetadataValue::Int32(v) => usize::try_from(*v).ok(),
-            GGUFMetadataValue::Int64(v) => usize::try_from(*v).ok(),
-            _ => None,
-        })?;
-
-    let hidden = metadata
-        .iter()
-        .find(|kv| kv.key.ends_with(".embedding_length"))
-        .and_then(|kv| match &kv.value {
-            GGUFMetadataValue::Uint32(v) => usize::try_from(*v).ok(),
-            GGUFMetadataValue::Uint64(v) => usize::try_from(*v).ok(),
-            GGUFMetadataValue::Int32(v) => usize::try_from(*v).ok(),
-            GGUFMetadataValue::Int64(v) => usize::try_from(*v).ok(),
-            _ => None,
-        })?;
-
-    let context = metadata
-        .iter()
-        .find(|kv| kv.key.ends_with(".context_length"))
-        .and_then(|kv| match &kv.value {
-            GGUFMetadataValue::Uint32(v) => usize::try_from(*v).ok(),
-            GGUFMetadataValue::Uint64(v) => usize::try_from(*v).ok(),
-            GGUFMetadataValue::Int32(v) => usize::try_from(*v).ok(),
-            GGUFMetadataValue::Int64(v) => usize::try_from(*v).ok(),
-            _ => None,
-        })?;
-
-    Some((layers, hidden, context))
+    Some((
+        find(".block_count")?,
+        find(".embedding_length")?,
+        find(".context_length")?,
+    ))
 }
 
 const OVERHEAD_GB: f64 = 3.0;

@@ -28,7 +28,7 @@ fn recorder() -> (Arc<RecordingSender>, Arc<dyn Sender>) {
     (recorder, sender)
 }
 
-#[test]
+#[quench_test::test]
 fn only_a_confirmed_address_may_receive_a_notice() {
     assert_eq!(
         notice_address(&user(Some("a@example.test"), true, None)),
@@ -46,7 +46,7 @@ fn only_a_confirmed_address_may_receive_a_notice() {
     assert_eq!(notice_address(&user(Some("   "), true, None)), None);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_notice_goes_to_the_confirmed_address_in_the_saved_language() {
     let (recorder, sender) = recorder();
     notify(
@@ -66,7 +66,7 @@ async fn a_notice_goes_to_the_confirmed_address_in_the_saved_language() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_browsers_language_is_the_fallback() {
     let (recorder, sender) = recorder();
     notify(
@@ -79,7 +79,7 @@ async fn the_browsers_language_is_the_fallback() {
     assert_eq!(recorder.sent()[0].locale.as_deref(), Some("de-DE"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn nothing_is_sent_without_a_confirmed_address() {
     let (recorder, sender) = recorder();
     for account in [
@@ -91,7 +91,7 @@ async fn nothing_is_sent_without_a_confirmed_address() {
     assert!(recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failing_sender_is_swallowed() {
     struct Failing;
     #[quench_core::async_trait]
@@ -114,7 +114,7 @@ async fn a_failing_sender_is_swallowed() {
     .await;
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn notify_username_looks_the_account_up_and_ignores_strangers() {
     let db = Db::connect("").await.expect("in-memory db");
     let (recorder, sender) = recorder();

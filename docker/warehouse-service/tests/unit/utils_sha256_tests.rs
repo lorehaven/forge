@@ -1,6 +1,6 @@
 use warehouse_service::utils::sha256::sha256_hex;
 
-#[test]
+#[quench_test::test]
 fn hashes_the_empty_input_to_the_well_known_digest() {
     assert_eq!(
         sha256_hex(""),
@@ -8,7 +8,7 @@ fn hashes_the_empty_input_to_the_well_known_digest() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn hashes_a_short_string_to_the_well_known_digest() {
     assert_eq!(
         sha256_hex("abc"),
@@ -16,12 +16,12 @@ fn hashes_a_short_string_to_the_well_known_digest() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn accepts_both_str_and_bytes() {
     assert_eq!(sha256_hex("abc"), sha256_hex(b"abc"));
 }
 
-#[test]
+#[quench_test::test]
 fn different_input_hashes_differently() {
     assert_ne!(sha256_hex("a"), sha256_hex("b"));
 }

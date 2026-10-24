@@ -32,7 +32,7 @@ async fn app() -> (
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_for_a_missing_tag() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -46,7 +46,7 @@ async fn handle_reports_not_found_for_a_missing_tag() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_ok_with_the_digest_for_an_existing_tag() {
     let storage = support::WithDockerStorageRoot::new();
     write_manifest_and_tag(&storage, "my-repo", "latest", MANIFEST_JSON.as_bytes());

@@ -7,8 +7,11 @@
 //! `docker/workbench-service/tests/integration/support.rs` for how to stand
 //! one up). They skip - not fail - without it, matching that convention.
 
-use assert_cmd::Command;
-use predicates::prelude::*;
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
+use quench_test::cmd::Command;
+use quench_test::predicate::prelude::*;
 
 fn foundry() -> Command {
     Command::cargo_bin("foundry-service").expect("binary built")
@@ -20,7 +23,7 @@ fn test_database_url() -> Option<String> {
         .filter(|url| !url.trim().is_empty())
 }
 
-#[test]
+#[quench_test::test]
 fn validate_accepts_the_real_catalog_and_config() {
     // `validate` never needs a database, so this runs unconditionally.
     foundry()
@@ -31,7 +34,7 @@ fn validate_accepts_the_real_catalog_and_config() {
         .stdout(predicate::str::contains("catalog and plan are consistent"));
 }
 
-#[test]
+#[quench_test::test]
 fn validate_rejects_an_unknown_module() {
     foundry()
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -40,7 +43,7 @@ fn validate_rejects_an_unknown_module() {
         .failure();
 }
 
-#[test]
+#[quench_test::test]
 fn apply_without_a_database_url_refuses_to_start() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     foundry()
@@ -60,7 +63,7 @@ fn apply_without_a_database_url_refuses_to_start() {
         .stderr(predicate::str::contains("no database configured"));
 }
 
-#[test]
+#[quench_test::test]
 fn reset_without_yes_refuses_and_lists_the_schemas_it_would_drop() {
     let Some(url) = test_database_url() else {
         eprintln!(
@@ -79,7 +82,7 @@ fn reset_without_yes_refuses_and_lists_the_schemas_it_would_drop() {
         ));
 }
 
-#[test]
+#[quench_test::test]
 fn apply_against_the_test_database_reports_up_to_date_modules() {
     let Some(url) = test_database_url() else {
         eprintln!(
@@ -99,7 +102,7 @@ fn apply_against_the_test_database_reports_up_to_date_modules() {
         .stdout(predicate::str::contains("already up to date"));
 }
 
-#[test]
+#[quench_test::test]
 fn status_against_the_test_database_lists_installed_modules() {
     let Some(url) = test_database_url() else {
         eprintln!(
@@ -116,7 +119,7 @@ fn status_against_the_test_database_lists_installed_modules() {
         .stdout(predicate::str::contains("installed"));
 }
 
-#[test]
+#[quench_test::test]
 fn plan_against_the_test_database_is_a_dry_run() {
     let Some(url) = test_database_url() else {
         eprintln!(
@@ -132,3 +135,5 @@ fn plan_against_the_test_database_is_a_dry_run() {
         .success()
         .stdout(predicate::str::contains("dry-run"));
 }
+
+quench_test::main!();

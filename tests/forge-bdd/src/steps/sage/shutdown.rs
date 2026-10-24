@@ -24,7 +24,7 @@ pub fn record_deleted_instance(id: String) {
     deleted_instances().lock().unwrap().push(id);
 }
 
-#[cucumber::given("the sage service was started with model teardown enabled")]
+#[quench_test_bdd::given("the sage service was started with model teardown enabled")]
 async fn started_with_teardown(_world: &mut ForgeWorld) -> Result<(), String> {
     // The harness launches sage with SAGE_STOP_MODELS_ON_SHUTDOWN=true and
     // records its PID; here we just assert that wiring is in place.
@@ -34,7 +34,7 @@ async fn started_with_teardown(_world: &mut ForgeWorld) -> Result<(), String> {
     Ok(())
 }
 
-#[cucumber::when("the sage service receives a termination signal")]
+#[quench_test_bdd::when("the sage service receives a termination signal")]
 async fn send_termination_signal(_world: &mut ForgeWorld) -> Result<(), String> {
     let pid = *SAGE_PID
         .get()
@@ -53,7 +53,7 @@ async fn send_termination_signal(_world: &mut ForgeWorld) -> Result<(), String> 
     Ok(())
 }
 
-#[cucumber::then("switchboard should be asked to stop the default model instance")]
+#[quench_test_bdd::then("switchboard should be asked to stop the default model instance")]
 async fn switchboard_stop_requested(_world: &mut ForgeWorld) -> Result<(), String> {
     // Graceful teardown runs after actix finishes its shutdown, so the DELETE
     // arrives shortly after the signal — poll for it rather than assuming timing.

@@ -202,7 +202,7 @@ impl SageConfig {
     pub fn is_model_supported(&self, model: &str) -> bool {
         self.supported_models.iter().any(|pattern| {
             let regex_pattern = format!("(?i)^{}$", pattern.replace('*', ".*").replace('?', "."));
-            regex::Regex::new(&regex_pattern).is_ok_and(|re| re.is_match(model))
+            quench_regex::Regex::new(&regex_pattern).is_ok_and(|re| re.is_match(model))
         })
     }
 }

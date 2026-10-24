@@ -10,7 +10,7 @@ const fn config(max_tokens: u32, overlap_tokens: u32) -> ChunkerConfig {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn test_short_text_single_chunk() {
     let chunks = chunk_text("Hello world.\n\nSecond paragraph.", &config(512, 50));
     assert_eq!(chunks.len(), 1);
@@ -18,13 +18,13 @@ fn test_short_text_single_chunk() {
     assert!(chunks[0].contains("Second paragraph."));
 }
 
-#[test]
+#[quench_test::test]
 fn test_empty_text() {
     assert!(chunk_text("", &config(512, 50)).is_empty());
     assert!(chunk_text("\n\n\n\n", &config(512, 50)).is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn test_splits_on_paragraphs() {
     // Each paragraph is ~25 tokens; max 30 forces one paragraph per chunk.
     let paragraph = "word ".repeat(20);
@@ -33,7 +33,7 @@ fn test_splits_on_paragraphs() {
     assert_eq!(chunks.len(), 2);
 }
 
-#[test]
+#[quench_test::test]
 fn test_oversized_paragraph_is_split() {
     let text = "word ".repeat(1000);
     let chunks = chunk_text(text.trim(), &config(100, 0));
@@ -43,7 +43,7 @@ fn test_oversized_paragraph_is_split() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn test_overlap_carried_between_chunks() {
     let paragraph_a = "alpha ".repeat(20);
     let paragraph_b = "beta ".repeat(20);
@@ -55,7 +55,7 @@ fn test_overlap_carried_between_chunks() {
     assert!(chunks[1].contains("beta"));
 }
 
-#[test]
+#[quench_test::test]
 fn test_all_content_preserved() {
     let text = (0..50)
         .map(|i| format!("Sentence number {i} with some padding words."))
@@ -68,7 +68,7 @@ fn test_all_content_preserved() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn test_chunk_segments_carry_metadata() {
     use quench_serde::json;
     use sage_service::files::extractor::Segment;

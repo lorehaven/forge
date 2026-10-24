@@ -1,9 +1,9 @@
+use quench_test::mock::matchers::{method, path as path_matcher, path_regex};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use warehouse_cli::api::files_api::{
     FilesApi, base_url, filename_from_content_disposition, remote_path_for_upload, url_encode,
 };
 use warehouse_cli::domain::{RegistryConfig, RegistryDockerConfig, RegistryFilesConfig};
-use wiremock::matchers::{method, path as path_matcher, path_regex};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn registry(url: &str) -> RegistryConfig {
     RegistryConfig {
@@ -16,14 +16,14 @@ fn registry(url: &str) -> RegistryConfig {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn url_encode_keeps_or_escapes_the_slash_as_requested() {
     assert_eq!(url_encode("a/b c", true), "a/b%20c");
     assert_eq!(url_encode("a/b c", false), "a%2Fb%20c");
     assert_eq!(url_encode("safe-._~09AZaz", false), "safe-._~09AZaz");
 }
 
-#[test]
+#[quench_test::test]
 fn filename_from_content_disposition_extracts_a_quoted_name() {
     assert_eq!(
         filename_from_content_disposition(Some(r#"attachment; filename="report.pdf""#)),
@@ -31,13 +31,13 @@ fn filename_from_content_disposition_extracts_a_quoted_name() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn filename_from_content_disposition_is_none_without_a_filename_part() {
     assert_eq!(filename_from_content_disposition(Some("attachment")), None);
     assert_eq!(filename_from_content_disposition(None), None);
 }
 
-#[test]
+#[quench_test::test]
 fn base_url_prefers_files_then_docker_then_crates() {
     let mut reg = registry("");
     reg.docker = RegistryDockerConfig {
@@ -53,12 +53,12 @@ fn base_url_prefers_files_then_docker_then_crates() {
     assert_eq!(base_url(&reg, "/x").unwrap(), "https://files.example.net/x");
 }
 
-#[test]
+#[quench_test::test]
 fn base_url_errors_when_every_url_is_empty() {
     assert!(base_url(&registry(""), "/x").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn remote_path_for_upload_joins_the_filename_under_a_remote_dir() {
     assert_eq!(
         remote_path_for_upload("/local/report.pdf", Some("/backups/")).unwrap(),
@@ -74,12 +74,12 @@ fn remote_path_for_upload_joins_the_filename_under_a_remote_dir() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn remote_path_for_upload_errors_without_a_filename() {
     assert!(remote_path_for_upload("/", None).is_err());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn storages_parses_the_response_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -101,7 +101,7 @@ async fn storages_parses_the_response_list() {
     assert_eq!(storages[0].name, "default");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_parses_directory_entries() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -126,7 +126,7 @@ async fn list_parses_directory_entries() {
     assert_eq!(listing.entries[0].path, "/a.txt");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn upload_sends_the_bytes_as_octet_stream() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
@@ -142,7 +142,7 @@ async fn upload_sends_the_bytes_as_octet_stream() {
         .expect("upload");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn preview_parses_the_response() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -172,7 +172,7 @@ async fn preview_parses_the_response() {
     assert!(!preview.truncated);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn mkdir_and_rmdir_hit_the_folder_endpoint() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -192,7 +192,7 @@ async fn mkdir_and_rmdir_hit_the_folder_endpoint() {
     api.rmdir(&reg, "default", "/new").await.expect("rmdir");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_file_hits_the_file_endpoint() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
@@ -208,7 +208,7 @@ async fn delete_file_hits_the_file_endpoint() {
         .expect("delete");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn bulk_delete_and_bulk_download_send_the_path_list() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
@@ -235,7 +235,7 @@ async fn bulk_delete_and_bulk_download_send_the_path_list() {
     assert_eq!(bytes, b"zip-bytes".to_vec());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn download_reads_the_body_and_filename_header() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -258,7 +258,7 @@ async fn download_reads_the_body_and_filename_header() {
     assert_eq!(filename.as_deref(), Some("a.txt"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn download_reports_a_non_success_status() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

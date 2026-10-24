@@ -73,7 +73,7 @@ async fn claims_of(
     config.decode_claims(token).await.expect("decodes")
 }
 
-#[test]
+#[quench_test::test]
 fn new_row_stores_only_the_hash_of_a_prefixed_secret() {
     let (row, secret) = new_row(
         "alice",
@@ -88,7 +88,7 @@ fn new_row_stores_only_the_hash_of_a_prefixed_secret() {
     assert_eq!(row.id.len(), 12);
 }
 
-#[test]
+#[quench_test::test]
 fn new_row_caps_the_lifetime() {
     let now = Time::now();
     let mut request = body("anvil", &[]);
@@ -97,7 +97,7 @@ fn new_row_caps_the_lifetime() {
     assert_eq!(row.expires_at, Some(now + Duration::days(365)));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn refusal_checks_name_lifetime_and_scope_entries() {
     let db = Db::connect("").await.unwrap();
     let user = seed_user(&db, "alice", &[("warehouse", "write")]).await;
@@ -112,7 +112,7 @@ async fn refusal_checks_name_lifetime_and_scope_entries() {
     assert!(refusal(&short, &user).is_some());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn grant_requires_the_secret() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.unwrap();
@@ -122,7 +122,7 @@ async fn grant_requires_the_secret() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn grant_rejects_an_unknown_secret() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.unwrap();
@@ -132,7 +132,7 @@ async fn grant_rejects_an_unknown_secret() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn grant_rejects_revoked_and_expired_tokens() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.unwrap();
@@ -153,7 +153,7 @@ async fn grant_rejects_revoked_and_expired_tokens() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn grant_rejects_a_token_whose_owner_is_gone() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.unwrap();
@@ -164,7 +164,7 @@ async fn grant_rejects_a_token_whose_owner_is_gone() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn full_access_token_carries_the_owners_grants_and_records_use() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.unwrap();
@@ -193,7 +193,7 @@ async fn full_access_token_carries_the_owners_grants_and_records_use() {
     assert!(stored.last_used_at.is_some());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn narrowed_token_carries_only_its_entries() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.unwrap();
@@ -212,7 +212,7 @@ async fn narrowed_token_carries_only_its_entries() {
     assert!(!claims.can("conveyor", "read"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn narrowed_token_loses_an_entry_the_owner_no_longer_holds() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.unwrap();

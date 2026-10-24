@@ -28,7 +28,7 @@ fn rendered(chunk: &LogChunk, format: Format) -> String {
 // Framing
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn the_default_format_is_the_line_as_it_was_written() {
     // What `conveyor logs --follow` parses.
     let text = rendered(&chunk(0, Stream::Stdout, "compiling thing"), Format::Text);
@@ -37,7 +37,7 @@ fn the_default_format_is_the_line_as_it_was_written() {
     assert!(!text.contains("<span"), "{text}");
 }
 
-#[test]
+#[quench_test::test]
 fn every_frame_carries_its_sequence_number_and_stream() {
     // The sequence number is what lets a reconnecting reader resume rather than
     // replay the whole log.
@@ -49,7 +49,7 @@ fn every_frame_carries_its_sequence_number_and_stream() {
     assert!(err.contains("event: stderr\n"), "{err}");
 }
 
-#[test]
+#[quench_test::test]
 fn the_html_format_wraps_each_line_in_an_element() {
     // The run page appends these with `hx-swap="beforeend"`.
     let html = rendered(&chunk(0, Stream::Stdout, "compiling thing"), Format::Html);
@@ -59,7 +59,7 @@ fn the_html_format_wraps_each_line_in_an_element() {
     assert!(html.contains("compiling thing"), "{html}");
 }
 
-#[test]
+#[quench_test::test]
 fn stderr_is_distinguishable_in_the_html_format() {
     // Both event names swap into the same element, so the class is the only
     // thing that tells them apart once they are on the page.
@@ -67,7 +67,7 @@ fn stderr_is_distinguishable_in_the_html_format() {
     assert!(html.contains("log-stderr"), "{html}");
 }
 
-#[test]
+#[quench_test::test]
 fn the_stream_ends_by_saying_so() {
     // A connection that simply closes reads as a drop, and the browser fetches
     // the whole log again.
@@ -79,7 +79,7 @@ fn the_stream_ends_by_saying_so() {
 // Escaping
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn html_frames_escape_the_build_output() {
     // Build output is written by whoever owns the repository. A line holding a
     // tag has to reach the page as characters, not as markup - otherwise a
@@ -97,7 +97,7 @@ fn html_frames_escape_the_build_output() {
     assert!(html.contains("&lt;script&gt;"), "{html}");
 }
 
-#[test]
+#[quench_test::test]
 fn an_ampersand_in_the_output_is_escaped_too() {
     let html = rendered(
         &chunk(0, Stream::Stdout, "cargo build && cargo test"),
@@ -106,7 +106,7 @@ fn an_ampersand_in_the_output_is_escaped_too() {
     assert!(html.contains("&amp;&amp;"), "{html}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_line_cannot_close_the_element_it_is_put_in() {
     // The other half of the same problem: escaping the opening tag is no use
     // if the line can end the span and start its own.
@@ -119,7 +119,7 @@ fn a_line_cannot_close_the_element_it_is_put_in() {
     assert!(html.contains("&lt;/span&gt;"), "{html}");
 }
 
-#[test]
+#[quench_test::test]
 fn the_text_format_is_deliberately_not_escaped() {
     // It is read by a terminal, where `&lt;` would be wrong rather than safe.
     let text = rendered(&chunk(0, Stream::Stdout, "a < b && c"), Format::Text);
@@ -130,7 +130,7 @@ fn the_text_format_is_deliberately_not_escaped() {
 // Frame integrity
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_newline_inside_a_line_cannot_split_the_frame() {
     // A blank line ends an SSE frame. One that survived the reader would make
     // the rest of the line arrive as a separate, malformed event.
@@ -141,7 +141,7 @@ fn a_newline_inside_a_line_cannot_split_the_frame() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_carriage_return_cannot_split_the_frame_either() {
     // Progress bars emit them constantly.
     for format in [Format::Text, Format::Html] {
@@ -154,7 +154,7 @@ fn a_carriage_return_cannot_split_the_frame_either() {
 // Raw view
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_raw_line_is_the_line_as_written_with_no_framing_at_all() {
     // What "open raw log" in a new tab shows: no `id:`/`event:`/`data:`, no
     // escaping - just the line a terminal would have printed.
@@ -165,7 +165,7 @@ fn a_raw_line_is_the_line_as_written_with_no_framing_at_all() {
     assert!(!out.contains("id:"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_raw_line_is_not_html_escaped() {
     // Same reasoning as `Format::Text`: this is read as plain text, not
     // rendered in a page, so escaping it would put literal `&lt;` in a log

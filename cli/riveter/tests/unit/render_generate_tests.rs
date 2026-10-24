@@ -51,7 +51,7 @@ fn in_temp_cwd_with_overlay<T>(env: &str, body: impl FnOnce() -> T) -> T {
     result
 }
 
-#[test]
+#[quench_test::test]
 fn generate_manifests_writes_every_resource_to_the_default_output_path() {
     in_temp_cwd_with_overlay("golden", || {
         let path = generate_manifests("golden").unwrap();
@@ -63,7 +63,7 @@ fn generate_manifests_writes_every_resource_to_the_default_output_path() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn generate_manifests_with_scope_mutable_excludes_the_immutable_resource() {
     in_temp_cwd_with_overlay("golden", || {
         let rendered = generate_manifests_with_scope("golden", ResourceScope::Mutable).unwrap();
@@ -73,7 +73,7 @@ fn generate_manifests_with_scope_mutable_excludes_the_immutable_resource() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn generate_manifests_with_scope_immutable_selects_only_the_immutable_resource() {
     in_temp_cwd_with_overlay("golden", || {
         let rendered = generate_manifests_with_scope("golden", ResourceScope::Immutable).unwrap();
@@ -82,7 +82,7 @@ fn generate_manifests_with_scope_immutable_selects_only_the_immutable_resource()
     });
 }
 
-#[test]
+#[quench_test::test]
 fn generate_manifests_selected_reports_a_secret_as_sensitive_and_locks_the_file_down() {
     in_temp_cwd_with_overlay("golden", || {
         let selector = riveter::render::Selector::parse(&["secret/db-creds"]).unwrap();
@@ -101,7 +101,7 @@ fn generate_manifests_selected_reports_a_secret_as_sensitive_and_locks_the_file_
     });
 }
 
-#[test]
+#[quench_test::test]
 fn generate_manifests_selected_with_an_unmatched_selector_errors() {
     in_temp_cwd_with_overlay("golden", || {
         let selector = Selector::parse(&["deployment/does-not-exist"]).unwrap();
@@ -110,7 +110,7 @@ fn generate_manifests_selected_with_an_unmatched_selector_errors() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn list_resources_lists_every_resource_regardless_of_scope() {
     in_temp_cwd_with_overlay("golden", || {
         let resources = list_resources("golden").unwrap();
@@ -121,7 +121,7 @@ fn list_resources_lists_every_resource_regardless_of_scope() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn generate_manifests_errors_for_a_missing_overlay() {
     in_temp_cwd_with_overlay("golden", || {
         let err = generate_manifests("no-such-env").unwrap_err();

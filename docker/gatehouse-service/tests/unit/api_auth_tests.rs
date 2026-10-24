@@ -35,7 +35,7 @@ fn user(roles: Vec<Role>, grants: &[(&str, &[&str])]) -> User {
     .unwrap()
 }
 
-#[test]
+#[quench_test::test]
 fn a_grant_becomes_a_scope_entry_per_action() {
     let scope = user_scope(&user(
         vec![Role::User],
@@ -46,7 +46,7 @@ fn a_grant_becomes_a_scope_entry_per_action() {
 }
 
 /// Two actions on the same service become two tokens, not a combined one.
-#[test]
+#[quench_test::test]
 fn several_actions_on_one_service_become_several_scope_entries() {
     let scope = user_scope(&user(
         vec![Role::User],
@@ -57,13 +57,13 @@ fn several_actions_on_one_service_become_several_scope_entries() {
 }
 
 /// The token stays small and stays true as the estate grows.
-#[test]
+#[quench_test::test]
 fn a_wildcard_role_emits_the_role_and_nothing_else() {
     let scope = user_scope(&user(vec![Role::Admin], &[("sage", &["read"])]));
     assert_eq!(scope, "admin");
 }
 
-#[test]
+#[quench_test::test]
 fn audiences_narrow_to_the_services_a_user_was_granted() {
     let config = config();
     let audiences = user_audiences(&config, &user(vec![Role::User], &[("sage", &["read"])]));
@@ -73,7 +73,7 @@ fn audiences_narrow_to_the_services_a_user_was_granted() {
     assert!(!audiences.contains(&"warehouse".to_string()));
 }
 
-#[test]
+#[quench_test::test]
 fn an_admin_keeps_the_whole_realm() {
     let config = config();
     let audiences = user_audiences(&config, &user(vec![Role::Admin], &[]));
@@ -83,7 +83,7 @@ fn an_admin_keeps_the_whole_realm() {
 /// Gatehouse serves the login page, the home page and refresh. A token that
 /// excluded it would leave the holder unable to reach the one service that
 /// could grant them anything.
-#[test]
+#[quench_test::test]
 fn gatehouse_is_always_an_audience() {
     let config = config();
 
@@ -99,7 +99,7 @@ fn gatehouse_is_always_an_audience() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_user_with_no_grants_gets_gatehouse_alone() {
     let config = config();
     let audiences = user_audiences(&config, &user(vec![Role::User], &[]));
@@ -108,7 +108,7 @@ fn a_user_with_no_grants_gets_gatehouse_alone() {
 
 /// A grant left behind after a service was removed from the deployment must
 /// not put that service back into an audience list.
-#[test]
+#[quench_test::test]
 fn a_grant_for_a_service_this_deployment_does_not_run_is_ignored() {
     let config = config();
     let audiences = user_audiences(

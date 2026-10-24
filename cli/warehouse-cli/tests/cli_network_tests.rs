@@ -1,13 +1,16 @@
 //! Black-box CLI tests for the network-touching subcommands: each spawns the
-//! real `warehouse` binary against a `wiremock` server, the same way
+//! real `warehouse` binary against a `quench_test` mock server, the same way
 //! `cli_tests.rs` drives the config-only commands.
 
-use assert_cmd::Command;
-use predicates::prelude::*;
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
 use quench_core::tmp::TempDir;
+use quench_test::cmd::Command;
+use quench_test::mock::matchers::{method, path, path_regex};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
+use quench_test::predicate::prelude::*;
 use std::fs;
-use wiremock::matchers::{method, path, path_regex};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Registers one `local` registry, in the given temp dir, with its
 /// docker/crates/files sections all pointing at `server`.
@@ -55,7 +58,7 @@ fn add_local_registry(dir: &std::path::Path, server: &MockServer) {
     .success();
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn docker_catalog_and_tags_print_repositories_and_tags() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -102,7 +105,7 @@ async fn docker_catalog_and_tags_print_repositories_and_tags() {
         .stdout(predicate::str::contains("latest"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn docker_login_saves_credentials() {
     let server = MockServer::start().await;
     let temp = TempDir::new().unwrap();
@@ -127,7 +130,7 @@ async fn docker_login_saves_credentials() {
     assert!(saved.contains("user"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn crates_login_search_yank_and_unyank() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -192,7 +195,7 @@ async fn crates_login_search_yank_and_unyank() {
         .stdout(predicate::str::contains("unyanked foo-1.2.3"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn crates_yank_without_a_token_fails_locally() {
     let server = MockServer::start().await;
     let temp = TempDir::new().unwrap();
@@ -206,7 +209,7 @@ async fn crates_yank_without_a_token_fails_locally() {
         .stderr(predicate::str::contains("no token set"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn crates_search_reports_when_nothing_is_found() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -234,7 +237,7 @@ async fn crates_search_reports_when_nothing_is_found() {
         .stdout(predicate::str::contains("no crates found"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn crates_versions_lists_active_by_default_and_all_with_flag() {
     let server = MockServer::start().await;
     let body = format!(
@@ -272,7 +275,7 @@ async fn crates_versions_lists_active_by_default_and_all_with_flag() {
         .stdout(predicate::str::contains("1.0.0").and(predicate::str::contains("1.1.0")));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn files_storages_ls_upload_preview_and_download() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -377,7 +380,7 @@ async fn files_storages_ls_upload_preview_and_download() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn files_ls_reports_an_empty_directory() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -406,7 +409,7 @@ async fn files_ls_reports_an_empty_directory() {
         .stdout(predicate::str::contains("(empty)"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn files_mkdir_rmdir_delete_and_bulk_operations() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -486,7 +489,7 @@ async fn files_mkdir_rmdir_delete_and_bulk_operations() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn files_bulk_delete_requires_at_least_one_path() {
     let server = MockServer::start().await;
     let temp = TempDir::new().unwrap();
@@ -499,7 +502,7 @@ async fn files_bulk_delete_requires_at_least_one_path() {
         .failure();
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn admin_gc_runs_both_docker_and_crates_by_default() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -543,7 +546,7 @@ async fn admin_gc_runs_both_docker_and_crates_by_default() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn admin_gc_docker_only_skips_crates() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -573,3 +576,5 @@ async fn admin_gc_docker_only_skips_crates() {
                 .and(predicate::str::contains("Crates GC completed").not()),
         );
 }
+
+quench_test::main!();

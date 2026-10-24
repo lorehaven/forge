@@ -15,7 +15,7 @@ use welder::config::CONFIG;
 /// be `Some`) aren't reachable here without changing that fixture -
 /// `Config::load`'s parsing itself is covered separately in
 /// `config_tests`/`app_config_tests`.
-#[test]
+#[quench_test::test]
 fn init_succeeds_once_then_get_returns_the_vllm_backend() {
     // `CONFIG` is a `LazyLock` that locks in whatever `cwd` was at its first
     // touch from anywhere in this process, forever - hold the crate-wide cwd

@@ -26,7 +26,7 @@ fn running(version: &str) -> Vec<Workload> {
     }]
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn every_page_sends_a_signed_out_visitor_to_log_in() {
     let rig = support::rig(true).await;
     for path in [
@@ -47,7 +47,7 @@ async fn every_page_sends_a_signed_out_visitor_to_log_in() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_home_page_renders_for_a_signed_in_visitor_with_its_empty_state() {
     let rig = support::rig(false).await;
     let resp = rig
@@ -61,7 +61,7 @@ async fn the_home_page_renders_for_a_signed_in_visitor_with_its_empty_state() {
     assert!(html.contains("Gantry"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_root_redirects_a_signed_in_visitor_to_the_home_page() {
     let rig = support::rig(false).await;
     let resp = rig
@@ -72,7 +72,7 @@ async fn the_root_redirects_a_signed_in_visitor_to_the_home_page() {
     assert!(location(resp).ends_with("/ui/home"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_home_page_shows_a_card_per_package_with_its_sync_state_and_the_newer_version() {
     let rig = support::rig(false).await;
     rig.registry.publish("media", "1.0.0", Some("media"));
@@ -91,7 +91,7 @@ async fn the_home_page_shows_a_card_per_package_with_its_sync_state_and_the_newe
     assert!(html.contains("ui_nav_operations"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_package_that_cannot_be_read_is_shown_not_hidden() {
     let rig = support::rig(false).await;
     // Nothing published, but a workload nobody published: listed as such.
@@ -105,7 +105,7 @@ async fn a_package_that_cannot_be_read_is_shown_not_hidden() {
     assert!(html.contains("ui_sync_unlisted"), "{html}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_scoped_grant_hides_the_other_packages_from_the_page() {
     let rig = support::rig(true).await;
     rig.registry.publish("media", "1.0.0", Some("media"));
@@ -130,7 +130,7 @@ async fn a_scoped_grant_hides_the_other_packages_from_the_page() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_package_page_shows_versions_and_syncing_runs_at_once() {
     let rig = support::rig(false).await;
     rig.registry.publish("media", "1.0.0", Some("media"));
@@ -183,7 +183,7 @@ async fn a_package_page_shows_versions_and_syncing_runs_at_once() {
     assert!(page.contains("ui_state_queued"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_running_operation_can_be_cancelled_and_stops_refreshing() {
     let rig = support::rig(false).await;
     rig.registry.publish("media", "1.0.0", Some("media"));
@@ -241,7 +241,7 @@ async fn a_running_operation_can_be_cancelled_and_stops_refreshing() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_home_page_filters_applications_by_sync_state_and_name() {
     let rig = support::rig(false).await;
     rig.registry.publish("media", "1.0.0", Some("media"));
@@ -279,7 +279,7 @@ async fn the_home_page_filters_applications_by_sync_state_and_name() {
     assert!(none.contains("ui_filter_no_match"), "{none}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_application_page_filters_its_resources_and_an_unknown_one_goes_home() {
     let rig = support::rig(false).await;
     rig.registry.publish("media", "1.0.0", Some("media"));

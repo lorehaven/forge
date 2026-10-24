@@ -5,7 +5,7 @@
 
 use sage_service::observability::audit::AuditLogger;
 
-#[test]
+#[quench_test::test]
 fn log_tool_execution_success_does_not_panic() {
     AuditLogger::log_tool_execution(
         "calculator",
@@ -18,7 +18,7 @@ fn log_tool_execution_success_does_not_panic() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn log_tool_execution_failure_does_not_panic() {
     AuditLogger::log_tool_execution(
         "web_search",
@@ -31,7 +31,7 @@ fn log_tool_execution_failure_does_not_panic() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn log_restricted_tool_attempt_does_not_panic() {
     AuditLogger::log_restricted_tool_attempt(
         "code_executor",
@@ -41,7 +41,7 @@ fn log_restricted_tool_attempt_does_not_panic() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn log_confirmation_required_does_not_panic() {
     AuditLogger::log_confirmation_required("command", "cli_agent", None, Some("conv-2"));
 }

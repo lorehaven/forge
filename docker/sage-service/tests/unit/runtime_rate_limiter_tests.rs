@@ -2,7 +2,7 @@
 
 use sage_service::runtime::rate_limiter::*;
 
-#[test]
+#[quench_test::test]
 fn test_rate_limit_check() {
     let limiter = RateLimiter::new();
 
@@ -10,7 +10,7 @@ fn test_rate_limit_check() {
     assert!(result.is_ok());
 }
 
-#[test]
+#[quench_test::test]
 fn test_burst_limit_exceeded() {
     let limiter = RateLimiter::new();
 
@@ -26,7 +26,7 @@ fn test_burst_limit_exceeded() {
     assert!(result.is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn test_remaining_calls() {
     let limiter = RateLimiter::new();
 
@@ -41,7 +41,7 @@ fn test_remaining_calls() {
     assert_eq!(remaining, 115);
 }
 
-#[test]
+#[quench_test::test]
 fn test_reset_user() {
     let limiter = RateLimiter::new();
 
@@ -58,7 +58,7 @@ fn test_reset_user() {
     assert_eq!(remaining_after, 120);
 }
 
-#[test]
+#[quench_test::test]
 fn user_rate_limit_exceeded_after_the_configured_calls_per_minute() {
     let limiter = RateLimiter::new();
     // cli_agent: 30 calls/min.
@@ -82,7 +82,7 @@ fn user_rate_limit_exceeded_after_the_configured_calls_per_minute() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn burst_limit_error_names_the_conversation_and_limit() {
     let limiter = RateLimiter::new();
     for _ in 0..5 {
@@ -107,7 +107,7 @@ fn burst_limit_error_names_the_conversation_and_limit() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn an_unknown_profile_falls_back_to_the_default_config() {
     let limiter = RateLimiter::new();
     assert!(limiter.get_config("no-such-profile").is_none());
@@ -128,7 +128,7 @@ fn an_unknown_profile_falls_back_to_the_default_config() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn set_config_overrides_the_default_for_a_profile() {
     let mut limiter = RateLimiter::new();
     limiter.set_config("web_assistant", RateLimitConfig::new(2, 1));
@@ -151,7 +151,7 @@ fn set_config_overrides_the_default_for_a_profile() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn reset_conversation_clears_only_that_conversations_burst_count() {
     let limiter = RateLimiter::new();
     limiter
@@ -169,7 +169,7 @@ fn reset_conversation_clears_only_that_conversations_burst_count() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn reset_all_clears_every_user_and_conversation() {
     let limiter = RateLimiter::new();
     limiter
@@ -188,7 +188,7 @@ fn reset_all_clears_every_user_and_conversation() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn get_conversation_remaining_calls_is_zero_for_an_unseen_conversation() {
     let limiter = RateLimiter::new();
     assert_eq!(
@@ -197,7 +197,7 @@ fn get_conversation_remaining_calls_is_zero_for_an_unseen_conversation() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn rate_limit_error_display_messages_name_the_offender_and_limit() {
     let user_err = RateLimitError::UserRateLimitExceeded {
         limit: 10,
@@ -218,7 +218,7 @@ fn rate_limit_error_display_messages_name_the_offender_and_limit() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn default_trait_impl_matches_new() {
     let limiter = RateLimiter::default();
     assert_eq!(

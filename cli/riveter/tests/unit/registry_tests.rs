@@ -1,7 +1,7 @@
+use quench_test::mock::matchers::{body_bytes, body_string_contains, header, method, path};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use riveter::registry::Registry;
 use std::sync::{Mutex, OnceLock};
-use wiremock::matchers::{body_bytes, body_string_contains, header, method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// `Registry::from_env` reads process-global variables.
 fn env_lock() -> &'static Mutex<()> {
@@ -45,7 +45,7 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
     tokio::task::spawn_blocking(f).await.unwrap()
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn publishes_the_bytes_with_the_bearer_token() {
     let server = MockServer::start().await;
     let bytes = b"archive-bytes".to_vec();
@@ -75,7 +75,7 @@ async fn publishes_the_bytes_with_the_bearer_token() {
     assert_eq!(published.version, "0.4.0+b1");
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn explains_each_way_a_publish_can_be_refused() {
     for (status, expected) in [
         (401, "rejected the credentials"),
@@ -114,7 +114,7 @@ async fn explains_each_way_a_publish_can_be_refused() {
     }
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fetch_resolves_latest_then_downloads_that_exact_version() {
     let server = MockServer::start().await;
     let bytes = b"the-archive".to_vec();
@@ -148,7 +148,7 @@ async fn fetch_resolves_latest_then_downloads_that_exact_version() {
     assert_eq!(fetched.bytes, bytes);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fetch_refuses_bytes_that_do_not_match_the_recorded_digest() {
     let server = MockServer::start().await;
 
@@ -181,7 +181,7 @@ async fn fetch_refuses_bytes_that_do_not_match_the_recorded_digest() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fetching_an_unknown_package_says_not_found() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -208,7 +208,7 @@ async fn fetching_an_unknown_package_says_not_found() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn lists_versions_and_the_catalog() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -255,7 +255,7 @@ async fn lists_versions_and_the_catalog() {
     assert_eq!(catalog.len(), 1);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_unreachable_warehouse_is_reported_as_such() {
     let err = blocking(|| {
         Registry::new("http://127.0.0.1:1", None)
@@ -270,7 +270,7 @@ async fn an_unreachable_warehouse_is_reported_as_such() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn from_env_needs_a_url_and_credentials() {
     let _guard = env_lock()
         .lock()
@@ -290,7 +290,7 @@ fn from_env_needs_a_url_and_credentials() {
     clear_env();
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn from_env_exchanges_client_credentials_for_a_token() {
     let gatehouse = MockServer::start().await;
     Mock::given(method("POST"))
@@ -337,7 +337,7 @@ async fn from_env_exchanges_client_credentials_for_a_token() {
     assert!(catalog.is_empty());
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn from_env_reports_refused_client_credentials() {
     let gatehouse = MockServer::start().await;
     Mock::given(method("POST"))

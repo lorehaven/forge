@@ -101,7 +101,7 @@ fn anvil_logs(t0: quench_core::time::Time) -> Vec<LogChunk> {
     ]
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn summarises_lint_machete_and_audit_from_one_job() {
     let Some((db, _guard)) = database().await else {
         return skipped("summarises_lint_machete_and_audit_from_one_job");
@@ -163,7 +163,7 @@ async fn summarises_lint_machete_and_audit_from_one_job() {
     assert!(audit.findings.is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_repo_with_no_runs_has_an_empty_summary() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_repo_with_no_runs_has_an_empty_summary");
@@ -176,7 +176,7 @@ async fn a_repo_with_no_runs_has_an_empty_summary() {
     assert!(summary.is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_run_with_no_quality_steps_has_an_empty_summary() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_run_with_no_quality_steps_has_an_empty_summary");

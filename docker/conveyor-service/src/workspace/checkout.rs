@@ -76,7 +76,7 @@ pub async fn checkout(
     validate_ref(request.git_ref)?;
     validate_url(request.clone_url)?;
 
-    if which::which("git").is_err() {
+    if quench_core::process::which("git").is_err() {
         return Err(CheckoutError::GitMissing);
     }
 

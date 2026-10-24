@@ -64,7 +64,7 @@ pub async fn init_runtime() -> quench_core::Result<()> {
     }
 
     backend::get().initialized();
-    dotenvy::dotenv().ok();
+    quench_core::dotenv::load().ok();
 
     Ok(())
 }

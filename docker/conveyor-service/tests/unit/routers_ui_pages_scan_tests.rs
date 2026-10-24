@@ -40,13 +40,13 @@ fn run() -> Run {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn renders_no_runs_yet() {
     let html = overview_body(&repo(), &ScanSummary::default()).render();
     assert!(html.contains("ui_scan_no_runs"));
 }
 
-#[test]
+#[quench_test::test]
 fn renders_no_checks_configured() {
     let summary = ScanSummary {
         run: Some(run()),
@@ -57,7 +57,7 @@ fn renders_no_checks_configured() {
     assert!(html.contains("deadbee"));
 }
 
-#[test]
+#[quench_test::test]
 fn renders_cards_with_counts_and_links() {
     let summary = ScanSummary {
         run: Some(run()),
@@ -91,7 +91,7 @@ fn renders_cards_with_counts_and_links() {
     assert!(!html.contains("ui_scan_coverage_title"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_coverage_card_shows_its_metric_not_the_capped_finding_count() {
     let check = CheckResult {
         kind: CheckKind::Coverage,
@@ -115,7 +115,7 @@ fn a_coverage_card_shows_its_metric_not_the_capped_finding_count() {
     assert!(!html.contains(">50<"));
 }
 
-#[test]
+#[quench_test::test]
 fn renders_finding_detail_fields() {
     let check = CheckResult {
         kind: CheckKind::Audit,
@@ -143,7 +143,7 @@ fn renders_finding_detail_fields() {
     assert!(html.contains("No fixed upgrade is available!"));
 }
 
-#[test]
+#[quench_test::test]
 fn renders_clean_detail_page() {
     let check = CheckResult {
         kind: CheckKind::Machete,

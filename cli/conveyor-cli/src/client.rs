@@ -92,7 +92,7 @@ impl Client {
 
     /// A `Client` pointed at `base_url` with no token, bypassing the
     /// login flow entirely - for other modules' tests (e.g.
-    /// `commands.rs`) that need a `Client` talking to a `wiremock` server
+    /// `commands.rs`) that need a `Client` talking to a `quench_test` mock server
     /// but can't reach the private fields `Client::new`'s tests use
     /// directly, since they aren't in this module. Not `#[cfg(test)]`:
     /// the `tests/` integration binary links this crate as an ordinary

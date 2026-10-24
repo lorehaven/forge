@@ -1,7 +1,7 @@
 use foreman::config::ToneName;
 use foreman::ui::*;
 
-#[test]
+#[quench_test::test]
 fn tone_from_tone_name_maps_every_variant() {
     assert!(matches!(Tone::from(ToneName::Info), Tone::Info));
     assert!(matches!(Tone::from(ToneName::Ok), Tone::Ok));
@@ -9,7 +9,7 @@ fn tone_from_tone_name_maps_every_variant() {
     assert!(matches!(Tone::from(ToneName::Error), Tone::Error));
 }
 
-#[test]
+#[quench_test::test]
 fn tone_colour_is_distinct_per_variant() {
     let colours = [
         Tone::Info.colour(),
@@ -26,7 +26,7 @@ fn tone_colour_is_distinct_per_variant() {
 
 // Nothing here has an interesting return value - these just prove every
 // print helper runs to completion without panicking, for every tone.
-#[test]
+#[quench_test::test]
 fn every_print_helper_runs_without_panicking() {
     say(Tone::Info, "label", "message");
     info("label", "message");
@@ -40,7 +40,7 @@ fn every_print_helper_runs_without_panicking() {
     quote("");
 }
 
-#[test]
+#[quench_test::test]
 fn say_pads_a_short_label_to_the_column_width() {
     // No direct way to capture stdout here without a wider refactor -
     // this at least exercises a label both under and over LABEL_WIDTH.

@@ -52,7 +52,7 @@ fn run(id: &str, repo_id: &str) -> Run {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn cap_per_repo_keeps_only_the_newest_from_each_repository() {
     // Newest first, as `queue::list_runs_page` already returns them.
     let runs = vec![
@@ -68,14 +68,14 @@ fn cap_per_repo_keeps_only_the_newest_from_each_repository() {
     assert_eq!(capped[1].id, "r1");
 }
 
-#[test]
+#[quench_test::test]
 fn cap_per_repo_stops_at_the_total_even_with_room_left_per_repo() {
     let runs = vec![run("r1", "a"), run("r2", "b"), run("r3", "c")];
     let capped = cap_per_repo(&runs, 2, 5);
     assert_eq!(capped.len(), 2);
 }
 
-#[test]
+#[quench_test::test]
 fn cap_per_repo_can_keep_more_than_one_per_repository() {
     let runs = vec![run("r3", "a"), run("r2", "a"), run("r1", "a")];
     let capped = cap_per_repo(&runs, 5, 2);
@@ -84,7 +84,7 @@ fn cap_per_repo_can_keep_more_than_one_per_repository() {
     assert_eq!(capped[1].id, "r2");
 }
 
-#[test]
+#[quench_test::test]
 fn descendant_project_ids_includes_the_root_and_everything_nested_under_it() {
     let projects = vec![
         project("root", "root", None),
@@ -101,7 +101,7 @@ fn descendant_project_ids_includes_the_root_and_everything_nested_under_it() {
     assert!(!ids.contains("cousin"));
 }
 
-#[test]
+#[quench_test::test]
 fn repo_ids_under_only_keeps_repos_whose_project_is_in_scope() {
     let mut project_ids = HashSet::new();
     project_ids.insert("in-scope".to_string());
@@ -112,7 +112,7 @@ fn repo_ids_under_only_keeps_repos_whose_project_is_in_scope() {
     assert_eq!(ids, vec!["in".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn ancestor_chain_runs_root_first_down_to_the_node_itself() {
     let projects = vec![
         project("root", "root", None),
@@ -126,13 +126,13 @@ fn ancestor_chain_runs_root_first_down_to_the_node_itself() {
     assert_eq!(names, vec!["root", "mid", "leaf"]);
 }
 
-#[test]
+#[quench_test::test]
 fn ancestor_chain_of_an_unknown_id_is_empty() {
     let projects = vec![project("root", "root", None)];
     assert!(ancestor_chain("missing", &projects).is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn breadcrumb_links_every_ancestor_but_the_last() {
     let projects = vec![
         project("root", "lorehaven", None),

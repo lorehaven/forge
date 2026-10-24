@@ -1,4 +1,4 @@
-use clap::Parser;
+use quench_args::Parser;
 use quench_core::Result;
 use warehouse_cli::{application, cli, ui};
 

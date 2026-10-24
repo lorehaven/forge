@@ -36,7 +36,7 @@ fn node(children: Vec<&str>, tool_count: usize) -> AgentNode {
 
 /// These only need to not panic - the actual formatting is terminal
 /// escape-code soup not worth asserting on character-for-character.
-#[test]
+#[quench_test::test]
 fn print_functions_do_not_panic() {
     print_backend_banner("vllm", "127.0.0.1:8000");
     print_answer("the answer");
@@ -44,7 +44,7 @@ fn print_functions_do_not_panic() {
     print_prompt();
 }
 
-#[test]
+#[quench_test::test]
 fn print_workflow_header_walks_a_tree_without_panicking() {
     let mut agents = HashMap::new();
     agents.insert("root".to_string(), node(vec!["child"], 2));
@@ -53,7 +53,7 @@ fn print_workflow_header_walks_a_tree_without_panicking() {
     print_workflow_header("workflow.toml", "root", &agents);
 }
 
-#[test]
+#[quench_test::test]
 fn print_workflow_header_handles_a_root_missing_from_the_map() {
     let agents: HashMap<String, AgentNode> = HashMap::new();
     print_workflow_header("workflow.toml", "missing-root", &agents);

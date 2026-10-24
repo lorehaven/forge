@@ -33,7 +33,7 @@ fn skipped(test: &str) {
     println!("skipping {test}: TOOLBOX_TEST_LIVE_REGISTRY is not set");
 }
 
-#[test]
+#[quench_test::test]
 fn installed_versions_reads_the_local_cargo_install_list() {
     // Whatever is or isn't installed on this machine, the call itself must
     // succeed and return a plain map.
@@ -41,7 +41,7 @@ fn installed_versions_reads_the_local_cargo_install_list() {
     assert!(installed.len() < 10_000, "sanity bound, not a real limit");
 }
 
-#[test]
+#[quench_test::test]
 fn fetch_latest_registry_version_finds_a_known_package() {
     if !live_registry_enabled() {
         skipped("fetch_latest_registry_version_finds_a_known_package");
@@ -55,7 +55,7 @@ fn fetch_latest_registry_version_finds_a_known_package() {
     assert!(version.is_some());
 }
 
-#[test]
+#[quench_test::test]
 fn fetch_latest_registry_version_returns_none_for_an_unpublished_name() {
     if !live_registry_enabled() {
         skipped("fetch_latest_registry_version_returns_none_for_an_unpublished_name");
@@ -66,26 +66,26 @@ fn fetch_latest_registry_version_returns_none_for_an_unpublished_name() {
     assert_eq!(version, None);
 }
 
-#[test]
+#[quench_test::test]
 fn collect_statuses_returns_one_row_per_monitored_crate() {
     let statuses = collect_statuses(&HashMap::new());
     assert_eq!(statuses.len(), MONITORED_CRATES.len());
 }
 
-#[test]
+#[quench_test::test]
 fn toolbox_note_is_never_empty() {
     let note = toolbox_note(&HashMap::new());
     assert!(note.starts_with("note:"));
 }
 
-#[test]
+#[quench_test::test]
 fn refresh_app_state_builds_a_full_app() {
     let app = refresh_app_state(0, "Ready").expect("refresh should succeed");
     assert_eq!(app.statuses.len(), MONITORED_CRATES.len());
     assert_eq!(app.message, "Ready");
 }
 
-#[test]
+#[quench_test::test]
 fn refresh_app_state_clamps_selected_to_the_status_list() {
     let app = refresh_app_state(usize::MAX, "Ready").expect("refresh should succeed");
     assert!(app.selected < app.statuses.len());

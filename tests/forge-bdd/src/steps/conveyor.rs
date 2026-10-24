@@ -7,28 +7,28 @@
 //! `docker/conveyor-service/tests/integration`, against a real Postgres.
 
 use crate::world::ForgeWorld;
-use cucumber::{given, when};
-use serde_json::json;
+use quench_serde::json;
+use quench_test_bdd::{given, when};
 
 /// The secret `services.rs` starts conveyor with.
 const WEBHOOK_SECRET: &str = "conveyor-bdd-secret";
 
-fn no_redirect_client() -> reqwest::Client {
-    reqwest::Client::builder()
+fn no_redirect_client() -> quench_client::transport::Client {
+    quench_client::transport::Client::builder()
         .danger_accept_invalid_certs(true)
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(quench_client::transport::Redirect::None)
         .build()
         .expect("http client")
 }
 
 /// The signature conveyor expects, computed the way GitHub computes it.
 fn sign(body: &str, secret: &str) -> String {
-    use hmac::{Hmac, KeyInit, Mac};
-    use sha2::Sha256;
-
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("any key length");
-    mac.update(body.as_bytes());
-    format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    let mac = quench_crypto::hmac::sign(
+        quench_crypto::hmac::Algorithm::Sha256,
+        secret.as_bytes(),
+        body.as_bytes(),
+    );
+    format!("sha256={}", quench_core::hex::encode(mac))
 }
 
 fn push_body(slug: &str, git_ref: &str) -> String {

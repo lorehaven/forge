@@ -63,7 +63,7 @@ async fn json_body(resp: quench_http::response::Response) -> quench_serde::Value
     quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn auth_status_reports_a_dev_identity_when_auth_is_disabled() {
     let (app, container) = app(JwtConfig::for_tests()).await;
 
@@ -75,7 +75,7 @@ async fn auth_status_reports_a_dev_identity_when_auth_is_disabled() {
     assert_eq!(body["username"], "dev");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn auth_status_is_unauthenticated_without_a_session_cookie_when_auth_is_required() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;
@@ -89,7 +89,7 @@ async fn auth_status_is_unauthenticated_without_a_session_cookie_when_auth_is_re
     assert!(body["username"].is_null());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn auth_status_is_unauthenticated_for_a_cookie_that_fails_to_decode() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;
@@ -113,7 +113,7 @@ async fn auth_status_is_unauthenticated_for_a_cookie_that_fails_to_decode() {
     assert_eq!(body["authenticated"], false);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn login_delegates_when_sso_is_unconfigured() {
     let (app, container) = app(JwtConfig::for_tests()).await;
     let resp = app.call(req(Method::GET, "/ui/login", &container)).await;
@@ -122,14 +122,14 @@ async fn login_delegates_when_sso_is_unconfigured() {
     assert!(resp.status().as_u16() >= 300);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn login_slash_delegates_the_same_way_as_login() {
     let (app, container) = app(JwtConfig::for_tests()).await;
     let resp = app.call(req(Method::GET, "/ui/login/", &container)).await;
     assert!(resp.status().as_u16() >= 300);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn callback_reports_an_error_without_a_state_cookie() {
     let (app, container) = app(JwtConfig::for_tests()).await;
     let resp = app
@@ -142,7 +142,7 @@ async fn callback_reports_an_error_without_a_state_cookie() {
     assert!(!resp.status().is_success());
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 async fn logout_redirects_when_gatehouse_is_configured() {
     // `GATEHOUSE_URL` is process-global and other files in this shared
@@ -162,7 +162,7 @@ async fn logout_redirects_when_gatehouse_is_configured() {
     assert_eq!(resp.status(), StatusCode::FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn refresh_fails_without_a_refresh_cookie() {
     let (app, container) = app(JwtConfig::for_tests()).await;
     let resp = app.call(req(Method::POST, "/ui/refresh", &container)).await;

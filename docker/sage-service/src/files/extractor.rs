@@ -104,8 +104,8 @@ fn language_for_mime(mime: &str) -> Option<&'static str> {
 }
 
 fn extract_pdf(data: &[u8]) -> Result<Vec<Segment>, String> {
-    let pages = pdf_extract::extract_text_from_mem_by_pages(data)
-        .map_err(|e| format!("PDF text extraction failed: {e}"))?;
+    let pages =
+        quench_pdf::extract_pages(data).map_err(|e| format!("PDF text extraction failed: {e}"))?;
     Ok(pages
         .into_iter()
         .enumerate()
@@ -121,19 +121,20 @@ fn extract_pdf(data: &[u8]) -> Result<Vec<Segment>, String> {
 
 /// Render CSV rows as "header: value" lines so each record stays readable and self-describing after chunking.
 fn extract_csv(data: &[u8]) -> Result<Segment, String> {
-    let mut reader = csv::ReaderBuilder::new().flexible(true).from_reader(data);
-
-    let headers: Vec<String> = reader
-        .headers()
+    let text = std::str::from_utf8(data).map_err(|e| format!("CSV parsing failed: {e}"))?;
+    let mut records = quench_convert::csv::records(text, b',', false)
         .map_err(|e| format!("CSV parsing failed: {e}"))?
+        .into_iter();
+
+    let headers: Vec<String> = records
+        .next()
+        .unwrap_or_default()
         .iter()
         .map(|h| h.trim().to_string())
         .collect();
 
     let mut out = String::new();
-    for (row_idx, record) in reader.records().enumerate() {
-        let record =
-            record.map_err(|e| format!("CSV parsing failed at row {}: {}", row_idx + 1, e))?;
+    for record in records {
         let line: Vec<String> = record
             .iter()
             .enumerate()
@@ -160,7 +161,7 @@ fn extract_csv(data: &[u8]) -> Result<Segment, String> {
 /// Flattens HTML to plain text: block elements become `\n\n`-separated
 /// paragraphs, inline markup drops, scripts/styles/head are skipped.
 fn extract_html(html: &str) -> Segment {
-    use scraper::{Html, Node, Selector};
+    use quench_html::{Document, NodeKind, Selector};
 
     /// Elements whose text starts a new paragraph in the flattened output.
     fn is_block(tag: &str) -> bool {
@@ -199,29 +200,30 @@ fn extract_html(html: &str) -> Segment {
         matches!(tag, "script" | "style" | "noscript" | "template" | "head")
     }
 
-    let document = Html::parse_document(html);
+    let document = Document::parse(html);
 
     let title = Selector::parse("title")
         .ok()
         .and_then(|s| document.select(&s).next())
-        .map(|t| t.text().collect::<String>().trim().to_string())
+        .map(|t| t.text().trim().to_string())
         .filter(|t| !t.is_empty());
 
     let mut out = String::new();
     // Whether the source had whitespace before the next text node; inline markup ("a<b>b</b>") must not introduce spaces.
     let mut pending_space = false;
     for node in document.root_element().descendants() {
-        match node.value() {
-            Node::Element(el)
-                if is_block(el.name()) && !out.is_empty() && !out.ends_with("\n\n") =>
+        match node.kind() {
+            NodeKind::Element
+                if node.name().is_some_and(is_block)
+                    && !out.is_empty()
+                    && !out.ends_with("\n\n") =>
             {
                 out.push_str("\n\n");
                 pending_space = false;
             }
-            Node::Text(text) => {
-                let skipped = node
-                    .ancestors()
-                    .any(|a| matches!(a.value(), Node::Element(el) if is_skipped(el.name())));
+            NodeKind::Text => {
+                let text = node.as_text().unwrap_or_default();
+                let skipped = node.ancestors().any(|a| a.name().is_some_and(is_skipped));
                 if skipped {
                     continue;
                 }

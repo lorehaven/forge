@@ -4,7 +4,7 @@ use quench_db::{Db, InMemoryDb};
 use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::files;
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_when_file_storage_is_disabled() {
     files::register_routes();
     let container = support::container_builder()

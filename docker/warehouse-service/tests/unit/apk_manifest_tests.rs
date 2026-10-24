@@ -19,7 +19,7 @@ const RESOURCE_LABEL: &[u8] = include_bytes!("../fixtures/apk/resource_label.apk
 const MISSING_VERSION_CODE: &[u8] = include_bytes!("../fixtures/apk/missing_version_code.apk");
 const NO_MANIFEST: &[u8] = include_bytes!("../fixtures/apk/no_manifest.zip");
 
-#[test]
+#[quench_test::test]
 fn extracts_identity_and_sdk_levels_from_a_real_manifest() {
     let metadata = extract(Cursor::new(MINIMAL)).expect("valid manifest");
 
@@ -31,7 +31,7 @@ fn extracts_identity_and_sdk_levels_from_a_real_manifest() {
     assert_eq!(metadata.label.as_deref(), Some("Forge Test App"));
 }
 
-#[test]
+#[quench_test::test]
 fn collects_every_uses_permission() {
     let metadata = extract(Cursor::new(MINIMAL)).expect("valid manifest");
 
@@ -44,7 +44,7 @@ fn collects_every_uses_permission() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn label_is_none_when_it_is_an_unresolved_resource_reference() {
     let metadata = extract(Cursor::new(RESOURCE_LABEL)).expect("valid manifest");
 
@@ -53,19 +53,19 @@ fn label_is_none_when_it_is_an_unresolved_resource_reference() {
     assert_eq!(metadata.label, None);
 }
 
-#[test]
+#[quench_test::test]
 fn missing_version_code_is_rejected() {
     let err = extract(Cursor::new(MISSING_VERSION_CODE)).unwrap_err();
     assert!(matches!(err, ApkManifestError::MissingVersionCode));
 }
 
-#[test]
+#[quench_test::test]
 fn zip_with_no_manifest_entry_is_rejected() {
     let err = extract(Cursor::new(NO_MANIFEST)).unwrap_err();
     assert!(matches!(err, ApkManifestError::MissingManifest));
 }
 
-#[test]
+#[quench_test::test]
 fn non_zip_bytes_are_rejected() {
     let err = extract(Cursor::new(b"not a zip at all".as_slice())).unwrap_err();
     assert!(matches!(err, ApkManifestError::NotAZip));

@@ -91,12 +91,12 @@ fn stored(manifest: &Value) -> String {
 
 // --- the Secret ---------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn the_secret_is_named_for_its_package() {
     assert_eq!(secret_name("media"), "gantry-values-media");
 }
 
-#[test]
+#[quench_test::test]
 fn the_manifest_holds_the_file_verbatim_and_a_hash_of_it() {
     let contents = b"A=1\nB=\"two words\"\n";
     let m = manifest("media", "forge", contents);
@@ -113,7 +113,7 @@ fn the_manifest_holds_the_file_verbatim_and_a_hash_of_it() {
     assert_eq!(m["metadata"]["labels"][LABEL], "media");
 }
 
-#[test]
+#[quench_test::test]
 fn the_secret_carries_no_label_prune_could_select_it_by() {
     // `prune` selects on `app.kubernetes.io/managed-by=riveter` and `env=<env>`. A values Secret lives in
     // whatever namespace Gantry runs in - an overlay's own, perhaps - and must never look like its resource.
@@ -124,7 +124,7 @@ fn the_secret_carries_no_label_prune_could_select_it_by() {
     assert!(!labels.contains_key("env"));
 }
 
-#[test]
+#[quench_test::test]
 fn the_hash_changes_when_a_value_does_and_not_otherwise() {
     let hash =
         |text: &[u8]| manifest("a", "n", text)["metadata"]["annotations"][HASH_ANNOTATION].clone();
@@ -132,7 +132,7 @@ fn the_hash_changes_when_a_value_does_and_not_otherwise() {
     assert_ne!(hash(b"A=1\n"), hash(b"A=2\n"));
 }
 
-#[test]
+#[quench_test::test]
 fn awkward_bytes_are_stored_exactly() {
     let contents = "TOKEN='it'\"s\"=a=b\nUNICODE=zażółć\nNO_NEWLINE=at-the-end".as_bytes();
     assert_eq!(stored(&manifest("a", "n", contents)).as_bytes(), contents);
@@ -140,7 +140,7 @@ fn awkward_bytes_are_stored_exactly() {
 
 // --- finding overlays -----------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn only_overlays_with_both_a_manifest_and_a_dotenv_are_listed() {
     let (dir, root) = overlays(&[
         ("media", Some("A=1\n")),
@@ -158,7 +158,7 @@ fn only_overlays_with_both_a_manifest_and_a_dotenv_are_listed() {
 
 // --- syncing ---------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn syncing_one_overlay_sends_its_secret_to_kubectl_over_stdin() {
     let (_dir, root) = overlays(&[("media", Some(&format!("PORT=80\nTOKEN={SECRET_VALUE}\n")))]);
 
@@ -184,7 +184,7 @@ fn syncing_one_overlay_sends_its_secret_to_kubectl_over_stdin() {
     assert_eq!(synced[0].variables, ["PORT", "TOKEN"], "names, sorted");
 }
 
-#[test]
+#[quench_test::test]
 fn a_value_never_appears_in_an_argument_or_in_what_is_reported() {
     let (_dir, root) = overlays(&[("media", Some(&format!("TOKEN={SECRET_VALUE}\n")))]);
 
@@ -200,7 +200,7 @@ fn a_value_never_appears_in_an_argument_or_in_what_is_reported() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn all_syncs_every_overlay_that_has_values_and_a_context_comes_first() {
     let (_dir, root) = overlays(&[
         ("media", Some("A=1\n")),
@@ -235,7 +235,7 @@ fn all_syncs_every_overlay_that_has_values_and_a_context_comes_first() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_dry_run_reports_without_calling_kubectl() {
     let (_dir, root) = overlays(&[("media", Some("A=1\nB=2\n"))]);
     let mut dry = request(&["media"]);
@@ -248,7 +248,7 @@ fn a_dry_run_reports_without_calling_kubectl() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn naming_overlays_and_all_together_or_neither_is_refused() {
     let (_dir, root) = overlays(&[("media", Some("A=1\n"))]);
 
@@ -268,7 +268,7 @@ fn naming_overlays_and_all_together_or_neither_is_refused() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn an_overlay_that_cannot_be_synced_is_refused_before_anything_is_written() {
     let (_dir, root) = overlays(&[
         ("media", Some("A=1\n")),
@@ -292,7 +292,7 @@ fn an_overlay_that_cannot_be_synced_is_refused_before_anything_is_written() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn an_overlay_that_cannot_be_a_package_name_has_no_secret() {
     let (_dir, root) = overlays(&[("Bad_Name", Some("A=1\n"))]);
     let err = sync(&request(&["Bad_Name"]), &root)
@@ -301,7 +301,7 @@ fn an_overlay_that_cannot_be_a_package_name_has_no_secret() {
     assert!(err.contains("DNS-1123"), "{err}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_namespace_is_required() {
     let (_dir, root) = overlays(&[("media", Some("A=1\n"))]);
     let mut blank = request(&["media"]);
@@ -309,7 +309,7 @@ fn a_namespace_is_required() {
     assert!(sync(&blank, &root).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_kubectl_failure_names_the_overlay_and_says_why() {
     let (_dir, root) = overlays(&[("media", Some("A=1\n"))]);
     with_kubectl(1, |_| {
@@ -322,7 +322,7 @@ fn a_kubectl_failure_names_the_overlay_and_says_why() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn syncing_twice_is_the_same_apply_twice() {
     // `apply` is idempotent, so a second sync is not an error and sends the same Secret.
     let (_dir, root) = overlays(&[("media", Some("A=1\n"))]);

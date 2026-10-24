@@ -22,7 +22,7 @@ async fn app() -> (
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_reports_not_found_for_an_unpublished_crate() {
     let _storage = WithStorageRoot::new();
     let (app, container) = app().await;
@@ -37,7 +37,7 @@ async fn list_reports_not_found_for_an_unpublished_crate() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_is_empty_for_a_published_crate_with_no_owners_file() {
     let storage = WithStorageRoot::new();
     publish_crate(&storage, "my-crate");
@@ -55,7 +55,7 @@ async fn list_is_empty_for_a_published_crate_with_no_owners_file() {
     assert_eq!(body["users"], quench_serde::json!([]));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn add_rejects_an_empty_user_list() {
     let storage = WithStorageRoot::new();
     publish_crate(&storage, "my-crate");
@@ -72,7 +72,7 @@ async fn add_rejects_an_empty_user_list() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn add_assigns_sequential_ids_and_skips_case_insensitive_duplicates() {
     let storage = WithStorageRoot::new();
     publish_crate(&storage, "my-crate");
@@ -111,7 +111,7 @@ async fn add_assigns_sequential_ids_and_skips_case_insensitive_duplicates() {
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn remove_deletes_owners_case_insensitively() {
     let storage = WithStorageRoot::new();
     publish_crate(&storage, "my-crate");
@@ -150,7 +150,7 @@ async fn remove_deletes_owners_case_insensitively() {
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn remove_rejects_an_empty_user_list() {
     let storage = WithStorageRoot::new();
     publish_crate(&storage, "my-crate");
@@ -167,7 +167,7 @@ async fn remove_rejects_an_empty_user_list() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn add_rejects_an_invalid_crate_name() {
     let _storage = WithStorageRoot::new();
     let (app, container) = app().await;

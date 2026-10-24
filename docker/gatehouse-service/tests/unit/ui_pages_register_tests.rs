@@ -60,7 +60,7 @@ fn location(resp: quench_http::response::Response) -> String {
 // known_error_key / render_register_page
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn known_error_key_accepts_the_email_validation_key_and_realm_errors() {
     assert_eq!(
         known_error_key("ui_register_error_email_invalid"),
@@ -69,7 +69,7 @@ fn known_error_key_accepts_the_email_validation_key_and_realm_errors() {
     assert!(known_error_key("made-up-key").is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_register_page_shows_a_known_error() {
     let notice = Notice {
         err: Some("ui_register_error_email_invalid".to_string()),
@@ -79,7 +79,7 @@ async fn render_register_page_shows_a_known_error() {
     assert!(html.contains("ui_register_error_email_invalid"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_register_page_without_a_notice_has_no_error() {
     let resp = render_register_page(&Notice::default());
     let html = body_text(resp).await;
@@ -90,13 +90,13 @@ async fn render_register_page_without_a_notice_has_no_error() {
 // HTTP handlers
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn register_page_renders() {
     let resp = register_page(Query(Notice::default())).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn register_page_slash_renders() {
     let resp = register_page_slash(Query(Notice::default())).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -151,7 +151,7 @@ fn post_form_with_headers(
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn register_submit_rejects_an_invalid_email() {
     let (app, container) = register_app(db().await).await;
     let resp = app
@@ -169,7 +169,7 @@ async fn register_submit_rejects_an_invalid_email() {
     assert!(location(resp).contains("ui_register_error_email_invalid"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn register_submit_creates_the_account_and_redirects_to_login() {
     let (app, container) = register_app(db().await).await;
     let resp = app
@@ -187,7 +187,7 @@ async fn register_submit_creates_the_account_and_redirects_to_login() {
     assert!(location(resp).contains("registered=1"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn verify_rejects_an_unknown_token() {
     let resp = verify(
         Query(VerifyQuery {
@@ -201,7 +201,7 @@ async fn verify_rejects_an_unknown_token() {
     assert!(location(resp).contains("ui_login_verify_invalid"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn verification_link_uses_the_configured_base_not_the_request_host() {
     let recorder = Arc::new(RecordingSender::default());
     let (app, container) = register_app_with(db().await, recorder.clone()).await;
@@ -254,7 +254,7 @@ fn register_with_cookie(
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_verification_email_uses_the_browsers_language() {
     let recorder = Arc::new(RecordingSender::default());
     let (app, container) = register_app_with(db().await, recorder.clone()).await;
@@ -269,7 +269,7 @@ async fn the_verification_email_uses_the_browsers_language() {
     assert_eq!(recorder.sent()[0].locale.as_deref(), Some("pl-PL"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unsupported_or_missing_browser_language_means_no_preference() {
     for cookie in [Some("qlocale=xx-XX"), Some("theme=dark"), None] {
         let recorder = Arc::new(RecordingSender::default());
@@ -284,7 +284,7 @@ async fn an_unsupported_or_missing_browser_language_means_no_preference() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn registration_refuses_addresses_that_could_never_be_delivered_to() {
     for bad in [
         "no-at-sign",
@@ -306,7 +306,7 @@ async fn registration_refuses_addresses_that_could_never_be_delivered_to() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_address_is_trimmed_before_it_is_stored_and_emailed() {
     let recorder = Arc::new(RecordingSender::default());
     let (app, container) = register_app_with(db().await, recorder.clone()).await;
@@ -319,7 +319,7 @@ async fn the_address_is_trimmed_before_it_is_stored_and_emailed() {
     assert_eq!(recorder.sent()[0].to, "alice@example.com");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failing_mail_server_does_not_fail_the_registration() {
     struct Failing;
     #[quench_core::async_trait]
@@ -362,7 +362,7 @@ fn register_named(
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn one_address_cannot_be_flooded_through_many_usernames() {
     let recorder = Arc::new(RecordingSender::default());
     let db = db().await;
@@ -413,7 +413,7 @@ async fn one_address_cannot_be_flooded_through_many_usernames() {
     assert!(location(resp).contains("registered=1"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn one_client_cannot_register_without_end() {
     let recorder = Arc::new(RecordingSender::default());
     let (app, container) = register_app_with(db().await, recorder.clone()).await;
@@ -445,7 +445,7 @@ async fn one_client_cannot_register_without_end() {
     assert!(location(resp).contains("registered=1"));
 }
 
-#[test]
+#[quench_test::test]
 fn the_rate_limited_registration_error_is_a_known_key() {
     assert_eq!(
         known_error_key("ui_register_error_rate_limited"),

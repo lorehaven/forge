@@ -40,7 +40,7 @@ fn post_json(
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn mint_is_not_found_when_test_mode_is_off() {
     let _guard = env_lock().lock().await;
     quench_core::env::remove("GATEHOUSE_TEST_MODE");
@@ -56,7 +56,7 @@ async fn mint_is_not_found_when_test_mode_is_off() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn mint_issues_a_token_with_the_requested_claims_when_test_mode_is_on() {
     let _guard = env_lock().lock().await;
     quench_core::env::set("GATEHOUSE_TEST_MODE", "true");
@@ -83,7 +83,7 @@ async fn mint_issues_a_token_with_the_requested_claims_when_test_mode_is_on() {
     quench_core::env::remove("GATEHOUSE_TEST_MODE");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn mint_honors_explicit_iat_and_exp_overrides() {
     let _guard = env_lock().lock().await;
     quench_core::env::set("GATEHOUSE_TEST_MODE", "true");

@@ -1,8 +1,8 @@
 use crate::world::ForgeWorld;
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde_json::Value;
+use quench_core::base64::STANDARD;
+use quench_serde::Value;
 
-#[cucumber::when(expr = "GET request is sent to {string} with token")]
+#[quench_test_bdd::when(expr = "GET request is sent to {string} with token")]
 async fn send_get_request_with_token(world: &mut ForgeWorld, path: String) {
     let url = if path.starts_with("/v2/") || path.starts_with("/token") {
         format!("{}{}", world.warehouse_base_url, path)
@@ -21,7 +21,7 @@ async fn send_get_request_with_token(world: &mut ForgeWorld, path: String) {
     world.record_response(res).await;
 }
 
-#[cucumber::when(expr = "PUT request is sent to {string} with token and valid manifest")]
+#[quench_test_bdd::when(expr = "PUT request is sent to {string} with token and valid manifest")]
 async fn send_put_request_with_token_valid_manifest(world: &mut ForgeWorld, path: String) {
     let url = format!("{}{}", world.warehouse_base_url, path);
     let mut rb = world.client.put(&url);
@@ -29,7 +29,7 @@ async fn send_put_request_with_token_valid_manifest(world: &mut ForgeWorld, path
         rb = rb.bearer_auth(token);
     }
 
-    let manifest = serde_json::json!({
+    let manifest = quench_serde::json!({
         "schemaVersion": 2,
         "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
         "config": {
@@ -47,7 +47,7 @@ async fn send_put_request_with_token_valid_manifest(world: &mut ForgeWorld, path
     });
 
     let res = rb
-        .body(serde_json::to_vec(&manifest).unwrap())
+        .body(quench_serde::json::to_vec(&manifest))
         .header(
             "Content-Type",
             "application/vnd.docker.distribution.manifest.v2+json",
@@ -61,12 +61,12 @@ async fn send_put_request_with_token_valid_manifest(world: &mut ForgeWorld, path
     world.record_response(res).await;
 }
 
-#[cucumber::when(expr = "PUT request is sent to {string} without token but valid manifest")]
+#[quench_test_bdd::when(expr = "PUT request is sent to {string} without token but valid manifest")]
 async fn send_put_request_without_token_valid_manifest(world: &mut ForgeWorld, path: String) {
     let url = format!("{}{}", world.warehouse_base_url, path);
     let rb = world.client.put(&url);
 
-    let manifest = serde_json::json!({
+    let manifest = quench_serde::json!({
         "schemaVersion": 2,
         "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
         "config": {
@@ -84,7 +84,7 @@ async fn send_put_request_without_token_valid_manifest(world: &mut ForgeWorld, p
     });
 
     let res = rb
-        .body(serde_json::to_vec(&manifest).unwrap())
+        .body(quench_serde::json::to_vec(&manifest))
         .header(
             "Content-Type",
             "application/vnd.docker.distribution.manifest.v2+json",
@@ -97,7 +97,7 @@ async fn send_put_request_without_token_valid_manifest(world: &mut ForgeWorld, p
     world.record_response(res).await;
 }
 
-#[cucumber::when(expr = "DELETE request is sent to {string} with token")]
+#[quench_test_bdd::when(expr = "DELETE request is sent to {string} with token")]
 async fn send_delete_request_with_token(world: &mut ForgeWorld, path: String) {
     let url = format!("{}{}", world.warehouse_base_url, path);
     let mut rb = world.client.delete(&url);
@@ -109,7 +109,7 @@ async fn send_delete_request_with_token(world: &mut ForgeWorld, path: String) {
     world.record_response(res).await;
 }
 
-#[cucumber::then(expr = "response should contain tag {string}")]
+#[quench_test_bdd::then(expr = "response should contain tag {string}")]
 async fn check_tag_in_list(world: &mut ForgeWorld, tag: String) {
     let json = world
         .last_json
@@ -124,7 +124,7 @@ async fn check_tag_in_list(world: &mut ForgeWorld, tag: String) {
     );
 }
 
-#[cucumber::then(expr = "response should contain header {string}")]
+#[quench_test_bdd::then(expr = "response should contain header {string}")]
 async fn check_header(world: &mut ForgeWorld, header: String) {
     let lower_header = header.to_lowercase();
     let keys: Vec<String> = world
@@ -149,7 +149,7 @@ async fn check_header(world: &mut ForgeWorld, header: String) {
     }
 }
 
-#[cucumber::when(
+#[quench_test_bdd::when(
     expr = "DELETE request is sent to repository {string} with digest from header {string} and token"
 )]
 async fn delete_by_header_digest(world: &mut ForgeWorld, repo: String, _header: String) {
@@ -169,7 +169,7 @@ async fn delete_by_header_digest(world: &mut ForgeWorld, repo: String, _header: 
     world.record_response(res).await;
 }
 
-#[cucumber::when(expr = "token for service {string} and scope {string} is requested")]
+#[quench_test_bdd::when(expr = "token for service {string} and scope {string} is requested")]
 async fn get_token_step(world: &mut ForgeWorld, service: String, scope: String) {
     let url = format!(
         "{}/token?service={}&scope={}",
@@ -190,12 +190,12 @@ async fn get_token_step(world: &mut ForgeWorld, service: String, scope: String) 
     }
 }
 
-#[cucumber::then("response should contain a JWT token")]
+#[quench_test_bdd::then("response should contain a JWT token")]
 async fn check_token(world: &mut ForgeWorld) {
     assert!(world.token.is_some(), "Token not found in response");
 }
 
-#[cucumber::given(expr = "valid token for scope {string} is obtained")]
+#[quench_test_bdd::given(expr = "valid token for scope {string} is obtained")]
 async fn have_token(world: &mut ForgeWorld, scope: String) {
     let url = format!(
         "{}/token?service=warehouse&scope={}",
@@ -223,7 +223,7 @@ async fn have_token(world: &mut ForgeWorld, scope: String) {
     }
 }
 
-#[cucumber::then("response should contain a list of tags")]
+#[quench_test_bdd::then("response should contain a list of tags")]
 async fn check_tags(world: &mut ForgeWorld) {
     let json = world
         .last_json

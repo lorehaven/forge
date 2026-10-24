@@ -2,7 +2,7 @@
 
 use sage_service::observability::metrics::*;
 
-#[test]
+#[quench_test::test]
 fn test_tool_metrics_recording() {
     let mut metrics = ToolMetrics::new();
     metrics.record_execution(100, true, false);
@@ -19,7 +19,7 @@ fn test_tool_metrics_recording() {
     assert!((metrics.avg_duration_ms() - 150.0).abs() < 0.001);
 }
 
-#[test]
+#[quench_test::test]
 fn test_metrics_collector() {
     let collector = MetricsCollector::new();
 

@@ -80,7 +80,7 @@ async fn views(rig: &Rig) -> Vec<deployments::DeploymentView> {
 
 // ---------------------------------------------------------------- the picture
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_up_b_down_is_what_the_list_shows_and_it_knows_they_conflict() {
     let rig = rig();
     publish_ml(&rig);
@@ -106,7 +106,7 @@ async fn a_up_b_down_is_what_the_list_shows_and_it_knows_they_conflict() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn something_that_differs_from_what_was_asked_is_flagged() {
     let rig = rig();
     publish_ml(&rig);
@@ -138,7 +138,7 @@ async fn views_of(rig: &Rig, name: &str) -> deployments::DeploymentView {
         .unwrap()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_package_that_declares_nothing_is_one_deployment_named_after_it() {
     let rig = rig();
     rig.registry.publish("media", "1.0.0", Some("media"));
@@ -153,7 +153,7 @@ async fn a_package_that_declares_nothing_is_one_deployment_named_after_it() {
     assert_eq!(views[0].resources.len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_package_that_is_not_installed_shows_its_deployments_as_absent() {
     let rig = rig();
     publish_ml(&rig);
@@ -168,7 +168,7 @@ async fn a_package_that_is_not_installed_shows_its_deployments_as_absent() {
 
 // ---------------------------------------------------------------- stop
 
-#[tokio::test]
+#[quench_test::test]
 async fn stopping_goes_down_the_listed_order_clears_unowned_pods_and_waits_for_them() {
     let rig = rig();
     publish_ml(&rig);
@@ -222,7 +222,7 @@ async fn stopping_goes_down_the_listed_order_clears_unowned_pods_and_waits_for_t
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn stopping_what_is_stopped_or_missing_is_refused() {
     let rig = rig();
     publish_ml(&rig);
@@ -252,7 +252,7 @@ async fn stopping_what_is_stopped_or_missing_is_refused() {
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn what_gantry_stands_on_cannot_be_stopped_by_any_route() {
     let rig = rig();
     rig.registry.publish_with(
@@ -323,7 +323,7 @@ async fn what_gantry_stands_on_cannot_be_stopped_by_any_route() {
 
 // ---------------------------------------------------------------- start and swap
 
-#[tokio::test]
+#[quench_test::test]
 async fn starting_b_plans_the_stop_of_a_first_and_is_a_swap() {
     let rig = rig();
     publish_ml(&rig);
@@ -396,7 +396,7 @@ async fn starting_b_plans_the_stop_of_a_first_and_is_a_swap() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn starting_something_that_conflicts_with_nothing_running_is_a_plain_start() {
     let rig = rig();
     publish_ml(&rig);
@@ -425,7 +425,7 @@ async fn starting_something_that_conflicts_with_nothing_running_is_a_plain_start
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_explicit_also_stop_swaps_things_that_declare_no_conflict() {
     let rig = rig();
     rig.registry.publish_with(
@@ -466,7 +466,7 @@ async fn an_explicit_also_stop_swaps_things_that_declare_no_conflict() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn starting_what_is_running_is_refused_unless_it_means_stopping_something() {
     let rig = rig();
     publish_ml(&rig);
@@ -485,7 +485,7 @@ async fn starting_what_is_running_is_refused_unless_it_means_stopping_something(
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn starting_from_a_package_at_mixed_versions_is_refused() {
     let rig = rig();
     publish_ml(&rig);
@@ -513,7 +513,7 @@ async fn starting_from_a_package_at_mixed_versions_is_refused() {
 
 // ---------------------------------------------------------------- recorded state
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_recorded_state_changes_only_when_the_operation_succeeds() {
     let rig = rig();
     publish_ml(&rig);
@@ -583,7 +583,7 @@ async fn the_recorded_state_changes_only_when_the_operation_succeeds() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_update_of_a_stopped_deployment_keeps_it_stopped() {
     let rig = rig();
     publish_ml(&rig);
@@ -648,7 +648,7 @@ async fn an_update_of_a_stopped_deployment_keeps_it_stopped() {
     assert!(!except.contains(&"deployment/trainer".to_string()));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_first_install_of_a_package_whose_deployment_defaults_to_stopped_leaves_it_out() {
     let rig = rig();
     publish_ml(&rig);
@@ -664,7 +664,7 @@ async fn a_first_install_of_a_package_whose_deployment_defaults_to_stopped_leave
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_plan_is_refused_if_the_deployments_moved_since_it_was_made() {
     let rig = rig();
     publish_ml(&rig);

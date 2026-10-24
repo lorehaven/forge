@@ -36,14 +36,14 @@ fn names(stages: &[Stage], order: &[usize]) -> Vec<String> {
 // Ordering
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn independent_stages_keep_declaration_order() {
     let stages = vec![stage("a", &[]), stage("b", &[]), stage("c", &[])];
     let order = topological_order(&stages).expect("orders");
     assert_eq!(names(&stages, &order), ["a", "b", "c"]);
 }
 
-#[test]
+#[quench_test::test]
 fn a_stage_follows_what_it_needs() {
     // Declared backwards on purpose: the order has to come from `needs`, not
     // from where the author happened to put the tables.
@@ -56,7 +56,7 @@ fn a_stage_follows_what_it_needs() {
     assert_eq!(names(&stages, &order), ["build", "test", "deploy"]);
 }
 
-#[test]
+#[quench_test::test]
 fn a_diamond_is_ordered_with_ties_in_declaration_order() {
     let stages = vec![
         stage("build", &[]),
@@ -68,7 +68,7 @@ fn a_diamond_is_ordered_with_ties_in_declaration_order() {
     assert_eq!(names(&stages, &order), ["build", "lint", "test", "deploy"]);
 }
 
-#[test]
+#[quench_test::test]
 fn ordering_is_deterministic() {
     // A run report that reshuffles between runs is one nobody can compare
     // against the last one.
@@ -89,7 +89,7 @@ fn ordering_is_deterministic() {
     assert_eq!(names(&stages, &first), ["a", "c", "b", "d"]);
 }
 
-#[test]
+#[quench_test::test]
 fn a_stage_with_several_needs_follows_all_of_them() {
     let stages = vec![
         stage("deploy", &["build", "test"]),
@@ -107,7 +107,7 @@ fn a_stage_with_several_needs_follows_all_of_them() {
 // Rejected graphs
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn duplicate_stage_names_are_rejected() {
     let stages = vec![stage("build", &[]), stage("build", &[])];
     assert_eq!(
@@ -118,7 +118,7 @@ fn duplicate_stage_names_are_rejected() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_needs_naming_no_stage_is_rejected() {
     let stages = vec![stage("build", &[]), stage("deploy", &["tset"])];
     assert_eq!(
@@ -130,7 +130,7 @@ fn a_needs_naming_no_stage_is_rejected() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_stage_needing_itself_is_rejected() {
     let stages = vec![stage("build", &["build"])];
     assert_eq!(
@@ -141,7 +141,7 @@ fn a_stage_needing_itself_is_rejected() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_cycle_is_rejected_and_named() {
     let stages = vec![
         stage("a", &["c"]),
@@ -205,7 +205,7 @@ fn decisions(context: &EvalContext) -> Vec<(String, Decision)> {
         .collect()
 }
 
-#[test]
+#[quench_test::test]
 fn every_stage_runs_when_nothing_excludes_it() {
     let planned = decisions(&EvalContext::new("push", "refs/heads/master", "abc"));
     assert_eq!(
@@ -218,7 +218,7 @@ fn every_stage_runs_when_nothing_excludes_it() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_false_condition_excludes_only_that_stage() {
     let planned = decisions(&EvalContext::new("push", "refs/heads/topic", "abc"));
     assert_eq!(planned[0].1, Decision::Run);
@@ -226,7 +226,7 @@ fn a_false_condition_excludes_only_that_stage() {
     assert_eq!(planned[2].1, Decision::Excluded);
 }
 
-#[test]
+#[quench_test::test]
 fn the_plan_lists_skipped_stages_rather_than_omitting_them() {
     // A report that silently drops them cannot answer "why did this not
     // deploy", which is the question conditions generate.
@@ -234,7 +234,7 @@ fn the_plan_lists_skipped_stages_rather_than_omitting_them() {
     assert_eq!(planned.len(), 3);
 }
 
-#[test]
+#[quench_test::test]
 fn exclusion_propagates_to_dependents() {
     let source = r#"
 [[stage]]
@@ -261,7 +261,7 @@ steps = ["true"]
     );
 }
 
-#[test]
+#[quench_test::test]
 fn exclusion_propagates_transitively() {
     let source = r#"
 [[stage]]
@@ -294,7 +294,7 @@ steps = ["true"]
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_job_condition_is_evaluated_on_top_of_the_stages() {
     let source = r#"
 [[stage]]
@@ -315,7 +315,7 @@ steps = ["true"]
     assert_eq!(planned[0].jobs[1].decision, Decision::Excluded);
 }
 
-#[test]
+#[quench_test::test]
 fn jobs_of_an_excluded_stage_inherit_that_exclusion() {
     // Not `Blocked { by: "deploy" }`: a job told that its own stage did not run
     // learns nothing, and that is what the run report would have shown.
@@ -340,7 +340,7 @@ steps = ["true"]
     );
 }
 
-#[test]
+#[quench_test::test]
 fn jobs_of_a_blocked_stage_name_the_stage_that_caused_it() {
     let source = r#"
 [[stage]]
@@ -368,7 +368,7 @@ steps = ["true"]
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_job_condition_cannot_resurrect_an_excluded_stage() {
     let source = r#"
 [[stage]]
@@ -384,7 +384,7 @@ steps = ["true"]
     assert!(!planned[0].jobs[0].decision.will_run());
 }
 
-#[test]
+#[quench_test::test]
 fn decisions_explain_themselves() {
     assert!(Decision::Run.reason().is_none());
     assert!(
@@ -438,7 +438,7 @@ fn publish_decisions(event: &str, git_ref: &str) -> Vec<(String, bool)> {
         .collect()
 }
 
-#[test]
+#[quench_test::test]
 fn a_push_to_master_checks_and_publishes() {
     assert_eq!(
         publish_decisions("push", "refs/heads/master"),
@@ -446,7 +446,7 @@ fn a_push_to_master_checks_and_publishes() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_pull_request_checks_but_never_publishes() {
     assert_eq!(
         publish_decisions("pull_request", "refs/pull/7/merge"),
@@ -454,7 +454,7 @@ fn a_pull_request_checks_but_never_publishes() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_push_to_another_branch_checks_but_never_publishes() {
     assert_eq!(
         publish_decisions("push", "refs/heads/feature/x"),
@@ -462,7 +462,7 @@ fn a_push_to_another_branch_checks_but_never_publishes() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_manual_run_on_master_publishes_only_if_it_says_it_is_a_push() {
     // `manual` is an event of its own, so a hand-started run does not publish by accident.
     assert_eq!(

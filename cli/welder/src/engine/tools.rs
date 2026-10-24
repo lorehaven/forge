@@ -1,8 +1,6 @@
-use grep::regex::RegexMatcher;
-use grep::searcher::Searcher;
-use grep::searcher::sinks::UTF8;
-use ignore::WalkBuilder;
+use quench_core::fs::Walk;
 use quench_core::{Context, Result, bail, err};
+use quench_regex::Regex;
 use quench_serde::Value;
 use std::fmt::Write as _;
 use std::fs;
@@ -153,33 +151,31 @@ fn search(args: &Value) -> Result<String> {
     let path = args.get("path").and_then(Value::as_str).unwrap_or(".");
     let safe = safe_rel_path(path)?;
 
-    let matcher =
-        RegexMatcher::new(pattern).with_context(|| format!("invalid pattern: {pattern}"))?;
+    let regex = Regex::new(pattern).with_context(|| format!("invalid pattern: {pattern}"))?;
     let mut out = String::new();
 
-    for entry in WalkBuilder::new(safe).build() {
+    for entry in Walk::new(safe).standard_filters() {
         let entry = entry.context("failed to walk directory")?;
-        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+        if !entry.file_type().is_file() {
             continue;
         }
 
         let display = entry.path().display().to_string();
-        let mut searcher = Searcher::new();
-        let search_result = searcher.search_path(
-            &matcher,
-            entry.path(),
-            UTF8(|line_num, line| {
-                write!(&mut out, "{display}:{line_num}:{line}").map_err(std::io::Error::other)?;
-                Ok(true)
-            }),
-        );
+        let bytes = match fs::read(entry.path()) {
+            Ok(bytes) => bytes,
+            Err(err) => bail!("search failed on {display}: {err}"),
+        };
 
-        // Binary/unreadable files are skipped rather than failing the whole
-        // search, matching how `rg` quietly moves past them.
-        if let Err(err) = search_result
-            && err.kind() != std::io::ErrorKind::InvalidData
-        {
-            bail!("search failed on {display}: {err}");
+        // Lines that are not UTF-8 (binary files) are skipped rather than failing the whole search,
+        // matching how `rg` quietly moves past them.
+        for (index, raw) in bytes.split_inclusive(|&b| b == b'\n').enumerate() {
+            let Ok(line) = std::str::from_utf8(raw) else {
+                continue;
+            };
+            if regex.is_match(line.trim_end_matches(['\n', '\r'])) {
+                write!(&mut out, "{display}:{}:{line}", index + 1)
+                    .expect("writing to String should not fail");
+            }
         }
     }
 
@@ -192,9 +188,9 @@ fn index_project(args: &Value) -> Result<String> {
 
     let mut out = String::new();
 
-    for entry in WalkBuilder::new(safe).build() {
+    for entry in Walk::new(safe).standard_filters() {
         let entry = entry.context("failed to walk directory")?;
-        if entry.file_type().is_some_and(|ft| ft.is_file()) {
+        if entry.file_type().is_file() {
             writeln!(&mut out, "{}", entry.path().display())
                 .expect("writing to String should not fail");
         }
@@ -206,7 +202,8 @@ fn index_project(args: &Value) -> Result<String> {
 fn run_cmd(args: &Value, run_cmd_allowlist: &[String]) -> Result<String> {
     let cmd = required_str(args, "cmd")?;
 
-    let cmd_parts = shlex::split(cmd).ok_or_else(|| err!("invalid shell-like command syntax"))?;
+    let cmd_parts =
+        quench_core::shell::split(cmd).ok_or_else(|| err!("invalid shell-like command syntax"))?;
     if cmd_parts.is_empty() {
         bail!("command is empty");
     }

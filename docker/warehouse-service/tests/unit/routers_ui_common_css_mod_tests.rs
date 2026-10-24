@@ -1,6 +1,6 @@
 use warehouse_service::routers::ui::common::ensure_warehouse_css;
 
-#[test]
+#[quench_test::test]
 fn ensure_warehouse_css_writes_the_stylesheet_without_panicking() {
     // `ensure_warehouse_css` itself swallows I/O errors, so this only
     // asserts it didn't panic. It can't assert on the file's content: nextest

@@ -36,14 +36,14 @@ fn assert_continues(control: ReplControl) {
     assert!(matches!(control, ReplControl::Continue(_)));
 }
 
-#[test]
+#[quench_test::test]
 fn select_jobs_all_returns_every_job() {
     let jobs = vec![job("a"), job("b"), job("c")];
     let selected = select_jobs(&jobs, &["all"]);
     assert_eq!(selected.len(), 3);
 }
 
-#[test]
+#[quench_test::test]
 fn select_jobs_by_id_keeps_the_configured_order_not_the_argument_order() {
     let jobs = vec![job("a"), job("b"), job("c")];
     let selected = select_jobs(&jobs, &["c", "a"]);
@@ -51,7 +51,7 @@ fn select_jobs_by_id_keeps_the_configured_order_not_the_argument_order() {
     assert_eq!(ids, vec!["a", "c"]);
 }
 
-#[test]
+#[quench_test::test]
 fn select_jobs_ignores_unknown_ids() {
     let jobs = vec![job("a"), job("b")];
     let selected = select_jobs(&jobs, &["a", "does-not-exist"]);
@@ -59,14 +59,14 @@ fn select_jobs_ignores_unknown_ids() {
     assert_eq!(ids, vec!["a"]);
 }
 
-#[test]
+#[quench_test::test]
 fn select_jobs_with_no_matches_is_empty() {
     let jobs = vec![job("a"), job("b")];
     let selected = select_jobs(&jobs, &["nope"]);
     assert!(selected.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn select_jobs_does_not_treat_all_as_a_literal_job_id() {
     // A job actually named "all" is shadowed by the `run all` shorthand -
     // documented behavior, exercised here so a future change to the
@@ -76,52 +76,52 @@ fn select_jobs_does_not_treat_all_as_a_literal_job_id() {
     assert_eq!(selected.len(), 2);
 }
 
-#[test]
+#[quench_test::test]
 fn handle_command_quit_and_exit_end_the_session() {
     let mut repl = repl_with(vec![]);
     assert!(matches!(repl.handle_command("quit"), ReplControl::Exit));
     assert!(matches!(repl.handle_command("exit"), ReplControl::Exit));
 }
 
-#[test]
+#[quench_test::test]
 fn handle_command_empty_line_just_reprompts() {
     let mut repl = repl_with(vec![]);
     assert_continues(repl.handle_command(""));
     assert_continues(repl.handle_command("   "));
 }
 
-#[test]
+#[quench_test::test]
 fn handle_command_help_and_list_do_not_panic() {
     let mut repl = repl_with(vec![job("a")]);
     assert_continues(repl.handle_command("help"));
     assert_continues(repl.handle_command("list"));
 }
 
-#[test]
+#[quench_test::test]
 fn handle_command_list_on_an_empty_config_does_not_panic() {
     let mut repl = repl_with(vec![]);
     assert_continues(repl.handle_command("list"));
 }
 
-#[test]
+#[quench_test::test]
 fn handle_command_unknown_command_warns_and_continues() {
     let mut repl = repl_with(vec![]);
     assert_continues(repl.handle_command("frobnicate"));
 }
 
-#[test]
+#[quench_test::test]
 fn handle_command_run_with_no_args_prints_usage_and_continues() {
     let mut repl = repl_with(vec![job("a")]);
     assert_continues(repl.handle_command("run"));
 }
 
-#[test]
+#[quench_test::test]
 fn handle_command_run_with_an_unknown_job_id_finds_nothing() {
     let mut repl = repl_with(vec![job("a")]);
     assert_continues(repl.handle_command("run does-not-exist"));
 }
 
-#[test]
+#[quench_test::test]
 fn handle_command_reload_does_not_panic_regardless_of_real_config_state() {
     // `Config::load_merged()` is read-only (scans the real
     // `~/.config/pulley` and cwd for `*.pulley.toml`), so this is safe
@@ -132,7 +132,7 @@ fn handle_command_reload_does_not_panic_regardless_of_real_config_state() {
     assert_continues(repl.handle_command("reload"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_jobs_with_no_confirm_syncs_without_prompting() {
     let src = quench_core::tmp::TempDir::new().unwrap();
     let dest = quench_core::tmp::TempDir::new().unwrap();
@@ -148,7 +148,7 @@ fn run_jobs_with_no_confirm_syncs_without_prompting() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn run_jobs_with_nothing_to_sync_reports_no_changes_without_erroring() {
     let src = quench_core::tmp::TempDir::new().unwrap();
     let dest = quench_core::tmp::TempDir::new().unwrap();
@@ -158,7 +158,7 @@ fn run_jobs_with_nothing_to_sync_reports_no_changes_without_erroring() {
     repl.run_jobs(&["nothing-to-do"]).expect("run_jobs");
 }
 
-#[test]
+#[quench_test::test]
 fn run_jobs_with_empty_args_prints_usage_without_erroring() {
     let repl = repl_with(vec![job("a")]);
     repl.run_jobs(&[]).expect("run_jobs");

@@ -2,7 +2,7 @@
 
 use sage_service::tools::parser::*;
 
-#[test]
+#[quench_test::test]
 fn test_parse_tool_calls_format1() {
     let content = r#"Let me search for that information.
 <tool_call>
@@ -16,7 +16,7 @@ Found some results."#;
     assert_eq!(calls[0].arguments["query"], "latest Rust releases");
 }
 
-#[test]
+#[quench_test::test]
 fn test_parse_tool_calls_format2() {
     let content = r#"Let me search for that information.
 <toolcall>
@@ -31,7 +31,7 @@ Found some results."#;
     assert_eq!(calls[0].arguments["query"], "latest Python releases");
 }
 
-#[test]
+#[quench_test::test]
 fn test_parse_tool_calls_mismatched_tags() {
     // Test the Qwen quirk: <toolcall>...</tool_call> (mismatched)
     let content = r#"Let me search.
@@ -44,7 +44,7 @@ Found it."#;
     assert_eq!(calls[0].arguments["query"], "Python 2026");
 }
 
-#[test]
+#[quench_test::test]
 fn test_parse_tool_calls_trailing_semicolon() {
     // Regression: the model appended a stray `;` after the JSON object,
     // which defeated the old "closing brace must abut the closing tag"
@@ -59,7 +59,7 @@ fn test_parse_tool_calls_trailing_semicolon() {
     assert!(calls[0].arguments.as_object().unwrap().is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn test_parse_tool_calls_nested_braces_and_no_closing_tag() {
     // Nested object in arguments, no closing tag at all.
     let content =
@@ -71,7 +71,7 @@ fn test_parse_tool_calls_nested_braces_and_no_closing_tag() {
     assert_eq!(calls[0].arguments["query"], "a {b} c");
 }
 
-#[test]
+#[quench_test::test]
 fn test_strip_tool_calls_trailing_semicolon() {
     let content = r#"Before.
 <toolcall>{"name": "file_list", "arguments": {}};</toolcall>
@@ -85,7 +85,7 @@ After."#;
     assert!(cleaned.contains("After."));
 }
 
-#[test]
+#[quench_test::test]
 fn test_strip_tool_calls() {
     let content = r#"Let me search.
 <tool_call>

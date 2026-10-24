@@ -27,7 +27,7 @@ fn env_lock() -> &'static std::sync::Mutex<()> {
     LOCK.get_or_init(|| std::sync::Mutex::new(()))
 }
 
-#[test]
+#[quench_test::test]
 fn feature_enabled_recognizes_every_truthy_and_falsy_spelling() {
     let _guard = env_lock()
         .lock()
@@ -49,7 +49,7 @@ fn feature_enabled_recognizes_every_truthy_and_falsy_spelling() {
     quench_core::env::remove("GATEHOUSE_TEST_FEATURE_FLAG");
 }
 
-#[test]
+#[quench_test::test]
 fn feature_enabled_falls_back_to_the_default_when_unset_or_unrecognized() {
     let _guard = env_lock()
         .lock()
@@ -63,7 +63,7 @@ fn feature_enabled_falls_back_to_the_default_when_unset_or_unrecognized() {
     quench_core::env::remove("GATEHOUSE_TEST_FEATURE_FLAG_2");
 }
 
-#[test]
+#[quench_test::test]
 fn service_url_prefers_ui_url_over_the_plain_url_and_trims_trailing_slash() {
     let _guard = env_lock()
         .lock()
@@ -78,7 +78,7 @@ fn service_url_prefers_ui_url_over_the_plain_url_and_trims_trailing_slash() {
     quench_core::env::remove("SAGE_URL");
 }
 
-#[test]
+#[quench_test::test]
 fn service_url_is_none_when_neither_var_is_set() {
     let _guard = env_lock()
         .lock()
@@ -88,7 +88,7 @@ fn service_url_is_none_when_neither_var_is_set() {
     assert_eq!(service_url("SWITCHBOARD"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn enabled_services_excludes_a_service_disabled_by_its_feature_flag() {
     let _guard = env_lock()
         .lock()
@@ -119,7 +119,7 @@ fn enabled_services_excludes_a_service_disabled_by_its_feature_flag() {
     quench_core::env::remove("FEATURE_WAREHOUSE_ENABLED");
 }
 
-#[test]
+#[quench_test::test]
 fn enabled_services_includes_a_configured_and_enabled_service() {
     let _guard = env_lock()
         .lock()
@@ -149,7 +149,7 @@ fn enabled_services_includes_a_configured_and_enabled_service() {
     quench_core::env::remove("CONVEYOR_UI_URL");
 }
 
-#[test]
+#[quench_test::test]
 fn a_service_added_only_to_the_catalog_gets_a_card_with_derived_keys() {
     let _guard = env_lock()
         .lock()
@@ -173,7 +173,7 @@ fn a_service_added_only_to_the_catalog_gets_a_card_with_derived_keys() {
     quench_core::env::remove("ARCHIVE_VAULT_UI_URL");
 }
 
-#[test]
+#[quench_test::test]
 fn the_shipped_catalog_offers_every_estate_service_but_not_gatehouse() {
     let shipped = PermissionCatalog::load_from(concat!(
         env!("CARGO_MANIFEST_DIR"),

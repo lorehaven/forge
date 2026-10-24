@@ -5,7 +5,7 @@
 use std::path::Path;
 use warehouse_service::routers::files::dynamic::{blob_path, staging_path};
 
-#[test]
+#[quench_test::test]
 fn blob_path_shards_two_levels_deep_under_dot_blobs() {
     let root = Path::new("/data/dynamic");
     let digest = "abcdef0123456789";
@@ -16,7 +16,7 @@ fn blob_path_shards_two_levels_deep_under_dot_blobs() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn blob_path_tolerates_a_digest_shorter_than_the_shard_width() {
     let root = Path::new("/data/dynamic");
     // Too short for even one shard level: no `get(0..2)`, so the digest lands
@@ -29,7 +29,7 @@ fn blob_path_tolerates_a_digest_shorter_than_the_shard_width() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn staging_path_calls_never_collide() {
     let root = Path::new("/data/dynamic");
     let a = staging_path(root);

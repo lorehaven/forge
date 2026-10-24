@@ -3,7 +3,7 @@
 use sage_service::files::rag::RagSource;
 use sage_service::routers::ui::common::format::*;
 
-#[test]
+#[quench_test::test]
 fn test_format_message_headers() {
     let input = "### Conclusion\nChoose the appropriate loop.";
     let output = format_message(input);
@@ -11,28 +11,28 @@ fn test_format_message_headers() {
     assert!(output.contains("<p>Choose the appropriate loop.</p>"));
 }
 
-#[test]
+#[quench_test::test]
 fn test_format_message_lists() {
     let input = "- **Readability**: for loop\n- **Consistency**: codebase";
     let output = format_message(input);
     assert!(output.contains("<ul><li><strong>Readability</strong>: for loop</li><li><strong>Consistency</strong>: codebase</li></ul>"));
 }
 
-#[test]
+#[quench_test::test]
 fn test_format_message_lists_with_double_newlines() {
     let input = "- **Readability**: for loop\n\n- **Consistency**: codebase";
     let output = format_message(input);
     assert!(output.contains("<ul><li><strong>Readability</strong>: for loop</li><li><strong>Consistency</strong>: codebase</li></ul>"));
 }
 
-#[test]
+#[quench_test::test]
 fn test_format_message_inline_code() {
     let input = "Use `for` loops where possible.";
     let output = format_message(input);
     assert!(output.contains("<code class=\"inline-code\">for</code>"));
 }
 
-#[test]
+#[quench_test::test]
 fn test_format_message_bold_italic() {
     let input = "This is **bold** and _italic_ and `code` text.";
     let output = format_message(input);
@@ -41,7 +41,7 @@ fn test_format_message_bold_italic() {
     assert!(output.contains("<code class=\"inline-code\">code</code>"));
 }
 
-#[test]
+#[quench_test::test]
 fn format_message_renders_headers_from_h1_through_h6() {
     for level in 1..=6 {
         let hashes = "#".repeat(level);
@@ -53,25 +53,25 @@ fn format_message_renders_headers_from_h1_through_h6() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn format_message_seven_hashes_is_not_a_header() {
     let output = format_message("####### too many");
     assert!(!output.contains("<h"));
 }
 
-#[test]
+#[quench_test::test]
 fn format_message_renders_an_ordered_list() {
     let output = format_message("1. first\n2. second");
     assert!(output.contains("<ol><li>first</li><li>second</li></ol>"));
 }
 
-#[test]
+#[quench_test::test]
 fn format_message_renders_a_horizontal_rule() {
     let output = format_message("above\n\n---\n\nbelow");
     assert!(output.contains("<hr"));
 }
 
-#[test]
+#[quench_test::test]
 fn format_message_renders_a_markdown_table() {
     let input = "| Name | Age |\n|---|---|\n| Alice | 30 |\n| Bob | 25 |";
     let output = format_message(input);
@@ -83,14 +83,14 @@ fn format_message_renders_a_markdown_table() {
     assert!(output.contains("<td>Bob</td>"));
 }
 
-#[test]
+#[quench_test::test]
 fn format_message_renders_a_link_opening_in_a_new_tab() {
     let output = format_message("See [the docs](https://example.com/docs) for more.");
     assert!(output.contains("<a href=\"https://example.com/docs\" target=\"_blank\""));
     assert!(output.contains("the docs</a>"));
 }
 
-#[test]
+#[quench_test::test]
 fn format_message_renders_a_fenced_code_block_with_its_language() {
     let input = "before\n```rust\nfn main() {}\n```\nafter";
     let output = format_message(input);
@@ -100,7 +100,7 @@ fn format_message_renders_a_fenced_code_block_with_its_language() {
     assert!(output.contains("fn main() {}"));
 }
 
-#[test]
+#[quench_test::test]
 fn format_message_code_block_without_a_language_tag_defaults_to_code() {
     let input = "```\nplain text block\n```";
     let output = format_message(input);
@@ -108,7 +108,7 @@ fn format_message_code_block_without_a_language_tag_defaults_to_code() {
     assert!(output.contains("plain text block"));
 }
 
-#[test]
+#[quench_test::test]
 fn format_message_html_escapes_table_cell_content() {
     let input = "| A |\n|---|\n| <script> |";
     let output = format_message(input);
@@ -116,14 +116,14 @@ fn format_message_html_escapes_table_cell_content() {
     assert!(!output.contains("<script>"));
 }
 
-#[test]
+#[quench_test::test]
 fn format_message_underscore_bold_and_italic() {
     let output = format_message("__bold__ and _italic_");
     assert!(output.contains("<strong>bold</strong>"));
     assert!(output.contains("<em>italic</em>"));
 }
 
-#[test]
+#[quench_test::test]
 fn format_message_is_empty_for_blank_input() {
     assert_eq!(format_message(""), "");
     assert_eq!(format_message("   \n  "), "");
@@ -133,12 +133,12 @@ fn format_message_is_empty_for_blank_input() {
 // render_sources
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn render_sources_is_none_for_no_sources() {
     assert!(render_sources(&[]).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn render_sources_shows_the_detail_when_present() {
     let sources = vec![RagSource {
         file_name: "report.pdf".to_string(),
@@ -154,7 +154,7 @@ fn render_sources_shows_the_detail_when_present() {
     assert!(!html.contains("chunk 2"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_sources_falls_back_to_the_chunk_index_without_detail() {
     let sources = vec![RagSource {
         file_name: "notes.txt".to_string(),
@@ -167,7 +167,7 @@ fn render_sources_falls_back_to_the_chunk_index_without_detail() {
     assert!(!html.contains('%'));
 }
 
-#[test]
+#[quench_test::test]
 fn render_sources_lists_every_source() {
     let sources = vec![
         RagSource {

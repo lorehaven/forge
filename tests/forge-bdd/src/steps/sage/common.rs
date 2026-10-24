@@ -2,9 +2,9 @@
 //! `steps::common`, shared with every other service.
 
 use crate::world::ForgeWorld;
-use serde_json::json;
+use quench_serde::json;
 
-#[cucumber::when("I send a chat message")]
+#[quench_test_bdd::when("I send a chat message")]
 async fn send_generic_message(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
     let conv_id = world
@@ -36,32 +36,32 @@ async fn send_generic_message(world: &mut ForgeWorld) -> Result<(), String> {
     }
 }
 
-#[cucumber::then("both messages should be in conversation history")]
+#[quench_test_bdd::then("both messages should be in conversation history")]
 async fn both_messages_in_history(_world: &mut ForgeWorld) -> Result<(), String> {
     Ok(())
 }
 
-#[cucumber::then("all requests should complete successfully")]
+#[quench_test_bdd::then("all requests should complete successfully")]
 async fn all_requests_successful(_world: &mut ForgeWorld) -> Result<(), String> {
     Ok(())
 }
 
-#[cucumber::then("all three messages should be in conversation history")]
+#[quench_test_bdd::then("all three messages should be in conversation history")]
 async fn all_three_messages_in_history(_world: &mut ForgeWorld) -> Result<(), String> {
     Ok(())
 }
 
-#[cucumber::then("the response should contain:")]
+#[quench_test_bdd::then("the response should contain:")]
 async fn response_should_contain_table(_world: &mut ForgeWorld) -> Result<(), String> {
     Ok(())
 }
 
-#[cucumber::then("the conversation should have:")]
+#[quench_test_bdd::then("the conversation should have:")]
 async fn conversation_should_have_table(_world: &mut ForgeWorld) -> Result<(), String> {
     Ok(())
 }
 
-#[cucumber::then("the response should include token usage:")]
+#[quench_test_bdd::then("the response should include token usage:")]
 async fn response_should_have_token_usage_table(_world: &mut ForgeWorld) -> Result<(), String> {
     Ok(())
 }

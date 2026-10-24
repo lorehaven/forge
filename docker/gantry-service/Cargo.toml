@@ -10,6 +10,7 @@ homepage = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
 readme = { workspace = true }
+autotests = false
 
 [lib]
 name = "gantry_service"
@@ -33,9 +34,6 @@ quench-log = { workspace = true }
 quench-serde = { workspace = true, features = ["yaml"] }
 quench-core = { workspace = true }
 forge-ui = { workspace = true }
-futures-util = { workspace = true }
-k8s-openapi = { workspace = true }
-kube = { workspace = true }
 quench-auth = { workspace = true }
 quench-client = { workspace = true }
 quench-db = { workspace = true }
@@ -43,8 +41,23 @@ quench-http = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
 rivet-package = { workspace = true }
-rustls = { workspace = true }
-serde_json = { workspace = true }
+quench-k8s = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
+quench-test = { workspace = true }
+
+[[test]]
+name = "cluster_it"
+path = "tests/cluster_it.rs"
+harness = false
+
+[[test]]
+name = "pg_store"
+path = "tests/pg_store.rs"
+harness = false
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false

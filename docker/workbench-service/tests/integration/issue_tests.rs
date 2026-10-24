@@ -18,7 +18,7 @@ fn new_issue(project_id: &str, title: &str) -> NewIssue {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_assigns_seq_one_to_the_first_issue() {
     let Some((db, _guard)) = database().await else {
         return skipped("create_assigns_seq_one_to_the_first_issue");
@@ -37,7 +37,7 @@ async fn create_assigns_seq_one_to_the_first_issue() {
 /// `1..=10` with no gaps or duplicates - the guarantee `pg_advisory_xact_lock`
 /// in `issue::create` exists to give. A `MAX(seq) + 1` with no lock at all
 /// would race here and either skip a number or hand two issues the same one.
-#[tokio::test]
+#[quench_test::test]
 async fn concurrent_creates_in_one_project_get_gapless_unique_seq() {
     let Some((db, _guard)) = database().await else {
         return skipped("concurrent_creates_in_one_project_get_gapless_unique_seq");
@@ -71,7 +71,7 @@ async fn concurrent_creates_in_one_project_get_gapless_unique_seq() {
 
 /// Two projects racing at once must not interfere with each other's counters -
 /// the advisory lock is keyed on the project id specifically, not global.
-#[tokio::test]
+#[quench_test::test]
 async fn concurrent_creates_in_different_projects_each_start_at_one() {
     let Some((db, _guard)) = database().await else {
         return skipped("concurrent_creates_in_different_projects_each_start_at_one");
@@ -115,7 +115,7 @@ async fn concurrent_creates_in_different_projects_each_start_at_one() {
     assert_eq!(seqs_b, (1..=5).collect::<Vec<_>>());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn transition_changes_status_and_rejects_unknown_status_upstream() {
     let Some((db, _guard)) = database().await else {
         return skipped("transition_changes_status_and_rejects_unknown_status_upstream");
@@ -140,7 +140,7 @@ async fn transition_changes_status_and_rejects_unknown_status_upstream() {
     assert!(!issue::is_valid_status("archived"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_replaces_editable_fields_but_not_status_or_seq() {
     let Some((db, _guard)) = database().await else {
         return skipped("update_replaces_editable_fields_but_not_status_or_seq");
@@ -176,7 +176,7 @@ async fn update_replaces_editable_fields_but_not_status_or_seq() {
     assert_eq!(updated.status, created.status);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_by_project_filters_by_status() {
     let Some((db, _guard)) = database().await else {
         return skipped("list_by_project_filters_by_status");
@@ -205,7 +205,7 @@ async fn list_by_project_filters_by_status() {
     assert_eq!(all.len(), 2);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_removes_the_issue() {
     let Some((db, _guard)) = database().await else {
         return skipped("delete_removes_the_issue");

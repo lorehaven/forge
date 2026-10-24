@@ -58,14 +58,14 @@ fn in_memory_db() -> Db {
 // render_artifacts_page
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_with_no_versions_shows_the_empty_state() {
     let resp = render_artifacts_page(&[], None, None, None, false);
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(body_html(resp).await.contains("ui_artifact_empty"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_lists_programs_in_the_tree() {
     let versions = vec![
         version("com.example.one", Platform::Android, 1, false),
@@ -77,7 +77,7 @@ async fn render_lists_programs_in_the_tree() {
     assert!(html.contains("ui_artifact_empty_select_version"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_selects_the_newest_version_of_the_chosen_program_platform() {
     let versions = vec![
         version("com.example.app", Platform::Android, 1, false),
@@ -96,7 +96,7 @@ async fn render_selects_the_newest_version_of_the_chosen_program_platform() {
     assert!(html.contains("3.0"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_shows_a_yank_button_only_when_the_caller_may_manage() {
     let versions = vec![version("com.example.app", Platform::Android, 7, false)];
 
@@ -123,7 +123,7 @@ async fn render_shows_a_yank_button_only_when_the_caller_may_manage() {
     assert!(!without.contains("/artifacts/yank"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_offers_unyank_for_a_yanked_version() {
     let versions = vec![version("com.example.app", Platform::Linux, 9, true)];
     let html = body_html(render_artifacts_page(
@@ -160,7 +160,7 @@ async fn app(
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn catalog_redirects_to_login_when_unauthenticated() {
     let (app, container) = app(jwt_config(true), in_memory_db()).await;
     let resp = app
@@ -173,7 +173,7 @@ async fn catalog_redirects_to_login_when_unauthenticated() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn catalog_renders_when_authenticated() {
     let (app, container) = app(jwt_config(false), in_memory_db()).await;
     let resp = app
@@ -186,7 +186,7 @@ async fn catalog_renders_when_authenticated() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn yank_redirects_to_login_without_a_session() {
     let (app, container) = app(jwt_config(true), in_memory_db()).await;
     let resp = app
@@ -204,7 +204,7 @@ async fn yank_redirects_to_login_without_a_session() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn yank_is_not_found_when_the_feature_is_disabled() {
     let (app, container) = app(jwt_config(false), in_memory_db()).await;
     let resp = app
@@ -222,7 +222,7 @@ async fn yank_is_not_found_when_the_feature_is_disabled() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unyank_is_not_found_when_the_feature_is_disabled() {
     let (app, container) = app(jwt_config(false), in_memory_db()).await;
     let resp = app

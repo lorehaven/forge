@@ -2,7 +2,7 @@
 
 use conveyor_service::domain::Status;
 
-#[test]
+#[quench_test::test]
 fn parses_every_status_it_renders() {
     for status in [
         Status::Queued,
@@ -16,13 +16,13 @@ fn parses_every_status_it_renders() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parsing_ignores_case_and_surrounding_space() {
     assert_eq!(Status::parse("  SUCCESS "), Some(Status::Success));
     assert_eq!(Status::parse("Running"), Some(Status::Running));
 }
 
-#[test]
+#[quench_test::test]
 fn parsing_rejects_anything_else() {
     // A status column holding a value we do not recognise is a bug worth
     // surfacing, not something to coerce into `Queued`.
@@ -30,7 +30,7 @@ fn parsing_rejects_anything_else() {
     assert_eq!(Status::parse(""), None);
 }
 
-#[test]
+#[quench_test::test]
 fn only_resting_states_are_terminal() {
     assert!(!Status::Queued.is_terminal());
     assert!(!Status::Running.is_terminal());
@@ -40,7 +40,7 @@ fn only_resting_states_are_terminal() {
     assert!(Status::Skipped.is_terminal());
 }
 
-#[test]
+#[quench_test::test]
 fn skipped_is_not_a_failure() {
     // A stage whose `when` excluded it did what the pipeline asked for; if this
     // ever flips, every conditional deploy stage reports the build as broken.
@@ -50,7 +50,7 @@ fn skipped_is_not_a_failure() {
     assert!(Status::Cancelled.is_failure());
 }
 
-#[test]
+#[quench_test::test]
 fn rollup_keeps_the_parent_running_while_anything_still_moves() {
     assert_eq!(
         Status::rollup([Status::Success, Status::Running]),
@@ -63,7 +63,7 @@ fn rollup_keeps_the_parent_running_while_anything_still_moves() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn rollup_reports_failure_over_cancellation() {
     assert_eq!(
         Status::rollup([Status::Cancelled, Status::Failed, Status::Success]),
@@ -71,7 +71,7 @@ fn rollup_reports_failure_over_cancellation() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn rollup_reports_cancellation_over_success() {
     assert_eq!(
         Status::rollup([Status::Success, Status::Cancelled]),
@@ -79,7 +79,7 @@ fn rollup_reports_cancellation_over_success() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn rollup_is_success_only_when_something_succeeded_and_nothing_went_wrong() {
     assert_eq!(
         Status::rollup([Status::Success, Status::Skipped, Status::Success]),
@@ -87,7 +87,7 @@ fn rollup_is_success_only_when_something_succeeded_and_nothing_went_wrong() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_parent_whose_children_all_skipped_is_skipped() {
     // Not a hollow success: nothing was verified, and reporting green would
     // make a pipeline that excluded every stage look like a passing build.
@@ -97,7 +97,7 @@ fn a_parent_whose_children_all_skipped_is_skipped() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_parent_with_no_children_is_skipped() {
     assert_eq!(Status::rollup([]), Status::Skipped);
 }

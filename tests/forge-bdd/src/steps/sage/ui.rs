@@ -6,7 +6,7 @@
 //! here.
 
 use crate::world::{ForgeWorld, mint_test_token};
-use cucumber::when;
+use quench_test_bdd::when;
 
 /// GETs a `/api/v1/chat/*` path with a freshly minted sage token of the given
 /// scope - how the suite proves the read endpoints under that scope are gated

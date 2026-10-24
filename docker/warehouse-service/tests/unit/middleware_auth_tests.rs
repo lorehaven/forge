@@ -46,7 +46,7 @@ fn req_from(method: Method, path: &str, peer: &str) -> Request {
     )
 }
 
-#[test]
+#[quench_test::test]
 fn scope_allows_exact_repository_match_with_the_requested_action() {
     assert!(scope_allows(
         "repository:my/repo:pull,push",
@@ -60,7 +60,7 @@ fn scope_allows_exact_repository_match_with_the_requested_action() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn scope_allows_rejects_a_different_repository_or_action() {
     assert!(!scope_allows(
         "repository:my/repo:pull",
@@ -70,30 +70,30 @@ fn scope_allows_rejects_a_different_repository_or_action() {
     assert!(!scope_allows("repository:my/repo:pull", "my/repo", "push"));
 }
 
-#[test]
+#[quench_test::test]
 fn scope_allows_wildcard_repository_and_action() {
     assert!(scope_allows("repository:*:pull", "anything/at-all", "pull"));
     assert!(scope_allows("repository:my/repo:*", "my/repo", "push"));
 }
 
-#[test]
+#[quench_test::test]
 fn scope_allows_matches_any_entry_in_a_multi_entry_scope() {
     let scope = "repository:other/repo:pull repository:my/repo:push";
     assert!(scope_allows(scope, "my/repo", "push"));
     assert!(!scope_allows(scope, "my/repo", "pull"));
 }
 
-#[test]
+#[quench_test::test]
 fn scope_allows_ignores_non_repository_scope_types() {
     assert!(!scope_allows("registry:catalog:*", "my/repo", "pull"));
 }
 
-#[test]
+#[quench_test::test]
 fn scope_allows_rejects_an_empty_scope() {
     assert!(!scope_allows("", "my/repo", "pull"));
 }
 
-#[test]
+#[quench_test::test]
 fn repository_action_maps_get_and_head_to_pull() {
     let req = plain_req(Method::GET, "/v2/my/repo/manifests/latest");
     assert_eq!(
@@ -102,7 +102,7 @@ fn repository_action_maps_get_and_head_to_pull() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn repository_action_maps_writes_to_push() {
     let req = plain_req(Method::POST, "/v2/my/repo/blobs/uploads/");
     assert_eq!(
@@ -111,25 +111,25 @@ fn repository_action_maps_writes_to_push() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn repository_action_is_none_for_the_catalog_endpoint() {
     let req = plain_req(Method::GET, "/v2/_catalog");
     assert_eq!(repository_action(&req), None);
 }
 
-#[test]
+#[quench_test::test]
 fn repository_action_is_none_outside_v2() {
     let req = plain_req(Method::GET, "/api/v1/crates");
     assert_eq!(repository_action(&req), None);
 }
 
-#[test]
+#[quench_test::test]
 fn repository_action_is_none_without_a_recognized_marker() {
     let req = plain_req(Method::GET, "/v2/my/repo");
     assert_eq!(repository_action(&req), None);
 }
 
-#[test]
+#[quench_test::test]
 fn too_many_auth_failures_trips_after_the_configured_max_and_clear_resets_it() {
     let req = req_from(Method::GET, "/v2/my/repo/manifests/latest", "203.0.113.7");
     let window = Duration::from_secs(60);
@@ -145,7 +145,7 @@ fn too_many_auth_failures_trips_after_the_configured_max_and_clear_resets_it() {
     assert!(!too_many_auth_failures(&req, 3, window));
 }
 
-#[test]
+#[quench_test::test]
 fn too_many_auth_failures_is_scoped_per_client() {
     let a = req_from(Method::GET, "/v2/my/repo/manifests/latest", "203.0.113.8");
     let b = req_from(Method::GET, "/v2/my/repo/manifests/latest", "203.0.113.9");
@@ -233,7 +233,7 @@ fn req_with_headers(method: Method, path: &str, peer: &str, headers: &[(&str, &s
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn anonymous_mode_bypasses_bearer_validation_entirely() {
     let app = test_app(config(false));
     let req = req_with_headers(
@@ -246,7 +246,7 @@ async fn anonymous_mode_bypasses_bearer_validation_entirely() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn requests_outside_v2_are_never_gated() {
     // Unlike the old actix test (which relied on a route pattern scoped to
     // `/v2/{tail:.*}` so a non-matching path 404ed at the router), this uses
@@ -260,7 +260,7 @@ async fn requests_outside_v2_are_never_gated() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn missing_authorization_header_is_unauthorized() {
     let app = test_app(config(true));
     let req = req_with_headers(
@@ -275,7 +275,7 @@ async fn missing_authorization_header_is_unauthorized() {
     assert!(headers.contains_key("www-authenticate"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn non_bearer_authorization_header_is_unauthorized() {
     let app = test_app(config(true));
     let req = req_with_headers(
@@ -288,7 +288,7 @@ async fn non_bearer_authorization_header_is_unauthorized() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_token_for_a_different_service_is_unauthorized() {
     let config = config(true);
     let app = test_app(config.clone());
@@ -303,7 +303,7 @@ async fn a_token_for_a_different_service_is_unauthorized() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_valid_token_without_matching_scope_is_forbidden() {
     let config = config(true);
     let app = test_app(config.clone());
@@ -318,7 +318,7 @@ async fn a_valid_token_without_matching_scope_is_forbidden() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_valid_token_with_matching_scope_is_let_through() {
     let config = config(true);
     let app = test_app(config.clone());
@@ -333,7 +333,7 @@ async fn a_valid_token_with_matching_scope_is_let_through() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn repeated_failures_from_the_same_client_eventually_get_throttled() {
     // `MAX_AUTH_FAILURES_PER_MINUTE` defaults to 30 in `WarehouseAuth::new`
     // when unset, which would make this loop impractically long, so pin it

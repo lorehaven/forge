@@ -6,7 +6,7 @@ use sage_service::domain::conversation::ConversationContext;
 use sage_service::domain::models::Message;
 use sage_service::routers::ui::context_builder::*;
 
-#[test]
+#[quench_test::test]
 fn test_token_usage_display() {
     let usage = TokenUsageInfo {
         total_messages: 5,
@@ -24,7 +24,7 @@ fn test_token_usage_display() {
     assert!(display.contains("Messages: 5"));
 }
 
-#[test]
+#[quench_test::test]
 fn test_warning_at_limit() {
     let usage = TokenUsageInfo {
         total_messages: 10,
@@ -40,7 +40,7 @@ fn test_warning_at_limit() {
     assert!(usage.warning_message().unwrap().contains("at capacity"));
 }
 
-#[test]
+#[quench_test::test]
 fn test_warning_near_limit() {
     let usage = TokenUsageInfo {
         total_messages: 8,
@@ -56,7 +56,7 @@ fn test_warning_near_limit() {
     assert!(usage.warning_message().unwrap().contains("80%"));
 }
 
-#[test]
+#[quench_test::test]
 fn test_no_warning_under_limit() {
     let usage = TokenUsageInfo {
         total_messages: 3,
@@ -71,7 +71,7 @@ fn test_no_warning_under_limit() {
     assert!(usage.warning_message().is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn to_json_reports_every_field() {
     let usage = TokenUsageInfo {
         total_messages: 3,
@@ -92,7 +92,7 @@ fn to_json_reports_every_field() {
     assert_eq!(json["at_limit"], false);
 }
 
-#[test]
+#[quench_test::test]
 fn get_context_for_llm_reports_the_systems_token_count() {
     let mut ctx = ConversationContext::new(2048);
     ctx.add_message(sage_service::domain::conversation::ConversationMessage {
@@ -146,7 +146,7 @@ async fn seeded_db(conversation_id: &str) -> Db {
     db
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn build_conversation_context_sorts_and_scopes_to_one_conversation() {
     let db = seeded_db("conv-1").await;
 

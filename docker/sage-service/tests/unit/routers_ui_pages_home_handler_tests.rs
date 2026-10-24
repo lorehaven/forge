@@ -16,12 +16,12 @@ use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
 use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
+use quench_test::mock::matchers::{method, path};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use sage_service::clients::switchboard::SwitchboardClient;
 use sage_service::domain::models::{Conversation, Message, Project};
 use sage_service::routers::ui::chat::ChatState;
 use std::sync::Arc;
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn db() -> Db {
     Db::InMemory(InMemoryDb::new())
@@ -121,7 +121,7 @@ async fn body_text(resp: quench_http::response::Response) -> String {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn home_redirects_to_login_when_unauthenticated() {
     let _guard = env_lock()
         .lock()
@@ -136,7 +136,7 @@ async fn home_redirects_to_login_when_unauthenticated() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn home_renders_the_page_with_no_conversations() {
     let _guard = env_lock()
         .lock()
@@ -149,7 +149,7 @@ async fn home_renders_the_page_with_no_conversations() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn home_slash_renders_the_page_too() {
     let _guard = env_lock()
         .lock()
@@ -162,7 +162,7 @@ async fn home_slash_renders_the_page_too() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn home_lists_only_the_callers_own_projects_and_conversations() {
     let _guard = env_lock()
         .lock()
@@ -214,7 +214,7 @@ async fn home_lists_only_the_callers_own_projects_and_conversations() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn home_loads_the_active_conversations_message_history() {
     let _guard = env_lock()
         .lock()

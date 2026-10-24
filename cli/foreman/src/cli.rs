@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use quench_args::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(name = "foreman")]

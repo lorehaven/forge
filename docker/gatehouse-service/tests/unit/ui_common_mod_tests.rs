@@ -1,7 +1,7 @@
 use gatehouse_service::ui::common::{UiPageKind, ensure_assets, render_page, supported_locales};
 use quench_web::prelude::*;
 
-#[test]
+#[quench_test::test]
 fn supported_locales_lists_every_configured_locale() {
     let locales = supported_locales();
     assert_eq!(locales.len(), 5);
@@ -9,7 +9,7 @@ fn supported_locales_lists_every_configured_locale() {
     assert!(locales.contains(&"pl-PL".to_string()));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_page_wraps_content_in_html_for_every_page_kind() {
     for kind in [
         UiPageKind::Home,
@@ -34,7 +34,7 @@ async fn render_page_wraps_content_in_html_for_every_page_kind() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn ensure_assets_does_not_panic() {
     ensure_assets();
 }

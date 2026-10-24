@@ -65,7 +65,7 @@ async fn press(
     .await
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn opening_the_link_asks_and_changes_nothing() {
     let db = db().await;
     let tokens = Arc::new(VerificationTokens::in_memory());
@@ -93,7 +93,7 @@ async fn opening_the_link_asks_and_changes_nothing() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn pressing_the_button_turns_that_kind_off_for_that_person() {
     let db = db().await;
     let tokens = Arc::new(VerificationTokens::in_memory());
@@ -117,7 +117,7 @@ async fn pressing_the_button_turns_that_kind_off_for_that_person() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_mail_providers_one_click_post_works() {
     // RFC 8058: POST to the exact URL from the header, body `List-Unsubscribe=One-Click`.
     let db = db().await;
@@ -139,7 +139,7 @@ async fn a_mail_providers_one_click_post_works() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_token_may_also_arrive_in_the_form() {
     let db = db().await;
     let tokens = Arc::new(VerificationTokens::in_memory());
@@ -154,7 +154,7 @@ async fn the_token_may_also_arrive_in_the_form() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn doing_it_again_is_harmless_the_link_keeps_working() {
     let db = db().await;
     let tokens = Arc::new(VerificationTokens::in_memory());
@@ -175,7 +175,7 @@ async fn doing_it_again_is_harmless_the_link_keeps_working() {
     assert_eq!(open(&tokens, &token).await.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unknown_foreign_and_stale_tokens_are_refused_and_change_nothing() {
     let db = db().await;
     let tokens = Arc::new(VerificationTokens::in_memory());
@@ -219,7 +219,7 @@ async fn unknown_foreign_and_stale_tokens_are_refused_and_change_nothing() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn one_persons_link_never_touches_someone_elses_choices() {
     let db = db().await;
     let tokens = Arc::new(VerificationTokens::in_memory());

@@ -11,9 +11,8 @@
 //! expression (or `--service`). Every feature carries its service's tag, so the
 //! two stay in step.
 
-use cucumber::tag::Ext as _;
-use cucumber::{World, cli, gherkin};
-use futures_util::FutureExt;
+use quench_args::Parser;
+use quench_test_bdd::{Feature, Options, Runner, Scenario, Stats, Summary};
 use std::panic::AssertUnwindSafe;
 use world::{ForgeWorld, Target};
 
@@ -22,9 +21,12 @@ mod services;
 mod steps;
 mod world;
 
-/// Extra flags on top of cucumber's own CLI.
-#[derive(clap::Args, Clone, Debug, Default)]
-struct ForgeCli {
+/// The command line: the feature runner's own options, and a few of ours.
+#[derive(Parser, Clone, Debug)]
+struct Cli {
+    #[command(flatten)]
+    bdd: Options,
+
     /// Service to test; repeatable. Defaults to the services named in --tags,
     /// or all of them.
     #[arg(long = "service", value_name = "NAME")]
@@ -38,10 +40,10 @@ struct ForgeCli {
 #[tokio::main]
 async fn main() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    dotenvy::from_path(std::path::Path::new(manifest_dir).join(".env")).ok();
+    quench_core::dotenv::load_from(std::path::Path::new(manifest_dir).join(".env")).ok();
 
-    let opts = cli::Opts::<_, _, _, ForgeCli>::parsed();
-    let selected = selected_targets(&opts.custom.services);
+    let opts = Cli::parse();
+    let selected = selected_targets(&opts.services);
 
     println!(
         "Running suites: {}",
@@ -66,7 +68,7 @@ async fn main() {
     // gatehouse has to be running and answering before anything else starts,
     // and before the very first `ForgeWorld` (the probe, right below) is
     // built, whether or not a suite selected `@gatehouse` itself.
-    if !opts.custom.no_spawn {
+    if !opts.no_spawn {
         running.push(fixture.start(Target::Gatehouse).await);
         services::wait_until_ready(&[(
             Target::Gatehouse,
@@ -109,55 +111,39 @@ async fn main() {
 
     let features_path = std::path::Path::new(manifest_dir).join("features");
 
-    // Cucumber's own `--tags`/`--name` handling *replaces* the filter closure
-    // rather than combining with it, which would drop the service selection and
-    // the shutdown split. Take both over: hand cucumber a CLI with them
-    // cleared, and evaluate them here.
-    let user_filter = UserFilter {
-        tags: opts.tags_filter.clone(),
-        name: opts.re_filter.clone(),
-    };
-    let mut cucumber_cli = opts.clone();
-    cucumber_cli.tags_filter = None;
-    cucumber_cli.re_filter = None;
-
     // One pass per service, so the closing summary can report each separately.
-    let outcome = AssertUnwindSafe(async {
+    let outcome = quench_core::future::catch_unwind(AssertUnwindSafe(async {
         let mut results = Vec::new();
 
         for target in &selected {
             let target = *target;
-            let user_filter = user_filter.clone();
-
             println!("\n─── {} ───", target.tag());
-            let writer = ForgeWorld::cucumber()
-                .with_cli(cucumber_cli.clone())
-                .filter_run(features_path.clone(), move |feature, rule, scenario| {
+            let summary = Runner::<ForgeWorld>::new()
+                .options(opts.bdd.clone())
+                .title(&format!("forge-bdd-{}", target.tag()))
+                .filter(move |feature, _rule, scenario| {
                     feature.name != SHUTDOWN_FEATURE
                         && matches_selection(&[target], feature, Some(scenario))
-                        && user_filter.accepts(feature, rule, scenario)
                 })
+                .run(features_path.clone())
                 .await;
-            results.push(SuiteResult::collect(target, "scenarios", &writer));
+            results.push(SuiteResult::collect(target, "scenarios", &summary));
 
             // The sage shutdown scenario terminates the service under test, so
             // it runs after the rest of sage's suite, on its own.
-            if target == Target::Sage && !opts.custom.no_spawn {
-                let user_filter = user_filter_for_shutdown(&opts);
-                let writer = ForgeWorld::cucumber()
-                    .with_cli(cucumber_cli.clone())
-                    .filter_run(features_path.clone(), move |feature, rule, scenario| {
-                        feature.name == SHUTDOWN_FEATURE
-                            && user_filter.accepts(feature, rule, scenario)
-                    })
+            if target == Target::Sage && !opts.no_spawn {
+                let summary = Runner::<ForgeWorld>::new()
+                    .options(opts.bdd.clone())
+                    .title("forge-bdd-sage-shutdown")
+                    .filter(|feature, _rule, _scenario| feature.name == SHUTDOWN_FEATURE)
+                    .run(features_path.clone())
                     .await;
-                results.push(SuiteResult::collect(target, "shutdown", &writer));
+                results.push(SuiteResult::collect(target, "shutdown", &summary));
             }
         }
 
         results
-    })
-    .catch_unwind()
+    }))
     .await;
 
     for service in running {
@@ -181,34 +167,21 @@ async fn main() {
 
 const SHUTDOWN_FEATURE: &str = "Graceful shutdown";
 
-fn user_filter_for_shutdown(
-    opts: &cli::Opts<impl clap::Args, impl clap::Args, impl clap::Args, ForgeCli>,
-) -> UserFilter {
-    UserFilter {
-        tags: opts.tags_filter.clone(),
-        name: opts.re_filter.clone(),
-    }
-}
-
 /// What one pass of one suite did.
 struct SuiteResult {
     target: Target,
     pass: &'static str,
-    scenarios: cucumber::writer::summarize::Stats,
-    steps: cucumber::writer::summarize::Stats,
+    scenarios: Stats,
+    steps: Stats,
 }
 
 impl SuiteResult {
-    fn collect<W>(
-        target: Target,
-        pass: &'static str,
-        writer: &cucumber::writer::Summarize<W>,
-    ) -> Self {
+    fn collect(target: Target, pass: &'static str, summary: &Summary) -> Self {
         Self {
             target,
             pass,
-            scenarios: *writer.scenarios_stats(),
-            steps: *writer.steps_stats(),
+            scenarios: summary.scenarios,
+            steps: summary.steps,
         }
     }
 
@@ -265,7 +238,7 @@ fn print_summary(results: &[SuiteResult]) -> bool {
     any_failed
 }
 
-fn counts(stats: &cucumber::writer::summarize::Stats) -> String {
+fn counts(stats: &Stats) -> String {
     totals((stats.passed, stats.failed, stats.skipped))
 }
 
@@ -278,37 +251,6 @@ fn totals((passed, failed, skipped): (usize, usize, usize)) -> String {
         parts.push(format!("{skipped} skipped"));
     }
     parts.join(", ")
-}
-
-/// The `--tags` / `--name` filters the user asked for, applied alongside our
-/// own rather than instead of them.
-#[derive(Clone)]
-struct UserFilter {
-    tags: Option<gherkin::tagexpr::TagOperation>,
-    name: Option<regex::Regex>,
-}
-
-impl UserFilter {
-    fn accepts(
-        &self,
-        feature: &gherkin::Feature,
-        rule: Option<&gherkin::Rule>,
-        scenario: &gherkin::Scenario,
-    ) -> bool {
-        if let Some(name) = &self.name {
-            return name.is_match(&scenario.name);
-        }
-        // Feature -> Rule -> Scenario, the order cucumber itself uses.
-        self.tags.as_ref().is_none_or(|tags| {
-            tags.eval(
-                feature
-                    .tags
-                    .iter()
-                    .chain(rule.iter().flat_map(|r| &r.tags))
-                    .chain(scenario.tags.iter()),
-            )
-        })
-    }
 }
 
 /// Services to start: `--service` if given, otherwise every service named in
@@ -343,11 +285,7 @@ fn selected_targets(explicit: &[String]) -> Vec<Target> {
 
 /// Keeps scenarios whose service was not started out of the run, so a targeted
 /// invocation does not fail against services that are not up.
-fn matches_selection(
-    selected: &[Target],
-    feature: &gherkin::Feature,
-    scenario: Option<&gherkin::Scenario>,
-) -> bool {
+fn matches_selection(selected: &[Target], feature: &Feature, scenario: Option<&Scenario>) -> bool {
     let tags = feature
         .tags
         .iter()

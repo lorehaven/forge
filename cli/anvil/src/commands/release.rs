@@ -9,7 +9,6 @@ use std::fs;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use toml_edit::{DocumentMut, value};
 
 #[derive(Debug, Clone, Copy)]
 pub enum ReleaseKind {
@@ -685,16 +684,62 @@ pub fn set_manifest_version(path: &Path, version: &str) -> Result<()> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read manifest at {}", path.display()))?;
 
-    let mut doc = content
-        .parse::<DocumentMut>()
-        .with_context(|| format!("Failed to parse manifest at {}", path.display()))?;
+    let updated = with_package_version(&content, version)
+        .with_context(|| format!("No [package] version found in {}", path.display()))?;
 
-    doc["package"]["version"] = value(version);
-
-    fs::write(path, doc.to_string())
+    fs::write(path, updated)
         .with_context(|| format!("Failed to write manifest at {}", path.display()))?;
 
     Ok(())
+}
+
+/// `manifest` with the `version` of its `[package]` table replaced.
+///
+/// Everything else stays exactly as it was (comments, spacing, order), and a trailing comment on the line is
+/// kept. `None` when there is no `[package]` table with a `version` key.
+#[must_use]
+pub fn with_package_version(manifest: &str, version: &str) -> Option<String> {
+    let mut in_package = false;
+    let mut out = String::with_capacity(manifest.len() + 8);
+    let mut done = false;
+    for line in manifest.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('[') {
+            in_package =
+                trimmed.trim_end().split('#').next().map(str::trim_end) == Some("[package]");
+        } else if in_package
+            && !done
+            && let Some(rest) = trimmed.strip_prefix("version")
+            && let Some(value) = rest.trim_start().strip_prefix('=')
+        {
+            let indent = &line[..line.len() - trimmed.len()];
+            let value = value.trim_start();
+            // The value is a string, or an inline table such as `{ workspace = true }`; keep a trailing comment.
+            let end = value_end(value);
+            let comment = value[end..].trim_end_matches(['\r', '\n']);
+            let newline = &line[line.trim_end_matches(['\r', '\n']).len()..];
+            {
+                use std::fmt::Write as _;
+                let _ = write!(out, "{indent}version = \"{version}\"{comment}{newline}");
+            }
+            done = true;
+            continue;
+        }
+        out.push_str(line);
+    }
+    done.then_some(out)
+}
+
+/// Where the TOML value at the start of `text` ends: past the closing quote or brace.
+fn value_end(text: &str) -> usize {
+    let mut chars = text.char_indices();
+    match chars.next() {
+        Some((_, quote @ ('"' | '\''))) => chars
+            .find(|(_, c)| *c == quote)
+            .map_or(text.len(), |(i, _)| i + 1),
+        Some((_, '{')) => text.find('}').map_or(text.len(), |i| i + 1),
+        _ => text.find(['#', '\r', '\n']).unwrap_or(text.len()),
+    }
 }
 
 pub fn bump_patch(version: &str) -> Result<String> {

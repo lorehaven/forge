@@ -33,7 +33,7 @@ async fn app() -> (
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_an_invalid_repository_name() {
     let _storage = with_tags("my-repo", &["latest"]);
     let (app, container) = app().await;
@@ -42,7 +42,7 @@ async fn handle_rejects_an_invalid_repository_name() {
     assert_eq!(resp.status(), quench_http::http::StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_for_an_unknown_repository() {
     let _storage = with_tags("my-repo", &["latest"]);
     let (app, container) = app().await;
@@ -51,7 +51,7 @@ async fn handle_reports_not_found_for_an_unknown_repository() {
     assert_eq!(resp.status(), quench_http::http::StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_lists_tags_for_a_known_repository() {
     let _storage = with_tags("my-repo", &["1.0.0", "2.0.0"]);
     let (app, container) = app().await;
@@ -65,7 +65,7 @@ async fn handle_lists_tags_for_a_known_repository() {
     assert_eq!(body.tags, vec!["2.0.0".to_string(), "1.0.0".to_string()]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_paginates_with_n_and_sets_a_link_header_when_more_remain() {
     let _storage = with_tags("my-repo", &["1.0.0", "2.0.0", "3.0.0"]);
     let (app, container) = app().await;

@@ -35,7 +35,7 @@ async fn app() -> (
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_a_non_digest_reference() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -49,7 +49,7 @@ async fn handle_rejects_a_non_digest_reference() {
     assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_an_invalid_repository_name() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -63,7 +63,7 @@ async fn handle_rejects_an_invalid_repository_name() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_for_an_unknown_manifest() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -77,7 +77,7 @@ async fn handle_reports_not_found_for_an_unknown_manifest() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_deletes_the_manifest_and_every_tag_pointing_at_it() {
     let storage = support::WithDockerStorageRoot::new();
     let manifest_path = write_manifest(&storage);

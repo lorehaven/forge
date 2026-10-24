@@ -45,7 +45,7 @@ fn dummy(name: &'static str) -> DummyProvider {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn registry_get_falls_back_to_the_default_provider_when_no_name_is_given() {
     let mut registry = SearchProviderRegistry::new();
     registry.register("duckduckgo".to_string(), Box::new(dummy("duckduckgo")));
@@ -54,13 +54,13 @@ fn registry_get_falls_back_to_the_default_provider_when_no_name_is_given() {
     assert_eq!(provider.name(), "duckduckgo");
 }
 
-#[test]
+#[quench_test::test]
 fn registry_get_returns_none_for_an_unregistered_name() {
     let registry = SearchProviderRegistry::new();
     assert!(registry.get(Some("brave")).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn registry_get_returns_the_requested_provider_by_name() {
     let mut registry = SearchProviderRegistry::new();
     registry.register("duckduckgo".to_string(), Box::new(dummy("duckduckgo")));
@@ -70,7 +70,7 @@ fn registry_get_returns_the_requested_provider_by_name() {
     assert_eq!(provider.name(), "brave");
 }
 
-#[test]
+#[quench_test::test]
 fn registry_set_default_is_ignored_for_an_unregistered_provider() {
     let mut registry = SearchProviderRegistry::new();
     registry.register("duckduckgo".to_string(), Box::new(dummy("duckduckgo")));
@@ -83,7 +83,7 @@ fn registry_set_default_is_ignored_for_an_unregistered_provider() {
     assert_eq!(provider.name(), "duckduckgo");
 }
 
-#[test]
+#[quench_test::test]
 fn registry_set_default_switches_the_default_when_the_provider_exists() {
     let mut registry = SearchProviderRegistry::new();
     registry.register("duckduckgo".to_string(), Box::new(dummy("duckduckgo")));
@@ -94,21 +94,21 @@ fn registry_set_default_switches_the_default_when_the_provider_exists() {
     assert_eq!(provider.name(), "brave");
 }
 
-#[test]
+#[quench_test::test]
 #[should_panic(expected = "Default provider not registered")]
 fn registry_get_default_panics_when_nothing_is_registered_for_it() {
     let registry = SearchProviderRegistry::new();
     let _ = registry.get_default();
 }
 
-#[test]
+#[quench_test::test]
 fn registry_get_default_returns_the_configured_default() {
     let mut registry = SearchProviderRegistry::new();
     registry.register("duckduckgo".to_string(), Box::new(dummy("duckduckgo")));
     assert_eq!(registry.get_default().name(), "duckduckgo");
 }
 
-#[test]
+#[quench_test::test]
 fn registry_list_returns_every_registered_name() {
     let mut registry = SearchProviderRegistry::new();
     registry.register("duckduckgo".to_string(), Box::new(dummy("duckduckgo")));
@@ -119,7 +119,7 @@ fn registry_list_returns_every_registered_name() {
     assert_eq!(names, vec!["brave".to_string(), "duckduckgo".to_string()]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn dummy_provider_returns_its_canned_response() {
     let provider = DummyProvider {
         name: "dummy",
@@ -130,7 +130,7 @@ async fn dummy_provider_returns_its_canned_response() {
     assert!(provider.requires_api_key());
 }
 
-#[test]
+#[quench_test::test]
 fn duckduckgo_needs_no_api_key() {
     let provider = DuckDuckGoProvider::new();
     assert_eq!(provider.name(), "duckduckgo");
@@ -140,14 +140,14 @@ fn duckduckgo_needs_no_api_key() {
     assert_eq!(default_provider.name(), "duckduckgo");
 }
 
-#[test]
+#[quench_test::test]
 fn brave_requires_an_api_key() {
     let provider = BraveProvider::new("key".to_string());
     assert_eq!(provider.name(), "brave");
     assert!(provider.requires_api_key());
 }
 
-#[test]
+#[quench_test::test]
 fn brave_from_env_reads_brave_search_api_key() {
     let _guard = env_lock()
         .lock()
@@ -160,14 +160,14 @@ fn brave_from_env_reads_brave_search_api_key() {
     quench_core::env::remove("BRAVE_SEARCH_API_KEY");
 }
 
-#[test]
+#[quench_test::test]
 fn serpapi_requires_an_api_key() {
     let provider = SerpapiProvider::new("key".to_string());
     assert_eq!(provider.name(), "serpapi");
     assert!(provider.requires_api_key());
 }
 
-#[test]
+#[quench_test::test]
 fn serpapi_from_env_reads_serpapi_api_key() {
     let _guard = env_lock()
         .lock()
@@ -180,7 +180,7 @@ fn serpapi_from_env_reads_serpapi_api_key() {
     quench_core::env::remove("SERPAPI_API_KEY");
 }
 
-#[test]
+#[quench_test::test]
 fn searxng_needs_no_api_key_and_trims_a_trailing_slash() {
     let provider = SearxngProvider::new("https://example.org/");
     assert_eq!(provider.name(), "searxng");
@@ -191,7 +191,7 @@ fn searxng_needs_no_api_key_and_trims_a_trailing_slash() {
     let _ = provider;
 }
 
-#[test]
+#[quench_test::test]
 fn searxng_from_env_defaults_when_unset() {
     let _guard = env_lock()
         .lock()
@@ -201,12 +201,12 @@ fn searxng_from_env_defaults_when_unset() {
     assert_eq!(provider.name(), "searxng");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn searxng_search_parses_results_from_a_mocked_instance() {
-    let server = wiremock::MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("GET"))
-        .and(wiremock::matchers::path("/search"))
-        .respond_with(wiremock::ResponseTemplate::new(200).set_body_raw(
+    let server = quench_test::mock::MockServer::start().await;
+    quench_test::mock::Mock::given(quench_test::mock::matchers::method("GET"))
+        .and(quench_test::mock::matchers::path("/search"))
+        .respond_with(quench_test::mock::ResponseTemplate::new(200).set_body_raw(
             quench_serde::json::to_string(
                 &(quench_serde::json!({
                     "results": [
@@ -231,12 +231,12 @@ async fn searxng_search_parses_results_from_a_mocked_instance() {
     assert!(result.contains("via SearXNG"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn searxng_search_errors_when_the_response_has_no_results() {
-    let server = wiremock::MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("GET"))
-        .and(wiremock::matchers::path("/search"))
-        .respond_with(wiremock::ResponseTemplate::new(200).set_body_raw(
+    let server = quench_test::mock::MockServer::start().await;
+    quench_test::mock::Mock::given(quench_test::mock::matchers::method("GET"))
+        .and(quench_test::mock::matchers::path("/search"))
+        .respond_with(quench_test::mock::ResponseTemplate::new(200).set_body_raw(
             quench_serde::json::to_string(&(quench_serde::json!({ "results": [] }))),
             "application/json",
         ))
@@ -248,12 +248,12 @@ async fn searxng_search_errors_when_the_response_has_no_results() {
     assert!(error.contains("could not find results"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn searxng_search_reports_invalid_json_from_the_instance() {
-    let server = wiremock::MockServer::start().await;
-    wiremock::Mock::given(wiremock::matchers::method("GET"))
-        .and(wiremock::matchers::path("/search"))
-        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("not json"))
+    let server = quench_test::mock::MockServer::start().await;
+    quench_test::mock::Mock::given(quench_test::mock::matchers::method("GET"))
+        .and(quench_test::mock::matchers::path("/search"))
+        .respond_with(quench_test::mock::ResponseTemplate::new(200).set_body_string("not json"))
         .mount(&server)
         .await;
 

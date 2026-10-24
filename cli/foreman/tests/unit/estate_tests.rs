@@ -34,28 +34,28 @@ const CHAIN: &str = r#"
         needs = ["auth"]
     "#;
 
-#[test]
+#[quench_test::test]
 fn with_dependencies_pulls_in_the_whole_transitive_chain() {
     let estate = estate(CHAIN);
     let selected = estate.with_dependencies(&["web"]).unwrap();
     assert_eq!(selected, vec!["db", "auth", "web"]);
 }
 
-#[test]
+#[quench_test::test]
 fn with_dependencies_dedupes_when_two_selections_share_a_need() {
     let estate = estate(CHAIN);
     let selected = estate.with_dependencies(&["web", "auth"]).unwrap();
     assert_eq!(selected, vec!["db", "auth", "web"]);
 }
 
-#[test]
+#[quench_test::test]
 fn with_dependencies_is_always_in_table_order_regardless_of_input_order() {
     let estate = estate(CHAIN);
     let selected = estate.with_dependencies(&["auth", "web"]).unwrap();
     assert_eq!(selected, vec!["db", "auth", "web"]);
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_names_empty_means_the_whole_estate_in_table_order() {
     let estate = estate(CHAIN);
     let names: Vec<String> = Vec::new();
@@ -65,19 +65,19 @@ fn resolve_names_empty_means_the_whole_estate_in_table_order() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_names_rejects_an_unknown_service() {
     let estate = estate(CHAIN);
     assert!(estate.resolve_names(&["nope"]).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_names_does_not_pull_in_dependencies() {
     let estate = estate(CHAIN);
     assert_eq!(estate.resolve_names(&["web"]).unwrap(), vec!["web"]);
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_selection_combines_names_and_dependencies() {
     let estate = estate(CHAIN);
     assert_eq!(
@@ -86,20 +86,20 @@ fn resolve_selection_combines_names_and_dependencies() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn is_whole_estate_true_only_when_everything_is_selected() {
     let estate = estate(CHAIN);
     assert!(estate.is_whole_estate(&["db".into(), "auth".into(), "web".into()]));
     assert!(!estate.is_whole_estate(&["web".into()]));
 }
 
-#[test]
+#[quench_test::test]
 fn reject_unknown_is_ok_for_known_names() {
     let estate = estate(CHAIN);
     assert!(estate.reject_unknown(&["db", "web"]).is_ok());
 }
 
-#[test]
+#[quench_test::test]
 fn reject_unknown_reports_a_single_unknown_name_in_singular() {
     let estate = estate(CHAIN);
     let err = estate.reject_unknown(&["nope"]).unwrap_err().to_string();
@@ -107,7 +107,7 @@ fn reject_unknown_reports_a_single_unknown_name_in_singular() {
     assert!(err.contains("nope"));
 }
 
-#[test]
+#[quench_test::test]
 fn reject_unknown_reports_multiple_unknown_names_in_plural() {
     let estate = estate(CHAIN);
     let err = estate
@@ -139,7 +139,7 @@ const WITH_DEFAULTS: &str = r#"
         SERVICE_ONLY = "yes"
     "#;
 
-#[test]
+#[quench_test::test]
 fn resolve_folds_defaults_and_lets_the_service_win_on_conflict() {
     let estate = estate(WITH_DEFAULTS);
     let resolved = estate.resolve("auth").unwrap();
@@ -159,7 +159,7 @@ fn resolve_folds_defaults_and_lets_the_service_win_on_conflict() {
     assert_eq!(service_only, Some("yes"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_expands_the_service_own_fields_into_its_environment_templates() {
     let estate = estate(WITH_DEFAULTS);
     let resolved = estate.resolve("auth").unwrap();
@@ -171,7 +171,7 @@ fn resolve_expands_the_service_own_fields_into_its_environment_templates() {
     assert_eq!(addr, Some("0.0.0.0:8080"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_falls_back_through_service_then_defaults_then_the_hardcoded_default() {
     let estate = estate(WITH_DEFAULTS);
     let resolved = estate.resolve("auth").unwrap();
@@ -187,7 +187,7 @@ const NO_DEFAULTS: &str = r#"
         port = 8080
     "#;
 
-#[test]
+#[quench_test::test]
 fn resolve_uses_the_hardcoded_fallback_when_nothing_else_is_set() {
     let estate = estate(NO_DEFAULTS);
     let resolved = estate.resolve("auth").unwrap();
@@ -198,7 +198,7 @@ fn resolve_uses_the_hardcoded_fallback_when_nothing_else_is_set() {
     assert_eq!(resolved.stop_timeout_secs, 5);
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_defaults_the_workdir_to_the_package_name() {
     let estate = estate(NO_DEFAULTS);
     let resolved = estate.resolve("auth").unwrap();
@@ -216,7 +216,7 @@ const WITH_UNSET: &str = r#"
         unset = ["SHARED_SECRET"]
     "#;
 
-#[test]
+#[quench_test::test]
 fn resolve_drops_unset_keys_even_when_a_default_supplied_them() {
     let estate = estate(WITH_UNSET);
     let resolved = estate.resolve("public").unwrap();
@@ -247,7 +247,7 @@ fn env_when_lock() -> &'static std::sync::Mutex<()> {
     LOCK.get_or_init(|| std::sync::Mutex::new(()))
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_skips_env_when_blocks_whose_condition_variable_is_not_set() {
     // A variable name specific enough that nothing else could plausibly set it.
     // SAFETY: this test owns the lifetime of this specific, uniquely-named variable.
@@ -261,7 +261,7 @@ fn resolve_skips_env_when_blocks_whose_condition_variable_is_not_set() {
     assert!(resolved.notes.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_applies_env_when_blocks_whose_condition_variable_is_set() {
     // SAFETY: this test owns the lifetime of this specific, uniquely-named
     // variable and clears it again before returning.
@@ -287,7 +287,7 @@ fn resolve_applies_env_when_blocks_whose_condition_variable_is_set() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn cert_files_falls_back_from_service_to_defaults_to_the_hardcoded_pair() {
     let estate = estate(NO_DEFAULTS);
     let service = estate.service("auth").unwrap();
@@ -297,7 +297,7 @@ fn cert_files_falls_back_from_service_to_defaults_to_the_hardcoded_pair() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn cert_files_prefers_the_service_own_list() {
     let text = r#"
             [[services]]
@@ -311,7 +311,7 @@ fn cert_files_prefers_the_service_own_list() {
     assert_eq!(estate.cert_files(service), vec!["custom.pem".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn resolved_url_and_health_url_are_assembled_from_the_resolved_fields() {
     let estate = estate(WITH_DEFAULTS);
     let resolved = estate.resolve("auth").unwrap();

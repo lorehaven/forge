@@ -6,13 +6,13 @@
 //! having no programmatic one.
 
 use crate::env_support::env_lock;
+use quench_test::mock::matchers::{method, path};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use sage_service::clients::switchboard::VllmInstance;
 use sage_service::config::{DefaultModel, SageConfig};
 use sage_service::startup::default_models::*;
 use sage_service::tools;
 use std::collections::HashMap;
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn model(name: &str) -> DefaultModel {
     DefaultModel {
@@ -59,14 +59,14 @@ fn test_config(models: &[&str]) -> SageConfig {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn launches_the_first_missing_model() {
     let config = test_config(&["chat", "embed"]);
     let next = next_model_to_launch(&config, &[], &HashMap::new()).unwrap();
     assert_eq!(next.name, "chat");
 }
 
-#[test]
+#[quench_test::test]
 fn waits_while_another_model_is_starting() {
     let config = test_config(&["chat", "embed"]);
     let instances = vec![instance("chat", "starting")];
@@ -76,7 +76,7 @@ fn waits_while_another_model_is_starting() {
     assert!(next_model_to_launch(&config, &instances, &HashMap::new()).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn moves_on_once_the_previous_model_is_running() {
     let config = test_config(&["chat", "embed"]);
     let instances = vec![instance("chat", "running")];
@@ -84,7 +84,7 @@ fn moves_on_once_the_previous_model_is_running() {
     assert_eq!(next.name, "embed");
 }
 
-#[test]
+#[quench_test::test]
 fn relaunches_a_failed_model_before_the_rest() {
     let config = test_config(&["chat", "embed"]);
     let instances = vec![instance("chat", "failed")];
@@ -92,7 +92,7 @@ fn relaunches_a_failed_model_before_the_rest() {
     assert_eq!(next.name, "chat");
 }
 
-#[test]
+#[quench_test::test]
 fn skips_a_model_that_exhausted_its_attempts() {
     let config = test_config(&["chat", "embed"]);
     let instances = vec![instance("chat", "failed")];
@@ -101,7 +101,7 @@ fn skips_a_model_that_exhausted_its_attempts() {
     assert_eq!(next.name, "embed");
 }
 
-#[test]
+#[quench_test::test]
 fn skips_unsupported_models() {
     let mut config = test_config(&["chat", "embed"]);
     config.supported_models = vec!["embed".to_string()];
@@ -109,7 +109,7 @@ fn skips_unsupported_models() {
     assert_eq!(next.name, "embed");
 }
 
-#[test]
+#[quench_test::test]
 fn nothing_to_launch_when_all_models_are_running() {
     let config = test_config(&["chat", "embed"]);
     let instances = vec![instance("chat", "running"), instance("embed", "running")];
@@ -170,7 +170,7 @@ async fn switchboard() -> (
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn monitor_default_models_returns_early_when_switchboard_is_unreachable() {
     let _guard = env_lock()
         .lock()
@@ -190,7 +190,7 @@ async fn monitor_default_models_returns_early_when_switchboard_is_unreachable() 
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn monitor_default_models_launches_the_next_missing_model() {
     let _guard = env_lock()
         .lock()
@@ -222,7 +222,7 @@ async fn monitor_default_models_launches_the_next_missing_model() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn monitor_default_models_clears_attempts_once_a_model_is_running() {
     let _guard = env_lock()
         .lock()
@@ -249,7 +249,7 @@ async fn monitor_default_models_clears_attempts_once_a_model_is_running() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn request_model_launch_records_the_launched_instance() {
     let _guard = env_lock()
         .lock()
@@ -272,7 +272,7 @@ async fn request_model_launch_records_the_launched_instance() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn request_model_launch_does_not_panic_when_the_launch_request_fails() {
     let _guard = env_lock()
         .lock()
@@ -290,7 +290,7 @@ async fn request_model_launch_does_not_panic_when_the_launch_request_fails() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn shutdown_is_a_no_op_when_stop_models_on_shutdown_is_disabled() {
     let _guard = env_lock()
         .lock()
@@ -308,7 +308,7 @@ async fn shutdown_is_a_no_op_when_stop_models_on_shutdown_is_disabled() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn shutdown_returns_early_when_switchboard_is_unreachable() {
     let _guard = env_lock()
         .lock()
@@ -325,7 +325,7 @@ async fn shutdown_returns_early_when_switchboard_is_unreachable() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn shutdown_stops_an_instance_this_process_launched() {
     let _guard = env_lock()
         .lock()
@@ -366,7 +366,7 @@ async fn shutdown_stops_an_instance_this_process_launched() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn shutdown_does_not_stop_an_instance_it_never_launched() {
     let _guard = env_lock()
         .lock()
@@ -395,7 +395,7 @@ async fn shutdown_does_not_stop_an_instance_it_never_launched() {
     shutdown(&sb, &cfg, &launched).await;
 }
 
-#[test]
+#[quench_test::test]
 fn default_models_json_accepts_max_num_seqs() {
     let models = sage_service::config::DefaultModel::parse_list(
         r#"[{"name":"m","gpu_utilization":0.7,"max_num_seqs":64}]"#,

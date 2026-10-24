@@ -544,7 +544,7 @@ fn marker_for_call(
     tool_call: &crate::tools::ToolCall,
     query: &str,
     full_content: &str,
-    tool_result_re: &regex::Regex,
+    tool_result_re: &quench_regex::Regex,
 ) -> Option<String> {
     tool_result_re
         .find_iter(full_content)
@@ -937,7 +937,7 @@ impl Turn {
         let mut tool_results_with_markers: Vec<(String, String)> = Vec::new();
 
         // Matches every tag variant the parser supports, mismatched/unclosed included.
-        let tool_result_re = regex::Regex::new(
+        let tool_result_re = quench_regex::Regex::new(
             r"(?s)<(?:tool_call|toolcall)>\s*(\{.*?\})\s*</(?:tool_call|toolcall)>",
         )
         .ok();
@@ -2460,11 +2460,7 @@ pub fn render_tool_result(
     let content_html = if result.is_error {
         format!("<p>{}</p>", html_escape(&result.content))
     } else {
-        use pulldown_cmark::{Parser, html};
-        let parser = Parser::new(&result.content);
-        let mut html_output = String::new();
-        html::push_html(&mut html_output, parser);
-        html_output
+        quench_html::markdown::to_html(&result.content)
     };
 
     // Don't capitalize tool name in header

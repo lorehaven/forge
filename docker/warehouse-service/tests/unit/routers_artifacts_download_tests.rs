@@ -3,7 +3,7 @@ use quench_db::{Db, InMemoryDb};
 use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::artifacts;
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_when_artifact_storage_is_disabled() {
     artifacts::register_routes();
     let container = support::container_builder()
@@ -51,7 +51,7 @@ mod macos {
         }
     }
 
-    #[test]
+    #[quench_test::test]
     fn disk_images_are_served_as_such_and_other_formats_as_opaque_bytes() {
         assert_eq!(content_type_for("dmg"), "application/x-apple-diskimage");
         assert_eq!(
@@ -63,7 +63,7 @@ mod macos {
         }
     }
 
-    #[tokio::test]
+    #[quench_test::test]
     async fn a_published_macos_build_downloads_with_its_filename_and_type() {
         let _root = WithArtifactStorageRoot::new();
         let version = dmg("com.example.app", 7, "App-1.2.3.dmg");
@@ -87,7 +87,7 @@ mod macos {
         );
     }
 
-    #[tokio::test]
+    #[quench_test::test]
     async fn a_macos_row_whose_file_is_gone_is_not_found() {
         let _root = WithArtifactStorageRoot::new();
         let resp = serve(&dmg("com.example.app", 8, "missing.dmg")).await;

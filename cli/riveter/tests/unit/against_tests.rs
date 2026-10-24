@@ -63,7 +63,7 @@ fn compare(git_ref: &str) -> quench_core::Result<riveter::against::Comparison> {
     diff_against("prod", git_ref, ResourceScope::All, &Selector::default())
 }
 
-#[test]
+#[quench_test::test]
 fn an_unchanged_overlay_renders_the_same_as_its_ref() {
     in_repo("", |_| {
         let found = compare("v1").unwrap();
@@ -73,7 +73,7 @@ fn an_unchanged_overlay_renders_the_same_as_its_ref() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_changed_overlay_differs() {
     in_repo("", |work| {
         fs::write(
@@ -85,7 +85,7 @@ fn a_changed_overlay_differs() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn the_ref_is_what_is_compared_not_the_latest_commit() {
     in_repo("", |work| {
         fs::write(
@@ -100,7 +100,7 @@ fn the_ref_is_what_is_compared_not_the_latest_commit() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn it_works_from_a_subdirectory_of_the_repository() {
     in_repo("deploy/homecloud", |work| {
         assert!(!compare("v1").unwrap().differs);
@@ -113,7 +113,7 @@ fn it_works_from_a_subdirectory_of_the_repository() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_difference_in_source_that_renders_identically_is_not_a_change() {
     in_repo("", |work| {
         // Comments and key order are not in the rendered manifest.
@@ -123,7 +123,7 @@ fn a_difference_in_source_that_renders_identically_is_not_a_change() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn the_uncommitted_env_file_stands_in_for_both_sides() {
     in_repo("", |work| {
         // `.env` is not committed, so v1 has none; a variable still resolves on both sides.
@@ -141,7 +141,7 @@ fn the_uncommitted_env_file_stands_in_for_both_sides() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn nothing_is_written_to_the_working_directory() {
     in_repo("", |work| {
         fs::write(
@@ -157,7 +157,7 @@ fn nothing_is_written_to_the_working_directory() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn an_unknown_ref_is_refused_by_name() {
     in_repo("", |_| {
         let err = compare("no-such-ref").unwrap_err().to_string();
@@ -165,7 +165,7 @@ fn an_unknown_ref_is_refused_by_name() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn an_environment_that_did_not_exist_at_the_ref_says_so() {
     in_repo("", |work| {
         fs::create_dir_all(work.join("overlays/new")).unwrap();
@@ -177,7 +177,7 @@ fn an_environment_that_did_not_exist_at_the_ref_says_so() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_blank_ref_is_refused() {
     in_repo("", |_| {
         assert!(compare("  ").is_err());

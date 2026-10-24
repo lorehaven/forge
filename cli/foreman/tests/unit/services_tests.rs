@@ -26,7 +26,7 @@ const ONE_SERVICE: &str = r#"
         port = 8080
     "#;
 
-#[test]
+#[quench_test::test]
 fn is_running_and_pid_are_none_without_a_pid_file() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), ONE_SERVICE);
@@ -34,7 +34,7 @@ fn is_running_and_pid_are_none_without_a_pid_file() {
     assert_eq!(pid(&estate, "web"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn is_running_and_pid_are_none_for_a_pid_file_naming_a_dead_process() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), ONE_SERVICE);
@@ -45,7 +45,7 @@ fn is_running_and_pid_are_none_for_a_pid_file_naming_a_dead_process() {
     assert_eq!(pid(&estate, "web"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn pid_is_some_for_a_pid_file_naming_a_live_process() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), ONE_SERVICE);
@@ -57,14 +57,14 @@ fn pid_is_some_for_a_pid_file_naming_a_live_process() {
     assert_eq!(pid(&estate, "web"), Some(ours));
 }
 
-#[test]
+#[quench_test::test]
 fn ensure_cert_is_a_no_op_when_the_service_does_not_borrow_one() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), ONE_SERVICE);
     ensure_cert(&estate, "web").unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn ensure_cert_skips_when_the_cert_files_already_exist_in_the_workdir() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let config_text = r#"
@@ -86,7 +86,7 @@ fn ensure_cert_skips_when_the_cert_files_already_exist_in_the_workdir() {
     assert!(resolved.workdir.join("cert.pem").is_file());
 }
 
-#[test]
+#[quench_test::test]
 fn ensure_cert_warns_without_erroring_when_the_source_has_no_cert_either() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let config_text = r#"
@@ -100,7 +100,7 @@ fn ensure_cert_warns_without_erroring_when_the_source_has_no_cert_either() {
     ensure_cert(&estate, "web").unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn ensure_cert_links_from_the_source_when_the_workdir_is_missing_it() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let config_text = r#"
@@ -125,7 +125,7 @@ fn ensure_cert_links_from_the_source_when_the_workdir_is_missing_it() {
     assert!(resolved.workdir.join("key.pem").is_symlink());
 }
 
-#[test]
+#[quench_test::test]
 fn build_is_a_no_op_when_the_service_has_no_build_command() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let config_text = r#"
@@ -140,7 +140,7 @@ fn build_is_a_no_op_when_the_service_has_no_build_command() {
     build(&resolved, &estate.root).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn build_runs_the_configured_command_and_errors_on_failure() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let config_text = r#"
@@ -157,7 +157,7 @@ fn build_runs_the_configured_command_and_errors_on_failure() {
     assert!(build(&resolved, &estate.root).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn stop_reports_not_running_for_a_service_with_no_pid_file() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), ONE_SERVICE);
@@ -165,7 +165,7 @@ fn stop_reports_not_running_for_a_service_with_no_pid_file() {
     stop(&estate, &["web".to_string()]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn stop_terminates_a_service_with_a_live_pid_and_removes_the_pid_file() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), ONE_SERVICE);
@@ -185,14 +185,14 @@ fn stop_terminates_a_service_with_a_live_pid_and_removes_the_pid_file() {
     let _ = child.wait();
 }
 
-#[test]
+#[quench_test::test]
 fn report_strays_is_a_no_op_without_configured_warnings() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), ONE_SERVICE);
     report_strays(&estate).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn report_strays_is_quiet_when_the_pattern_matches_nothing() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let config_text = r#"
@@ -210,14 +210,14 @@ fn report_strays_is_quiet_when_the_pattern_matches_nothing() {
     report_strays(&estate).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn running_services_is_empty_when_nothing_has_a_pid_file() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), ONE_SERVICE);
     assert!(running_services(&estate).is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn running_services_includes_a_service_with_a_live_pid() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), ONE_SERVICE);
@@ -227,7 +227,7 @@ fn running_services_includes_a_service_with_a_live_pid() {
     assert_eq!(running_services(&estate), vec!["web".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn healthy_is_false_for_a_url_nothing_is_listening_on() {
     // Port 1 is reserved and never has a real server behind it, so `curl`
     // reliably fails fast without needing to configure a fake service at
@@ -235,7 +235,7 @@ fn healthy_is_false_for_a_url_nothing_is_listening_on() {
     assert!(!healthy("https://localhost:1/health"));
 }
 
-#[test]
+#[quench_test::test]
 fn start_spawns_a_real_process_and_times_out_when_it_never_answers_health_checks() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let config_text = r#"
@@ -273,7 +273,7 @@ fn start_spawns_a_real_process_and_times_out_when_it_never_answers_health_checks
     process::kill(pid);
 }
 
-#[test]
+#[quench_test::test]
 fn run_pre_stop_hooks_is_a_no_op_when_the_service_is_not_running() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let config_text = r#"
@@ -290,7 +290,7 @@ fn run_pre_stop_hooks_is_a_no_op_when_the_service_is_not_running() {
     run_pre_stop_hooks(&estate, "web").unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn run_pre_stop_hooks_runs_the_configured_shell_command_for_a_running_service() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let config_text = r#"

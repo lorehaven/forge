@@ -4,7 +4,7 @@
 
 use warehouse_service::domain::storage_file::prefix_upper_bound;
 
-#[test]
+#[quench_test::test]
 fn bumps_the_last_byte_of_an_ascii_prefix() {
     assert_eq!(prefix_upper_bound("photos").as_deref(), Some("photot"));
     assert_eq!(prefix_upper_bound("videos").as_deref(), Some("videot"));
@@ -14,18 +14,18 @@ fn bumps_the_last_byte_of_an_ascii_prefix() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_trailing_slash_bumps_to_the_next_byte() {
     // '/' is 0x2F; the successor is 0x30, '0'.
     assert_eq!(prefix_upper_bound("photos/").as_deref(), Some("photos0"));
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_prefix_has_no_successor() {
     assert_eq!(prefix_upper_bound(""), None);
 }
 
-#[test]
+#[quench_test::test]
 fn a_non_ascii_prefix_still_brackets_correctly_when_the_bump_stays_valid() {
     // 'é' is U+00E9 (`C3 A9`); bumping the trailing byte gives `C3 AA`, U+00EA,
     // still well-formed - so the range is `[café, cafê)`.
@@ -34,7 +34,7 @@ fn a_non_ascii_prefix_still_brackets_correctly_when_the_bump_stays_valid() {
     assert!("café/2026/01/1-a.jpg".as_bytes() < upper.as_bytes());
 }
 
-#[test]
+#[quench_test::test]
 fn a_bump_that_would_break_utf8_falls_back_to_none() {
     // U+007F's one byte is 0x7F; +1 is 0x80, a lone continuation byte and not
     // valid UTF-8 - `prefix_upper_bound` reports "no bound" and the query
@@ -43,7 +43,7 @@ fn a_bump_that_would_break_utf8_falls_back_to_none() {
     assert_eq!(prefix_upper_bound("x\u{7f}"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn the_bound_brackets_exactly_the_paths_that_start_with_the_prefix() {
     let prefix = "photos";
     let upper = prefix_upper_bound(prefix).unwrap();

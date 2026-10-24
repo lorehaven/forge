@@ -15,7 +15,7 @@ fn estate_in(root: &std::path::Path, text: &str) -> Estate {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn containers_for_role_collects_without_duplicates_across_tasks() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
@@ -36,14 +36,14 @@ fn containers_for_role_collects_without_duplicates_across_tasks() {
     assert_eq!(containers, vec!["db".to_string(), "cache".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn containers_for_role_is_empty_when_no_task_has_that_role() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
     assert!(containers_for_role(&estate, foreman::config::Role::Reset).is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn run_named_errors_for_an_unknown_task() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
@@ -51,7 +51,7 @@ fn run_named_errors_for_an_unknown_task() {
     assert!(error.to_string().contains("unknown task"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_named_runs_a_known_task() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
@@ -64,7 +64,7 @@ fn run_named_runs_a_known_task() {
     run_named(&estate, "hello", &[]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn run_bails_when_the_command_exits_with_failure() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
@@ -86,7 +86,7 @@ fn run_bails_when_the_command_exits_with_failure() {
     assert!(error.to_string().contains("failed"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_bails_when_the_build_step_fails() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
@@ -108,7 +108,7 @@ fn run_bails_when_the_build_step_fails() {
     assert!(error.to_string().contains("build step failed"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_bails_on_an_empty_command() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
@@ -130,7 +130,7 @@ fn run_bails_on_an_empty_command() {
     assert!(error.to_string().contains("empty command"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_substitutes_the_selection_placeholder_into_the_command() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
@@ -166,7 +166,7 @@ fn run_substitutes_the_selection_placeholder_into_the_command() {
     run(&estate, "scoped", &task, &["web".to_string()]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn run_reports_the_warning_and_stops_services_first_when_configured() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
@@ -198,7 +198,7 @@ fn run_reports_the_warning_and_stops_services_first_when_configured() {
     run(&estate, "with-warning", &task, &[]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn run_errors_for_an_unknown_container() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");

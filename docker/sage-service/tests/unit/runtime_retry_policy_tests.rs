@@ -2,7 +2,7 @@
 
 use sage_service::runtime::retry_policy::*;
 
-#[test]
+#[quench_test::test]
 fn test_retry_policy_creation() {
     let policy = RetryPolicy::new(3, 100, 5000);
     assert_eq!(policy.max_retries, 3);
@@ -10,7 +10,7 @@ fn test_retry_policy_creation() {
     assert_eq!(policy.max_backoff_ms, 5000);
 }
 
-#[test]
+#[quench_test::test]
 fn test_exponential_backoff() {
     let policy = RetryPolicy::new(5, 100, 5000);
 
@@ -31,7 +31,7 @@ fn test_exponential_backoff() {
     assert_eq!(backoff_large.as_millis(), 5000);
 }
 
-#[test]
+#[quench_test::test]
 fn test_should_retry() {
     let policy = RetryPolicy::new(3, 100, 1000);
 
@@ -41,7 +41,7 @@ fn test_should_retry() {
     assert!(!policy.should_retry(3));
 }
 
-#[test]
+#[quench_test::test]
 fn test_tool_policies() {
     let web_search = get_retry_policy("web_search");
     assert_eq!(web_search.max_retries, 3);

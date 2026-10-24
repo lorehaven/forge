@@ -19,17 +19,17 @@ fn package(name: &str, version: &str, yanked: bool) -> RivetPackage {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn id_for_joins_name_and_version() {
     assert_eq!(RivetPackage::id_for("forge", "0.4.0+b1"), "forge@0.4.0+b1");
 }
 
-#[test]
+#[quench_test::test]
 fn table_name_is_schema_qualified() {
     assert!(RivetPackage::table_name().ends_with(".rivet_packages"));
 }
 
-#[test]
+#[quench_test::test]
 fn latest_compares_numerically_not_lexically() {
     let rows = [
         package("forge", "0.9.0", false),
@@ -39,7 +39,7 @@ fn latest_compares_numerically_not_lexically() {
     assert_eq!(latest_of(&rows).unwrap().version, "0.10.0");
 }
 
-#[test]
+#[quench_test::test]
 fn latest_skips_yanked_and_prereleases_rank_below_releases() {
     let rows = [
         package("forge", "1.0.0", true),
@@ -55,7 +55,7 @@ fn latest_skips_yanked_and_prereleases_rank_below_releases() {
     assert_eq!(latest_of(&rows).unwrap().version, "1.0.0");
 }
 
-#[test]
+#[quench_test::test]
 fn latest_orders_build_metadata_and_is_none_when_all_yanked() {
     let rows = [
         package("forge", "0.4.0+b1", false),
@@ -67,7 +67,7 @@ fn latest_orders_build_metadata_and_is_none_when_all_yanked() {
     assert!(latest_of(&[]).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn sorts_newest_first_with_unparseable_rows_last() {
     let mut rows = vec![
         package("forge", "0.2.0", false),

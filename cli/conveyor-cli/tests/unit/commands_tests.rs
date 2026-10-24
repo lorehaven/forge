@@ -4,63 +4,63 @@ use conveyor_cli::commands::*;
 use quench_cli::prelude::Tone;
 use quench_serde::json;
 
-#[test]
+#[quench_test::test]
 fn split_slug_splits_owner_and_name() {
     let (owner, name) = split_slug("lorehaven/forge").unwrap();
     assert_eq!(owner, "lorehaven");
     assert_eq!(name, "forge");
 }
 
-#[test]
+#[quench_test::test]
 fn split_slug_rejects_a_bare_name() {
     let err = split_slug("forge").unwrap_err();
     assert!(err.to_string().contains("owner/name"));
 }
 
-#[test]
+#[quench_test::test]
 fn split_slug_takes_only_the_first_slash() {
     let (owner, name) = split_slug("owner/name/extra").unwrap();
     assert_eq!(owner, "owner");
     assert_eq!(name, "name/extra");
 }
 
-#[test]
+#[quench_test::test]
 fn string_reads_a_present_key() {
     let value = json!({ "id": "abc123" });
     assert_eq!(string(&value, "id"), "abc123");
 }
 
-#[test]
+#[quench_test::test]
 fn string_defaults_to_empty_for_a_missing_key() {
     let value = json!({ "id": "abc123" });
     assert_eq!(string(&value, "missing"), "");
 }
 
-#[test]
+#[quench_test::test]
 fn string_defaults_to_empty_for_a_non_string_value() {
     let value = json!({ "count": 5 });
     assert_eq!(string(&value, "count"), "");
 }
 
-#[test]
+#[quench_test::test]
 fn short_takes_the_first_seven_characters_of_the_sha() {
     let run = json!({ "sha": "abcdef1234567890" });
     assert_eq!(short(&run), "abcdef1");
 }
 
-#[test]
+#[quench_test::test]
 fn short_of_a_shorter_sha_is_unchanged() {
     let run = json!({ "sha": "abc" });
     assert_eq!(short(&run), "abc");
 }
 
-#[test]
+#[quench_test::test]
 fn short_of_a_missing_sha_is_empty() {
     let run = json!({});
     assert_eq!(short(&run), "");
 }
 
-#[test]
+#[quench_test::test]
 fn tone_for_maps_terminal_statuses() {
     assert!(matches!(tone_for("success"), Tone::Success));
     assert!(matches!(tone_for("failed"), Tone::Error));
@@ -78,7 +78,7 @@ fn write_temp(name: &str, contents: &str) -> std::path::PathBuf {
     path
 }
 
-#[test]
+#[quench_test::test]
 fn validate_accepts_a_well_formed_pipeline() {
     let path = write_temp(
         "valid",
@@ -103,7 +103,7 @@ fn validate_accepts_a_well_formed_pipeline() {
     std::fs::remove_file(&path).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn validate_rejects_malformed_toml() {
     let path = write_temp("malformed", "not = [valid");
 
@@ -115,7 +115,7 @@ fn validate_rejects_malformed_toml() {
     std::fs::remove_file(&path).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn validate_reports_a_missing_file() {
     let path = std::env::temp_dir().join(format!(
         "conveyor-validate-test-missing-{}-does-not-exist",
@@ -130,18 +130,18 @@ fn validate_reports_a_missing_file() {
 }
 
 // ------------------------------------------------------------------
-// The rest of this module talks to a `wiremock` server through a
+// The rest of this module talks to a `quench_test` mock server through a
 // `Client::for_tests`-built client - never a real network.
 // ------------------------------------------------------------------
 
-use wiremock::matchers::{body_json_string, method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use quench_test::mock::matchers::{body_json_string, method, path};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
 async fn client_for(server: &MockServer) -> Client {
     Client::for_tests(server.uri())
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn resolve_repo_returns_a_bare_reference_unchanged_without_a_lookup() {
     // No mock mounted at all: a match here would panic on an
     // unexpected request, proving the id-shaped fast path never calls
@@ -151,7 +151,7 @@ async fn resolve_repo_returns_a_bare_reference_unchanged_without_a_lookup() {
     assert_eq!(resolve_repo(&client, "abc-123").await.unwrap(), "abc-123");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn resolve_repo_looks_up_an_owner_slash_name_reference() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -174,7 +174,7 @@ async fn resolve_repo_looks_up_an_owner_slash_name_reference() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn resolve_repo_errors_when_the_slug_is_not_registered() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -191,7 +191,7 @@ async fn resolve_repo_errors_when_the_slug_is_not_registered() {
     assert!(err.to_string().contains("is not registered"), "{err}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn repo_add_posts_the_split_slug_and_resolved_project() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -228,7 +228,7 @@ async fn repo_add_posts_the_split_slug_and_resolved_project() {
     .expect("repo add");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn repo_add_rejects_a_slug_without_a_slash() {
     let server = MockServer::start().await;
     let client = client_for(&server).await;
@@ -247,7 +247,7 @@ async fn repo_add_rejects_a_slug_without_a_slash() {
     assert!(err.to_string().contains("owner/name"), "{err}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn repo_list_prints_nothing_special_when_empty() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -263,7 +263,7 @@ async fn repo_list_prints_nothing_special_when_empty() {
     repo(&client, &RepoCommands::List).await.expect("repo list");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn repo_enable_and_disable_resolve_then_post_the_flag() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -320,7 +320,7 @@ async fn repo_enable_and_disable_resolve_then_post_the_flag() {
     .expect("disable");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn repo_move_and_set_branch_and_remove_resolve_then_act() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -378,7 +378,7 @@ async fn repo_move_and_set_branch_and_remove_resolve_then_act() {
     .expect("remove");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn project_add_list_show_rename_move_remove() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -490,7 +490,7 @@ async fn project_add_list_show_rename_move_remove() {
     .expect("remove");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn project_move_requires_a_parent_or_to_root() {
     let server = MockServer::start().await;
     let client = client_for(&server).await;
@@ -507,7 +507,7 @@ async fn project_move_requires_a_parent_or_to_root() {
     assert!(err.to_string().contains("--parent or --to-root"), "{err}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_queues_a_run_and_prints_its_id() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -535,7 +535,7 @@ async fn run_queues_a_run_and_prints_its_id() {
     .expect("run");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_with_wait_polls_until_the_run_succeeds() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -569,7 +569,7 @@ async fn run_with_wait_polls_until_the_run_succeeds() {
     .expect("run --wait");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_with_wait_fails_when_the_run_fails() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -606,7 +606,7 @@ async fn run_with_wait_fails_when_the_run_fails() {
     assert!(err.to_string().contains("step 2 exited 1"), "{err}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_lists_recent_runs_and_can_scope_to_a_repo() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -651,7 +651,7 @@ async fn runs_lists_recent_runs_and_can_scope_to_a_repo() {
     .expect("runs scoped to a repo");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn show_prints_the_run_its_jobs_and_its_artifacts() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -679,7 +679,7 @@ async fn show_prints_the_run_its_jobs_and_its_artifacts() {
     .expect("show");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn cancel_posts_the_cancel_endpoint() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -699,7 +699,7 @@ async fn cancel_posts_the_cancel_endpoint() {
     .expect("cancel");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn logs_prints_stored_lines_for_every_job_in_a_run() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -741,7 +741,7 @@ async fn logs_prints_stored_lines_for_every_job_in_a_run() {
     .expect("logs");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn logs_treats_an_id_that_is_not_a_run_as_a_job_id() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -770,7 +770,7 @@ async fn logs_treats_an_id_that_is_not_a_run_as_a_job_id() {
     .expect("logs on a bare job id");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn logs_follow_reads_the_sse_stream_until_the_done_event() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -807,7 +807,7 @@ async fn logs_follow_reads_the_sse_stream_until_the_done_event() {
     .expect("logs --follow");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn secret_set_list_and_remove_at_estate_scope() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
@@ -860,7 +860,7 @@ async fn secret_set_list_and_remove_at_estate_scope() {
     .expect("remove");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn secret_set_scoped_to_a_repo_resolves_it_first() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -897,7 +897,7 @@ async fn secret_set_scoped_to_a_repo_resolves_it_first() {
     .expect("set scoped to a repo");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn credential_set_show_and_remove_scoped_to_a_project() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
@@ -954,7 +954,7 @@ async fn credential_set_show_and_remove_scoped_to_a_project() {
     .expect("remove");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn credential_show_reports_none_set_for_a_null_response() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -978,7 +978,7 @@ async fn credential_show_reports_none_set_for_a_null_response() {
     .expect("show with nothing set");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn credential_rejects_both_repo_and_project_scope() {
     let server = MockServer::start().await;
     let client = client_for(&server).await;
@@ -994,7 +994,7 @@ async fn credential_rejects_both_repo_and_project_scope() {
     assert!(err.to_string().contains("not both"), "{err}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn credential_requires_a_scope() {
     let server = MockServer::start().await;
     let client = client_for(&server).await;

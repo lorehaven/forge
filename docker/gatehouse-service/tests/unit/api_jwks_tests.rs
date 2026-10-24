@@ -17,14 +17,14 @@ async fn signing_keys() -> Arc<SigningKeys> {
     SigningKeys::init(db, 3600).await.expect("init keys")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn jwks_returns_the_published_key_set() {
     let keys = signing_keys().await;
     let resp = jwks(Inject(keys)).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn rotate_succeeds_for_the_dev_bypass_actor() {
     let keys = signing_keys().await;
     let container = Arc::new(

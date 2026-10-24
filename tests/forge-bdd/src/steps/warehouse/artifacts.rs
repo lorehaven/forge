@@ -7,11 +7,11 @@
 //! token` are shared with the files steps (`src/steps/warehouse/files.rs`).
 
 use crate::world::ForgeWorld;
-use cucumber::when;
+use quench_test_bdd::when;
 
 async fn send(
     world: &mut ForgeWorld,
-    method: reqwest::Method,
+    method: quench_client::transport::Method,
     path: &str,
     body: Option<&'static [u8]>,
 ) {
@@ -30,14 +30,20 @@ async fn send(
 
 #[when("I request the artifacts catalog")]
 async fn artifacts_catalog(world: &mut ForgeWorld) {
-    send(world, reqwest::Method::GET, "/api/v1/artifacts", None).await;
+    send(
+        world,
+        quench_client::transport::Method::GET,
+        "/api/v1/artifacts",
+        None,
+    )
+    .await;
 }
 
 #[when(expr = "I request artifact metadata for {string}")]
 async fn artifact_metadata(world: &mut ForgeWorld, spec: String) {
     send(
         world,
-        reqwest::Method::GET,
+        quench_client::transport::Method::GET,
         &format!("/api/v1/artifacts/{spec}"),
         None,
     )
@@ -48,7 +54,7 @@ async fn artifact_metadata(world: &mut ForgeWorld, spec: String) {
 async fn publish_artifact(world: &mut ForgeWorld, spec: String) {
     send(
         world,
-        reqwest::Method::PUT,
+        quench_client::transport::Method::PUT,
         &format!("/api/v1/artifacts/{spec}"),
         Some(b"bdd artifact bytes"),
     )
@@ -57,5 +63,11 @@ async fn publish_artifact(world: &mut ForgeWorld, spec: String) {
 
 #[when("I request the apk catalog")]
 async fn apk_catalog(world: &mut ForgeWorld) {
-    send(world, reqwest::Method::GET, "/api/v1/apk", None).await;
+    send(
+        world,
+        quench_client::transport::Method::GET,
+        "/api/v1/apk",
+        None,
+    )
+    .await;
 }

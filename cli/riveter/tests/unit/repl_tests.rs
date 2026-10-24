@@ -17,7 +17,7 @@ fn list(line: &str) -> quench_core::Result<riveter::repl::ParsedArgs> {
     parse_args(&args, ResourceScope::All, false)
 }
 
-#[test]
+#[quench_test::test]
 fn render_defaults_to_the_same_scope_as_apply() {
     // A render that previewed a wider scope than apply acts on would make the
     // obvious "render, check, apply" workflow lie.
@@ -28,7 +28,7 @@ fn render_defaults_to_the_same_scope_as_apply() {
     assert_eq!(render.scope, ResourceScope::Mutable);
 }
 
-#[test]
+#[quench_test::test]
 fn bare_command_takes_the_default_scope() {
     let parsed = apply("apply").expect("bare apply should parse");
     assert!(!parsed.dry_run);
@@ -36,7 +36,7 @@ fn bare_command_takes_the_default_scope() {
     assert_eq!(parsed.scope, ResourceScope::Mutable);
 }
 
-#[test]
+#[quench_test::test]
 fn scope_accepts_both_the_space_and_equals_forms() {
     // clap takes either on the CLI, so the REPL must agree — otherwise
     // `--scope=immutable` silently falls back to the default.
@@ -46,7 +46,7 @@ fn scope_accepts_both_the_space_and_equals_forms() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn scope_value_is_case_insensitive() {
     assert_eq!(
         list("list --scope ALL").expect("scope should parse").scope,
@@ -54,7 +54,7 @@ fn scope_value_is_case_insensitive() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn unknown_option_is_rejected_rather_than_dropped() {
     // The whole point: a typo'd safety flag must not turn into a live apply.
     let err = apply("apply --dry-runn").expect_err("typo should be rejected");
@@ -63,7 +63,7 @@ fn unknown_option_is_rejected_rather_than_dropped() {
     assert!(msg.contains("accepted options"), "{msg}");
 }
 
-#[test]
+#[quench_test::test]
 fn dry_run_is_only_accepted_where_it_does_something() {
     assert!(
         apply("apply --dry-run")
@@ -75,13 +75,13 @@ fn dry_run_is_only_accepted_where_it_does_something() {
     assert!(err.to_string().contains("only `apply`"), "{err}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_near_miss_on_scope_names_the_real_flag() {
     let err = list("list --scoped immutable").expect_err("should be rejected");
     assert!(err.to_string().contains("did you mean `--scope`"), "{err}");
 }
 
-#[test]
+#[quench_test::test]
 fn scope_requires_a_value() {
     for line in ["list --scope", "list --scope="] {
         let err = list(line).expect_err(&format!("`{line}` should be rejected"));
@@ -92,13 +92,13 @@ fn scope_requires_a_value() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn invalid_scope_value_is_rejected() {
     let err = list("list --scope sideways").expect_err("should be rejected");
     assert!(err.to_string().contains("sideways"), "{err}");
 }
 
-#[test]
+#[quench_test::test]
 fn targets_parse_alongside_flags_in_any_order() {
     let parsed = apply("apply --scope=all deployment/api --dry-run service/api")
         .expect("mixed line should parse");
@@ -110,7 +110,7 @@ fn targets_parse_alongside_flags_in_any_order() {
     assert!(!parsed.selector.matches("configmap", "api"));
 }
 
-#[test]
+#[quench_test::test]
 fn the_scope_value_is_not_mistaken_for_a_target() {
     let parsed = list("list --scope mutable").expect("should parse");
     assert!(
@@ -140,7 +140,7 @@ fn resource(kind: &str, name: &str) -> ResourceRef {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn describe_lists_every_selected_resource_as_kind_slash_name() {
     let rendered = manifest(
         vec![resource("Deployment", "web"), resource("Service", "web")],
@@ -149,17 +149,17 @@ fn describe_lists_every_selected_resource_as_kind_slash_name() {
     assert_eq!(describe(&rendered), "Deployment/web, Service/web");
 }
 
-#[test]
+#[quench_test::test]
 fn describe_is_empty_when_nothing_is_selected() {
     assert_eq!(describe(&manifest(vec![], vec![])), "");
 }
 
-#[test]
+#[quench_test::test]
 fn note_skipped_is_none_when_nothing_was_left_out() {
     assert_eq!(note_skipped(&manifest(vec![], vec![])), None);
 }
 
-#[test]
+#[quench_test::test]
 fn note_skipped_names_the_left_out_resources() {
     let rendered = manifest(vec![], vec![resource("ConfigMap", "immutable-cfg")]);
     let note = note_skipped(&rendered).unwrap();
@@ -168,7 +168,7 @@ fn note_skipped_names_the_left_out_resources() {
     assert!(note.contains("--scope all"));
 }
 
-#[test]
+#[quench_test::test]
 fn print_resource_list_and_report_prune_do_not_panic_on_empty_or_populated_input() {
     print_resource_list(&[]);
     print_resource_list(&[resource("Deployment", "web")]);
@@ -182,7 +182,7 @@ fn print_resource_list_and_report_prune_do_not_panic_on_empty_or_populated_input
     report_prune(&[orphan], false);
 }
 
-#[test]
+#[quench_test::test]
 fn live_resource_display_is_kind_slash_name() {
     let resource = LiveResource {
         kind: "deployment".to_string(),
@@ -191,7 +191,7 @@ fn live_resource_display_is_kind_slash_name() {
     assert_eq!(resource.to_string(), "deployment/my-app");
 }
 
-#[test]
+#[quench_test::test]
 fn wait_policy_default_waits_up_to_five_minutes() {
     let policy = WaitPolicy::default();
     assert!(policy.enabled);
@@ -227,7 +227,7 @@ fn with_fake_kubectl<T>(output: &str, body: impl FnOnce() -> T) -> T {
     result
 }
 
-#[test]
+#[quench_test::test]
 fn find_orphans_reports_live_resources_the_overlay_no_longer_selects() {
     // kind, name, owners, selector - the fields `prune` asks kubectl to print, tab-separated.
     with_fake_kubectl("Deployment\tmy-app\t\t\nService\tmy-app\t\t", || {
@@ -240,7 +240,7 @@ fn find_orphans_reports_live_resources_the_overlay_no_longer_selects() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn find_orphans_leaves_alone_what_the_cluster_derived_from_declared_resources() {
     // The listing that used to propose deleting every certificate, endpoint and endpoint slice: all of
     // them carry riveter's labels, none of them is riveter's.
@@ -266,7 +266,7 @@ fn find_orphans_leaves_alone_what_the_cluster_derived_from_declared_resources() 
     });
 }
 
-#[test]
+#[quench_test::test]
 fn find_orphans_is_empty_when_the_cluster_has_nothing_extra() {
     with_fake_kubectl("Deployment\tmy-app\t\t", || {
         let rendered = manifest(vec![resource("Deployment", "my-app")], vec![]);
@@ -288,7 +288,7 @@ fn manifest_with_context(kube_context: Option<&str>) -> RenderedManifest {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn kubectl_binds_the_overlays_context_when_it_pins_one() {
     let cmd = kubectl(&manifest_with_context(Some("prod-cluster")));
     assert_eq!(cmd.get_program(), "kubectl");
@@ -296,13 +296,13 @@ fn kubectl_binds_the_overlays_context_when_it_pins_one() {
     assert_eq!(args, vec!["--context", "prod-cluster"]);
 }
 
-#[test]
+#[quench_test::test]
 fn kubectl_adds_no_context_flag_when_the_overlay_pins_none() {
     let cmd = kubectl(&manifest_with_context(None));
     assert_eq!(cmd.get_args().count(), 0);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_scope_value_accepts_every_case_insensitive_spelling() {
     assert!(matches!(
         parse_scope_value("Mutable").unwrap(),
@@ -318,19 +318,19 @@ fn parse_scope_value_accepts_every_case_insensitive_spelling() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_scope_value_rejects_anything_else() {
     let error = parse_scope_value("bogus").unwrap_err();
     assert!(error.to_string().contains("invalid --scope value"));
 }
 
-#[test]
+#[quench_test::test]
 fn unknown_option_hints_at_apply_only_for_dry_run() {
     assert!(unknown_option("--dry-run", false).contains("only `apply` takes --dry-run"));
     assert!(!unknown_option("--foo", false).contains("only `apply`"));
 }
 
-#[test]
+#[quench_test::test]
 fn unknown_option_lists_dry_run_only_when_it_is_accepted() {
     assert!(unknown_option("--foo", true).contains("--dry-run"));
     assert!(!unknown_option("--foo", false).contains("--dry-run"));

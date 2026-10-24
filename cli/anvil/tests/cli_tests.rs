@@ -7,14 +7,17 @@
 //! through the compiled binary here. Everything else in `main.rs`'s dispatch
 //! table is a one-line match arm identical in shape to this one.
 
-use assert_cmd::Command;
-use predicates::prelude::*;
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
+use quench_test::cmd::Command;
+use quench_test::predicate::prelude::*;
 
 fn anvil() -> Command {
     Command::cargo_bin("anvil").expect("binary built")
 }
 
-#[test]
+#[quench_test::test]
 fn list_names_runs_through_the_full_binary_and_prints_workspace_members() {
     anvil()
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -24,7 +27,7 @@ fn list_names_runs_through_the_full_binary_and_prints_workspace_members() {
         .stdout(predicate::str::contains("anvil"));
 }
 
-#[test]
+#[quench_test::test]
 fn list_json_runs_through_the_full_binary() {
     anvil()
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -34,7 +37,7 @@ fn list_json_runs_through_the_full_binary() {
         .stdout(predicate::str::contains("\"packages\""));
 }
 
-#[test]
+#[quench_test::test]
 fn list_with_an_unknown_format_fails_through_the_full_binary() {
     anvil()
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -43,7 +46,7 @@ fn list_with_an_unknown_format_fails_through_the_full_binary() {
         .failure();
 }
 
-#[test]
+#[quench_test::test]
 fn help_flag_short_circuits_before_the_dispatch_match() {
     anvil()
         .arg("--help")
@@ -57,7 +60,7 @@ fn help_flag_short_circuits_before_the_dispatch_match() {
 // asserts success: this workspace having something to flag is a legitimate
 // non-zero exit, not a test failure. The point is that stdout is nothing but
 // the banner-free, parseable report - not that the report is empty.
-#[test]
+#[quench_test::test]
 fn machete_json_runs_through_the_full_binary_with_a_banner_free_stdout() {
     let assert = anvil()
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -78,7 +81,7 @@ fn machete_json_runs_through_the_full_binary_with_a_banner_free_stdout() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn deny_json_runs_through_the_full_binary_with_a_banner_free_stdout() {
     let assert = anvil()
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -96,7 +99,7 @@ fn deny_json_runs_through_the_full_binary_with_a_banner_free_stdout() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn config_check_accepts_the_estates_own_anvil_toml() {
     anvil()
         .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
@@ -106,7 +109,7 @@ fn config_check_accepts_the_estates_own_anvil_toml() {
         .stdout(predicate::str::contains("valid"));
 }
 
-#[test]
+#[quench_test::test]
 fn config_check_rejects_a_malformed_anvil_toml_and_lists_every_problem() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     std::fs::write(
@@ -123,3 +126,5 @@ fn config_check_rejects_a_malformed_anvil_toml_and_lists_every_problem() {
         .stdout(predicate::str::contains("bogus_top_level"))
         .stdout(predicate::str::contains("docker.modules.core"));
 }
+
+quench_test::main!();

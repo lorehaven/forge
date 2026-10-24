@@ -1,24 +1,11 @@
 use anvil::cli::{Cli, Commands, ConfigCommands, DockerCommands};
 use anvil::commands;
 use anvil::config;
-use anvil::util::{OutputMode, set_output_mode};
-use clap::Parser;
+use anvil::util::{OutputMode, set_output_mode, wants_json};
+use quench_args::Parser;
 use quench_cli::require::require_binary;
 use quench_cli::terminal::print_box_banner;
 use quench_core::Result;
-
-/// Cheap, parse-free check for a `--json` flag anywhere in argv.
-///
-/// The banner has to be decided before `Cli::parse()` runs, since clap exits
-/// the process directly on `--help`/`--version`/a parse error without
-/// returning - a real parse-then-check would silently drop the banner from
-/// those paths too, not just from `--json` runs. Only the six `--json`-aware
-/// commands ever accept that flag, so its presence anywhere in argv is
-/// enough to know a JSON consumer is on the other end of stdout, without
-/// needing to know which subcommand it belongs to.
-fn wants_json(args: &[String]) -> bool {
-    args.iter().any(|arg| arg == "--json")
-}
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -120,24 +107,4 @@ fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::wants_json;
-
-    #[test]
-    fn true_when_json_flag_is_anywhere_in_argv() {
-        let args = |s: &[&str]| s.iter().map(|a| (*a).to_string()).collect::<Vec<_>>();
-        assert!(wants_json(&args(&["anvil", "lint", "--json"])));
-        assert!(wants_json(&args(&["anvil", "audit", "--json"])));
-    }
-
-    #[test]
-    fn false_without_a_json_flag() {
-        let args = |s: &[&str]| s.iter().map(|a| (*a).to_string()).collect::<Vec<_>>();
-        assert!(!wants_json(&args(&["anvil", "lint"])));
-        assert!(!wants_json(&args(&["anvil", "--help"])));
-        assert!(!wants_json(&args(&["anvil"])));
-    }
 }

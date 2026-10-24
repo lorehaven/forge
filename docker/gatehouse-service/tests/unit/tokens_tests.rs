@@ -1,7 +1,7 @@
 use gatehouse_service::VerificationTokens;
 use gatehouse_service::tokens::{PURPOSE_RESET_PASSWORD, PURPOSE_VERIFY_EMAIL};
 
-#[tokio::test]
+#[quench_test::test]
 async fn issue_then_redeem_round_trips_the_username() {
     let tokens = VerificationTokens::in_memory();
     let token = tokens
@@ -16,7 +16,7 @@ async fn issue_then_redeem_round_trips_the_username() {
     assert_eq!(redeemed, Some("alice".to_string()));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn redeem_is_single_use() {
     let tokens = VerificationTokens::in_memory();
     let token = tokens
@@ -40,7 +40,7 @@ async fn redeem_is_single_use() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn redeem_is_scoped_to_its_purpose() {
     let tokens = VerificationTokens::in_memory();
     let token = tokens
@@ -66,7 +66,7 @@ async fn redeem_is_scoped_to_its_purpose() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn redeem_of_an_unknown_token_is_none() {
     let tokens = VerificationTokens::in_memory();
     assert!(
@@ -78,7 +78,7 @@ async fn redeem_of_an_unknown_token_is_none() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn issued_tokens_are_unique() {
     let tokens = VerificationTokens::in_memory();
     let a = tokens

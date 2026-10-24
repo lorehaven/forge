@@ -6,12 +6,12 @@ use riveter::vault::{
 };
 use std::collections::HashMap;
 
-fn keys() -> (Vec<age::x25519::Identity>, String) {
+fn keys() -> (Vec<quench_crypto::age::Identity>, String) {
     let (secret, public) = vault::keygen();
     (parse_identities(&secret).unwrap(), public)
 }
 
-#[test]
+#[quench_test::test]
 fn a_generated_key_is_an_age_key_and_its_recipient_matches() {
     let (secret, public) = vault::keygen();
     assert!(secret.starts_with("AGE-SECRET-KEY-1"), "{secret}");
@@ -25,7 +25,7 @@ fn a_generated_key_is_an_age_key_and_its_recipient_matches() {
     assert!(parse_identities("not a key").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_value_round_trips_and_only_its_recipients_can_open_it() {
     let (mine, my_public) = keys();
     let (theirs, their_public) = keys();
@@ -54,7 +54,7 @@ fn a_value_round_trips_and_only_its_recipients_can_open_it() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_value_that_is_not_utf8_or_not_ours_is_a_clear_error() {
     let (mine, _) = keys();
     assert!(
@@ -73,7 +73,7 @@ fn a_value_that_is_not_utf8_or_not_ours_is_a_clear_error() {
     assert!(encrypt_value(&["age1nope".to_string()], "x").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_file_keeps_names_readable_sorted_and_the_rest_untouched_when_one_value_changes() {
     let (identities, public) = keys();
     let mut file = Vault::new(vec![public]);
@@ -102,7 +102,7 @@ fn a_file_keeps_names_readable_sorted_and_the_rest_untouched_when_one_value_chan
     assert_eq!(back.names().collect::<Vec<_>>(), ["ALPHA", "ZED"]);
 }
 
-#[test]
+#[quench_test::test]
 fn a_plaintext_value_in_a_secrets_file_is_refused_so_it_is_never_shipped() {
     let (_, public) = keys();
     let text =
@@ -128,7 +128,7 @@ fn a_plaintext_value_in_a_secrets_file_is_refused_so_it_is_never_shipped() {
     assert!(Vault::parse("riveter-secrets: 1\nrecipients: [nope]\n").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn rekeying_moves_access_from_the_old_key_to_the_new_one() {
     let (old, old_public) = keys();
     let (new, new_public) = keys();
@@ -149,7 +149,7 @@ fn rekeying_moves_access_from_the_old_key_to_the_new_one() {
     assert!(file.rekey(&old, vec![keys().1]).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn names_must_be_usable_variable_names() {
     let (_, public) = keys();
     let mut file = Vault::new(vec![public]);
@@ -161,7 +161,7 @@ fn names_must_be_usable_variable_names() {
 
 // ---------------------------------------------------------------- finding the key
 
-#[test]
+#[quench_test::test]
 fn the_key_is_found_inline_then_in_a_named_file_then_in_the_default_place() {
     let (secret, _) = vault::keygen();
     let dir = quench_core::tmp::TempDir::new().unwrap();
@@ -197,7 +197,7 @@ fn the_key_is_found_inline_then_in_a_named_file_then_in_the_default_place() {
     ]))
     .unwrap()
     .unwrap();
-    assert_eq!(both[0].to_string().expose_secret_for_test(), other);
+    assert_eq!(both[0].to_secret_string(), other);
 
     // The default place, under HOME.
     let home = dir.path().join("home");
@@ -222,19 +222,9 @@ fn the_key_is_found_inline_then_in_a_named_file_then_in_the_default_place() {
     assert!(identities_from(env(vec![("RIVETER_AGE_KEY", "garbage".to_string())])).is_err());
 }
 
-trait ExposeForTest {
-    fn expose_secret_for_test(&self) -> String;
-}
-impl ExposeForTest for age::secrecy::SecretString {
-    fn expose_secret_for_test(&self) -> String {
-        use age::secrecy::ExposeSecret;
-        self.expose_secret().to_string()
-    }
-}
-
 // ---------------------------------------------------------------- values.yaml
 
-#[test]
+#[quench_test::test]
 fn values_yaml_is_a_flat_mapping_of_scalars() {
     let values =
         parse_values_yaml("# defaults\nHOST: example.org\nPORT: 8080\nDEBUG: true\nEMPTY:\n")
@@ -256,7 +246,7 @@ fn values_yaml_is_a_flat_mapping_of_scalars() {
     assert!(parse_values_yaml("bad name: 1\n").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn an_overlay_carries_values_yaml_or_values_toml_never_both() {
     let yaml = b"A: 1\n".as_slice();
     let toml = b"A = \"2\"\n".as_slice();
@@ -318,7 +308,7 @@ fn packed(dir: &quench_core::tmp::TempDir) -> rivet_package::Package {
     .unwrap()
 }
 
-#[test]
+#[quench_test::test]
 fn a_package_carries_its_values_and_its_encrypted_secrets_and_no_plaintext() {
     let (identities, public) = keys();
     let mut secrets = Vault::new(vec![public]);
@@ -348,7 +338,7 @@ fn a_package_carries_its_values_and_its_encrypted_secrets_and_no_plaintext() {
     assert_eq!(merged["TOKEN"], "s3cret-token");
 }
 
-#[test]
+#[quench_test::test]
 fn encrypted_names_count_as_supplied_and_a_missing_key_says_how_to_name_one() {
     let (_, public) = keys();
     let mut secrets = Vault::new(vec![public]);
@@ -361,7 +351,7 @@ fn encrypted_names_count_as_supplied_and_a_missing_key_says_how_to_name_one() {
     assert!(message.contains("RIVETER_AGE_KEY"), "{message}");
 }
 
-#[test]
+#[quench_test::test]
 fn precedence_is_values_then_secrets_then_the_env_file_then_set() {
     let (identities, public) = keys();
     let mut secrets = Vault::new(vec![public]);
@@ -389,7 +379,7 @@ fn precedence_is_values_then_secrets_then_the_env_file_then_set() {
     assert_eq!(merged["TOKEN"], "from-set", "--set beats everything");
 }
 
-#[test]
+#[quench_test::test]
 fn an_install_renders_the_secret_with_the_decrypted_value_and_the_configmap_with_the_defaults() {
     let (identities, public) = keys();
     let mut secrets = Vault::new(vec![public]);
@@ -420,7 +410,7 @@ fn an_install_renders_the_secret_with_the_decrypted_value_and_the_configmap_with
     assert!(manifest.contains("example.org"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_plaintext_secrets_file_cannot_be_packed() {
     let (_, public) = keys();
     let dir = overlay_with(None);
@@ -442,7 +432,7 @@ fn a_plaintext_secrets_file_cannot_be_packed() {
 
 // ---------------------------------------------------------------- straight from the overlay directory
 
-#[test]
+#[quench_test::test]
 fn rendering_from_the_overlay_directory_reads_values_secrets_and_a_local_env_in_that_order() {
     let (secret, public) = vault::keygen();
     let mut secrets = Vault::new(vec![public]);
@@ -480,7 +470,7 @@ fn rendering_from_the_overlay_directory_reads_values_secrets_and_a_local_env_in_
 
 // ---------------------------------------------------------------- the commands
 
-#[test]
+#[quench_test::test]
 fn the_secrets_commands_create_list_import_and_remove_without_printing_a_value() {
     use riveter::cli::SecretsCmd;
     use riveter::secrets_cmd::secrets_command;
@@ -555,7 +545,7 @@ fn the_secrets_commands_create_list_import_and_remove_without_printing_a_value()
     );
 }
 
-#[test]
+#[quench_test::test]
 fn keygen_writes_a_private_key_once_with_owner_only_permissions() {
     use riveter::cli::SecretsCmd;
     use riveter::secrets_cmd::secrets_command;
@@ -635,7 +625,7 @@ fn hash_of(docs: &[quench_serde::Value], name: &str) -> Option<String> {
         })
 }
 
-#[test]
+#[quench_test::test]
 fn a_workload_carries_a_hash_of_the_config_it_reads_and_it_moves_when_that_does() {
     let first = render_cfg(&config_overlay("info", "one"));
     let same = render_cfg(&config_overlay("info", "one"));
@@ -668,7 +658,7 @@ fn a_workload_carries_a_hash_of_the_config_it_reads_and_it_moves_when_that_does(
     );
 }
 
-#[test]
+#[quench_test::test]
 fn the_hash_does_not_reveal_a_secret_and_a_selected_workload_still_gets_it() {
     let dir = config_overlay("info", "very-secret-value");
     let workspace = riveter::env::Workspace {

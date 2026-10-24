@@ -63,7 +63,7 @@ fn workspace() -> (quench_core::tmp::TempDir, Workspace) {
 // Success
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_passing_job_succeeds_and_records_every_step() {
     let executor = NativeExecutor::new();
     let (_dir, ws) = workspace();
@@ -82,7 +82,7 @@ async fn a_passing_job_succeeds_and_records_every_step() {
     assert!(state.steps.iter().all(|s| s.status == Status::Success));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn stdout_is_captured() {
     let executor = NativeExecutor::new();
     let (_dir, ws) = workspace();
@@ -102,7 +102,7 @@ async fn stdout_is_captured() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_command_is_echoed_before_it_runs() {
     // Without this a log opens on the output of a command nobody can identify.
     let executor = NativeExecutor::new();
@@ -118,7 +118,7 @@ async fn the_command_is_echoed_before_it_runs() {
     assert_eq!(lines.first().map(String::as_str), Some("$ echo hi"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn stderr_is_captured_and_labelled() {
     let executor = NativeExecutor::new();
     let (_dir, ws) = workspace();
@@ -138,7 +138,7 @@ async fn stderr_is_captured_and_labelled() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn log_sequence_numbers_are_contiguous_and_ordered() {
     // A reader resumes by asking for everything after the seq it has; a gap
     // would silently drop output and a repeat would duplicate it.
@@ -160,7 +160,7 @@ async fn log_sequence_numbers_are_contiguous_and_ordered() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn steps_run_in_the_checkout() {
     let executor = NativeExecutor::new();
     let dir = quench_core::tmp::TempDir::new().expect("temp dir");
@@ -175,7 +175,7 @@ async fn steps_run_in_the_checkout() {
     assert_eq!(finish(&executor, &handle).await.status, Status::Success);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn job_environment_reaches_the_step() {
     let executor = NativeExecutor::new();
     let (_dir, ws) = workspace();
@@ -196,7 +196,7 @@ async fn job_environment_reaches_the_step() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn steps_run_in_order() {
     let executor = NativeExecutor::new();
     let dir = quench_core::tmp::TempDir::new().expect("temp dir");
@@ -224,7 +224,7 @@ async fn steps_run_in_order() {
 // Failure
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failing_step_fails_the_job_with_its_exit_code() {
     let executor = NativeExecutor::new();
     let (_dir, ws) = workspace();
@@ -241,7 +241,7 @@ async fn a_failing_step_fails_the_job_with_its_exit_code() {
     assert_eq!(state.steps[0].exit_code, Some(3));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failing_step_skips_the_ones_after_it() {
     let executor = NativeExecutor::new();
     let dir = quench_core::tmp::TempDir::new().expect("temp dir");
@@ -263,7 +263,7 @@ async fn a_failing_step_skips_the_ones_after_it() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn no_step_is_left_looking_like_it_is_still_queued() {
     // A finished job whose later steps still read `queued` looks like it is
     // still going.
@@ -282,7 +282,7 @@ async fn no_step_is_left_looking_like_it_is_still_queued() {
     assert!(state.steps.iter().all(|s| s.status != Status::Queued));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_step_whose_command_does_not_exist_fails_the_job() {
     // Deliberately a `run` step. A tool step would depend on whether `anvil`
     // happens to be on PATH, which differs between a developer's machine and
@@ -304,14 +304,14 @@ async fn a_step_whose_command_does_not_exist_fails_the_job() {
     assert_eq!(state.exit_code, Some(127));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_job_with_no_steps_is_refused() {
     let executor = NativeExecutor::new();
     let (_dir, ws) = workspace();
     assert!(executor.start(&spec("build", vec![]), &ws).await.is_err());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_quoting_mistake_is_caught_before_anything_runs() {
     // Step two cannot be resolved; step one must not have run by the time the
     // caller learns about it.
@@ -340,7 +340,7 @@ async fn a_quoting_mistake_is_caught_before_anything_runs() {
 // Cancellation and timeouts
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn cancelling_stops_a_running_job() {
     let executor = NativeExecutor::new();
     let dir = quench_core::tmp::TempDir::new().expect("temp dir");
@@ -369,7 +369,7 @@ async fn cancelling_stops_a_running_job() {
     assert!(!dir.path().join("should-not-exist").exists());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_job_that_outlives_its_timeout_fails() {
     let executor = NativeExecutor::new();
     let (_dir, ws) = workspace();
@@ -393,7 +393,7 @@ async fn a_job_that_outlives_its_timeout_fails() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_timeout_covers_the_job_not_each_step() {
     let executor = NativeExecutor::new();
     let (_dir, ws) = workspace();
@@ -417,7 +417,7 @@ async fn the_timeout_covers_the_job_not_each_step() {
 // Handles
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unknown_handle_is_an_error_on_every_call() {
     let executor = NativeExecutor::new();
     let handle = Handle::new("never-started");
@@ -427,7 +427,7 @@ async fn an_unknown_handle_is_an_error_on_every_call() {
     assert!(executor.cancel(&handle).await.is_err());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn forgetting_a_job_releases_it() {
     // Without this a long-lived service accumulates every log line it has
     // ever produced.
@@ -444,7 +444,7 @@ async fn forgetting_a_job_releases_it() {
     assert!(executor.poll(&handle).await.is_err());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_late_subscriber_still_sees_earlier_output() {
     // History and the live channel together, because either alone is a race.
     let executor = NativeExecutor::new();
@@ -460,7 +460,7 @@ async fn a_late_subscriber_still_sees_earlier_output() {
     assert!(tail.history.iter().any(|c| c.line == "early"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_subscriber_receives_output_as_it_happens() {
     let executor = NativeExecutor::new();
     let (_dir, ws) = workspace();

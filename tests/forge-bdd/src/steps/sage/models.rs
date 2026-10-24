@@ -1,7 +1,7 @@
 use crate::world::ForgeWorld;
-use serde_json::json;
+use quench_serde::json;
 
-#[cucumber::when("I request available models")]
+#[quench_test_bdd::when("I request available models")]
 async fn request_available_models(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/models", world.sage_base_url);
 
@@ -21,12 +21,12 @@ async fn request_available_models(world: &mut ForgeWorld) -> Result<(), String> 
     }
 }
 
-#[cucumber::then("the response should contain model list")]
+#[quench_test_bdd::then("the response should contain model list")]
 async fn response_contains_models(_world: &mut ForgeWorld) -> Result<(), String> {
     Ok(())
 }
 
-#[cucumber::given(expr = "I have a conversation with model {string}")]
+#[quench_test_bdd::given(expr = "I have a conversation with model {string}")]
 async fn have_conversation_with_model(
     _world: &mut ForgeWorld,
     _model: String,
@@ -35,7 +35,7 @@ async fn have_conversation_with_model(
     Ok(())
 }
 
-#[cucumber::when(expr = "I send a message {string} with model {string}")]
+#[quench_test_bdd::when(expr = "I send a message {string} with model {string}")]
 async fn send_with_model(
     world: &mut ForgeWorld,
     message: String,
@@ -71,13 +71,13 @@ async fn send_with_model(
     }
 }
 
-#[cucumber::given("default model is not running")]
+#[quench_test_bdd::given("default model is not running")]
 async fn default_model_not_running(_world: &mut ForgeWorld) -> Result<(), String> {
     // In mock setup, models start not running
     Ok(())
 }
 
-#[cucumber::then("sage should request switchboard to launch the model")]
+#[quench_test_bdd::then("sage should request switchboard to launch the model")]
 async fn sage_should_launch_model(_world: &mut ForgeWorld) -> Result<(), String> {
     Ok(())
 }

@@ -7,14 +7,14 @@ use quench_serde::json;
 use crate::support;
 use support::stable_cwd_lock;
 
-#[test]
+#[quench_test::test]
 fn format_metadata_json_pretty_prints_the_whole_document() {
     let metadata = json!({ "packages": [] });
     let rendered = format_metadata("json", &metadata).unwrap();
     assert!(rendered.contains("\"packages\""));
 }
 
-#[test]
+#[quench_test::test]
 fn format_metadata_names_lists_one_per_line() {
     let metadata = json!({
         "packages": [
@@ -26,21 +26,21 @@ fn format_metadata_names_lists_one_per_line() {
     assert_eq!(rendered, "pkg-a\npkg-b");
 }
 
-#[test]
+#[quench_test::test]
 fn format_metadata_names_is_empty_when_packages_is_missing() {
     let metadata = json!({});
     let rendered = format_metadata("names", &metadata).unwrap();
     assert_eq!(rendered, "");
 }
 
-#[test]
+#[quench_test::test]
 fn format_metadata_rejects_an_unknown_format() {
     let metadata = json!({});
     let error = format_metadata("yaml", &metadata).unwrap_err();
     assert!(error.to_string().contains("Unknown format"));
 }
 
-#[test]
+#[quench_test::test]
 fn list_runs_against_the_real_workspace_for_every_known_format() {
     // Shells out to real `cargo metadata` with no explicit
     // `--manifest-path`, so it needs cwd to stay put for its duration -
@@ -53,12 +53,12 @@ fn list_runs_against_the_real_workspace_for_every_known_format() {
     assert!(list("bogus-format").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn ensure_tool_installed_succeeds_for_a_binary_that_exists() {
     ensure_tool_installed("cargo", "n/a").expect("cargo is on PATH in this environment");
 }
 
-#[test]
+#[quench_test::test]
 fn ensure_tool_installed_errors_with_the_install_hint_for_a_missing_binary() {
     let error = ensure_tool_installed(
         "definitely-not-a-real-binary-anvil-workspace-test",
@@ -68,7 +68,7 @@ fn ensure_tool_installed_errors_with_the_install_hint_for_a_missing_binary() {
     assert!(error.to_string().contains("cargo install something"));
 }
 
-#[test]
+#[quench_test::test]
 fn previous_version_rev_finds_the_commit_before_the_last_change_to_a_tracked_file() {
     // `git log` (no `-C`/`current_dir` override) needs cwd inside a git
     // repo to find it at all - see `stable_cwd_lock`'s docs. Built against
@@ -114,7 +114,7 @@ fn previous_version_rev_finds_the_commit_before_the_last_change_to_a_tracked_fil
     assert_eq!(rev.len(), 40, "a full git SHA");
 }
 
-#[test]
+#[quench_test::test]
 fn previous_version_rev_is_none_for_a_manifest_with_only_one_commit() {
     // The first-release case this whole fallback exists for: the manifest
     // has exactly one commit in its history (the one that created it), so
@@ -152,7 +152,7 @@ fn previous_version_rev_is_none_for_a_manifest_with_only_one_commit() {
     assert!(rev.expect("git log itself succeeds").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn empty_api_baseline_writes_a_stub_crate_matching_the_package_name() {
     let dir = empty_api_baseline("some-package").expect("writes the stub crate");
 
@@ -165,7 +165,7 @@ fn empty_api_baseline_writes_a_stub_crate_matching_the_package_name() {
     assert_eq!(lib, "", "an empty API to diff the real crate against");
 }
 
-#[test]
+#[quench_test::test]
 fn previous_version_rev_is_none_for_a_path_git_has_never_tracked() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -191,7 +191,7 @@ fn previous_version_rev_is_none_for_a_path_git_has_never_tracked() {
 // something to flag in this workspace is a legitimate `Err`, not a test
 // failure - the point is exercising the command-construction and the
 // run_command* plumbing, not asserting this repo is currently clean.
-#[test]
+#[quench_test::test]
 fn machete_runs_cargo_machete_for_real_against_this_workspace() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -199,7 +199,7 @@ fn machete_runs_cargo_machete_for_real_against_this_workspace() {
     let _ = machete(false);
 }
 
-#[test]
+#[quench_test::test]
 fn machete_json_runs_cargo_machete_for_real_against_this_workspace() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -207,7 +207,7 @@ fn machete_json_runs_cargo_machete_for_real_against_this_workspace() {
     let _ = machete(true);
 }
 
-#[test]
+#[quench_test::test]
 fn deny_runs_cargo_deny_check_for_real_against_this_workspace() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -215,7 +215,7 @@ fn deny_runs_cargo_deny_check_for_real_against_this_workspace() {
     let _ = deny(false);
 }
 
-#[test]
+#[quench_test::test]
 fn deny_json_runs_cargo_deny_check_for_real_against_this_workspace() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -223,7 +223,7 @@ fn deny_json_runs_cargo_deny_check_for_real_against_this_workspace() {
     let _ = deny(true);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_machete_output_reads_no_unused_dependencies_as_empty() {
     let findings = parse_machete_output(
         "cargo-machete didn't find any unused dependencies in this directory. Good job!\n",
@@ -231,7 +231,7 @@ fn parse_machete_output_reads_no_unused_dependencies_as_empty() {
     assert!(findings.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_machete_output_reads_one_finding_per_crate_block() {
     let stdout = "cargo-machete found the following unused dependencies in this directory:\n\
         workbench-service -- ./docker/workbench-service/Cargo.toml:\n\
@@ -262,7 +262,7 @@ fn parse_machete_output_reads_one_finding_per_crate_block() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn parse_machete_output_ignores_unrecognised_text() {
     assert!(
         parse_machete_output("Analyzing dependencies of crates in this directory...\n").is_empty()
@@ -273,7 +273,7 @@ fn tags(names: &[&str]) -> Vec<String> {
     names.iter().map(ToString::to_string).collect()
 }
 
-#[test]
+#[quench_test::test]
 fn pick_baseline_tag_uses_the_previous_release_before_the_bump_is_tagged() {
     let tags = tags(&["pkg-v0.1.4", "pkg-v0.1.5"]);
     assert_eq!(
@@ -282,7 +282,7 @@ fn pick_baseline_tag_uses_the_previous_release_before_the_bump_is_tagged() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn pick_baseline_tag_uses_the_current_versions_own_tag_once_it_exists() {
     let tags = tags(&["pkg-v0.1.5", "pkg-v0.1.6"]);
     assert_eq!(
@@ -291,7 +291,7 @@ fn pick_baseline_tag_uses_the_current_versions_own_tag_once_it_exists() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn pick_baseline_tag_orders_by_semver_not_text() {
     let tags = tags(&["pkg-v0.1.9", "pkg-v0.1.10"]);
     assert_eq!(
@@ -300,7 +300,7 @@ fn pick_baseline_tag_orders_by_semver_not_text() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn pick_baseline_tag_ignores_other_packages_and_malformed_tags() {
     let tags = tags(&[
         "pkg-extra-v0.9.0",
@@ -314,7 +314,7 @@ fn pick_baseline_tag_ignores_other_packages_and_malformed_tags() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn pick_baseline_tag_is_none_without_a_release_at_or_below_the_current_version() {
     assert_eq!(pick_baseline_tag(&[], "pkg", "0.1.0"), None);
     assert_eq!(

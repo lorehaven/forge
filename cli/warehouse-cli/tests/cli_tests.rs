@@ -1,9 +1,12 @@
-use assert_cmd::Command;
-use predicates::prelude::*;
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
 use quench_core::tmp::TempDir;
+use quench_test::cmd::Command;
+use quench_test::predicate::prelude::*;
 use std::fs;
 
-#[test]
+#[quench_test::test]
 fn test_registry_management() {
     let temp = TempDir::new().unwrap();
     let config_dir = temp.path().join(".warehouse");
@@ -120,7 +123,7 @@ fn test_registry_management() {
         .stdout(predicate::str::contains("registry 'local' removed"));
 }
 
-#[test]
+#[quench_test::test]
 fn test_global_local_config() {
     let temp = TempDir::new().unwrap();
     let home_dir = temp.path().join("home");
@@ -193,7 +196,7 @@ fn test_global_local_config() {
         .stdout(predicate::str::contains("* local-reg"));
 }
 
-#[test]
+#[quench_test::test]
 fn test_registry_validation() {
     let temp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
@@ -215,7 +218,7 @@ fn test_registry_validation() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn test_help_output() {
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
     cmd.arg("--help")
@@ -227,3 +230,5 @@ fn test_help_output() {
         .stdout(predicate::str::contains("files"))
         .stdout(predicate::str::contains("admin"));
 }
+
+quench_test::main!();

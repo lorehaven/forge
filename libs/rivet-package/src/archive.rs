@@ -13,8 +13,6 @@ use std::fmt::Write as _;
 use std::io::Read;
 use std::path::Path;
 
-/// Zstd level for packing. Overlays are small text, so spend the CPU.
-const ZSTD_LEVEL: i32 = 19;
 /// Tar's per-entry header and padding, for sizing the decoded-stream cap.
 const TAR_ENTRY_OVERHEAD: u64 = 1024;
 
@@ -50,37 +48,34 @@ pub struct Package {
 
 impl Package {
     /// Reads a `tar.zst`, applying every check a registry needs before storing it.
-    pub fn read(reader: impl Read, limits: &Limits) -> Result<Self, PackageError> {
-        let decoder = zstd::stream::read::Decoder::new(reader)
-            .map_err(|e| PackageError::Archive(format!("not a zstd stream: {e}")))?;
+    pub fn read(mut reader: impl Read, limits: &Limits) -> Result<Self, PackageError> {
         // Entry sizes are checked against the limits individually; this is the
         // backstop for a stream that lies about them.
-        let cap = limits
-            .max_total_bytes
-            .saturating_add((limits.max_entries as u64 + 2).saturating_mul(TAR_ENTRY_OVERHEAD));
-        let mut archive = tar::Archive::new(decoder.take(cap));
+        let cap =
+            usize::try_from(limits.max_total_bytes.saturating_add(
+                (limits.max_entries as u64 + 2).saturating_mul(TAR_ENTRY_OVERHEAD),
+            ))
+            .unwrap_or(usize::MAX);
+        let mut compressed = Vec::new();
+        reader.read_to_end(&mut compressed)?;
+        let tar_bytes =
+            quench_archive::zstd::decompress(&compressed, cap).map_err(|e| match e {
+                quench_archive::Error::Limit(_) => PackageError::Limit(e.to_string()),
+                other => PackageError::Archive(format!("not a zstd stream: {other}")),
+            })?;
 
         let mut files = BTreeMap::new();
         let mut total: u64 = 0;
-        let entries = archive
-            .entries()
-            .map_err(|e| PackageError::Archive(e.to_string()))?;
 
-        for entry in entries {
-            let mut entry = entry.map_err(|e| PackageError::Archive(e.to_string()))?;
-            let kind = entry.header().entry_type();
-            if kind.is_dir() {
+        for entry in quench_archive::tar::Reader::new(&tar_bytes) {
+            let entry = entry.map_err(|e| PackageError::Archive(e.to_string()))?;
+            if entry.kind.is_dir() {
                 continue;
             }
-            let name = entry
-                .path()
-                .map_err(|e| PackageError::Archive(e.to_string()))?
-                .to_str()
-                .map(str::to_string)
-                .ok_or_else(|| PackageError::Archive("a path is not valid UTF-8".to_string()))?;
+            let name = entry.path.clone();
             path::validate(&name)?;
 
-            if !kind.is_file() {
+            if !entry.kind.is_file() {
                 return Err(PackageError::UnsafePath(
                     name,
                     "only regular files are allowed (no links or devices)",
@@ -93,10 +88,7 @@ impl Package {
                 )));
             }
 
-            let size = entry
-                .header()
-                .size()
-                .map_err(|e| PackageError::Archive(e.to_string()))?;
+            let size = entry.size;
             if size > limits.max_file_bytes {
                 return Err(PackageError::Limit(format!(
                     "`{name}` is larger than {} bytes",
@@ -111,9 +103,7 @@ impl Package {
                 )));
             }
 
-            let mut data = Vec::with_capacity(usize::try_from(size.min(1 << 20)).unwrap_or(0));
-            entry.by_ref().take(size).read_to_end(&mut data)?;
-            if files.insert(name.clone(), data).is_some() {
+            if files.insert(name.clone(), entry.data.to_vec()).is_some() {
                 return Err(PackageError::Archive(format!("`{name}` appears twice")));
             }
         }
@@ -267,19 +257,13 @@ impl PackageBuilder {
 impl Package {
     /// Serialises to a deterministic `tar.zst`.
     pub fn to_bytes(&self) -> Result<Vec<u8>, PackageError> {
-        let mut builder = tar::Builder::new(Vec::new());
+        let mut builder = quench_archive::tar::Builder::new();
         // `BTreeMap` iterates sorted, which is what makes the output stable.
         for (name, data) in &self.files {
-            let mut header = tar::Header::new_gnu();
-            header.set_size(data.len() as u64);
-            header.set_mode(0o644);
-            header.set_uid(0);
-            header.set_gid(0);
-            header.set_mtime(0);
-            header.set_entry_type(tar::EntryType::Regular);
-            builder.append_data(&mut header, name, data.as_slice())?;
+            builder
+                .append_file(name, data)
+                .map_err(|e| PackageError::Archive(e.to_string()))?;
         }
-        let tar_bytes = builder.into_inner()?;
-        Ok(zstd::stream::encode_all(tar_bytes.as_slice(), ZSTD_LEVEL)?)
+        Ok(quench_archive::zstd::compress(&builder.finish()))
     }
 }

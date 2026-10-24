@@ -1,14 +1,14 @@
 use forge_toolbox::{parse_installed_list, parse_search_line};
 use quench_core::version::Version;
 
-#[test]
+#[quench_test::test]
 fn parse_search_line_matches_exact_package_line() {
     let line = r#"anvil = "0.1.22"    # Anvil CLI - workspace build tools for cargo projects"#;
     let result = parse_search_line("anvil", line).unwrap();
     assert_eq!(result, Some(Version::parse("0.1.22").unwrap()));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_search_line_ignores_lines_for_other_packages() {
     let line = r#"anvil-extra = "0.1.0""#;
     // "anvil-extra" must not match a search for "anvil" (prefix + `" "` guards this).
@@ -16,32 +16,32 @@ fn parse_search_line_ignores_lines_for_other_packages() {
     assert_eq!(result, None);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_search_line_ignores_unrelated_lines() {
     let result = parse_search_line("anvil", "... and 3 crates not shown").unwrap();
     assert_eq!(result, None);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_search_line_errors_on_unterminated_quote() {
     let line = r#"anvil = "0.1.22"#; // missing closing quote
     assert!(parse_search_line("anvil", line).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_search_line_errors_on_invalid_semver() {
     let line = r#"anvil = "not-a-version""#;
     assert!(parse_search_line("anvil", line).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_search_line_handles_leading_whitespace() {
     let line = "   anvil = \"1.0.0\"";
     let result = parse_search_line("anvil", line).unwrap();
     assert_eq!(result, Some(Version::parse("1.0.0").unwrap()));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_installed_list_extracts_package_and_version() {
     let stdout = "anvil v0.1.22:\n    anvil\nriveter v0.2.3:\n    riveter\n";
     let versions = parse_installed_list(stdout);
@@ -56,7 +56,7 @@ fn parse_installed_list_extracts_package_and_version() {
     assert_eq!(versions.len(), 2);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_installed_list_handles_registry_suffix() {
     let stdout = "riveter v0.2.3 (registry `ennor`):\n    riveter\n";
     let versions = parse_installed_list(stdout);
@@ -69,7 +69,7 @@ fn parse_installed_list_handles_registry_suffix() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn parse_installed_list_skips_indented_binary_lines() {
     let stdout = "anvil v0.1.22:\n    anvil\n    anvil-helper\n";
     let versions = parse_installed_list(stdout);
@@ -77,40 +77,40 @@ fn parse_installed_list_skips_indented_binary_lines() {
     assert!(!versions.contains_key("anvil-helper"));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_installed_list_skips_malformed_version() {
     let stdout = "broken-package vNOTASEMVER:\n    broken-package\n";
     let versions = parse_installed_list(stdout);
     assert!(versions.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_installed_list_empty_input() {
     let versions = parse_installed_list("");
     assert!(versions.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_installed_list_ignores_lines_without_trailing_colon() {
     let stdout = "some free text with no colon\n    anvil\n";
     let versions = parse_installed_list(stdout);
     assert!(versions.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_installed_list_skips_a_bare_colon_line_with_no_package() {
     let versions = parse_installed_list(":\n");
     assert!(versions.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_installed_list_skips_a_header_line_missing_the_version_token() {
     let stdout = "anvil:\n    anvil\n";
     let versions = parse_installed_list(stdout);
     assert!(versions.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_installed_output_parses_a_successful_listing() {
     use forge_toolbox::parse_installed_output;
     use std::os::unix::process::ExitStatusExt;
@@ -126,7 +126,7 @@ fn parse_installed_output_parses_a_successful_listing() {
     assert!(versions.contains_key("anvil"));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_installed_output_errors_with_stderr_when_the_command_fails() {
     use forge_toolbox::parse_installed_output;
     use std::os::unix::process::ExitStatusExt;
@@ -141,7 +141,7 @@ fn parse_installed_output_errors_with_stderr_when_the_command_fails() {
     assert!(err.to_string().contains("no such registry"));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_search_output_finds_the_requested_package() {
     use forge_toolbox::parse_search_output;
     use std::os::unix::process::ExitStatusExt;
@@ -156,7 +156,7 @@ fn parse_search_output_finds_the_requested_package() {
     assert_eq!(version.unwrap().to_string(), "0.1.22");
 }
 
-#[test]
+#[quench_test::test]
 fn parse_search_output_errors_with_stderr_when_the_command_fails() {
     use forge_toolbox::parse_search_output;
     use std::os::unix::process::ExitStatusExt;

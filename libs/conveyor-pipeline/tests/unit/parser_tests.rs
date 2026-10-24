@@ -43,7 +43,7 @@ fn message(source: &str) -> String {
 // The happy path
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn the_documented_pipeline_parses() {
     let spec = parse(README_PIPELINE).expect("the README example must parse");
 
@@ -73,12 +73,12 @@ fn the_documented_pipeline_parses() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn the_pipeline_file_is_the_documented_name() {
     assert_eq!(PIPELINE_FILE, ".conveyor.toml");
 }
 
-#[test]
+#[quench_test::test]
 fn a_bare_string_step_is_a_shell_command() {
     let spec = parse(
         r#"
@@ -92,7 +92,7 @@ steps = ["make all"]
     assert_eq!(spec.stages[0].jobs[0].steps, [Step::Run("make all".into())]);
 }
 
-#[test]
+#[quench_test::test]
 fn every_step_kind_is_accepted() {
     let spec = parse(
         r#"
@@ -117,7 +117,7 @@ steps = [
     assert_eq!(kinds, ["run", "anvil", "riveter", "warehouse"]);
 }
 
-#[test]
+#[quench_test::test]
 fn a_package_publishing_pipeline_parses() {
     // The shape a homecloud repository would use: publish each overlay on a push to master.
     let spec = parse(
@@ -156,7 +156,7 @@ steps = [
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_typo_in_a_package_step_is_caught_at_parse_time() {
     let error = parse(
         r#"
@@ -170,7 +170,7 @@ steps = [{ riveter = "--env forge publsh" }]
     assert!(error.to_string().contains("publsh"), "{error}");
 }
 
-#[test]
+#[quench_test::test]
 fn job_options_are_carried_through() {
     let spec = parse(
         r#"
@@ -205,7 +205,7 @@ CARGO_TERM_COLOR = "always"
 // Defaults
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_pipeline_without_on_builds_every_push() {
     let spec = parse(
         r#"
@@ -221,7 +221,7 @@ steps = ["make"]
     assert!(!spec.on.allows("pull_request", "refs/heads/anything"));
 }
 
-#[test]
+#[quench_test::test]
 fn naming_one_event_turns_the_others_off() {
     // `on = { pull_request = ["*"] }` and still getting every push built is not
     // what it looks like it says.
@@ -241,7 +241,7 @@ steps = ["make"]
     assert!(!spec.on.allows("push", "refs/heads/master"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_sole_unnamed_job_takes_the_stages_name() {
     let spec = parse(
         r#"
@@ -255,7 +255,7 @@ steps = ["make"]
     assert_eq!(spec.stages[0].jobs[0].name, "build");
 }
 
-#[test]
+#[quench_test::test]
 fn several_unnamed_jobs_are_numbered_from_one() {
     let spec = parse(
         r#"
@@ -277,7 +277,7 @@ steps = ["make b"]
     assert_eq!(names, ["job-1", "job-2"]);
 }
 
-#[test]
+#[quench_test::test]
 fn names_are_trimmed() {
     let spec = parse(
         r#"
@@ -297,7 +297,7 @@ steps = ["make"]
 // Structural mistakes
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_pipeline_with_no_stages_is_rejected() {
     assert!(matches!(error(""), SpecError::NoStages));
     assert!(matches!(
@@ -306,13 +306,13 @@ fn a_pipeline_with_no_stages_is_rejected() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn a_stage_with_no_jobs_is_rejected() {
     let error = error("[[stage]]\nname = \"build\"\n");
     assert!(matches!(error, SpecError::NoJobs { .. }), "{error:?}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_job_with_no_steps_is_rejected() {
     let error = error(
         r#"
@@ -325,7 +325,7 @@ steps = []
     assert!(matches!(error, SpecError::NoSteps { .. }), "{error:?}");
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_stage_name_is_rejected() {
     let error = error("[[stage]]\nname = \"  \"\n[[stage.job]]\nsteps = [\"x\"]\n");
     assert!(
@@ -334,7 +334,7 @@ fn an_empty_stage_name_is_rejected() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn duplicate_job_names_within_a_stage_are_rejected() {
     let error = error(
         r#"
@@ -351,7 +351,7 @@ steps = ["b"]
     assert!(matches!(error, SpecError::DuplicateJob { .. }), "{error:?}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_needs_on_a_job_is_rejected_with_an_explanation() {
     // Left to `deny_unknown_fields` this reads as a typo rather than as a key
     // that belongs one level up.
@@ -368,7 +368,7 @@ steps = ["a"]
     assert!(message.contains("needs"), "{message}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_misspelled_key_is_rejected_rather_than_ignored() {
     // A silently ignored key is a pipeline that quietly does not do what it
     // says: this `step` would have produced a job with no steps.
@@ -385,7 +385,7 @@ step = ["make"]
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_zero_timeout_is_rejected() {
     let error = error(
         r#"
@@ -399,7 +399,7 @@ steps = ["a"]
     assert!(matches!(error, SpecError::ZeroTimeout { .. }), "{error:?}");
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_secret_name_is_rejected() {
     let error = error(
         r#"
@@ -416,7 +416,7 @@ steps = ["a"]
     );
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_trigger_pattern_is_rejected_with_a_suggestion() {
     let message = message(
         r#"
@@ -435,7 +435,7 @@ steps = ["a"]
 // Step mistakes
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn an_unknown_step_kind_lists_the_known_ones() {
     let message = message(
         r#"
@@ -451,7 +451,7 @@ steps = [{ npm = "install" }]
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_step_naming_two_tools_is_rejected() {
     let message = message(
         r#"
@@ -464,7 +464,7 @@ steps = [{ run = "a", anvil = "b" }]
     assert!(message.contains("exactly one"), "{message}");
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_command_is_rejected() {
     let message = message(
         r#"
@@ -477,7 +477,7 @@ steps = [{ run = "   " }]
     assert!(message.contains("empty command"), "{message}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_non_string_command_is_rejected() {
     let message = message(
         r#"
@@ -490,7 +490,7 @@ steps = [{ run = ["a", "b"] }]
     assert!(message.contains("command string"), "{message}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_step_error_names_the_stage_job_and_position() {
     let message = message(
         r#"
@@ -510,7 +510,7 @@ steps = [{ run = "ok" }, { npm = "install" }]
 // Conditions and the graph, reported through the parser
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_bad_stage_condition_names_the_stage() {
     let message = message(
         r#"
@@ -525,7 +525,7 @@ steps = ["a"]
     assert!(message.contains("'=='"), "{message}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_bad_job_condition_names_the_job() {
     let message = message(
         r#"
@@ -541,7 +541,7 @@ steps = ["a"]
     assert!(message.contains("author"), "{message}");
 }
 
-#[test]
+#[quench_test::test]
 fn an_unresolvable_graph_is_a_parse_error() {
     // Not a run that gets three stages in and then discovers the typo.
     let error = error(
@@ -561,7 +561,7 @@ steps = ["b"]
     assert!(matches!(error, SpecError::Graph(_)), "{error:?}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_cycle_is_a_parse_error() {
     let error = error(
         r#"
@@ -581,7 +581,7 @@ steps = ["y"]
     assert!(matches!(error, SpecError::Graph(_)), "{error:?}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_naming_mistake_is_reported_in_preference_to_the_graph_error_it_caused() {
     // Both are wrong here; the empty command is the one the author can act on.
     let message = message(
@@ -601,7 +601,7 @@ steps = ["b"]
     assert!(message.contains("empty command"), "{message}");
 }
 
-#[test]
+#[quench_test::test]
 fn malformed_toml_is_reported_as_such() {
     let error = error("[[stage]\nname = \"build\"");
     assert!(matches!(error, SpecError::Toml(_)), "{error:?}");

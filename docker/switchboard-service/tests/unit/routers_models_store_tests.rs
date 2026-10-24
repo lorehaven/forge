@@ -28,7 +28,7 @@ async fn store() -> ModelStore {
     ModelStore::init(db).await
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn insert_then_get_model_round_trips_through_the_db() {
     let store = store().await;
     let model = sample_model("/mnt/dev/huggingface/hub/llama");
@@ -40,7 +40,7 @@ async fn insert_then_get_model_round_trips_through_the_db() {
     assert_eq!(fetched.architecture, model.architecture);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn insert_model_twice_updates_rather_than_duplicating() {
     let store = store().await;
     let mut model = sample_model("/mnt/dev/huggingface/hub/llama-updated");
@@ -55,13 +55,13 @@ async fn insert_model_twice_updates_rather_than_duplicating() {
     assert!((matching[0].params_billion - 13.0).abs() < 1e-6);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_model_for_an_unknown_path_is_none() {
     let store = store().await;
     assert!(store.get_model("/does/not/exist").await.is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn remove_model_deletes_it_from_the_db_and_cache() {
     let store = store().await;
     let model = sample_model("/mnt/dev/huggingface/hub/to-remove");
@@ -72,7 +72,7 @@ async fn remove_model_deletes_it_from_the_db_and_cache() {
     assert!(store.get_model(&model.path).await.is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_all_paths_lists_every_inserted_model() {
     let store = store().await;
     store
@@ -93,7 +93,7 @@ async fn get_all_paths_lists_every_inserted_model() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn clear_in_memory_cache_does_not_lose_db_backed_reads() {
     let store = store().await;
     let model = sample_model("/mnt/dev/huggingface/hub/cached");
@@ -106,7 +106,7 @@ async fn clear_in_memory_cache_does_not_lose_db_backed_reads() {
     assert!(store.get_model(&model.path).await.is_some());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn is_vllm_supported_reflects_the_loaded_architecture_list() {
     let store = store().await;
     // `load_architectures_file` falls back to a fixed default list when
@@ -115,7 +115,7 @@ async fn is_vllm_supported_reflects_the_loaded_architecture_list() {
     assert!(!store.is_vllm_supported("NotARealArchitectureForCausalLM"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_all_models_is_empty_for_a_freshly_initialized_store() {
     let store = store().await;
     assert!(store.get_all_models().await.is_empty());

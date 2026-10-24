@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use quench_args::{Parser, Subcommand, ValueEnum};
 
 const TARGET_HELP: &str = "Resources to act on as kind[/name], e.g. `deployment/api`, \
                            `statefulset` or `*/api`. Both halves accept `*` and `?` \

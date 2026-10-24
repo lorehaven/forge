@@ -3,7 +3,7 @@
 use crate::env_support::env_lock;
 use sage_service::config::settings::*;
 
-#[test]
+#[quench_test::test]
 fn test_parse_default_models_json() {
     // Array of models
     let json_arr = r#"[
@@ -69,13 +69,13 @@ fn test_parse_default_models_json() {
     assert!(!list3[0].enable_tool_calling);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_list_returns_empty_for_blank_input() {
     assert!(DefaultModel::parse_list("").is_empty());
     assert!(DefaultModel::parse_list("   ").is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_list_returns_empty_for_malformed_json_that_looks_like_json() {
     // Starts with `{`/`[`, so the raw-string fallback doesn't apply, and
     // it isn't valid JSON either - the "give up" branch.
@@ -83,7 +83,7 @@ fn parse_list_returns_empty_for_malformed_json_that_looks_like_json() {
     assert!(DefaultModel::parse_list("[{\"name\":}]").is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn is_model_supported_matches_glob_style_patterns_case_insensitively() {
     let config = sample_config(&["qwen*", "*-instruct", "llama?"]);
 
@@ -95,7 +95,7 @@ fn is_model_supported_matches_glob_style_patterns_case_insensitively() {
     assert!(!config.is_model_supported("unrelated-model"));
 }
 
-#[test]
+#[quench_test::test]
 fn is_model_supported_is_false_with_no_configured_patterns() {
     let config = sample_config(&[]);
     assert!(!config.is_model_supported("anything"));
@@ -120,7 +120,7 @@ fn sample_config(supported_models: &[&str]) -> SageConfig {
     quench_serde::from_value(&value).expect("valid SageConfig shape")
 }
 
-#[test]
+#[quench_test::test]
 fn load_uses_defaults_when_nothing_is_configured() {
     let _guard = env_lock()
         .lock()
@@ -151,7 +151,7 @@ fn load_uses_defaults_when_nothing_is_configured() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn load_falls_back_to_web_assistant_for_an_unknown_capability_profile() {
     let _guard = env_lock()
         .lock()
@@ -164,7 +164,7 @@ fn load_falls_back_to_web_assistant_for_an_unknown_capability_profile() {
     quench_core::env::remove("SAGE_CAPABILITY_PROFILE");
 }
 
-#[test]
+#[quench_test::test]
 fn load_picks_up_search_provider_api_keys() {
     let _guard = env_lock()
         .lock()
@@ -187,7 +187,7 @@ fn load_picks_up_search_provider_api_keys() {
     quench_core::env::remove("SERPAPI_API_KEY");
 }
 
-#[test]
+#[quench_test::test]
 fn load_stop_models_on_shutdown_and_supported_models_read_their_env_vars() {
     let _guard = env_lock()
         .lock()

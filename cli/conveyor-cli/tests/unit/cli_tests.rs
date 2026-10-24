@@ -1,7 +1,7 @@
-use clap::Parser;
 use conveyor_cli::cli::*;
+use quench_args::Parser;
 
-#[test]
+#[quench_test::test]
 fn repo_add_defaults_provider_and_branch() {
     let cli = Cli::try_parse_from([
         "conveyor",
@@ -24,7 +24,7 @@ fn repo_add_defaults_provider_and_branch() {
     assert_eq!(args.project, "proj-1");
 }
 
-#[test]
+#[quench_test::test]
 fn repo_add_requires_a_project() {
     let result = Cli::try_parse_from([
         "conveyor",
@@ -36,7 +36,7 @@ fn repo_add_requires_a_project() {
     assert!(result.is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn repo_set_branch_parses_repo_and_branch() {
     let cli =
         Cli::try_parse_from(["conveyor", "repo", "set-branch", "owner/name", "master"]).unwrap();
@@ -50,7 +50,7 @@ fn repo_set_branch_parses_repo_and_branch() {
     assert_eq!(args.branch, "master");
 }
 
-#[test]
+#[quench_test::test]
 fn project_add_parent_is_optional() {
     let cli = Cli::try_parse_from(["conveyor", "project", "add", "forge"]).unwrap();
     let Commands::Project {
@@ -63,7 +63,7 @@ fn project_add_parent_is_optional() {
     assert_eq!(args.parent, None);
 }
 
-#[test]
+#[quench_test::test]
 fn project_move_parent_and_to_root_are_mutually_exclusive() {
     let result = Cli::try_parse_from([
         "conveyor",
@@ -77,7 +77,7 @@ fn project_move_parent_and_to_root_are_mutually_exclusive() {
     assert!(result.is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn runs_defaults_limit_to_twenty() {
     let cli = Cli::try_parse_from(["conveyor", "runs"]).unwrap();
     let Commands::Runs(args) = cli.command else {
@@ -87,7 +87,7 @@ fn runs_defaults_limit_to_twenty() {
     assert_eq!(args.repo, None);
 }
 
-#[test]
+#[quench_test::test]
 fn validate_defaults_path_to_conveyor_toml() {
     let cli = Cli::try_parse_from(["conveyor", "validate"]).unwrap();
     let Commands::Validate(args) = cli.command else {
@@ -96,7 +96,7 @@ fn validate_defaults_path_to_conveyor_toml() {
     assert_eq!(args.path, ".conveyor.toml");
 }
 
-#[test]
+#[quench_test::test]
 fn global_flags_are_readable_after_a_subcommand_is_parsed() {
     let cli = Cli::try_parse_from([
         "conveyor",
@@ -111,13 +111,13 @@ fn global_flags_are_readable_after_a_subcommand_is_parsed() {
     assert!(cli.insecure);
 }
 
-#[test]
+#[quench_test::test]
 fn run_requires_a_repo_argument() {
     let result = Cli::try_parse_from(["conveyor", "run"]);
     assert!(result.is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn secret_set_value_is_optional_so_it_can_be_read_from_stdin() {
     let cli = Cli::try_parse_from(["conveyor", "secret", "set", "API_KEY"]).unwrap();
     let Commands::Secret {
@@ -130,7 +130,7 @@ fn secret_set_value_is_optional_so_it_can_be_read_from_stdin() {
     assert_eq!(args.value, None);
 }
 
-#[test]
+#[quench_test::test]
 fn credential_set_token_is_optional_so_it_can_be_read_from_stdin() {
     let cli = Cli::try_parse_from([
         "conveyor",
@@ -156,7 +156,7 @@ fn credential_set_token_is_optional_so_it_can_be_read_from_stdin() {
     assert_eq!(args.project, None);
 }
 
-#[test]
+#[quench_test::test]
 fn credential_set_requires_a_username() {
     let result = Cli::try_parse_from([
         "conveyor",
@@ -169,7 +169,7 @@ fn credential_set_requires_a_username() {
     assert!(result.is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn credential_sets_git_username_does_not_clobber_the_login_username() {
     // Regression test for the collision `--git-username` exists to avoid:
     // before the rename, this same command line silently overwrote the

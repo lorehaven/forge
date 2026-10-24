@@ -96,7 +96,7 @@ async fn seed_code(
     code.to_string()
 }
 
-#[test]
+#[quench_test::test]
 fn random_code_produces_distinct_url_safe_values() {
     let a = random_code();
     let b = random_code();
@@ -104,7 +104,7 @@ fn random_code_produces_distinct_url_safe_values() {
     assert!(!a.contains('+') && !a.contains('/'));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn authorization_code_grant_rejects_missing_fields() {
     let db = Db::connect("").await.expect("in-memory db");
     let config = JwtConfig::for_tests_with_signing();
@@ -122,7 +122,7 @@ async fn authorization_code_grant_rejects_missing_fields() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn authorization_code_grant_rejects_an_unknown_client() {
     let db = Db::connect("").await.expect("in-memory db");
     let config = JwtConfig::for_tests_with_signing();
@@ -140,7 +140,7 @@ async fn authorization_code_grant_rejects_an_unknown_client() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn authorization_code_grant_rejects_the_wrong_client_secret() {
     let db = Db::connect("").await.expect("in-memory db");
     let config = JwtConfig::for_tests_with_signing();
@@ -159,7 +159,7 @@ async fn authorization_code_grant_rejects_the_wrong_client_secret() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn authorization_code_grant_rejects_an_unusable_code() {
     let db = Db::connect("").await.expect("in-memory db");
     let config = JwtConfig::for_tests_with_signing();
@@ -190,7 +190,7 @@ async fn authorization_code_grant_rejects_an_unusable_code() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn authorization_code_grant_rejects_a_pkce_verifier_mismatch() {
     let db = Db::connect("").await.expect("in-memory db");
     let config = JwtConfig::for_tests_with_signing();
@@ -221,7 +221,7 @@ async fn authorization_code_grant_rejects_a_pkce_verifier_mismatch() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn authorization_code_grant_succeeds_and_the_code_cannot_be_replayed() {
     let db = Db::connect("").await.expect("in-memory db");
     let config = JwtConfig::for_tests_with_signing();
@@ -256,7 +256,7 @@ async fn authorization_code_grant_succeeds_and_the_code_cannot_be_replayed() {
     assert_eq!(replay.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn refresh_token_grant_rejects_a_missing_refresh_token() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.expect("in-memory db");
@@ -273,7 +273,7 @@ async fn refresh_token_grant_rejects_a_missing_refresh_token() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn refresh_token_grant_rejects_an_unknown_token() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.expect("in-memory db");
@@ -288,7 +288,7 @@ async fn refresh_token_grant_rejects_an_unknown_token() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn refresh_token_grant_succeeds_for_a_live_session() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.expect("in-memory db");
@@ -308,7 +308,7 @@ async fn refresh_token_grant_succeeds_for_a_live_session() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn client_credentials_grant_rejects_missing_fields() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.expect("in-memory db");
@@ -318,7 +318,7 @@ async fn client_credentials_grant_rejects_missing_fields() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn client_credentials_grant_rejects_the_wrong_secret() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.expect("in-memory db");
@@ -333,7 +333,7 @@ async fn client_credentials_grant_rejects_the_wrong_secret() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn client_credentials_grant_succeeds_with_the_right_secret() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.expect("in-memory db");
@@ -348,7 +348,7 @@ async fn client_credentials_grant_succeeds_with_the_right_secret() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn subject_from_cookie_is_none_without_a_session_cookie() {
     let config = JwtConfig::for_tests_with_signing();
     let sessions = SessionDb::init(CacheStore::in_memory());
@@ -367,7 +367,7 @@ async fn subject_from_cookie_is_none_without_a_session_cookie() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn token_endpoint_rejects_an_unsupported_grant_type() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.expect("in-memory db");
@@ -385,7 +385,7 @@ async fn token_endpoint_rejects_an_unsupported_grant_type() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn authorize_endpoint_rejects_an_unknown_client() {
     // `AuthorizeQuery` is private to `api::oauth`, so this goes through the
     // real discovered router rather than calling `authorize` directly.

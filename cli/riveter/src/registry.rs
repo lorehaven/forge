@@ -71,7 +71,7 @@ impl Registry {
     /// - the application token `riveter login` stores in `.riveter.secret.toml`,
     ///   exchanged for a short-lived token on every run.
     pub fn from_env() -> Result<Self> {
-        dotenvy::dotenv().ok();
+        quench_core::dotenv::load().ok();
 
         let base = var("RIVETER_WAREHOUSE_URL").context(
             "RIVETER_WAREHOUSE_URL is not set - point it at Warehouse, including its base path \

@@ -35,7 +35,7 @@ fn version(program: &str, platform: Platform, version_code: i64, yanked: bool) -
     }
 }
 
-#[test]
+#[quench_test::test]
 fn latest_of_picks_the_highest_version_code() {
     let versions = vec![
         version("com.example.app", Platform::Android, 1, false),
@@ -45,7 +45,7 @@ fn latest_of_picks_the_highest_version_code() {
     assert_eq!(latest_of(&versions).unwrap().version_code, 3);
 }
 
-#[test]
+#[quench_test::test]
 fn latest_of_skips_yanked_versions() {
     let versions = vec![
         version("com.example.app", Platform::Android, 1, false),
@@ -54,13 +54,13 @@ fn latest_of_skips_yanked_versions() {
     assert_eq!(latest_of(&versions).unwrap().version_code, 1);
 }
 
-#[test]
+#[quench_test::test]
 fn latest_of_is_none_when_every_version_is_yanked() {
     let versions = vec![version("com.example.app", Platform::Android, 1, true)];
     assert!(latest_of(&versions).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn artifact_view_flattens_metadata_and_hides_the_storage_key() {
     let view = ArtifactView::from(&version("com.example.app", Platform::Android, 5, false));
 
@@ -78,7 +78,7 @@ fn artifact_view_flattens_metadata_and_hides_the_storage_key() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn artifact_view_carries_arch_and_format_for_desktop_rows() {
     let view = ArtifactView::from(&version("com.example.app", Platform::Linux, 9, false));
     assert_eq!(view.platform, "linux");

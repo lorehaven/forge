@@ -8,7 +8,7 @@ use std::path::Path;
 use switchboard_service::routers::models::discovery::*;
 use switchboard_service::routers::models::types::{Context, Model, Quant};
 
-#[test]
+#[quench_test::test]
 fn round2_rounds_to_two_decimal_places() {
     // 1.005 is not exactly representable in f64 (it's stored as slightly
     // less than 1.005), so `(1.005 * 100.0).round() / 100.0` lands on 1.0,
@@ -18,7 +18,7 @@ fn round2_rounds_to_two_decimal_places() {
     assert!((round2(1.234) - 1.23).abs() < 1e-6);
 }
 
-#[test]
+#[quench_test::test]
 fn normalize_hf_name_extracts_the_repo_id_from_the_hub_cache_layout() {
     let path = Path::new(
         "/mnt/dev/huggingface/hub/models--meta-llama--Llama-3-8B/snapshots/abc/config.json",
@@ -32,13 +32,13 @@ fn normalize_hf_name_extracts_the_repo_id_from_the_hub_cache_layout() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn normalize_hf_name_falls_back_to_the_file_name_without_the_marker() {
     let path = Path::new("/mnt/dev/huggingface/hub/some-dir");
     assert_eq!(normalize_hf_name(path), "some-dir");
 }
 
-#[test]
+#[quench_test::test]
 fn estimate_dense_transformer_params_grows_with_layers_and_hidden_size() {
     let small = estimate_dense_transformer_params(1024, 12, 32000.0);
     let large = estimate_dense_transformer_params(4096, 32, 32000.0);
@@ -46,7 +46,7 @@ fn estimate_dense_transformer_params_grows_with_layers_and_hidden_size() {
     assert!(small > 0.0);
 }
 
-#[test]
+#[quench_test::test]
 fn infer_hf_quant_maps_known_torch_dtypes() {
     assert_eq!(infer_hf_quant("bfloat16"), Quant::BF16);
     assert_eq!(infer_hf_quant("float16"), Quant::FP16);
@@ -55,7 +55,7 @@ fn infer_hf_quant_maps_known_torch_dtypes() {
     assert_eq!(infer_hf_quant("something-else"), Quant::ALL);
 }
 
-#[test]
+#[quench_test::test]
 fn infer_hf_quant_config_reads_quantization_config_over_torch_dtype() {
     let cfg = |v: quench_serde::Value| infer_hf_quant_config(&v);
 
@@ -74,7 +74,7 @@ fn infer_hf_quant_config_reads_quantization_config_over_torch_dtype() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn infer_hf_quant_config_sizes_compressed_tensors_by_weight_bits() {
     let ct = |bits: u64, ty: &str| {
         infer_hf_quant_config(&quench_serde::json!({"quantization_config": {
@@ -88,14 +88,14 @@ fn infer_hf_quant_config_sizes_compressed_tensors_by_weight_bits() {
     assert_eq!(ct(3, "int"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn infer_context_maps_known_sizes_and_falls_back_to_all() {
     assert_eq!(infer_context(4096), Context::Size4096);
     assert_eq!(infer_context(131_072), Context::Size131072);
     assert_eq!(infer_context(12345), Context::ALL);
 }
 
-#[test]
+#[quench_test::test]
 fn infer_quant_from_name_matches_common_gguf_suffixes() {
     assert_eq!(
         infer_quant_from_name("llama-3-8b-instruct.Q4_K_M.gguf"),
@@ -109,7 +109,7 @@ fn infer_quant_from_name_matches_common_gguf_suffixes() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn infer_params_from_name_reads_the_b_suffixed_number() {
     assert_eq!(
         infer_params_from_name("llama-3-8b-instruct.gguf"),
@@ -119,7 +119,7 @@ fn infer_params_from_name_reads_the_b_suffixed_number() {
     assert_eq!(infer_params_from_name("no-params-here.gguf"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn infer_architecture_returns_none_for_a_missing_or_non_gguf_file() {
     assert_eq!(infer_architecture("/does/not/exist.gguf"), None);
 }
@@ -140,7 +140,7 @@ fn sample_model(quant: Quant, context: Context) -> Model {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn build_hf_estimates_covers_every_hf_quant_at_every_context_up_to_the_models_max() {
     let model = sample_model(Quant::FP16, Context::Size4096);
     let estimates = build_hf_estimates(&model);
@@ -151,7 +151,7 @@ fn build_hf_estimates_covers_every_hf_quant_at_every_context_up_to_the_models_ma
     assert!(estimates.iter().all(|e| e.total_gb > 0.0));
 }
 
-#[test]
+#[quench_test::test]
 fn build_gguf_estimates_only_covers_the_models_own_quant() {
     let model = sample_model(Quant::Q4KM, Context::Size2048);
     let estimates = build_gguf_estimates(&model);
@@ -161,7 +161,7 @@ fn build_gguf_estimates_only_covers_the_models_own_quant() {
     assert_eq!(estimates.len(), 3);
 }
 
-#[test]
+#[quench_test::test]
 fn estimate_weights_gb_scales_linearly_with_params_and_bytes() {
     let one_byte = estimate_weights_gb(1.0, 1.0);
     let two_bytes = estimate_weights_gb(1.0, 2.0);
@@ -169,14 +169,14 @@ fn estimate_weights_gb_scales_linearly_with_params_and_bytes() {
     assert!(one_byte > 0.0);
 }
 
-#[test]
+#[quench_test::test]
 fn estimate_kv_cache_gb_scales_with_layers_hidden_and_context() {
     let base = estimate_kv_cache_gb(32, 4096, 8192);
     let double_context = estimate_kv_cache_gb(32, 4096, 16384);
     assert!((double_context - base * 2.0).abs() < 1e-9);
 }
 
-#[test]
+#[quench_test::test]
 fn get_on_disk_model_paths_is_empty_when_the_default_roots_do_not_exist() {
     // HF_ROOTS/GGUF_ROOTS default to /mnt/dev/... which does not exist in this
     // sandbox, and once the LazyLock is initialized it stays fixed for the

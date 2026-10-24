@@ -92,7 +92,7 @@ async fn settle(db: &Db, run_id: &str) -> Run {
     panic!("the scheduler never finished the run");
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_queued_run_is_checked_out_planned_and_executed() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_queued_run_is_checked_out_planned_and_executed");
@@ -128,7 +128,7 @@ async fn a_queued_run_is_checked_out_planned_and_executed() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_condition_that_excludes_a_stage_is_recorded_not_hidden() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_condition_that_excludes_a_stage_is_recorded_not_hidden");
@@ -158,7 +158,7 @@ async fn a_condition_that_excludes_a_stage_is_recorded_not_hidden() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_failing_stage_fails_the_run_and_skips_what_needed_it() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_failing_stage_fails_the_run_and_skips_what_needed_it");
@@ -203,7 +203,7 @@ steps = ["echo should not happen"]
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn stages_that_do_not_depend_on_each_other_run_at_the_same_time() {
     let Some((db, _guard)) = database().await else {
         return skipped("stages_that_do_not_depend_on_each_other_run_at_the_same_time");
@@ -239,7 +239,7 @@ steps = ["sleep 1"]
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn jobs_in_the_same_stage_run_at_the_same_time_too() {
     // `needs` lives on the stage, not the job - a stage's own jobs never
     // depend on each other, so they are exactly as independent as two jobs in
@@ -306,7 +306,7 @@ async fn restart(db: &Db, first_run: &Run) -> String {
     .clone()
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_restart_carries_over_the_stage_that_already_passed() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_restart_carries_over_the_stage_that_already_passed");
@@ -383,7 +383,7 @@ steps = ["echo deploying"]
     assert!(deploy.reused_from_run.is_none());
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_commit_with_no_pipeline_fails_with_a_clear_reason() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_commit_with_no_pipeline_fails_with_a_clear_reason");
@@ -406,7 +406,7 @@ async fn a_commit_with_no_pipeline_fails_with_a_clear_reason() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_unparseable_pipeline_fails_the_run_before_anything_executes() {
     let Some((db, _guard)) = database().await else {
         return skipped("an_unparseable_pipeline_fails_the_run_before_anything_executes");
@@ -441,7 +441,7 @@ steps = [{ npm = "install" }]
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_ref_the_pipeline_does_not_want_is_skipped_not_failed() {
     // Registering a repository means conveyor watches it; the pipeline decides
     // which of those events it actually wants.
@@ -464,7 +464,7 @@ async fn a_ref_the_pipeline_does_not_want_is_skipped_not_failed() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancelling_a_running_run_stops_it() {
     let Some((db, _guard)) = database().await else {
         return skipped("cancelling_a_running_run_stops_it");
@@ -503,7 +503,7 @@ steps = ["sleep 120"]
     assert_eq!(run.status, Status::Cancelled, "error was {:?}", run.error);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_failed_run_queues_a_notification_for_the_people_following_the_repo() {
     use conveyor_service::notifications::Notifications;
     use conveyor_service::notifications::outbox;

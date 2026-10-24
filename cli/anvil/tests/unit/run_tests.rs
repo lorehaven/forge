@@ -16,25 +16,25 @@ fn args_of(cmd: &Command) -> Vec<String> {
         .collect()
 }
 
-#[test]
+#[quench_test::test]
 fn build_command_without_a_package_builds_the_whole_workspace() {
     let cmd = build_command(None, true);
     assert_eq!(args_of(&cmd), vec!["build", "--all-features"]);
 }
 
-#[test]
+#[quench_test::test]
 fn build_command_with_a_package_scopes_to_it() {
     let cmd = build_command(Some("anvil"), false);
     assert_eq!(args_of(&cmd), vec!["build", "--package", "anvil"]);
 }
 
-#[test]
+#[quench_test::test]
 fn run_command_for_package_with_no_package_is_a_plain_cargo_run() {
     let cmd = run_command_for_package(None);
     assert_eq!(args_of(&cmd), vec!["run"]);
 }
 
-#[test]
+#[quench_test::test]
 fn run_command_for_package_sets_the_package_arg_and_working_dir() {
     // `resolve_package_dir` shells to real `cargo metadata` with no
     // explicit `--manifest-path` - see `stable_cwd_lock`'s docs.
@@ -48,7 +48,7 @@ fn run_command_for_package_sets_the_package_arg_and_working_dir() {
     assert!(cmd.get_current_dir().is_some());
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_package_dir_finds_a_real_workspace_member() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -57,7 +57,7 @@ fn resolve_package_dir_finds_a_real_workspace_member() {
     assert!(dir.ends_with("anvil"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_package_dir_is_none_for_an_unknown_package() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -65,7 +65,7 @@ fn resolve_package_dir_is_none_for_an_unknown_package() {
     assert!(resolve_package_dir("not-a-real-package-xyz").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn stop_child_if_running_kills_a_live_process_and_clears_the_slot() {
     let mut cmd = Command::new("sleep");
     cmd.arg("30");
@@ -76,7 +76,7 @@ fn stop_child_if_running_kills_a_live_process_and_clears_the_slot() {
     assert!(slot.is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn stop_child_if_running_is_a_no_op_for_an_already_exited_process() {
     let mut cmd = Command::new("true");
     let mut child = cmd.spawn().expect("spawn true");
@@ -87,26 +87,26 @@ fn stop_child_if_running_is_a_no_op_for_an_already_exited_process() {
     assert!(slot.is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn stop_child_if_running_is_a_no_op_for_an_empty_slot() {
     let mut slot: Option<Child> = None;
     stop_child_if_running(&mut slot).expect("stop succeeds");
     assert!(slot.is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn clear_echoed_hotkey_does_not_panic() {
     clear_echoed_hotkey();
 }
 
-#[test]
+#[quench_test::test]
 fn should_watch_path_excludes_ignored_directories() {
     assert!(!should_watch_path(Path::new("/repo/target/debug/build.rs")));
     assert!(!should_watch_path(Path::new("/repo/.git/HEAD")));
     assert!(should_watch_path(Path::new("/repo/src/main.rs")));
 }
 
-#[test]
+#[quench_test::test]
 fn should_watch_file_matches_known_manifest_names_and_source_extensions() {
     assert!(should_watch_file(Path::new("Cargo.toml")));
     assert!(should_watch_file(Path::new("Cargo.lock")));
@@ -117,7 +117,7 @@ fn should_watch_file_matches_known_manifest_names_and_source_extensions() {
     assert!(!should_watch_file(Path::new("no-extension")));
 }
 
-#[test]
+#[quench_test::test]
 fn file_snapshot_tracks_watched_files_and_reacts_to_a_change() {
     // Not under `std::env::temp_dir()` (typically `/tmp`, whose "tmp"
     // path component is itself one of `should_watch_path`'s ignored

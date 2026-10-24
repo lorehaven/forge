@@ -68,7 +68,7 @@ fn location(resp: quench_http::response::Response) -> String {
 // render_forgot_password_page / render_reset_password_page
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_forgot_password_page_renders_ok() {
     let resp = render_forgot_password_page();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -76,7 +76,7 @@ async fn render_forgot_password_page_renders_ok() {
     assert!(html.contains("ui_forgot_password_title"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_reset_password_page_carries_the_token_and_shows_the_error() {
     let notice = ResetNotice {
         err: Some("ui_reset_error_password_empty".to_string()),
@@ -87,7 +87,7 @@ async fn render_reset_password_page_carries_the_token_and_shows_the_error() {
     assert!(html.contains("ui_reset_error_password_empty"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_reset_password_page_without_error_omits_the_banner() {
     let resp = render_reset_password_page("a-token", &ResetNotice::default());
     let html = body_text(resp).await;
@@ -98,13 +98,13 @@ async fn render_reset_password_page_without_error_omits_the_banner() {
 // HTTP handlers
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn forgot_password_page_renders() {
     let resp = forgot_password_page().await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn forgot_password_page_slash_renders() {
     let resp = forgot_password_page_slash().await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -159,7 +159,7 @@ fn post_form_with_headers(
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn forgot_password_submit_redirects_regardless_of_whether_the_account_exists() {
     let (app, container) = reset_app(db().await).await;
     let resp = app
@@ -173,7 +173,7 @@ async fn forgot_password_submit_redirects_regardless_of_whether_the_account_exis
     assert!(location(resp).contains("reset_requested=1"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn forgot_password_submit_sends_a_link_for_a_real_account_with_an_email() {
     let db = db().await;
     realm::register(
@@ -197,7 +197,7 @@ async fn forgot_password_submit_sends_a_link_for_a_real_account_with_an_email() 
     assert_eq!(resp.status(), StatusCode::FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reset_password_page_renders() {
     let resp = reset_password_page(
         Query(ResetPasswordQuery {
@@ -209,7 +209,7 @@ async fn reset_password_page_renders() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reset_password_submit_rejects_an_unknown_token() {
     let resp = reset_password_submit(
         Form(ResetPasswordForm {
@@ -227,7 +227,7 @@ async fn reset_password_submit_rejects_an_unknown_token() {
     assert!(location(resp).contains("ui_login_reset_invalid"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reset_password_submit_changes_the_password_for_a_valid_token() {
     let db = db().await;
     realm::create(
@@ -269,7 +269,7 @@ async fn reset_password_submit_changes_the_password_for_a_valid_token() {
     assert!(location(resp).contains("reset=1"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reset_link_uses_the_configured_base_not_the_request_host() {
     let db = db().await;
     realm::register(
@@ -353,7 +353,7 @@ async fn requested_reset(preferred: Option<&str>, cookie: Option<&str>) -> Optio
     recorder.sent()[0].locale.clone()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_reset_email_uses_the_saved_language_over_the_browsers() {
     assert_eq!(
         requested_reset(Some("de-DE"), Some("qlocale=pl-PL"))
@@ -363,7 +363,7 @@ async fn the_reset_email_uses_the_saved_language_over_the_browsers() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_reset_email_falls_back_to_the_browsers_language() {
     assert_eq!(
         requested_reset(None, Some("qlocale=fr-FR"))
@@ -374,7 +374,7 @@ async fn the_reset_email_falls_back_to_the_browsers_language() {
     assert_eq!(requested_reset(None, None).await, None);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failing_mail_server_still_gets_the_same_redirect() {
     struct Failing;
     #[quench_core::async_trait]
@@ -428,7 +428,7 @@ async fn forgot(
     location(app.call(request).await)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_fourth_reset_request_for_one_account_within_an_hour_is_refused() {
     let db = db().await;
     realm::register(
@@ -456,7 +456,7 @@ async fn a_fourth_reset_request_for_one_account_within_an_hour_is_refused() {
     assert_eq!(recorder.sent().len(), limit, "no email past the limit");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn refusals_look_the_same_for_accounts_that_do_not_exist() {
     let recorder = Arc::new(RecordingSender::default());
     let (app, container) = reset_app_with(db().await, recorder.clone()).await;
@@ -478,7 +478,7 @@ async fn refusals_look_the_same_for_accounts_that_do_not_exist() {
     assert!(recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn one_client_cannot_ask_for_resets_without_end() {
     let recorder = Arc::new(RecordingSender::default());
     let (app, container) = reset_app_with(db().await, recorder).await;
@@ -553,7 +553,7 @@ fn reset_recorder() -> (Arc<RecordingSender>, Arc<dyn Sender>) {
     (recorder, sender)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn following_a_reset_link_confirms_an_unconfirmed_address_and_tells_it() {
     let db = db().await;
     let (recorder, sender) = reset_recorder();
@@ -569,7 +569,7 @@ async fn following_a_reset_link_confirms_an_unconfirmed_address_and_tells_it() {
     assert_eq!(sent[0].to, "alice@example.test");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_reset_for_a_confirmed_address_just_sends_the_notice() {
     let db = db().await;
     let (recorder, sender) = reset_recorder();
@@ -577,7 +577,7 @@ async fn a_reset_for_a_confirmed_address_just_sends_the_notice() {
     assert_eq!(recorder.sent_of("password-changed").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_reset_for_an_account_without_an_address_works_and_says_nothing() {
     let db = db().await;
     let (recorder, sender) = reset_recorder();

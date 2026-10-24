@@ -1,14 +1,14 @@
-use clap::CommandFactory;
+use quench_args::CommandFactory;
 use riveter::cli::{Cli, help_template};
 
-#[test]
+#[quench_test::test]
 fn help_template_embeds_the_command_tree_and_reference() {
     let text = help_template();
     assert!(text.contains("{usage-heading}"));
     assert!(text.contains("Options:"));
 }
 
-#[test]
+#[quench_test::test]
 fn the_cli_definition_is_internally_consistent() {
     // clap panics at construction time if a derive is malformed (e.g. a
     // duplicate flag or an invalid `help_template`), so this doubles as
@@ -19,10 +19,10 @@ fn the_cli_definition_is_internally_consistent() {
 /// Conveyor validates a pipeline's `riveter` steps against its own list of commands, because it
 /// cannot depend on this crate. Two lists that must agree are two lists that drift - `images`
 /// was already missing from it - so this fails the moment either side changes alone.
-#[test]
+#[quench_test::test]
 fn conveyors_riveter_step_accepts_every_command_riveter_has() {
-    use clap::CommandFactory;
     use conveyor_pipeline::steps::riveter::COMMANDS;
+    use quench_args::CommandFactory;
 
     // Interactive: they wait for input a pipeline never sends (a REPL line, a password), and
     // conveyor refuses them by design.
@@ -50,10 +50,10 @@ fn conveyors_riveter_step_accepts_every_command_riveter_has() {
 
 /// And the other way: nothing conveyor accepts may be a command riveter lacks, or a pipeline
 /// would parse and then fail at deploy time.
-#[test]
+#[quench_test::test]
 fn riveter_has_every_command_conveyors_step_accepts() {
-    use clap::CommandFactory;
     use conveyor_pipeline::steps::riveter::COMMANDS;
+    use quench_args::CommandFactory;
 
     let cli = riveter::cli::Cli::command();
     let known: Vec<&str> = cli

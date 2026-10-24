@@ -140,7 +140,7 @@ async fn json_body<T: quench_serde::DeserializeOwned>(resp: quench_http::respons
     quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_then_list_then_get_a_user() {
     let _guard = auth_disabled().await;
     let db = Db::connect("").await.expect("in-memory db");
@@ -172,7 +172,7 @@ async fn create_then_list_then_get_a_user() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_a_missing_user_reports_not_found_with_a_message() {
     let _guard = auth_disabled().await;
     let db = Db::connect("").await.expect("in-memory db");
@@ -187,7 +187,7 @@ async fn get_a_missing_user_reports_not_found_with_a_message() {
     assert_eq!(problem.error, "no such user");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_rejects_a_duplicate_username_with_conflict() {
     let _guard = auth_disabled().await;
     let db = Db::connect("").await.expect("in-memory db");
@@ -203,7 +203,7 @@ async fn create_rejects_a_duplicate_username_with_conflict() {
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_changes_the_password() {
     let _guard = auth_disabled().await;
     let db = Db::connect("").await.expect("in-memory db");
@@ -231,7 +231,7 @@ async fn update_changes_the_password() {
     assert!(user.verify_password("new-password"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn replace_permissions_rejects_unknown_grants() {
     let _guard = auth_disabled().await;
     let db = Db::connect("").await.expect("in-memory db");
@@ -256,7 +256,7 @@ async fn replace_permissions_rejects_unknown_grants() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_removes_the_user() {
     let _guard = auth_disabled().await;
     let db = Db::connect("").await.expect("in-memory db");
@@ -281,7 +281,7 @@ async fn delete_removes_the_user() {
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn me_reports_wildcard_access_for_the_anonymous_admin_bypass() {
     let _guard = auth_disabled().await;
     let db = Db::connect("").await.expect("in-memory db");
@@ -317,7 +317,7 @@ async fn bearer(config: &JwtConfig, scope: &str) -> String {
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_users_is_unauthorized_without_a_token_when_auth_is_enabled() {
     let _guard = auth_enabled().await;
     let db = Db::connect("").await.expect("in-memory db");
@@ -334,7 +334,7 @@ async fn list_users_is_unauthorized_without_a_token_when_auth_is_enabled() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_users_is_forbidden_without_the_read_users_action() {
     let _guard = auth_enabled().await;
     let db = Db::connect("").await.expect("in-memory db");
@@ -355,7 +355,7 @@ async fn list_users_is_forbidden_without_the_read_users_action() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_users_succeeds_with_the_read_users_action() {
     let _guard = auth_enabled().await;
     let db = Db::connect("").await.expect("in-memory db");
@@ -374,7 +374,7 @@ async fn list_users_succeeds_with_the_read_users_action() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_users_succeeds_for_a_wildcard_admin_role() {
     let _guard = auth_enabled().await;
     let db = Db::connect("").await.expect("in-memory db");
@@ -395,7 +395,7 @@ async fn list_users_succeeds_for_a_wildcard_admin_role() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_password_change_through_the_api_tells_a_confirmed_address_only() {
     let _guard = auth_disabled().await;
     let db = Db::connect("").await.expect("in-memory db");
@@ -472,7 +472,7 @@ async fn invite_app() -> (
     (recorder, app, container, db)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn creating_an_invited_user_emails_the_address_and_reports_it() {
     let _guard = auth_disabled().await;
     let (recorder, app, container, db) = invite_app().await;
@@ -500,7 +500,7 @@ async fn creating_an_invited_user_emails_the_address_and_reports_it() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_invitation_needs_a_valid_address() {
     let _guard = auth_disabled().await;
     let (recorder, app, container, db) = invite_app().await;
@@ -526,7 +526,7 @@ async fn an_invitation_needs_a_valid_address() {
     assert!(recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_ordinary_create_neither_invites_nor_mentions_it() {
     let _guard = auth_disabled().await;
     let (recorder, app, container, _db) = invite_app().await;
@@ -544,7 +544,7 @@ async fn an_ordinary_create_neither_invites_nor_mentions_it() {
     assert!(recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_plain_create_still_needs_a_password() {
     let _guard = auth_disabled().await;
     let (_recorder, app, container, _db) = invite_app().await;
@@ -559,7 +559,7 @@ async fn a_plain_create_still_needs_a_password() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failed_invitation_email_still_creates_the_account() {
     struct Failing;
     #[quench_core::async_trait]

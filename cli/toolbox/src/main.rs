@@ -1,15 +1,12 @@
-use clap::Parser;
-use crossterm::cursor::MoveTo;
-use crossterm::event::{self, Event, KeyEventKind};
-use crossterm::execute;
-use crossterm::terminal::{
-    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
 use forge_toolbox::{
     ActionDispatch, App, KeyOutcome, PollOutcome, dispatch_action, handle_key, poll_in_flight,
     refresh_app_state, render, run_selected_action,
 };
+use quench_args::Parser;
+use quench_cli::keys::Keys;
 use quench_cli::prelude::{Tone, print_status, require_binary};
+use quench_cli::term::{ENTER_ALTERNATE_SCREEN, LEAVE_ALTERNATE_SCREEN, clear_screen, size};
+use quench_cli::tty::RawMode;
 use quench_core::{Context, Result};
 use std::io::{Write, stdout};
 use std::sync::mpsc;
@@ -24,20 +21,27 @@ use std::time::{Duration, Instant};
 )]
 struct Cli {}
 
-struct TerminalGuard;
+/// Raw mode and the alternate screen for as long as it lives; both are undone on drop.
+struct TerminalGuard {
+    _raw: Option<RawMode>,
+}
 
 impl TerminalGuard {
     fn enter() -> Result<Self> {
-        enable_raw_mode().context("failed to enable raw mode")?;
-        execute!(stdout(), EnterAlternateScreen).context("failed to enter alternate screen")?;
-        Ok(Self)
+        let raw = RawMode::enable(0).context("failed to enable raw mode")?;
+        let mut out = stdout();
+        out.write_all(ENTER_ALTERNATE_SCREEN.as_bytes())
+            .and_then(|()| out.flush())
+            .context("failed to enter alternate screen")?;
+        Ok(Self { _raw: raw })
     }
 }
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        let _ = execute!(stdout(), LeaveAlternateScreen);
-        let _ = disable_raw_mode();
+        let mut out = stdout();
+        let _ = out.write_all(LEAVE_ALTERNATE_SCREEN.as_bytes());
+        let _ = out.flush();
     }
 }
 
@@ -54,6 +58,7 @@ fn main() -> Result<()> {
 fn run_repl() -> Result<()> {
     let mut app = refresh_app_state(0, "Ready")?;
     let _guard = TerminalGuard::enter()?;
+    let mut keys = Keys::stdin();
     let mut dirty = true;
     let mut in_flight: Option<forge_toolbox::InFlightAction> = None;
 
@@ -82,18 +87,14 @@ fn run_repl() -> Result<()> {
             dirty = false;
         }
 
-        if !event::poll(Duration::from_millis(80)).context("failed to poll terminal events")? {
+        if !keys
+            .poll(Duration::from_millis(80))
+            .context("failed to poll terminal events")?
+        {
             continue;
         }
 
-        let evt = event::read().context("failed to read terminal event")?;
-        let Event::Key(key) = evt else {
-            continue;
-        };
-
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
+        let key = keys.read().context("failed to read terminal event")?;
 
         match handle_key(
             key.code,
@@ -148,8 +149,8 @@ fn run_repl() -> Result<()> {
 
 fn draw(app: &App, transient_status: Option<&str>) -> Result<()> {
     let mut out = stdout();
-    execute!(out, Clear(ClearType::All), MoveTo(0, 0)).context("failed to clear terminal")?;
-    let (term_width, _) = crossterm::terminal::size().context("failed to read terminal size")?;
+    clear_screen(&mut out).context("failed to clear terminal")?;
+    let (term_width, _) = size().context("failed to read terminal size")?;
 
     for line in render(app, transient_status, term_width as usize) {
         out.write_all(line.as_bytes())?;

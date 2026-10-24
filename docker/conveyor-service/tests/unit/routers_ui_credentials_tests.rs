@@ -51,7 +51,7 @@ fn credential(project_id: Option<&str>, repo_id: Option<&str>) -> CredentialRef 
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_project_scoped_credential_resolves_its_own_project_id() {
     let cred = credential(Some("proj-1"), None);
     let repos_by_id: HashMap<&str, &Repo> = HashMap::new();
@@ -61,7 +61,7 @@ fn a_project_scoped_credential_resolves_its_own_project_id() {
     assert!(scope.repo.is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn a_repo_scoped_credential_resolves_via_its_repository() {
     let repo = repo("repo-1", "proj-1");
     let cred = credential(None, Some("repo-1"));
@@ -72,7 +72,7 @@ fn a_repo_scoped_credential_resolves_via_its_repository() {
     assert_eq!(scope.repo.map(|r| r.id.as_str()), Some("repo-1"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_repo_scoped_credential_with_no_matching_repository_is_unplaceable() {
     // A repo-scoped row whose repository no longer exists - `ON DELETE
     // CASCADE` means this shouldn't happen, but the page has to treat it as
@@ -83,7 +83,7 @@ fn a_repo_scoped_credential_with_no_matching_repository_is_unplaceable() {
     assert!(credential_scope(&cred, &repos_by_id).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn a_credential_with_neither_scope_is_unplaceable() {
     let cred = credential(None, None);
     let repos_by_id: HashMap<&str, &Repo> = HashMap::new();
@@ -91,7 +91,7 @@ fn a_credential_with_neither_scope_is_unplaceable() {
     assert!(credential_scope(&cred, &repos_by_id).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn a_project_scoped_row_renders_its_breadcrumb_path() {
     let root = project("root-1", "lorehaven", None);
     let child = project("proj-1", "sci-rust", Some("root-1"));
@@ -107,7 +107,7 @@ fn a_project_scoped_row_renders_its_breadcrumb_path() {
     assert!(html.contains("9f2a"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_repo_scoped_row_renders_owner_slash_name_instead_of_a_project_path() {
     let repo = repo("repo-1", "proj-1");
     let cred = credential(None, Some("repo-1"));
@@ -119,7 +119,7 @@ fn a_repo_scoped_row_renders_owner_slash_name_instead_of_a_project_path() {
     assert!(!html.contains("project:"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_row_never_renders_anything_beyond_the_masked_preview() {
     // `CredentialRef` structurally has no token field to leak - this pins
     // down that the row's rendered text is built only from `preview`, not

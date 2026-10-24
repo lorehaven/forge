@@ -5,7 +5,7 @@
 use quench_http::prelude::Path;
 use switchboard_service::routers::ui::common::{assets, supported_locales};
 
-#[test]
+#[quench_test::test]
 fn supported_locales_lists_all_five_configured_locales() {
     let locales = supported_locales();
     assert_eq!(locales.len(), 5);
@@ -13,7 +13,7 @@ fn supported_locales_lists_all_five_configured_locales() {
     assert!(locales.contains(&"pl-PL".to_string()));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn assets_returns_not_found_for_a_nonexistent_asset() {
     let resp = assets(Path("does-not-exist.css".to_string())).await;
     assert!(!resp.status().is_success());

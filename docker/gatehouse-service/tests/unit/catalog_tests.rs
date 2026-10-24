@@ -16,7 +16,7 @@ fn load(toml: &str) -> quench_core::Result<PermissionCatalog> {
     result
 }
 
-#[test]
+#[quench_test::test]
 fn a_service_lists_its_declared_actions() {
     let catalog = load(
         r#"
@@ -32,7 +32,7 @@ fn a_service_lists_its_declared_actions() {
     assert!(!catalog.is_known_service("warehouse"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_resource_scoped_action_is_known_when_its_type_and_base_action_are() {
     let catalog = load(
         r#"
@@ -54,7 +54,7 @@ fn a_resource_scoped_action_is_known_when_its_type_and_base_action_are() {
     assert!(!catalog.is_known_action("conveyor", "project:abc-123:launch"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_template_expands_to_a_permissions_map() {
     let catalog = load(
         r#"
@@ -77,7 +77,7 @@ fn a_template_expands_to_a_permissions_map() {
     assert!(catalog.template("nonexistent").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn a_template_naming_an_unknown_action_fails_to_load() {
     let err = load(
         r#"
@@ -92,7 +92,7 @@ fn a_template_naming_an_unknown_action_fails_to_load() {
     assert!(err.to_string().contains("sage:write"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_dangling_default_template_fails_to_load() {
     let err = load(
         r#"
@@ -107,7 +107,7 @@ fn a_dangling_default_template_fails_to_load() {
     assert!(err.to_string().contains("nonexistent"));
 }
 
-#[test]
+#[quench_test::test]
 fn no_default_template_means_registration_grants_nothing() {
     let catalog = load(
         r#"
@@ -120,7 +120,7 @@ fn no_default_template_means_registration_grants_nothing() {
     assert!(catalog.default_registration_grants().is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_catalog_fails_to_load() {
     let err = load("").unwrap_err();
     assert!(err.to_string().contains("no [services"));

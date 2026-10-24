@@ -1,7 +1,7 @@
+use quench_test::mock::matchers::{method, path};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use welder::llm::{Content, Llm, LlmRequest, Part};
 use welder::model::vllm_client::{VllmConfig, VllmModel};
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn request(text: &str) -> LlmRequest {
     LlmRequest {
@@ -12,20 +12,20 @@ fn request(text: &str) -> LlmRequest {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn config_new_defaults_to_localhost_8000() {
     let config = VllmConfig::new("llama");
     assert_eq!(config.model, "llama");
     assert_eq!(config.host, "http://127.0.0.1:8000");
 }
 
-#[test]
+#[quench_test::test]
 fn name_returns_the_configured_model() {
     let model = VllmModel::new(VllmConfig::new("llama")).expect("build");
     assert_eq!(model.name(), "llama");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn generate_content_parses_the_first_choice() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -58,7 +58,7 @@ async fn generate_content_parses_the_first_choice() {
     assert_eq!(text, "hi there");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn generate_content_defaults_when_choices_is_empty() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -84,7 +84,7 @@ async fn generate_content_defaults_when_choices_is_empty() {
     assert_eq!(text, "No response");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn generate_content_surfaces_a_non_success_response_as_an_error() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

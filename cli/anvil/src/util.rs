@@ -1,9 +1,8 @@
-use crossterm::tty::IsTty;
 use quench_cli::prelude::{DIM, RESET, Tone, print_status};
 use quench_core::{Context, Result};
 use std::collections::VecDeque;
 use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -139,7 +138,7 @@ fn pump_stream<R: std::io::Read + Send + 'static>(
 /// anvil's own stdout/stderr are real terminals, tell the child to colorize
 /// anyway via the env vars the Rust toolchain and most CLIs already respect.
 fn force_color_if_tty(cmd: &mut Command) {
-    if io::stdout().is_tty() || io::stderr().is_tty() {
+    if quench_cli::term::stdout_is_tty() || quench_cli::term::is_tty(2) {
         cmd.env("CARGO_TERM_COLOR", "always")
             .env("CLICOLOR_FORCE", "1")
             .env("FORCE_COLOR", "1");
@@ -299,4 +298,18 @@ pub fn print_log_tail(log_path: &PathBuf) {
     };
     let lines: Vec<String> = contents.lines().map(str::to_string).collect();
     print_tail_lines(&lines, FAILURE_TAIL_LINES, &log_path.display().to_string());
+}
+
+/// Cheap, parse-free check for a `--json` flag anywhere in argv.
+///
+/// The banner has to be decided before `Cli::parse()` runs, since clap exits
+/// the process directly on `--help`/`--version`/a parse error without
+/// returning - a real parse-then-check would silently drop the banner from
+/// those paths too, not just from `--json` runs. Only the six `--json`-aware
+/// commands ever accept that flag, so its presence anywhere in argv is
+/// enough to know a JSON consumer is on the other end of stdout, without
+/// needing to know which subcommand it belongs to.
+#[must_use]
+pub fn wants_json(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "--json")
 }

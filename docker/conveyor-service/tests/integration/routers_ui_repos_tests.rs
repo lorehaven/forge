@@ -22,7 +22,7 @@ async fn app(
     support::app(db, config).await
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_page_renders_ok_with_no_repositories() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("list_page_renders_ok_with_no_repositories");
@@ -35,7 +35,7 @@ async fn list_page_renders_ok_with_no_repositories() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_page_lists_a_registered_repository_and_offers_a_create_panel() {
     let Some((db, _guard)) = database().await else {
         return support::skipped(
@@ -54,7 +54,7 @@ async fn list_page_lists_a_registered_repository_and_offers_a_create_panel() {
     assert!(html.contains("ui_repos_add_title"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn edit_page_renders_ok_for_a_known_repository() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("edit_page_renders_ok_for_a_known_repository");
@@ -74,7 +74,7 @@ async fn edit_page_renders_ok_for_a_known_repository() {
     assert!(html.contains("widget"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn edit_page_reports_not_found_for_an_unknown_repository() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("edit_page_reports_not_found_for_an_unknown_repository");
@@ -91,7 +91,7 @@ async fn edit_page_reports_not_found_for_an_unknown_repository() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_repo_rejects_an_empty_owner_or_name() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("create_repo_rejects_an_empty_owner_or_name");
@@ -125,7 +125,7 @@ async fn create_repo_rejects_an_empty_owner_or_name() {
     assert!(support::location(&headers).contains("err=owner_name_empty"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_repo_rejects_a_malformed_clone_url() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("create_repo_rejects_a_malformed_clone_url");
@@ -159,7 +159,7 @@ async fn create_repo_rejects_a_malformed_clone_url() {
     assert!(support::location(&headers).contains("err=bad_clone_url"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_repo_registers_a_valid_repository_and_redirects_to_the_list() {
     let Some((db, _guard)) = database().await else {
         return support::skipped(
@@ -203,7 +203,7 @@ async fn create_repo_registers_a_valid_repository_and_redirects_to_the_list() {
     assert_eq!(repos[0].registered_by, "admin");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn save_repo_updates_an_existing_repository() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("save_repo_updates_an_existing_repository");
@@ -236,7 +236,7 @@ async fn save_repo_updates_an_existing_repository() {
     assert_eq!(updated.clone_url, "https://example.test/widget-renamed.git");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn save_repo_redirects_home_for_an_unknown_repository() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("save_repo_redirects_home_for_an_unknown_repository");
@@ -261,7 +261,7 @@ async fn save_repo_redirects_home_for_an_unknown_repository() {
     assert!(support::location(&headers).contains("err=not_found"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_repo_removes_a_registered_repository() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("delete_repo_removes_a_registered_repository");
@@ -284,7 +284,7 @@ async fn delete_repo_removes_a_registered_repository() {
     assert!(repos.is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_repo_redirects_home_for_an_unknown_repository() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("delete_repo_redirects_home_for_an_unknown_repository");

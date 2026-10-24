@@ -21,17 +21,17 @@ fn config(auth_enabled: bool) -> JwtConfig {
     config
 }
 
-#[test]
+#[quench_test::test]
 fn can_on_project_is_always_true_when_auth_is_disabled() {
     assert!(can_on_project(None, &config(false), "any-project", "write"));
 }
 
-#[test]
+#[quench_test::test]
 fn can_on_project_is_false_without_claims_when_auth_is_enabled() {
     assert!(!can_on_project(None, &config(true), "p1", "read"));
 }
 
-#[test]
+#[quench_test::test]
 fn can_on_project_honors_the_blanket_grant() {
     let claims = claims_with("workbench:read");
     let cfg = config(true);
@@ -39,7 +39,7 @@ fn can_on_project_honors_the_blanket_grant() {
     assert!(!can_on_project(Some(&claims), &cfg, "any-project", "write"));
 }
 
-#[test]
+#[quench_test::test]
 fn can_on_project_honors_a_resource_scoped_grant() {
     let claims = claims_with("workbench:project:p1:write");
     let cfg = config(true);
@@ -47,19 +47,19 @@ fn can_on_project_honors_a_resource_scoped_grant() {
     assert!(!can_on_project(Some(&claims), &cfg, "p2", "write"));
 }
 
-#[test]
+#[quench_test::test]
 fn can_unscoped_is_always_true_when_auth_is_disabled() {
     let cfg = config(false);
     assert!(can_unscoped(None, &cfg, "write"));
     assert!(can_unscoped(None, &cfg, "read"));
 }
 
-#[test]
+#[quench_test::test]
 fn can_unscoped_is_false_without_claims() {
     assert!(!can_unscoped(None, &config(true), "write"));
 }
 
-#[test]
+#[quench_test::test]
 fn can_unscoped_checks_the_blanket_grant() {
     let claims = claims_with("workbench:write");
     let cfg = config(true);
@@ -67,7 +67,7 @@ fn can_unscoped_checks_the_blanket_grant() {
     assert!(!can_unscoped(Some(&claims), &cfg, "read"));
 }
 
-#[test]
+#[quench_test::test]
 fn can_unscoped_is_true_for_a_wildcard_role() {
     let claims = claims_with("admin");
     assert!(can_unscoped(Some(&claims), &config(true), "write"));

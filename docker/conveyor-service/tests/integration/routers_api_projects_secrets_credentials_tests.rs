@@ -60,7 +60,7 @@ async fn app(db: Db) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
 // Projects
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_rejects_an_empty_name() {
     let Some((db, _guard)) = database().await else {
         return skipped("create_rejects_an_empty_name");
@@ -78,7 +78,7 @@ async fn create_rejects_an_empty_name() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_then_read_round_trips_with_its_full_path() {
     let Some((db, _guard)) = database().await else {
         return skipped("create_then_read_round_trips_with_its_full_path");
@@ -110,7 +110,7 @@ async fn create_then_read_round_trips_with_its_full_path() {
     assert_eq!(body["path"], "api-project-root");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn read_a_missing_project_is_not_found() {
     let Some((db, _guard)) = database().await else {
         return skipped("read_a_missing_project_is_not_found");
@@ -127,7 +127,7 @@ async fn read_a_missing_project_is_not_found() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_renames_and_rejects_an_empty_name() {
     let Some((db, _guard)) = database().await else {
         return skipped("update_renames_and_rejects_an_empty_name");
@@ -168,7 +168,7 @@ async fn update_renames_and_rejects_an_empty_name() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_move_rejects_a_cycle() {
     let Some((db, _guard)) = database().await else {
         return skipped("update_move_rejects_a_cycle");
@@ -208,7 +208,7 @@ async fn update_move_rejects_a_cycle() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_conflicts_when_children_exist_then_succeeds_once_they_are_gone() {
     let Some((db, _guard)) = database().await else {
         return skipped("delete_conflicts_when_children_exist_then_succeeds_once_they_are_gone");
@@ -265,7 +265,7 @@ async fn delete_conflicts_when_children_exist_then_succeeds_once_they_are_gone()
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_defaults_to_root_level_projects() {
     let Some((db, _guard)) = database().await else {
         return skipped("list_defaults_to_root_level_projects");
@@ -297,7 +297,7 @@ async fn list_defaults_to_root_level_projects() {
 // Secrets (estate-wide)
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn estate_secret_round_trips_and_is_removable() {
     let Some((db, _guard)) = database().await else {
         return skipped("estate_secret_round_trips_and_is_removable");
@@ -333,7 +333,7 @@ async fn estate_secret_round_trips_and_is_removable() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn writing_a_secret_without_the_encryption_key_configured_is_service_unavailable() {
     let Some((db, _guard)) = database().await else {
         return skipped(
@@ -390,7 +390,7 @@ async fn make_repo(db: &Db, project_name: &str, repo_name: &str) -> (String, Str
     (project.id, repo.id)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn repo_secret_round_trips_and_is_scoped_to_that_repo() {
     let Some((db, _guard)) = database().await else {
         return skipped("repo_secret_round_trips_and_is_scoped_to_that_repo");
@@ -421,7 +421,7 @@ async fn repo_secret_round_trips_and_is_scoped_to_that_repo() {
     assert!(names.iter().any(|n| n["name"] == "deploy_key"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn repo_secret_for_an_unknown_repo_is_not_found() {
     let Some((db, _guard)) = database().await else {
         return skipped("repo_secret_for_an_unknown_repo_is_not_found");
@@ -439,7 +439,7 @@ async fn repo_secret_for_an_unknown_repo_is_not_found() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn repo_credential_round_trips_and_shows_null_when_unset() {
     let Some((db, _guard)) = database().await else {
         return skipped("repo_credential_round_trips_and_shows_null_when_unset");
@@ -480,7 +480,7 @@ async fn repo_credential_round_trips_and_shows_null_when_unset() {
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn credential_rejects_an_unsupported_kind() {
     let Some((db, _guard)) = database().await else {
         return skipped("credential_rejects_an_unsupported_kind");

@@ -23,7 +23,8 @@ pub use native::NativeExecutor;
 pub struct Executor(pub Arc<dyn JobExecutor>);
 
 /// Async because reaching a cluster is: `Client::try_default` can fail in a way worth reporting, not panicking through.
-pub async fn build(kind: ExecutorKind) -> Arc<dyn JobExecutor> {
+#[must_use]
+pub fn build(kind: ExecutorKind) -> Arc<dyn JobExecutor> {
     match kind {
         ExecutorKind::Native => Arc::new(NativeExecutor::new()),
         ExecutorKind::Mock => {
@@ -32,7 +33,7 @@ pub async fn build(kind: ExecutorKind) -> Arc<dyn JobExecutor> {
             );
             Arc::new(MockExecutor::new())
         }
-        ExecutorKind::Kubernetes => match KubernetesExecutor::connect().await {
+        ExecutorKind::Kubernetes => match KubernetesExecutor::connect() {
             Ok(executor) => Arc::new(executor),
             // Never silently falls back to native - that would break the isolation this deployment asked for.
             Err(error) => {

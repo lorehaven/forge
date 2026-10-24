@@ -59,7 +59,7 @@ async fn body_text(resp: quench_http::response::Response) -> String {
     String::from_utf8_lossy(&collected).into_owned()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn auth_status_reports_the_dev_admin_bypass_when_auth_is_disabled() {
     let mut config = JwtConfig::for_tests();
     // `for_tests()` reads SERVICE_AUTH_ENABLED, which routing tests toggle concurrently: pin it.
@@ -76,7 +76,7 @@ async fn auth_status_reports_the_dev_admin_bypass_when_auth_is_disabled() {
     assert_eq!(body["roles"][0], "admin");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn auth_status_is_anonymous_when_auth_is_enabled_and_there_is_no_session() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;
@@ -91,7 +91,7 @@ async fn auth_status_is_anonymous_when_auth_is_enabled_and_there_is_no_session()
     assert!(body["roles"].as_array().unwrap().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn job_log_viewer_connects_to_the_streams_own_sse_endpoint() {
     let mut config = JwtConfig::for_tests();
     // `for_tests()` reads SERVICE_AUTH_ENABLED, which routing tests toggle concurrently: pin it.
@@ -107,7 +107,7 @@ async fn job_log_viewer_connects_to_the_streams_own_sse_endpoint() {
     assert!(html.contains("sse-connect"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn job_log_viewer_offers_a_raw_view_and_a_copy_button() {
     let mut config = JwtConfig::for_tests();
     // `for_tests()` reads SERVICE_AUTH_ENABLED, which routing tests toggle concurrently: pin it.
@@ -127,7 +127,7 @@ async fn job_log_viewer_offers_a_raw_view_and_a_copy_button() {
     assert!(html.contains("log-job-42"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn job_log_viewer_redirects_to_login_when_auth_is_enabled_and_there_is_no_session() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;

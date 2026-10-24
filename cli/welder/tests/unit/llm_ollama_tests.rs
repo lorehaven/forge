@@ -1,7 +1,7 @@
 use welder::llm::ollama::OllamaModel;
 use welder::llm::{Content, Llm, LlmRequest, Part};
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use quench_test::mock::matchers::{method, path};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
 fn request(text: &str) -> LlmRequest {
     LlmRequest {
@@ -12,13 +12,13 @@ fn request(text: &str) -> LlmRequest {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn name_returns_the_configured_model() {
     let model = OllamaModel::new("llama", "http://127.0.0.1:1").expect("build");
     assert_eq!(model.name(), "llama");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn generate_content_parses_the_message_content() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -38,7 +38,7 @@ async fn generate_content_parses_the_message_content() {
     assert_eq!(text, "hi there");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn generate_content_surfaces_a_non_success_response_as_an_error() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -52,7 +52,7 @@ async fn generate_content_surfaces_a_non_success_response_as_an_error() {
     assert!(error.to_string().contains("boom"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn generate_content_reports_an_unparseable_response_as_an_error() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

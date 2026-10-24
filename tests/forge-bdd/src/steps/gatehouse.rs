@@ -1,18 +1,18 @@
 //! Steps for the auth service: the token API and the realm login page.
 
 use crate::world::ForgeWorld;
-use cucumber::{given, then, when};
-use serde_json::{Value, json};
+use quench_serde::{Value, json};
+use quench_test_bdd::{given, then, when};
 
 /// Cookie names are realm-wide; a service-specific name here would mean SSO is
 /// not actually happening.
 const SESSION_COOKIE: &str = "forge_session";
 const REFRESH_COOKIE: &str = "forge_refresh";
 
-fn no_redirect_client() -> reqwest::Client {
-    reqwest::Client::builder()
+fn no_redirect_client() -> quench_client::transport::Client {
+    quench_client::transport::Client::builder()
         .danger_accept_invalid_certs(true)
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(quench_client::transport::Redirect::None)
         .build()
         .expect("http client")
 }
@@ -169,14 +169,12 @@ async fn token_session_id(world: &mut ForgeWorld) {
 /// Reads the claims without verifying the signature - the suite is asserting
 /// what gatehouse put in the token, not re-implementing verification.
 fn decode_claims(world: &ForgeWorld) -> Value {
-    use base64::Engine;
-
     let token = world.access_token.as_ref().expect("no access token");
     let payload = token.split('.').nth(1).expect("malformed JWT");
-    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+    let decoded = quench_core::base64::URL_SAFE_NO_PAD
         .decode(payload)
         .expect("JWT payload is not base64");
-    serde_json::from_slice(&decoded).expect("JWT payload is not JSON")
+    quench_serde::json::from_slice(&decoded).expect("JWT payload is not JSON")
 }
 
 #[given("I am signed in to the realm")]
@@ -199,7 +197,7 @@ async fn open_home(world: &mut ForgeWorld) {
     let mut request = no_redirect_client().get(&url);
     if let Some(cookie) = &world.session_cookie {
         request = request.header(
-            reqwest::header::COOKIE,
+            quench_client::transport::header::COOKIE,
             format!("{SESSION_COOKIE}={cookie}"),
         );
     }
@@ -217,7 +215,7 @@ async fn request_authorization_without_session(world: &mut ForgeWorld, client_id
     let url = format!(
         "{}/api/v1/authorize?client_id={client_id}&redirect_uri={}&state=test-state&code_challenge=test-challenge&code_challenge_method=S256",
         world.gatehouse_url,
-        urlencoding::encode(&redirect_uri),
+        quench_serde::urlencoded::percent_encode(&redirect_uri),
     );
     let res = no_redirect_client()
         .get(&url)
@@ -243,7 +241,7 @@ async fn open_ui_root(world: &mut ForgeWorld) {
     let mut request = no_redirect_client().get(&url);
     if let Some(cookie) = &world.session_cookie {
         request = request.header(
-            reqwest::header::COOKIE,
+            quench_client::transport::header::COOKIE,
             format!("{SESSION_COOKIE}={cookie}"),
         );
     }
@@ -305,7 +303,7 @@ async fn visit_logout(world: &mut ForgeWorld) {
     let res = no_redirect_client()
         .get(&url)
         .header(
-            reqwest::header::COOKIE,
+            quench_client::transport::header::COOKIE,
             format!("{SESSION_COOKIE}={cookie}"),
         )
         .send()
@@ -371,17 +369,18 @@ async fn cookie_cleared(world: &mut ForgeWorld) {
 fn set_cookie_header(world: &ForgeWorld) -> String {
     world
         .last_response_headers
-        .get_all(reqwest::header::SET_COOKIE)
-        .iter()
+        .get_all(&quench_client::transport::header::SET_COOKIE)
         .filter_map(|value| value.to_str().ok())
         .collect::<Vec<_>>()
         .join("; ")
 }
 
-fn cookie_value(headers: &reqwest::header::HeaderMap, name: &str) -> Option<String> {
+fn cookie_value(
+    headers: &quench_client::transport::header::HeaderMap,
+    name: &str,
+) -> Option<String> {
     headers
-        .get_all(reqwest::header::SET_COOKIE)
-        .iter()
+        .get_all(&quench_client::transport::header::SET_COOKIE)
         .filter_map(|value| value.to_str().ok())
         .find_map(|cookie| {
             cookie
@@ -840,7 +839,7 @@ async fn open_page(world: &mut ForgeWorld, path: &str) {
     let mut request = no_redirect_client().get(&url);
     if let Some(cookie) = &world.session_cookie {
         request = request.header(
-            reqwest::header::COOKIE,
+            quench_client::transport::header::COOKIE,
             format!("{SESSION_COOKIE}={cookie}"),
         );
     }
@@ -872,7 +871,7 @@ async fn post_form(world: &mut ForgeWorld, path: &str, form: &[(&str, &str)]) {
     let mut request = no_redirect_client().post(&url).form(form);
     if let Some(cookie) = &world.session_cookie {
         request = request.header(
-            reqwest::header::COOKIE,
+            quench_client::transport::header::COOKIE,
             format!("{SESSION_COOKIE}={cookie}"),
         );
     }
@@ -932,7 +931,7 @@ async fn submit_self_demote(world: &mut ForgeWorld) {
 async fn redirect_reports(world: &mut ForgeWorld, marker: String) {
     let location = world
         .last_response_headers
-        .get(reqwest::header::LOCATION)
+        .get(&quench_client::transport::header::LOCATION)
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
     assert!(
@@ -1410,7 +1409,7 @@ async fn enroll_mfa(world: &mut ForgeWorld) {
     let mut request = no_redirect_client().get(&url);
     if let Some(cookie) = &world.session_cookie {
         request = request.header(
-            reqwest::header::COOKIE,
+            quench_client::transport::header::COOKIE,
             format!("{SESSION_COOKIE}={cookie}"),
         );
     }
@@ -1434,15 +1433,13 @@ async fn enroll_mfa(world: &mut ForgeWorld) {
 fn pending_from_redirect(world: &ForgeWorld) -> String {
     let location = world
         .last_response_headers
-        .get(reqwest::header::LOCATION)
+        .get(&quench_client::transport::header::LOCATION)
         .and_then(|value| value.to_str().ok())
         .expect("no Location header - was the previous step a login attempt?");
     let (_, after) = location
         .split_once("pending=")
         .expect("redirect did not carry a pending MFA token");
-    urlencoding::decode(after.split('&').next().unwrap_or(after))
-        .expect("pending token was not valid percent-encoding")
-        .into_owned()
+    quench_serde::urlencoded::percent_decode(after.split('&').next().unwrap_or(after))
 }
 
 #[when("I complete the MFA challenge with a valid code")]

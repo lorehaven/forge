@@ -9,12 +9,12 @@ use warehouse_service::routers::docker_storage_root;
 const VALID_DIGEST: &str =
     "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-#[test]
+#[quench_test::test]
 fn validate_digest_accepts_a_well_formed_sha256() {
     assert!(validate_digest(VALID_DIGEST));
 }
 
-#[test]
+#[quench_test::test]
 fn validate_digest_rejects_wrong_algorithm_length_or_characters() {
     assert!(!validate_digest(
         "md5:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -26,7 +26,7 @@ fn validate_digest_rejects_wrong_algorithm_length_or_characters() {
     assert!(!validate_digest(""));
 }
 
-#[test]
+#[quench_test::test]
 fn digest_hex_strips_the_algorithm_prefix_only_when_valid() {
     assert_eq!(
         digest_hex(VALID_DIGEST),
@@ -35,7 +35,7 @@ fn digest_hex_strips_the_algorithm_prefix_only_when_valid() {
     assert_eq!(digest_hex("not-a-digest"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn validate_repository_name_rejects_traversal_and_backslashes() {
     assert!(validate_repository_name("my/repo"));
     assert!(!validate_repository_name(""));
@@ -44,7 +44,7 @@ fn validate_repository_name_rejects_traversal_and_backslashes() {
     assert!(!validate_repository_name("./repo"));
 }
 
-#[test]
+#[quench_test::test]
 fn validate_tag_reference_accepts_exactly_one_normal_component() {
     assert!(validate_tag_reference("latest"));
     assert!(validate_tag_reference("v1.2.3"));
@@ -54,7 +54,7 @@ fn validate_tag_reference_accepts_exactly_one_normal_component() {
     assert!(!validate_tag_reference(".."));
 }
 
-#[test]
+#[quench_test::test]
 fn repository_path_rejects_invalid_names_and_nests_valid_ones_under_the_root() {
     // The storage root is process-global env; hold the lock the other tests take.
     let _storage = support::WithDockerStorageRoot::new();
@@ -66,7 +66,7 @@ fn repository_path_rejects_invalid_names_and_nests_valid_ones_under_the_root() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn blob_path_and_manifest_path_use_separate_sha256_subtrees() {
     // The storage root is process-global env; hold the lock the other tests take.
     let _storage = support::WithDockerStorageRoot::new();
@@ -87,12 +87,12 @@ fn blob_path_and_manifest_path_use_separate_sha256_subtrees() {
     assert_ne!(blob, manifest);
 }
 
-#[test]
+#[quench_test::test]
 fn blob_path_rejects_an_invalid_digest() {
     assert!(blob_path("not-a-digest").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn upload_path_nests_under_the_repository_s_uploads_directory() {
     // The storage root is process-global env; hold the lock the other tests take.
     let _storage = support::WithDockerStorageRoot::new();
@@ -104,7 +104,7 @@ fn upload_path_nests_under_the_repository_s_uploads_directory() {
 }
 
 #[allow(clippy::await_holding_lock)]
-#[tokio::test]
+#[quench_test::test]
 async fn blob_exists_is_false_for_a_digest_with_nothing_on_disk() {
     let _guard = support::storage_env_lock()
         .lock()
@@ -112,7 +112,7 @@ async fn blob_exists_is_false_for_a_digest_with_nothing_on_disk() {
     assert!(!blob_exists(VALID_DIGEST).await);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn blob_exists_is_false_for_an_invalid_digest() {
     assert!(!blob_exists("not-a-digest").await);
 }

@@ -76,11 +76,6 @@ ignore = [
     # is available to drop it.
     # Re-check: https://rustsec.org/advisories/RUSTSEC-2026-0192
     { id = "RUSTSEC-2026-0192", reason = "unmaintained, pulled in as a mandatory dep of lopdf via pdf-extract 0.12.0 (latest); no replacement pairing available" },
-    # basic-toml is unmaintained (no CVE, informational only). Pulled in via
-    # riveter -> age 0.12.1 -> i18n-embed-fl/i18n-embed-impl -> i18n-config
-    # 0.4.8, which depends on it. No safe upgrade is available.
-    # Re-check: https://rustsec.org/advisories/RUSTSEC-2026-0374
-    { id = "RUSTSEC-2026-0374", reason = "unmaintained, pulled in via riveter -> age -> i18n-embed -> i18n-config; no safe upgrade available" },
 ]
 # If this is true, then cargo deny will use the git executable to fetch advisory database.
 # If this is false, then it uses a built-in git library.

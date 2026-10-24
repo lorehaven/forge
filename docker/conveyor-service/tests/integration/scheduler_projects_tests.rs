@@ -20,7 +20,7 @@ async fn make_project(db: &quench_db::prelude::Db, name: &str, parent_id: Option
     .id
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_and_read_round_trip() {
     let Some((db, _guard)) = database().await else {
         return skipped("create_and_read_round_trip");
@@ -35,7 +35,7 @@ async fn create_and_read_round_trip() {
     assert!(read.parent_id.is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn read_missing_project_is_none() {
     let Some((db, _guard)) = database().await else {
         return skipped("read_missing_project_is_none");
@@ -49,7 +49,7 @@ async fn read_missing_project_is_none() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_children_separates_roots_from_nested_nodes() {
     let Some((db, _guard)) = database().await else {
         return skipped("list_children_separates_roots_from_nested_nodes");
@@ -71,7 +71,7 @@ async fn list_children_separates_roots_from_nested_nodes() {
     assert_eq!(children[1].name, "list-child-b");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_all_includes_every_registered_project() {
     let Some((db, _guard)) = database().await else {
         return skipped("list_all_includes_every_registered_project");
@@ -86,7 +86,7 @@ async fn list_all_includes_every_registered_project() {
     assert!(ids.contains(&b.as_str()));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn rename_changes_the_name_and_is_none_for_a_missing_project() {
     let Some((db, _guard)) = database().await else {
         return skipped("rename_changes_the_name_and_is_none_for_a_missing_project");
@@ -107,7 +107,7 @@ async fn rename_changes_the_name_and_is_none_for_a_missing_project() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn move_to_relocates_a_project_under_a_new_parent() {
     let Some((db, _guard)) = database().await else {
         return skipped("move_to_relocates_a_project_under_a_new_parent");
@@ -128,7 +128,7 @@ async fn move_to_relocates_a_project_under_a_new_parent() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn move_to_rejects_moving_a_project_under_itself() {
     let Some((db, _guard)) = database().await else {
         return skipped("move_to_rejects_moving_a_project_under_itself");
@@ -141,7 +141,7 @@ async fn move_to_rejects_moving_a_project_under_itself() {
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn move_to_rejects_moving_a_project_under_its_own_descendant() {
     let Some((db, _guard)) = database().await else {
         return skipped("move_to_rejects_moving_a_project_under_its_own_descendant");
@@ -159,7 +159,7 @@ async fn move_to_rejects_moving_a_project_under_its_own_descendant() {
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn move_to_is_not_found_for_a_missing_project() {
     let Some((db, _guard)) = database().await else {
         return skipped("move_to_is_not_found_for_a_missing_project");
@@ -173,7 +173,7 @@ async fn move_to_is_not_found_for_a_missing_project() {
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_refuses_a_project_with_children() {
     let Some((db, _guard)) = database().await else {
         return skipped("delete_refuses_a_project_with_children");
@@ -188,7 +188,7 @@ async fn delete_refuses_a_project_with_children() {
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_refuses_a_project_with_an_attached_repo() {
     let Some((db, _guard)) = database().await else {
         return skipped("delete_refuses_a_project_with_an_attached_repo");
@@ -216,7 +216,7 @@ async fn delete_refuses_a_project_with_an_attached_repo() {
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_succeeds_for_a_leaf_project_and_is_not_found_the_second_time() {
     let Some((db, _guard)) = database().await else {
         return skipped("delete_succeeds_for_a_leaf_project_and_is_not_found_the_second_time");
@@ -233,7 +233,7 @@ async fn delete_succeeds_for_a_leaf_project_and_is_not_found_the_second_time() {
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn ancestor_chain_includes_every_node_up_to_the_root() {
     let Some((db, _guard)) = database().await else {
         return skipped("ancestor_chain_includes_every_node_up_to_the_root");
@@ -250,7 +250,7 @@ async fn ancestor_chain_includes_every_node_up_to_the_root() {
     assert_eq!(chain.len(), 3);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn descendant_ids_includes_the_roots_and_everything_nested() {
     let Some((db, _guard)) = database().await else {
         return skipped("descendant_ids_includes_the_roots_and_everything_nested");
@@ -270,7 +270,7 @@ async fn descendant_ids_includes_the_roots_and_everything_nested() {
     assert!(!ids.contains(&unrelated));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn descendant_ids_is_empty_for_an_empty_root_list() {
     let Some((db, _guard)) = database().await else {
         return skipped("descendant_ids_is_empty_for_an_empty_root_list");
@@ -284,7 +284,7 @@ async fn descendant_ids_is_empty_for_an_empty_root_list() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn full_path_joins_names_from_root_to_leaf() {
     let Some((db, _guard)) = database().await else {
         return skipped("full_path_joins_names_from_root_to_leaf");
@@ -301,7 +301,7 @@ async fn full_path_joins_names_from_root_to_leaf() {
     assert_eq!(path, "path-root/path-mid/path-leaf");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn full_path_is_none_for_a_missing_project() {
     let Some((db, _guard)) = database().await else {
         return skipped("full_path_is_none_for_a_missing_project");

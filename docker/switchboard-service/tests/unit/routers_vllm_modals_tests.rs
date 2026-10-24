@@ -51,7 +51,7 @@ fn model_with_estimates(estimates: Vec<ModelEstimate>) -> Model {
 // parse_optional_{u32,f32}
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn parse_optional_u32_and_f32_trim_and_reject_blank_or_invalid() {
     assert_eq!(parse_optional_u32(Some(" 8192 ")), Some(8192));
     assert_eq!(parse_optional_u32(Some("")), None);
@@ -67,14 +67,14 @@ fn parse_optional_u32_and_f32_trim_and_reject_blank_or_invalid() {
 // round_gpu_util_up / calculate_minimum_gpu_util
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn round_gpu_util_up_rounds_to_the_next_twentieth() {
     assert!((round_gpu_util_up(0.81) - 0.85).abs() < 1e-6);
     assert!((round_gpu_util_up(0.80) - 0.80).abs() < 1e-6); // already exact
     assert!((round_gpu_util_up(0.001) - 0.05).abs() < 1e-6);
 }
 
-#[test]
+#[quench_test::test]
 fn calculate_minimum_gpu_util_covers_the_estimate_against_the_gpu_with_a_safety_margin() {
     let est = estimate(Quant::FP16, Context::Size4096, 14.0, 2.0);
     // (14 + 1.5) / (24 - 2) = 0.704545... -> rounds up to 0.75
@@ -82,7 +82,7 @@ fn calculate_minimum_gpu_util_covers_the_estimate_against_the_gpu_with_a_safety_
     assert!((result - 0.75).abs() < 1e-6);
 }
 
-#[test]
+#[quench_test::test]
 fn calculate_minimum_gpu_util_is_none_for_a_non_positive_or_non_finite_gpu_total() {
     let est = estimate(Quant::FP16, Context::Size4096, 14.0, 2.0);
     assert_eq!(calculate_minimum_gpu_util(&est, 0.0), None);
@@ -91,13 +91,13 @@ fn calculate_minimum_gpu_util_is_none_for_a_non_positive_or_non_finite_gpu_total
     assert_eq!(calculate_minimum_gpu_util(&est, f64::INFINITY), None);
 }
 
-#[test]
+#[quench_test::test]
 fn calculate_minimum_gpu_util_is_none_when_kv_cache_alone_exceeds_the_gpu() {
     let est = estimate(Quant::FP16, Context::Size4096, 14.0, 30.0);
     assert_eq!(calculate_minimum_gpu_util(&est, 24.0), None);
 }
 
-#[test]
+#[quench_test::test]
 fn calculate_minimum_gpu_util_clamps_to_the_20_to_100_percent_range() {
     // Tiny model on a huge GPU: raw ratio would round to far less than 20%.
     let tiny = estimate(Quant::FP16, Context::Size4096, 0.01, 0.01);
@@ -112,7 +112,7 @@ fn calculate_minimum_gpu_util_clamps_to_the_20_to_100_percent_range() {
 // find_launch_estimate
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn find_launch_estimate_filters_by_mapped_quantization_name() {
     let model = model_with_estimates(vec![
         estimate(Quant::AWQ, Context::Size4096, 5.0, 1.0),
@@ -122,7 +122,7 @@ fn find_launch_estimate_filters_by_mapped_quantization_name() {
     assert_eq!(found.quant, Quant::AWQ);
 }
 
-#[test]
+#[quench_test::test]
 fn find_launch_estimate_maps_marlin_aliases_to_the_same_quant() {
     let model = model_with_estimates(vec![estimate(Quant::AWQ, Context::Size4096, 5.0, 1.0)]);
     assert!(find_launch_estimate(&model, "awq_marlin", None).is_some());
@@ -137,7 +137,7 @@ fn find_launch_estimate_maps_marlin_aliases_to_the_same_quant() {
     assert!(find_launch_estimate(&model, "bitsandbytes", None).is_some());
 }
 
-#[test]
+#[quench_test::test]
 fn find_launch_estimate_ignores_unknown_quantization_strings() {
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 14.0, 2.0)]);
     // "unknown-quant" maps to no known Quant, so the filter is skipped
@@ -145,7 +145,7 @@ fn find_launch_estimate_ignores_unknown_quantization_strings() {
     assert!(find_launch_estimate(&model, "unknown-quant", None).is_some());
 }
 
-#[test]
+#[quench_test::test]
 fn find_launch_estimate_picks_the_smallest_context_at_or_above_the_requested_one() {
     let model = model_with_estimates(vec![
         estimate(Quant::FP16, Context::Size2048, 14.0, 1.0),
@@ -156,7 +156,7 @@ fn find_launch_estimate_picks_the_smallest_context_at_or_above_the_requested_one
     assert_eq!(found.context, Context::Size4096);
 }
 
-#[test]
+#[quench_test::test]
 fn find_launch_estimate_falls_back_to_the_largest_context_when_none_are_big_enough() {
     let model = model_with_estimates(vec![
         estimate(Quant::FP16, Context::Size2048, 14.0, 1.0),
@@ -166,7 +166,7 @@ fn find_launch_estimate_falls_back_to_the_largest_context_when_none_are_big_enou
     assert_eq!(found.context, Context::Size4096);
 }
 
-#[test]
+#[quench_test::test]
 fn find_launch_estimate_without_a_context_takes_the_first_matching_candidate() {
     let model = model_with_estimates(vec![
         estimate(Quant::FP16, Context::Size2048, 14.0, 1.0),
@@ -176,7 +176,7 @@ fn find_launch_estimate_without_a_context_takes_the_first_matching_candidate() {
     assert_eq!(found.context, Context::Size2048);
 }
 
-#[test]
+#[quench_test::test]
 fn find_launch_estimate_without_a_quantization_uses_the_models_own_quant() {
     // A pre-quantized 4-bit checkpoint launched with no --quantization override must be
     // sized by its own AWQ row, not the larger FP16 what-if row that sorts first.
@@ -189,7 +189,7 @@ fn find_launch_estimate_without_a_quantization_uses_the_models_own_quant() {
     assert_eq!(found.quant, Quant::AWQ);
 }
 
-#[test]
+#[quench_test::test]
 fn find_launch_estimate_is_none_for_a_model_with_no_estimates() {
     let model = model_with_estimates(vec![]);
     assert!(find_launch_estimate(&model, "", None).is_none());
@@ -218,7 +218,7 @@ fn query(gpu_util: Option<&str>, recalc: Option<bool>) -> LaunchModalQuery {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn launch_gpu_util_uses_the_explicit_query_value_unless_recalculating() {
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 14.0, 2.0)]);
     let q = query(Some("0.5"), None);
@@ -226,7 +226,7 @@ fn launch_gpu_util_uses_the_explicit_query_value_unless_recalculating() {
     assert!((value - 0.5).abs() < 1e-6);
 }
 
-#[test]
+#[quench_test::test]
 fn launch_gpu_util_recalculates_from_the_estimate_when_asked() {
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 14.0, 2.0)]);
     let q = query(Some("0.5"), Some(true));
@@ -234,14 +234,14 @@ fn launch_gpu_util_recalculates_from_the_estimate_when_asked() {
     assert!((f64::from(value) - round_gpu_util_up((14.0 + 1.5) / (24.0 - 2.0))).abs() < 1e-6);
 }
 
-#[test]
+#[quench_test::test]
 fn launch_gpu_util_defaults_to_0_90_with_no_model_and_no_query_value() {
     let q = query(None, None);
     let value = launch_gpu_util(None, "", None, &q, &gpu(24.0, 20.0));
     assert!((value - 0.90).abs() < 1e-6);
 }
 
-#[test]
+#[quench_test::test]
 fn launch_gpu_util_defaults_to_0_90_when_the_model_has_no_matching_estimate() {
     let model = model_with_estimates(vec![]);
     let q = query(None, None);
@@ -253,7 +253,7 @@ fn launch_gpu_util_defaults_to_0_90_when_the_model_has_no_matching_estimate() {
 // launch_fit_note
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn launch_fit_note_warns_when_no_model_is_selected() {
     let (class, _, i18n, args, disabled) = launch_fit_note(None, "", None, 0.9, &gpu(24.0, 20.0));
     assert_eq!(class, "fit-line fit-warn");
@@ -262,7 +262,7 @@ fn launch_fit_note_warns_when_no_model_is_selected() {
     assert!(disabled);
 }
 
-#[test]
+#[quench_test::test]
 fn launch_fit_note_warns_when_no_estimate_matches() {
     let model = model_with_estimates(vec![]);
     let (class, _, i18n, _, disabled) =
@@ -272,7 +272,7 @@ fn launch_fit_note_warns_when_no_estimate_matches() {
     assert!(disabled);
 }
 
-#[test]
+#[quench_test::test]
 fn launch_fit_note_reports_wont_fit_when_over_budget() {
     // 14 + (2 * 0.5) = 15 GB needed, budget is 24 * 0.5 = 12 GB -> over budget.
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 14.0, 2.0)]);
@@ -284,7 +284,7 @@ fn launch_fit_note_reports_wont_fit_when_over_budget() {
     assert!(disabled);
 }
 
-#[test]
+#[quench_test::test]
 fn launch_fit_note_reports_wont_fit_when_not_enough_free_vram_right_now() {
     // Budget is huge (0.95 * 24 ~= 22.8) so it clears the budget check, but
     // free VRAM is tiny.
@@ -296,7 +296,7 @@ fn launch_fit_note_reports_wont_fit_when_not_enough_free_vram_right_now() {
     assert!(disabled);
 }
 
-#[test]
+#[quench_test::test]
 fn launch_fit_note_warns_on_a_tight_fit_but_does_not_disable_launch() {
     // required ~= max(5 + 1*0.95, 24*0.95) = 22.8; free = 24 -> remaining ~1.2 < 2.0.
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 5.0, 1.0)]);
@@ -307,7 +307,7 @@ fn launch_fit_note_warns_on_a_tight_fit_but_does_not_disable_launch() {
     assert!(!disabled);
 }
 
-#[test]
+#[quench_test::test]
 fn launch_fit_note_reports_ok_with_comfortable_headroom() {
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 5.0, 1.0)]);
     let (class, _, i18n, _, disabled) =
@@ -321,7 +321,7 @@ fn launch_fit_note_reports_ok_with_comfortable_headroom() {
 // fit_note_icon_class / get_vllm_namespace
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn fit_note_icon_class_maps_each_fit_class_to_its_icon() {
     assert_eq!(
         fit_note_icon_class("fit-line fit-no"),
@@ -337,7 +337,7 @@ fn fit_note_icon_class_maps_each_fit_class_to_its_icon() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_vllm_namespace_reflects_mock_and_native_management_modes() {
     // VLLM_MANAGEMENT_MODE is process-global; this crate's env_support lock
     // (shared with every other test here that touches the same var) keeps
@@ -357,7 +357,7 @@ async fn get_vllm_namespace_reflects_mock_and_native_management_modes() {
 // render_launch_modal / render_stop_modal - light structural assertions
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn render_launch_modal_includes_the_model_select_and_fit_note() {
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 5.0, 1.0)]);
     let q = query(None, None);
@@ -367,7 +367,7 @@ fn render_launch_modal_includes_the_model_select_and_fit_note() {
     assert!(html.contains("fit-line"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_launch_modal_offers_a_device_select_defaulting_to_gpu() {
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 5.0, 1.0)]);
     let q = query(None, None);
@@ -380,7 +380,7 @@ fn render_launch_modal_offers_a_device_select_defaulting_to_gpu() {
     assert!(!html.contains("ui_vllm_fit_note_cpu"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_launch_modal_for_cpu_disables_gpu_util_and_skips_the_vram_fit_note() {
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 5.0, 1.0)]);
     let mut q = query(None, None);
@@ -392,7 +392,7 @@ fn render_launch_modal_for_cpu_disables_gpu_util_and_skips_the_vram_fit_note() {
     assert!(html.contains("disabled"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_stop_modal_includes_the_instance_id_and_optional_model_name() {
     let html = render_stop_modal("inst-1", Some("llama-3-8b"));
     assert!(html.contains("stop-instance-modal") || html.contains("inst-1"));
@@ -427,7 +427,7 @@ async fn body_text(resp: quench_http::response::Response) -> String {
     String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_launch_modal_renders_ok_with_a_model_in_the_store() {
     ensure_store().await;
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 5.0, 1.0)]);
@@ -444,13 +444,13 @@ async fn handle_launch_modal_renders_ok_with_a_model_in_the_store() {
     assert!(html.contains("launch-instance-modal"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn empty_launch_modal_renders_the_shell() {
     let resp = empty_launch_modal().await;
     assert!(resp.status().is_success());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_stop_modal_renders_the_provided_id_and_model() {
     let q = StopModalQuery {
         id: "abc".to_string(),
@@ -463,7 +463,7 @@ async fn handle_stop_modal_renders_the_provided_id_and_model() {
     assert!(html.contains("llama"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn empty_stop_modal_renders_the_shell() {
     let resp = empty_stop_modal().await;
     assert!(resp.status().is_success());

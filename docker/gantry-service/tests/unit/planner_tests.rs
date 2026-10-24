@@ -55,7 +55,7 @@ fn workload(package: &str, name: &str, namespace: &str, version: Option<&str>) -
 
 // ---------------------------------------------------------------- versions
 
-#[test]
+#[quench_test::test]
 fn versions_order_by_semver_then_by_build_metadata_text() {
     assert_eq!(compare("1.0.0", "1.0.1"), Ordering::Less);
     assert_eq!(compare("1.10.0", "1.9.0"), Ordering::Greater);
@@ -68,7 +68,7 @@ fn versions_order_by_semver_then_by_build_metadata_text() {
     assert_eq!(compare("0.4.0+x", "0.4.0+x"), Ordering::Equal);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_newest_version_skips_the_yanked_one() {
     let registry = MemoryRegistry::default();
     registry.publish("forge", "1.0.0", Some("forge"));
@@ -84,7 +84,7 @@ async fn the_newest_version_skips_the_yanked_one() {
     assert_eq!(registry.catalog().await.unwrap()[0].version, "1.0.0");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_directory_of_rivet_files_is_a_registry() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     for version in ["0.1.0", "0.2.0"] {
@@ -117,7 +117,7 @@ async fn a_directory_of_rivet_files_is_a_registry() {
 
 // ---------------------------------------------------------------- targets
 
-#[tokio::test]
+#[quench_test::test]
 async fn each_target_says_how_what_runs_compares_to_what_is_published() {
     let rig = rig();
     for (name, version) in [
@@ -155,7 +155,7 @@ async fn each_target_says_how_what_runs_compares_to_what_is_published() {
 
 // ---------------------------------------------------------------- plans
 
-#[tokio::test]
+#[quench_test::test]
 async fn installing_a_new_package_is_pull_check_install_into_its_namespace() {
     let rig = rig();
     rig.registry.publish("media", "1.0.0", Some("media"));
@@ -194,7 +194,7 @@ async fn installing_a_new_package_is_pull_check_install_into_its_namespace() {
     assert!(stored.plan.summary[0].contains("Install media 1.0.0 into media"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_upgrade_names_both_versions_and_remembers_what_it_was_made_against() {
     let rig = rig();
     rig.registry.publish("media", "1.0.0", Some("media"));
@@ -214,7 +214,7 @@ async fn an_upgrade_names_both_versions_and_remembers_what_it_was_made_against()
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn going_to_an_older_version_is_a_rollback_and_needs_that_permission() {
     let rig = rig();
     rig.registry.publish("media", "1.0.0", Some("media"));
@@ -231,7 +231,7 @@ async fn going_to_an_older_version_is_a_rollback_and_needs_that_permission() {
     assert_eq!(Action::parse("downgrade"), Some(Action::Downgrade));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_yanked_version_may_stay_where_it_runs_but_not_go_anywhere_new() {
     let rig = rig();
     rig.registry.publish("media", "1.0.0", Some("media"));
@@ -264,7 +264,7 @@ async fn a_yanked_version_may_stay_where_it_runs_but_not_go_anywhere_new() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unknown_packages_and_versions_are_refused() {
     let rig = rig();
     rig.registry.publish("media", "1.0.0", Some("media"));
@@ -282,7 +282,7 @@ async fn unknown_packages_and_versions_are_refused() {
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_plan_that_replaces_gantry_itself_applies_it_last_alone_and_guarded() {
     let mut settings = Settings::inert();
     settings.self_deployment = Some(("forge".into(), "gantry".into()));
@@ -354,7 +354,7 @@ async fn a_plan_that_replaces_gantry_itself_applies_it_last_alone_and_guarded() 
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_plan_that_does_not_touch_gantry_has_no_special_steps() {
     let mut settings = Settings::inert();
     settings.self_deployment = Some(("forge".into(), "gantry".into()));
@@ -375,7 +375,7 @@ async fn a_plan_that_does_not_touch_gantry_has_no_special_steps() {
     assert!(except.is_empty() && !no_wait);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_package_with_no_namespace_and_nothing_running_cannot_be_planned() {
     let rig = rig();
     rig.registry.publish("odd", "1.0.0", None);
@@ -388,7 +388,7 @@ async fn a_package_with_no_namespace_and_nothing_running_cannot_be_planned() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_plan_outside_the_allow_list_is_refused_up_front() {
     let mut settings = Settings::inert();
     settings.allowed_namespaces = vec!["scratch".into()];
@@ -405,7 +405,7 @@ async fn a_plan_outside_the_allow_list_is_refused_up_front() {
 
 // ---------------------------------------------------------------- confirming
 
-#[tokio::test]
+#[quench_test::test]
 async fn confirming_turns_the_plan_into_one_queued_operation_and_only_once() {
     let rig = rig();
     rig.registry.publish("media", "1.0.0", Some("media"));
@@ -439,7 +439,7 @@ async fn confirming_turns_the_plan_into_one_queued_operation_and_only_once() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_plan_made_against_an_older_cluster_is_refused() {
     let rig = rig();
     rig.registry.publish("media", "1.0.0", Some("media"));

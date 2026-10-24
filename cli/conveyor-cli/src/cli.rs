@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use quench_args::{Args, Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(

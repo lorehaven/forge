@@ -2,7 +2,7 @@
 
 use sage_service::tools::command::*;
 
-#[test]
+#[quench_test::test]
 fn test_safe_commands() {
     assert!(is_safe_command("cat /etc/hostname"));
     assert!(is_safe_command("ls -la"));
@@ -11,7 +11,7 @@ fn test_safe_commands() {
     assert!(is_safe_command("date"));
 }
 
-#[test]
+#[quench_test::test]
 fn test_dangerous_commands() {
     assert!(!is_safe_command("rm -rf /"));
     assert!(!is_safe_command("sudo cat file"));

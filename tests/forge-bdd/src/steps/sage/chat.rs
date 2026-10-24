@@ -1,7 +1,7 @@
 use crate::world::ForgeWorld;
-use serde_json::json;
+use quench_serde::json;
 
-#[cucumber::when(expr = "I send a chat message {string}")]
+#[quench_test_bdd::when(expr = "I send a chat message {string}")]
 async fn send_chat_message(world: &mut ForgeWorld, message: String) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
 
@@ -31,7 +31,7 @@ async fn send_chat_message(world: &mut ForgeWorld, message: String) -> Result<()
     }
 }
 
-#[cucumber::then(expr = "I should receive a response")]
+#[quench_test_bdd::then(expr = "I should receive a response")]
 async fn should_receive_response(_world: &mut ForgeWorld) -> Result<(), String> {
     // This is a placeholder - in real tests you'd verify the response
     Ok(())

@@ -112,7 +112,7 @@ fn location(resp: quench_http::response::Response) -> String {
 // Home
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn home_renders_the_empty_state_with_no_projects() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("home_renders_the_empty_state_with_no_projects");
@@ -125,7 +125,7 @@ async fn home_renders_the_empty_state_with_no_projects() {
     assert!(body.contains("ui_home_no_projects"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn home_slash_lists_a_seeded_project() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("home_slash_lists_a_seeded_project");
@@ -139,7 +139,7 @@ async fn home_slash_lists_a_seeded_project() {
     assert!(body.contains("Project HM"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn home_shows_the_error_notice_from_a_redirect() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("home_shows_the_error_notice_from_a_redirect");
@@ -154,7 +154,7 @@ async fn home_shows_the_error_notice_from_a_redirect() {
     assert!(body.contains("key_taken"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_project_rejects_empty_fields_then_creates_then_rejects_duplicate_key() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped(
@@ -200,7 +200,7 @@ async fn create_project_rejects_empty_fields_then_creates_then_rejects_duplicate
 // Board
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn board_redirects_home_for_a_missing_project() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("board_redirects_home_for_a_missing_project");
@@ -218,7 +218,7 @@ async fn board_redirects_home_for_a_missing_project() {
     assert!(location(resp).ends_with("/home"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn board_renders_issues_grouped_by_status() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("board_renders_issues_grouped_by_status");
@@ -240,7 +240,7 @@ async fn board_renders_issues_grouped_by_status() {
     assert!(body.contains("wb-board"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_issue_rejects_empty_title_then_creates_and_transitions() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped(
@@ -304,7 +304,7 @@ async fn create_issue_rejects_empty_title_then_creates_and_transitions() {
     assert_eq!(after.status, "done");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_issue_reports_an_unknown_assignee_as_a_foreign_key_violation() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped(
@@ -329,7 +329,7 @@ async fn create_issue_reports_an_unknown_assignee_as_a_foreign_key_violation() {
 // Issue detail
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn detail_redirects_home_for_a_missing_issue() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("detail_redirects_home_for_a_missing_issue");
@@ -343,7 +343,7 @@ async fn detail_redirects_home_for_a_missing_issue() {
     assert!(location(resp).ends_with("/home"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn detail_renders_the_issue_with_comments_and_links() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("detail_renders_the_issue_with_comments_and_links");
@@ -365,7 +365,7 @@ async fn detail_renders_the_issue_with_comments_and_links() {
     assert!(body.contains("ui_issue_comments"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_rejects_empty_title_then_applies_a_valid_update() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("update_rejects_empty_title_then_applies_a_valid_update");
@@ -411,7 +411,7 @@ async fn update_rejects_empty_title_then_applies_a_valid_update() {
     assert_eq!(after.estimate, Some(5));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_rejects_a_negative_estimate() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("update_rejects_a_negative_estimate");
@@ -437,7 +437,7 @@ async fn update_rejects_a_negative_estimate() {
     assert!(location(resp).contains("error=invalid_estimate"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_on_a_missing_issue_redirects_home() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("update_on_a_missing_issue_redirects_home");
@@ -460,7 +460,7 @@ async fn update_on_a_missing_issue_redirects_home() {
     assert!(location(resp).contains("error=not_found"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_comment_rejects_empty_body_then_adds_a_comment() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("create_comment_rejects_empty_body_then_adds_a_comment");
@@ -490,7 +490,7 @@ async fn create_comment_rejects_empty_body_then_adds_a_comment() {
     assert!(!location(resp).contains("error="));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn add_link_validates_kind_key_and_self_link_then_creates_and_removes() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped(
@@ -597,7 +597,7 @@ async fn add_link_validates_kind_key_and_self_link_then_creates_and_removes() {
     assert!(links.blocks.is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn add_link_on_a_missing_issue_redirects_home() {
     let Some((db, _guard)) = database().await else {
         return crate::support::skipped("add_link_on_a_missing_issue_redirects_home");

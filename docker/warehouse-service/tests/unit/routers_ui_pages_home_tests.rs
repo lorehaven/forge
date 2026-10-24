@@ -7,7 +7,7 @@ use warehouse_service::routers::ui::pages::home::render_home_page;
 /// tests), so this can't control which branch runs - it just asserts
 /// the page renders successfully and always carries the title, which
 /// holds regardless of which branch that turns out to be.
-#[tokio::test]
+#[quench_test::test]
 async fn render_home_page_always_renders_ok_with_the_home_title() {
     let resp = render_home_page();
     assert_eq!(resp.status(), StatusCode::OK);

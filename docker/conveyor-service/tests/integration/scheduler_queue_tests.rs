@@ -30,7 +30,7 @@ const SHA_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 // Enqueueing
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn enqueue_creates_a_queued_run() {
     let Some((db, _guard)) = database().await else {
         return skipped("enqueue_creates_a_queued_run");
@@ -48,7 +48,7 @@ async fn enqueue_creates_a_queued_run() {
     assert!(enqueued.run().claimed_by.is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_redelivered_webhook_does_not_queue_a_second_run() {
     // A provider retries a webhook it did not get a prompt answer for, and a
     // second run of the same commit would double every side effect the first
@@ -74,7 +74,7 @@ async fn a_redelivered_webhook_does_not_queue_a_second_run() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn manual_runs_of_the_same_commit_are_both_allowed() {
     // A manual run has no delivery to be a duplicate of; asking for the same
     // commit twice on purpose is a reasonable thing to do.
@@ -99,7 +99,7 @@ async fn manual_runs_of_the_same_commit_are_both_allowed() {
 // Claiming
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_empty_queue_claims_nothing() {
     let Some((db, _guard)) = database().await else {
         return skipped("an_empty_queue_claims_nothing");
@@ -112,7 +112,7 @@ async fn an_empty_queue_claims_nothing() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn claiming_takes_the_oldest_queued_run() {
     let Some((db, _guard)) = database().await else {
         return skipped("claiming_takes_the_oldest_queued_run");
@@ -139,7 +139,7 @@ async fn claiming_takes_the_oldest_queued_run() {
     assert!(claimed.started_at.is_some());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_repository_never_has_two_runs_in_flight() {
     // Two checkouts of the same repository at once would race on the registry
     // they push to, and on the workspace directory itself.
@@ -170,7 +170,7 @@ async fn a_repository_never_has_two_runs_in_flight() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_second_run_is_claimable_once_the_first_finishes() {
     let Some((db, _guard)) = database().await else {
         return skipped("the_second_run_is_claimable_once_the_first_finishes");
@@ -199,7 +199,7 @@ async fn the_second_run_is_claimable_once_the_first_finishes() {
     assert_eq!(next.id, second.run().id);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_database_refuses_a_second_running_run_for_one_repository() {
     // The claim query's `NOT EXISTS` and the claim are not one atomic act, so
     // this index is what actually holds the rule. Asserted directly, because a
@@ -225,7 +225,7 @@ async fn the_database_refuses_a_second_running_run_for_one_repository() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_disabled_repository_is_not_claimed() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_disabled_repository_is_not_claimed");
@@ -252,7 +252,7 @@ async fn a_disabled_repository_is_not_claimed() {
 // Abandoned runs
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_run_whose_worker_died_goes_back_on_the_queue() {
     // Without this, one killed worker takes its repository out of service for
     // good: the run stays `running` and the index never lets another start.
@@ -287,7 +287,7 @@ async fn a_run_whose_worker_died_goes_back_on_the_queue() {
     assert_eq!(recovered.attempt, 2, "the retry is counted");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_run_with_a_fresh_heartbeat_is_left_alone() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_run_with_a_fresh_heartbeat_is_left_alone");
@@ -312,7 +312,7 @@ async fn a_run_with_a_fresh_heartbeat_is_left_alone() {
 // Cancellation
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn cancelling_a_queued_run_ends_it_outright() {
     // Nothing is running, so there is nothing to wind down.
     let Some((db, _guard)) = database().await else {
@@ -345,7 +345,7 @@ async fn cancelling_a_queued_run_ends_it_outright() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn cancelling_a_running_run_only_asks() {
     // The worker holding it is probably on another replica; it notices on its
     // next poll and tears the job down itself.
@@ -384,7 +384,7 @@ async fn cancelling_a_running_run_only_asks() {
     assert_eq!(after.status, Status::Running, "still winding down");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_finished_run_cannot_be_cancelled() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_finished_run_cannot_be_cancelled");
@@ -444,7 +444,7 @@ async fn a_job(db: &Db) -> (String, String) {
     (run_id, jobs[0].id.clone())
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_whole_plan_is_recorded_including_what_will_not_run() {
     // A run whose page grows as it goes can never show what it decided not to
     // do, which is the question a `when` condition generates.
@@ -462,7 +462,7 @@ async fn the_whole_plan_is_recorded_including_what_will_not_run() {
     assert!(deploy.error.as_deref().is_some_and(|e| e.contains("when")));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_jobs_outcome_is_recorded() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_jobs_outcome_is_recorded");
@@ -481,7 +481,7 @@ async fn a_jobs_outcome_is_recorded() {
     assert!(build.started_at.is_some() && build.finished_at.is_some());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn recording_steps_twice_replaces_rather_than_duplicates() {
     // A retried job would otherwise accumulate two sets of rows under the same
     // ordinals, and the unique index on (job_id, ordinal) would reject it.
@@ -508,7 +508,7 @@ async fn recording_steps_twice_replaces_rather_than_duplicates() {
         .expect("second");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn logs_round_trip_in_order() {
     let Some((db, _guard)) = database().await else {
         return skipped("logs_round_trip_in_order");
@@ -540,7 +540,7 @@ async fn logs_round_trip_in_order() {
     assert!(read.windows(2).all(|w| w[0].seq < w[1].seq));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn appending_the_same_logs_twice_is_harmless() {
     // Which is what makes a retried write safe after a partial failure.
     let Some((db, _guard)) = database().await else {
@@ -571,7 +571,7 @@ async fn appending_the_same_logs_twice_is_harmless() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reading_logs_can_resume_from_a_sequence_number() {
     let Some((db, _guard)) = database().await else {
         return skipped("reading_logs_can_resume_from_a_sequence_number");

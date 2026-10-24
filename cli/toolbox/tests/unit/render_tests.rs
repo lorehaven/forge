@@ -18,7 +18,7 @@ fn rendered(statuses: Vec<CrateStatus>, selected: usize, transient: Option<&str>
     render(&app(statuses, selected), transient, 120).join("\n")
 }
 
-#[test]
+#[quench_test::test]
 fn header_and_controls_are_always_present() {
     let out = rendered(Vec::new(), 0, None);
     assert!(out.contains("Forge Toolbox Status"));
@@ -26,7 +26,7 @@ fn header_and_controls_are_always_present() {
     assert!(out.contains("controls:"));
 }
 
-#[test]
+#[quench_test::test]
 fn package_and_binary_names_appear_in_their_row() {
     let statuses = vec![CrateStatus {
         package: "anvil",
@@ -42,7 +42,7 @@ fn package_and_binary_names_appear_in_their_row() {
     assert!(out.contains("1.0.0"));
 }
 
-#[test]
+#[quench_test::test]
 fn an_updatable_crate_shows_the_update_action() {
     let statuses = vec![CrateStatus {
         package: "riveter",
@@ -58,7 +58,7 @@ fn an_updatable_crate_shows_the_update_action() {
     assert!(out.contains("yes"));
 }
 
-#[test]
+#[quench_test::test]
 fn an_uninstalled_installable_crate_shows_the_install_action() {
     let statuses = vec![CrateStatus {
         package: "welder",
@@ -73,7 +73,7 @@ fn an_uninstalled_installable_crate_shows_the_install_action() {
     assert!(out.contains("install"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_crate_with_an_error_shows_a_warning_line() {
     let statuses = vec![CrateStatus {
         package: "pulley",
@@ -89,7 +89,7 @@ fn a_crate_with_an_error_shows_a_warning_line() {
     assert!(out.contains("registry lookup failed"));
 }
 
-#[test]
+#[quench_test::test]
 fn the_selected_row_is_marked() {
     let statuses = vec![
         CrateStatus {
@@ -118,20 +118,20 @@ fn the_selected_row_is_marked() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_transient_status_overrides_the_app_message() {
     let out = rendered(Vec::new(), 0, Some("⠋ running anvil (installing)"));
     assert!(out.contains("running anvil (installing)"));
     assert!(!out.contains("Ready"));
 }
 
-#[test]
+#[quench_test::test]
 fn with_no_transient_status_the_app_message_is_shown() {
     let out = rendered(Vec::new(), 0, None);
     assert!(out.contains("Ready"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_very_narrow_terminal_still_renders_every_line() {
     let statuses = vec![CrateStatus {
         package: "warehouse-cli",

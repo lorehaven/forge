@@ -30,7 +30,7 @@ async fn app(db: Db, config: JwtConfig) -> (Arc<dyn Endpoint>, Arc<quench_http::
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_list_page_renders_ok_with_no_runs() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("runs_list_page_renders_ok_with_no_runs");
@@ -43,7 +43,7 @@ async fn runs_list_page_renders_ok_with_no_runs() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_list_page_reports_not_found_for_an_unknown_project_scope() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("runs_list_page_reports_not_found_for_an_unknown_project_scope");
@@ -60,7 +60,7 @@ async fn runs_list_page_reports_not_found_for_an_unknown_project_scope() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_list_page_lists_a_queued_run_scoped_to_its_project_and_a_later_page() {
     let Some((db, _guard)) = database().await else {
         return support::skipped(
@@ -96,7 +96,7 @@ async fn runs_list_page_lists_a_queued_run_scoped_to_its_project_and_a_later_pag
     assert!(html.contains("tests/widget"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_list_page_scoped_to_an_unrelated_project_shows_no_runs() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("runs_list_page_scoped_to_an_unrelated_project_shows_no_runs");

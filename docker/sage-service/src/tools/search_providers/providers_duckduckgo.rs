@@ -1,6 +1,6 @@
 use super::SearchProvider;
 use quench_core::async_trait;
-use scraper::{Html, Selector};
+use quench_html::{Document, Selector};
 
 const MAX_RESULTS: usize = 5;
 
@@ -65,7 +65,7 @@ impl SearchProvider for DuckDuckGoProvider {
 
         quench_log::info!("DuckDuckGo response length: {} bytes", body.len());
 
-        let document = Html::parse_document(&body);
+        let document = Document::parse(&body);
         let mut results = Vec::new();
         // DuckDuckGo's HTML response uses <div class="result"> for each result.
         let result_selector = Selector::parse(".result")
@@ -80,7 +80,7 @@ impl SearchProvider for DuckDuckGoProvider {
         for result_elem in document.select(&result_selector).take(MAX_RESULTS) {
             // Get title and URL
             if let Some(title_elem) = result_elem.select(&title_selector).next()
-                && let Some(href) = title_elem.value().attr("href")
+                && let Some(href) = title_elem.attr("href")
             {
                 // Get snippet
                 let snippet_text = result_elem.select(&snippet_selector).next().map_or_else(

@@ -21,14 +21,14 @@ const VALID: &str = r#"
         needs = ["auth"]
     "#;
 
-#[test]
+#[quench_test::test]
 fn a_minimal_config_parses_and_validates() {
     let config = parse(VALID).unwrap();
     config.validate().unwrap();
     assert_eq!(config.services.len(), 2);
 }
 
-#[test]
+#[quench_test::test]
 fn duplicate_service_names_are_rejected() {
     let text = r#"
             [[services]]
@@ -46,7 +46,7 @@ fn duplicate_service_names_are_rejected() {
     assert!(err.contains("more than once"), "error was: {err}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_service_needing_an_unknown_service_is_rejected() {
     let text = r#"
             [[services]]
@@ -60,7 +60,7 @@ fn a_service_needing_an_unknown_service_is_rejected() {
     assert!(err.contains("missing"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_task_with_an_empty_command_is_rejected() {
     let text = r#"
             [tasks.migrate]
@@ -71,7 +71,7 @@ fn a_task_with_an_empty_command_is_rejected() {
     assert!(err.contains("empty command"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_task_wanting_an_unconfigured_container_is_rejected() {
     let text = r#"
             [tasks.migrate]
@@ -83,7 +83,7 @@ fn a_task_wanting_an_unconfigured_container_is_rejected() {
     assert!(err.contains("db"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_task_wanting_a_configured_container_is_accepted() {
     let text = r#"
             [[containers]]
@@ -97,7 +97,7 @@ fn a_task_wanting_a_configured_container_is_accepted() {
     parse(text).unwrap().validate().unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn a_note_conditional_on_an_unknown_service_is_rejected() {
     let text = r#"
             [[notes]]
@@ -109,7 +109,7 @@ fn a_note_conditional_on_an_unknown_service_is_rejected() {
     assert!(err.contains("missing"));
 }
 
-#[test]
+#[quench_test::test]
 fn an_unknown_top_level_key_is_a_hard_error() {
     let text = r#"
             [project]
@@ -119,7 +119,7 @@ fn an_unknown_top_level_key_is_a_hard_error() {
     assert!(parse(text).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn service_and_container_lookup_by_name() {
     let config = parse(VALID).unwrap();
     assert!(config.service("auth").is_some());
@@ -127,7 +127,7 @@ fn service_and_container_lookup_by_name() {
     assert!(config.container("anything").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn tasks_with_role_filters_and_keeps_names() {
     let text = r#"
             [tasks.migrate]
@@ -147,7 +147,7 @@ fn tasks_with_role_filters_and_keeps_names() {
     assert_eq!(manual[0].0, "build");
 }
 
-#[test]
+#[quench_test::test]
 fn discover_finds_a_config_in_the_starting_directory() {
     let dir = std::env::temp_dir().join(format!("foreman-config-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -160,7 +160,7 @@ fn discover_finds_a_config_in_the_starting_directory() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn discover_walks_up_to_find_a_config_in_a_parent() {
     let root =
         std::env::temp_dir().join(format!("foreman-config-test-parent-{}", std::process::id()));

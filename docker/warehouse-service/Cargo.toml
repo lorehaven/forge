@@ -10,6 +10,7 @@ homepage = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
 readme = { workspace = true }
+autotests = false
 
 [lib]
 name = "warehouse_service"
@@ -28,7 +29,7 @@ quench-pg = { workspace = true }
 quench-log = { workspace = true }
 quench-core = { workspace = true }
 quench-serde = { workspace = true }
-axmldecoder = { workspace = true }
+quench-convert = { workspace = true }
 forge-ui = { workspace = true }
 quench-auth = { workspace = true }
 quench-config = { workspace = true }
@@ -41,7 +42,18 @@ rivet-package = { workspace = true }
 tokio = { workspace = true }
 
 
-zip = { workspace = true }
+quench-archive = { workspace = true }
 
 [dev-dependencies]
+quench-test = { workspace = true }
 tokio = { workspace = true }
+
+[[test]]
+name = "pg_storage"
+path = "tests/pg_storage.rs"
+harness = false
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false

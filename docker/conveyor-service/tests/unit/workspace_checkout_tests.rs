@@ -19,7 +19,7 @@ use std::time::Duration;
 // Argument validation
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_real_sha_is_accepted() {
     assert!(validate_sha("0123456789abcdef0123456789abcdef01234567").is_ok());
     assert!(
@@ -28,26 +28,26 @@ fn a_real_sha_is_accepted() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_sha_that_is_not_hexadecimal_is_rejected() {
     assert!(validate_sha("not-a-sha-at-all").is_err());
     assert!(validate_sha("0123456789abcdefg").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_sha_of_the_wrong_length_is_rejected() {
     assert!(validate_sha("abc12").is_err());
     assert!(validate_sha(&"a".repeat(65)).is_err());
     assert!(validate_sha("").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_sha_that_looks_like_an_option_is_rejected() {
     // It would not be hexadecimal either, but this is the case that matters.
     assert!(validate_sha("--upload-pack=/tmp/x").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn ordinary_refs_are_accepted() {
     for git_ref in [
         "refs/heads/master",
@@ -63,7 +63,7 @@ fn ordinary_refs_are_accepted() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_ref_that_git_would_read_as_an_option_is_rejected() {
     // The exploit this validation exists for: in a ref position,
     // `--upload-pack=/tmp/x` runs /tmp/x. The ref comes from a webhook body.
@@ -73,7 +73,7 @@ fn a_ref_that_git_would_read_as_an_option_is_rejected() {
     assert!(validate_ref("-x").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn refs_breaking_git_naming_rules_are_rejected() {
     for bad in [
         "",
@@ -99,7 +99,7 @@ fn refs_breaking_git_naming_rules_are_rejected() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_clone_url_that_looks_like_an_option_is_rejected() {
     assert!(validate_url("--upload-pack=/tmp/x").is_err());
     assert!(validate_url("").is_err());
@@ -111,7 +111,7 @@ fn a_clone_url_that_looks_like_an_option_is_rejected() {
 // Path containment
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_path_inside_the_checkout_resolves() {
     let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     std::fs::create_dir_all(dir.path().join("target/release")).expect("mkdir");
@@ -121,7 +121,7 @@ fn a_path_inside_the_checkout_resolves() {
     assert!(workspace.resolve("target/release/thing").is_some());
 }
 
-#[test]
+#[quench_test::test]
 fn a_resolved_path_can_actually_be_opened() {
     // `is_some()` is not enough. Joining an empty remainder used to append a
     // trailing separator, and `stat("/a/file/")` is ENOTDIR - so every existing
@@ -137,7 +137,7 @@ fn a_resolved_path_can_actually_be_opened() {
     assert_eq!(std::fs::read(&resolved).expect("read"), b"contents");
 }
 
-#[test]
+#[quench_test::test]
 fn a_path_that_climbs_out_of_the_checkout_is_refused() {
     // A pipeline can say `artifacts = ["../../etc/passwd"]`, and collecting it
     // would hand a repository author whatever the service account can read.
@@ -149,7 +149,7 @@ fn a_path_that_climbs_out_of_the_checkout_is_refused() {
     assert!(workspace.resolve("/etc/passwd").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn a_symlink_pointing_out_of_the_checkout_is_refused() {
     // Planted in the repository, this is how `..` gets past a textual check.
     let dir = quench_core::tmp::TempDir::new().expect("temp dir");
@@ -163,7 +163,7 @@ fn a_symlink_pointing_out_of_the_checkout_is_refused() {
     assert!(workspace.resolve("escape/secret").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn a_path_that_does_not_exist_yet_still_resolves() {
     // Artifacts are named before the build produces them.
     let dir = quench_core::tmp::TempDir::new().expect("temp dir");
@@ -228,7 +228,7 @@ const fn request<'a>(url: &'a str, git_ref: &'a str, sha: &'a str) -> CheckoutRe
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_commit_is_checked_out_at_the_requested_sha() {
     let origin = Origin::create();
     let url = origin.url();
@@ -249,7 +249,7 @@ async fn a_commit_is_checked_out_at_the_requested_sha() {
     assert_eq!(git(workspace.root(), &["rev-parse", "HEAD"]), origin.sha);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_checkout_is_detached_from_any_branch() {
     // A run builds a commit, not a branch. On a branch, a step running
     // `git describe` would report something other than what is being built.
@@ -266,7 +266,7 @@ async fn the_checkout_is_detached_from_any_branch() {
     assert_eq!(branch, "HEAD", "expected a detached HEAD, got {branch}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_checkout_lands_in_a_directory_named_for_the_run() {
     let origin = Origin::create();
     let url = origin.url();
@@ -283,7 +283,7 @@ async fn the_checkout_lands_in_a_directory_named_for_the_run() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_retry_does_not_inherit_the_previous_attempts_directory() {
     let origin = Origin::create();
     let url = origin.url();
@@ -305,7 +305,7 @@ async fn a_retry_does_not_inherit_the_previous_attempts_directory() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn removing_a_workspace_deletes_it() {
     let origin = Origin::create();
     let url = origin.url();
@@ -321,7 +321,7 @@ async fn removing_a_workspace_deletes_it() {
     assert!(!root.exists());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unknown_sha_fails_the_checkout() {
     let origin = Origin::create();
     let url = origin.url();
@@ -339,7 +339,7 @@ async fn an_unknown_sha_fails_the_checkout() {
     assert!(matches!(error, CheckoutError::Git { .. }), "{error:?}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_hostile_ref_never_reaches_git() {
     let work = quench_core::tmp::TempDir::new().expect("temp dir");
     let req = CheckoutRequest {
@@ -365,7 +365,7 @@ async fn a_hostile_ref_never_reaches_git() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_missing_origin_fails_rather_than_hanging() {
     let work = quench_core::tmp::TempDir::new().expect("temp dir");
     let req = CheckoutRequest {
@@ -389,19 +389,19 @@ async fn a_missing_origin_fails_rather_than_hanging() {
 // Credentials
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn the_auth_header_base64_encodes_username_and_token() {
     let header = basic_auth_header("x-access-token", "s3cr3t");
     let expected = quench_core::base64::STANDARD.encode("x-access-token:s3cr3t");
     assert_eq!(header, format!("Authorization: Basic {expected}"));
 }
 
-#[test]
+#[quench_test::test]
 fn no_header_means_no_extra_env() {
     assert!(credential_env(None).is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn a_header_becomes_the_three_git_config_env_vars() {
     let env = credential_env(Some("Authorization: Basic abc123"));
     assert_eq!(
@@ -414,7 +414,7 @@ fn a_header_becomes_the_three_git_config_env_vars() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_credential_does_not_break_a_checkout_that_did_not_need_one() {
     // `file://` never reads `http.*` config, so a credential handed to a
     // checkout that does not need one is inert rather than an error - the

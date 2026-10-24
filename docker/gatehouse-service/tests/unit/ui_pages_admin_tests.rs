@@ -105,7 +105,7 @@ fn catalog() -> PermissionCatalog {
     result
 }
 
-#[test]
+#[quench_test::test]
 fn a_resource_scoped_grant_survives_a_plain_checkbox_save() {
     let catalog = catalog();
     let mut existing = Permissions::new();
@@ -134,7 +134,7 @@ fn a_resource_scoped_grant_survives_a_plain_checkbox_save() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_plain_grant_can_still_be_revoked() {
     let catalog = catalog();
     let mut existing = Permissions::new();
@@ -160,7 +160,7 @@ fn a_plain_grant_can_still_be_revoked() {
 // parse_role / notice_banner
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn parse_role_accepts_known_roles_and_falls_back_to_user() {
     assert_eq!(parse_role(Some("admin")), Role::Admin);
     assert_eq!(parse_role(Some("service")), Role::Service);
@@ -169,7 +169,7 @@ fn parse_role_accepts_known_roles_and_falls_back_to_user() {
     assert_eq!(parse_role(None), Role::User);
 }
 
-#[test]
+#[quench_test::test]
 fn notice_banner_is_none_without_a_recognised_key() {
     assert!(notice_banner(&Notice::default()).is_none());
     assert!(
@@ -188,7 +188,7 @@ fn notice_banner_is_none_without_a_recognised_key() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn notice_banner_shows_a_known_error() {
     let notice = Notice {
         err: Some(RealmError::LastAdmin.i18n_key().to_string()),
@@ -197,7 +197,7 @@ fn notice_banner_shows_a_known_error() {
     assert!(notice_banner(&notice).is_some());
 }
 
-#[test]
+#[quench_test::test]
 fn notice_banner_shows_every_known_ok_outcome() {
     for ok in ["created", "saved", "deleted"] {
         let notice = Notice {
@@ -212,7 +212,7 @@ fn notice_banner_shows_every_known_ok_outcome() {
 // forbidden_page / error_page
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn forbidden_page_renders_403() {
     let resp = forbidden_page();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
@@ -220,7 +220,7 @@ async fn forbidden_page_renders_403() {
     assert!(html.contains("ui_admin_forbidden"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn error_page_renders_with_the_error_s_own_status() {
     let resp = error_page(&RealmError::NotFound);
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -232,7 +232,7 @@ async fn error_page_renders_with_the_error_s_own_status() {
 // render_list
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_list_shows_the_empty_state_with_no_users() {
     let db = db().await;
     let actor = seed_user(&db, "admin", vec![Role::Admin], &[]).await;
@@ -250,7 +250,7 @@ async fn render_list_shows_the_empty_state_with_no_users() {
     assert!(html.contains("ui_admin_users_title"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_list_shows_create_panel_only_when_actor_can_create() {
     let db = db().await;
     let admin = seed_user(&db, "admin", vec![Role::Admin], &[]).await;
@@ -279,7 +279,7 @@ async fn render_list_shows_create_panel_only_when_actor_can_create() {
 // render_edit
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn render_edit_as_admin_shows_the_role_select_and_delete_panel() {
     let catalog = catalog();
     let admin = User::new(
@@ -304,7 +304,7 @@ fn render_edit_as_admin_shows_the_role_select_and_delete_panel() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_edit_as_admin_includes_the_delete_button_for_someone_else() {
     let catalog = catalog();
     let admin = User::new(
@@ -331,7 +331,7 @@ async fn render_edit_as_admin_includes_the_delete_button_for_someone_else() {
     assert!(html.contains("ui_admin_role"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_edit_hides_delete_when_the_target_is_the_actor() {
     let catalog = catalog();
     let admin = User::new(
@@ -350,7 +350,7 @@ async fn render_edit_hides_delete_when_the_target_is_the_actor() {
     assert!(!html.contains("ui_admin_delete_title"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_edit_for_a_viewer_without_edit_user_shows_no_form() {
     let catalog = catalog();
     let viewer = User::new(
@@ -381,7 +381,7 @@ async fn render_edit_for_a_viewer_without_edit_user_shows_no_form() {
     assert!(!html.contains("ui_admin_save"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_edit_for_a_wildcard_target_shows_the_wildcard_note() {
     let catalog = catalog();
     let admin_actor = User::new(
@@ -411,7 +411,7 @@ async fn render_edit_for_a_wildcard_target_shows_the_wildcard_note() {
 // status_panel (transitively via render_edit) - lock/disable/mfa states
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_edit_reflects_a_locked_and_disabled_account() {
     let db = db().await;
     let admin = seed_user(&db, "admin", vec![Role::Admin], &[]).await;
@@ -507,7 +507,7 @@ fn post_form(
 // HTTP handlers - the "not signed in" guard branch
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn users_page_redirects_to_login_when_not_signed_in() {
     let db = db().await;
     let mut config = JwtConfig::for_tests();
@@ -521,7 +521,7 @@ async fn users_page_redirects_to_login_when_not_signed_in() {
 // HTTP handlers - auth disabled (bypass claims, sub="admin")
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn users_page_renders_for_the_bypass_admin() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -531,7 +531,7 @@ async fn users_page_renders_for_the_bypass_admin() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn users_page_slash_renders_for_the_bypass_admin() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -541,7 +541,7 @@ async fn users_page_slash_renders_for_the_bypass_admin() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn edit_user_renders_a_known_user_and_404s_an_unknown_one() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -557,7 +557,7 @@ async fn edit_user_renders_a_known_user_and_404s_an_unknown_one() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_user_creates_a_user_and_redirects_to_its_editor() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -580,7 +580,7 @@ async fn create_user_creates_a_user_and_redirects_to_its_editor() {
     assert!(location.contains("ok=created"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_user_reports_a_duplicate_username_via_the_list_redirect() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -602,7 +602,7 @@ async fn create_user_reports_a_duplicate_username_via_the_list_redirect() {
     assert!(location(resp).contains("/admin/users?err="));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn save_user_updates_permissions_via_the_checkbox_matrix() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -620,7 +620,7 @@ async fn save_user_updates_permissions_via_the_checkbox_matrix() {
     assert!(location(resp).contains("ok=saved"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn save_user_reports_not_found_for_an_unknown_target() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -633,7 +633,7 @@ async fn save_user_reports_not_found_for_an_unknown_target() {
     assert!(location(resp).contains("/admin/users?err="));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn apply_template_reports_an_unknown_template() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -650,7 +650,7 @@ async fn apply_template_reports_an_unknown_template() {
     assert_eq!(resp.status(), StatusCode::FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn disable_user_then_enable_user_round_trip() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -670,7 +670,7 @@ async fn disable_user_then_enable_user_round_trip() {
     assert_eq!(resp.status(), StatusCode::FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn disable_user_rejects_disabling_yourself() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -683,7 +683,7 @@ async fn disable_user_rejects_disabling_yourself() {
     assert!(location(resp).contains("err="));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unlock_user_clears_a_lockout() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -702,7 +702,7 @@ async fn unlock_user_clears_a_lockout() {
     assert!(location(resp).contains("ok=saved"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn disable_user_mfa_turns_it_off() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -716,7 +716,7 @@ async fn disable_user_mfa_turns_it_off() {
     assert!(location(resp).contains("ok=saved"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_user_removes_someone_else_but_not_yourself() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -768,7 +768,7 @@ fn admin_recording() -> (Arc<RecordingSender>, Arc<dyn Sender>) {
     (recorder, sender)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_administrator_changing_a_password_tells_the_account_holder() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -791,7 +791,7 @@ async fn an_administrator_changing_a_password_tells_the_account_holder() {
     assert_eq!(sent[0].username, "target");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn saving_other_changes_without_a_password_says_nothing() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -810,7 +810,7 @@ async fn saving_other_changes_without_a_password_says_nothing() {
     assert!(recorder.sent().is_empty(), "{:?}", recorder.sent());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn no_admin_notice_for_an_unconfirmed_or_missing_address() {
     for (address, confirmed) in [(Some("target@example.test"), false), (None, false)] {
         let _guard = auth_disabled_guard().await;
@@ -829,7 +829,7 @@ async fn no_admin_notice_for_an_unconfirmed_or_missing_address() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_administrator_turning_off_mfa_tells_the_account_holder_only_if_it_was_on() {
     let _guard = auth_disabled_guard().await;
     quench_core::env::set(
@@ -879,7 +879,7 @@ async fn admin_with_recorder() -> (
     (recorder, app, container, db)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn creating_a_user_with_an_address_sends_an_invitation() {
     let _guard = auth_disabled_guard().await;
     let (recorder, app, container, db) = admin_with_recorder().await;
@@ -904,7 +904,7 @@ async fn creating_a_user_with_an_address_sends_an_invitation() {
     assert!(user.email_verified_at.is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_password_typed_alongside_an_address_is_ignored() {
     let _guard = auth_disabled_guard().await;
     let (recorder, app, container, db) = admin_with_recorder().await;
@@ -926,7 +926,7 @@ async fn a_password_typed_alongside_an_address_is_ignored() {
     assert_eq!(recorder.sent_of("invite").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn creating_a_user_without_an_address_still_needs_a_password_and_sends_nothing() {
     let _guard = auth_disabled_guard().await;
     let (recorder, app, container, db) = admin_with_recorder().await;
@@ -958,7 +958,7 @@ async fn creating_a_user_without_an_address_still_needs_a_password_and_sends_not
     assert!(realm::get(&db, "nopw").await.is_err());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unusable_address_is_refused_and_creates_nothing() {
     let _guard = auth_disabled_guard().await;
     let (recorder, app, container, db) = admin_with_recorder().await;
@@ -974,7 +974,7 @@ async fn an_unusable_address_is_refused_and_creates_nothing() {
     assert!(recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_mail_failure_still_creates_the_account_and_says_so() {
     struct Failing;
     #[quench_core::async_trait]
@@ -1006,7 +1006,7 @@ async fn a_mail_failure_still_creates_the_account_and_says_so() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn resending_an_invitation_mails_the_unconfirmed_address_again() {
     let _guard = auth_disabled_guard().await;
     let (recorder, app, container, _db) = admin_with_recorder().await;
@@ -1025,7 +1025,7 @@ async fn resending_an_invitation_mails_the_unconfirmed_address_again() {
     assert_ne!(sent[0].link, sent[1].link, "a fresh token each time");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn resending_is_refused_for_a_confirmed_address_no_address_or_no_account() {
     let _guard = auth_disabled_guard().await;
     let (recorder, app, container, db) = admin_with_recorder().await;
@@ -1048,7 +1048,7 @@ async fn resending_is_refused_for_a_confirmed_address_no_address_or_no_account()
     assert!(recorder.sent().is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn the_invite_outcomes_have_banners_and_a_failure_is_styled_as_one() {
     let banner = |ok: &str| {
         notice_banner(&Notice {
@@ -1061,7 +1061,7 @@ fn the_invite_outcomes_have_banners_and_a_failure_is_styled_as_one() {
     assert!(banner("made-up").is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_editor_offers_a_resend_button_only_for_an_unconfirmed_address() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -1093,7 +1093,7 @@ async fn the_editor_offers_a_resend_button_only_for_an_unconfirmed_address() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_create_form_has_an_optional_email_and_no_longer_requires_a_password() {
     let _guard = auth_disabled_guard().await;
     let (_recorder, app, container, _db) = admin_with_recorder().await;

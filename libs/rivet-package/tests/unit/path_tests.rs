@@ -1,6 +1,6 @@
 use rivet_package::path::validate;
 
-#[test]
+#[quench_test::test]
 fn accepts_plain_relative_paths() {
     for ok in [
         "overlay.yaml",
@@ -11,7 +11,7 @@ fn accepts_plain_relative_paths() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_anything_that_could_escape_or_confuse() {
     for bad in [
         "",
@@ -29,7 +29,7 @@ fn rejects_anything_that_could_escape_or_confuse() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_overlong_paths_and_components() {
     assert!(validate(&"a".repeat(256)).is_err());
     assert!(validate(&format!("{}/x", "a/".repeat(300))).is_err());

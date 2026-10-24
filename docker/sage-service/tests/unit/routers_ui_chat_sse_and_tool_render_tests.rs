@@ -3,14 +3,14 @@ use sage_service::routers::ui::chat::{
 };
 use sage_service::tools::{ToolCall, ToolResult};
 
-#[test]
+#[quench_test::test]
 fn encode_sse_frames_each_line_of_multiline_data_with_its_own_data_prefix() {
     let bytes = encode_sse("message", "line one\nline two");
     let text = String::from_utf8(bytes.to_vec()).unwrap();
     assert_eq!(text, "event: message\ndata: line one\ndata: line two\n\n");
 }
 
-#[test]
+#[quench_test::test]
 fn embed_tool_results_into_response_replaces_every_marker_with_its_result() {
     let response = "before <toolcall>{\"name\":\"web_search\"}</toolcall> after";
     let markers = vec![(
@@ -24,7 +24,7 @@ fn embed_tool_results_into_response_replaces_every_marker_with_its_result() {
     assert!(embedded.trim_end().ends_with("after"));
 }
 
-#[test]
+#[quench_test::test]
 fn embed_tool_results_into_response_is_a_no_op_without_markers() {
     let response = "no tool calls here";
     assert_eq!(
@@ -33,7 +33,7 @@ fn embed_tool_results_into_response_is_a_no_op_without_markers() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn html_escape_escapes_every_special_character() {
     assert_eq!(
         html_escape("<a href=\"x\">it's & done</a>"),
@@ -41,7 +41,7 @@ fn html_escape_escapes_every_special_character() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn render_tool_result_uses_the_search_icon_and_quoted_query_for_web_search() {
     let call = ToolCall {
         id: "1".to_string(),
@@ -59,7 +59,7 @@ fn render_tool_result_uses_the_search_icon_and_quoted_query_for_web_search() {
     assert!(html.contains("tool-success"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_tool_result_escapes_error_content_and_marks_it_as_an_error() {
     let call = ToolCall {
         id: "1".to_string(),
@@ -77,7 +77,7 @@ fn render_tool_result_escapes_error_content_and_marks_it_as_an_error() {
     assert!(!html.contains("<script>bad"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_tool_result_converts_h1_headings_to_h3_in_markdown_output() {
     let call = ToolCall {
         id: "1".to_string(),
@@ -94,7 +94,7 @@ fn render_tool_result_converts_h1_headings_to_h3_in_markdown_output() {
     assert!(!html.contains("<h1>"));
 }
 
-#[test]
+#[quench_test::test]
 fn status_html_escapes_the_detail_and_carries_the_i18n_key() {
     let html = sage_service::routers::ui::chat::status_html(
         "ui_chat_status_searching",
@@ -108,7 +108,7 @@ fn status_html_escapes_the_detail_and_carries_the_i18n_key() {
     assert!(html.contains("chat-status"));
 }
 
-#[test]
+#[quench_test::test]
 fn stage_event_is_an_sse_message_per_stage() {
     use sage_service::grounding::Stage;
     use sage_service::routers::ui::chat::stage_event;

@@ -195,7 +195,7 @@ pub fn login(
 
 /// Reads a password from the terminal without echoing it.
 pub fn prompt_password(prompt: &str) -> Result<String> {
-    rpassword::prompt_password(prompt).context("reading the password")
+    quench_cli::term::prompt_password(prompt).context("reading the password")
 }
 
 /// `Bearer <token>`, the form Cargo registries and Warehouse expect verbatim.

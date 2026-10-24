@@ -12,7 +12,7 @@ async fn app() -> (
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_reports_ok_with_the_distribution_api_version_header() {
     let (app, container) = app().await;
     let req = support::req(Method::GET, "/v2/", &container);
@@ -25,7 +25,7 @@ async fn get_reports_ok_with_the_distribution_api_version_header() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn head_reports_the_same_as_get() {
     let (app, container) = app().await;
     let req = support::req(Method::HEAD, "/v2/", &container);

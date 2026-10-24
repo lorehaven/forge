@@ -47,7 +47,7 @@ async fn body_html(resp: quench_http::response::Response) -> String {
 // render_crates_page
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_crates_page_with_no_crates_renders_ok() {
     let _storage = WithStorageRoot::new();
     let resp = render_crates_page(None, None);
@@ -56,7 +56,7 @@ async fn render_crates_page_with_no_crates_renders_ok() {
     assert!(html.contains("ui_crates_empty"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_crates_page_with_an_unknown_selected_crate_ignores_the_selection() {
     let storage = WithStorageRoot::new();
     write_index_line("my-crate", &sample_record("1.0.0", false));
@@ -67,7 +67,7 @@ async fn render_crates_page_with_an_unknown_selected_crate_ignores_the_selection
     assert!(html.contains("ui_empty_select_version"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_crates_page_defaults_to_the_latest_non_yanked_version() {
     let storage = WithStorageRoot::new();
     write_index_line("my-crate", &sample_record("1.0.0", false));
@@ -80,7 +80,7 @@ async fn render_crates_page_defaults_to_the_latest_non_yanked_version() {
     assert!(html.contains("ui_yank_version"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_crates_page_falls_back_to_the_last_version_when_all_are_yanked() {
     let storage = WithStorageRoot::new();
     write_index_line("my-crate", &sample_record("1.0.0", true));
@@ -92,7 +92,7 @@ async fn render_crates_page_falls_back_to_the_last_version_when_all_are_yanked()
     assert!(html.contains("ui_unyank_version"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_crates_page_shows_deps_features_and_metadata_fields() {
     let storage = WithStorageRoot::new();
     let mut record = sample_record("1.0.0", false);
@@ -176,7 +176,7 @@ async fn app(
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn crates_index_redirects_to_login_when_unauthenticated() {
     let (app, container) = app(jwt_config(true)).await;
     let resp = app
@@ -185,7 +185,7 @@ async fn crates_index_redirects_to_login_when_unauthenticated() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn crates_index_slash_redirects_to_login_when_unauthenticated() {
     let (app, container) = app(jwt_config(true)).await;
     let resp = app
@@ -194,7 +194,7 @@ async fn crates_index_slash_redirects_to_login_when_unauthenticated() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn crates_index_renders_the_page_when_authenticated() {
     let _storage = WithStorageRoot::new();
     let (app, container) = app(jwt_config(false)).await;
@@ -204,7 +204,7 @@ async fn crates_index_renders_the_page_when_authenticated() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn yank_version_redirects_to_login_when_unauthenticated() {
     let (app, container) = app(jwt_config(true)).await;
     let resp = app
@@ -218,7 +218,7 @@ async fn yank_version_redirects_to_login_when_unauthenticated() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn yank_version_reports_not_found_for_an_unknown_version_when_authenticated() {
     let _storage = WithStorageRoot::new();
     let (app, container) = app(jwt_config(false)).await;
@@ -233,7 +233,7 @@ async fn yank_version_reports_not_found_for_an_unknown_version_when_authenticate
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn yank_version_yanks_an_existing_version_when_authenticated() {
     let storage = WithStorageRoot::new();
     write_index_line("my-crate", &sample_record("1.0.0", false));
@@ -253,7 +253,7 @@ async fn yank_version_yanks_an_existing_version_when_authenticated() {
     assert!(headers.contains_key("hx-redirect"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unyank_version_redirects_to_login_when_unauthenticated() {
     let (app, container) = app(jwt_config(true)).await;
     let resp = app
@@ -267,7 +267,7 @@ async fn unyank_version_redirects_to_login_when_unauthenticated() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unyank_version_unyanks_an_existing_version_when_authenticated() {
     let storage = WithStorageRoot::new();
     write_index_line("my-crate", &sample_record("1.0.0", true));

@@ -19,7 +19,6 @@
 //! `RIVETER_AGE_KEY_FILE` (a file holding it, which can be mounted wherever riveter runs), failing those
 //! `~/.config/riveter/age.key`.
 
-use age::secrecy::ExposeSecret;
 use quench_core::base64::STANDARD;
 use quench_core::{Context as _, Result, bail, ensure};
 use quench_serde::{Deserialize, Serialize};
@@ -56,22 +55,22 @@ const fn version() -> u32 {
 /// A new age key pair: the private key (`AGE-SECRET-KEY-1...`) and its public recipient (`age1...`).
 #[must_use]
 pub fn keygen() -> (String, String) {
-    let identity = age::x25519::Identity::generate();
+    let identity = quench_crypto::age::Identity::generate();
     (
-        identity.to_string().expose_secret().to_string(),
+        identity.to_secret_string(),
         identity.to_public().to_string(),
     )
 }
 
 /// Private keys from a text: one `AGE-SECRET-KEY-1...` per line, `#` comments and blank lines ignored (the
 /// format `age-keygen` writes).
-pub fn parse_identities(text: &str) -> Result<Vec<age::x25519::Identity>> {
-    let identities: Vec<age::x25519::Identity> = text
+pub fn parse_identities(text: &str) -> Result<Vec<quench_crypto::age::Identity>> {
+    let identities: Vec<quench_crypto::age::Identity> = text
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
         .map(|line| {
-            age::x25519::Identity::from_str(line)
+            quench_crypto::age::Identity::from_str(line)
                 .map_err(|e| quench_core::err!("not an age secret key: {e}"))
         })
         .collect::<Result<_>>()?;
@@ -81,7 +80,7 @@ pub fn parse_identities(text: &str) -> Result<Vec<age::x25519::Identity>> {
 
 /// The key riveter should open files with, if one is named: [`KEY_VAR`], else [`KEY_FILE_VAR`], else the
 /// default file. `Ok(None)` when none is configured at all.
-pub fn identities_from_env() -> Result<Option<Vec<age::x25519::Identity>>> {
+pub fn identities_from_env() -> Result<Option<Vec<quench_crypto::age::Identity>>> {
     identities_from(lookup)
 }
 
@@ -108,7 +107,7 @@ pub fn lookup(name: &str) -> Option<String> {
 /// [`identities_from_env`] with the environment passed in.
 pub fn identities_from(
     get: impl Fn(&str) -> Option<String>,
-) -> Result<Option<Vec<age::x25519::Identity>>> {
+) -> Result<Option<Vec<quench_crypto::age::Identity>>> {
     if let Some(key) = get(KEY_VAR) {
         return parse_identities(&key)
             .context(format!("{KEY_VAR} is set but is not an age secret key"))
@@ -137,7 +136,7 @@ pub fn identities_from(
         .map(Some)
 }
 
-fn parse_recipients(recipients: &[String]) -> Result<Vec<age::x25519::Recipient>> {
+fn parse_recipients(recipients: &[String]) -> Result<Vec<quench_crypto::age::Recipient>> {
     ensure!(
         !recipients.is_empty(),
         "no recipient: pass --recipient age1..., or have a key configured to encrypt to"
@@ -145,7 +144,7 @@ fn parse_recipients(recipients: &[String]) -> Result<Vec<age::x25519::Recipient>
     recipients
         .iter()
         .map(|r| {
-            age::x25519::Recipient::from_str(r.trim())
+            quench_crypto::age::Recipient::from_str(r.trim())
                 .map_err(|e| quench_core::err!("`{r}` is not an age recipient: {e}"))
         })
         .collect()
@@ -153,25 +152,14 @@ fn parse_recipients(recipients: &[String]) -> Result<Vec<age::x25519::Recipient>
 
 /// Encrypts one value to every recipient, as `ENC[age,...]`.
 pub fn encrypt_value(recipients: &[String], plaintext: &str) -> Result<String> {
-    use std::io::Write as _;
-
     let parsed = parse_recipients(recipients)?;
-    let refs = parsed.iter().map(|r| r as &dyn age::Recipient);
-    let encryptor = age::Encryptor::with_recipients(refs).map_err(|e| quench_core::err!("{e}"))?;
-
-    let mut ciphertext = Vec::new();
-    let mut writer = encryptor
-        .wrap_output(&mut ciphertext)
+    let ciphertext = quench_crypto::age::encrypt(&parsed, plaintext.as_bytes())
         .map_err(|e| quench_core::err!("{e}"))?;
-    writer.write_all(plaintext.as_bytes())?;
-    writer.finish()?;
     Ok(format!("{PREFIX}{}]", STANDARD.encode(ciphertext)))
 }
 
 /// Opens one `ENC[age,...]` value with any of `identities`.
-pub fn decrypt_value(identities: &[age::x25519::Identity], value: &str) -> Result<String> {
-    use std::io::Read as _;
-
+pub fn decrypt_value(identities: &[quench_crypto::age::Identity], value: &str) -> Result<String> {
     let encoded = value
         .strip_prefix(PREFIX)
         .and_then(|rest| rest.strip_suffix(']'))
@@ -180,20 +168,13 @@ pub fn decrypt_value(identities: &[age::x25519::Identity], value: &str) -> Resul
         .decode(encoded)
         .context("the ciphertext is not valid base64")?;
 
-    let decryptor =
-        age::Decryptor::new(ciphertext.as_slice()).map_err(|e| quench_core::err!("{e}"))?;
-    let mut reader = decryptor
-        .decrypt(identities.iter().map(|i| i as &dyn age::Identity))
-        .map_err(|_| {
-            quench_core::err!(
-                "this key does not open the value (it was encrypted to other recipients)"
-            )
-        })?;
-    let mut plaintext = String::new();
-    reader
-        .read_to_string(&mut plaintext)
-        .context("the value is not valid UTF-8")?;
-    Ok(plaintext)
+    let plaintext = quench_crypto::age::decrypt(identities, &ciphertext).map_err(|e| match e {
+        quench_crypto::age::Error::NoMatchingIdentity => quench_core::err!(
+            "this key does not open the value (it was encrypted to other recipients)"
+        ),
+        other => quench_core::err!("{other}"),
+    })?;
+    String::from_utf8(plaintext).context("the value is not valid UTF-8")
 }
 
 impl Vault {
@@ -212,7 +193,7 @@ impl Vault {
             vault.version
         );
         for recipient in &vault.recipients {
-            age::x25519::Recipient::from_str(recipient)
+            quench_crypto::age::Recipient::from_str(recipient)
                 .map_err(|e| quench_core::err!("recipient `{recipient}`: {e}"))?;
         }
         for (name, value) in &vault.data {
@@ -272,7 +253,7 @@ impl Vault {
         Ok(())
     }
 
-    pub fn get(&self, identities: &[age::x25519::Identity], name: &str) -> Result<String> {
+    pub fn get(&self, identities: &[quench_crypto::age::Identity], name: &str) -> Result<String> {
         let value = self
             .data
             .get(name)
@@ -283,7 +264,7 @@ impl Vault {
     /// Every value, opened.
     pub fn decrypt_all(
         &self,
-        identities: &[age::x25519::Identity],
+        identities: &[quench_crypto::age::Identity],
     ) -> Result<HashMap<String, String>> {
         self.data
             .iter()
@@ -299,7 +280,7 @@ impl Vault {
     /// opens the file now.
     pub fn rekey(
         &mut self,
-        identities: &[age::x25519::Identity],
+        identities: &[quench_crypto::age::Identity],
         recipients: Vec<String>,
     ) -> Result<()> {
         let plain = self.decrypt_all(identities)?;
@@ -318,7 +299,7 @@ impl Vault {
 /// name one, instead of a variable later turning up undefined with no hint why.
 pub fn variables(
     text: &str,
-    identities: Option<&[age::x25519::Identity]>,
+    identities: Option<&[quench_crypto::age::Identity]>,
 ) -> Result<HashMap<String, String>> {
     let vault = Vault::parse(text)?;
     if vault.data.is_empty() {

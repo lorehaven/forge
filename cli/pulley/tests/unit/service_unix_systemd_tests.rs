@@ -18,17 +18,17 @@ use std::path::PathBuf;
 // report on `pulley.service`'s (almost certainly nonexistent) state, never
 // change anything.
 
-#[test]
+#[quench_test::test]
 fn status_queries_systemctl_without_erroring_even_when_the_unit_does_not_exist() {
     let result = Systemd.status();
-    if which::which("systemctl").is_ok() {
+    if quench_core::process::which("systemctl").is_ok() {
         result.expect("status");
     } else {
         result.expect_err("status should report the missing systemctl binary");
     }
 }
 
-#[test]
+#[quench_test::test]
 fn run_systemctl_errors_for_a_unit_that_does_not_exist() {
     let err = run_systemctl(&[
         "is-active",
@@ -38,25 +38,25 @@ fn run_systemctl_errors_for_a_unit_that_does_not_exist() {
     // The crafted "systemctl ... failed" message only exists once systemctl
     // actually ran and exited non-zero; without the binary on PATH this is a
     // raw `NotFound` io error instead, which never mentions "systemctl".
-    if which::which("systemctl").is_ok() {
+    if quench_core::process::which("systemctl").is_ok() {
         assert!(err.to_string().contains("systemctl"));
     }
 }
 
-#[test]
+#[quench_test::test]
 fn linger_enabled_returns_a_bool_without_erroring() {
     // Whatever this machine's actual linger state is, the call itself must
     // succeed and parse to a bool - not panic or error just because linger
     // happens to be off. That's only true when `loginctl` actually exists.
     let result = linger_enabled();
-    if which::which("loginctl").is_ok() {
+    if quench_core::process::which("loginctl").is_ok() {
         result.expect("linger_enabled");
     } else {
         result.expect_err("linger_enabled should report the missing loginctl binary");
     }
 }
 
-#[test]
+#[quench_test::test]
 fn unit_file_contents_embeds_the_executable_path_and_the_daemon_subcommand() {
     let contents = unit_file_contents(std::path::Path::new("/usr/local/bin/pulley"));
     assert!(contents.contains("ExecStart=/usr/local/bin/pulley daemon"));
@@ -66,7 +66,7 @@ fn unit_file_contents_embeds_the_executable_path_and_the_daemon_subcommand() {
     assert!(contents.contains("Restart=on-failure"));
 }
 
-#[test]
+#[quench_test::test]
 fn whoami_returns_the_user_env_var() {
     let _lock = ENV_LOCK
         .lock()
@@ -75,7 +75,7 @@ fn whoami_returns_the_user_env_var() {
     assert_eq!(whoami(), "alice");
 }
 
-#[test]
+#[quench_test::test]
 fn whoami_falls_back_to_a_placeholder_when_unset() {
     let _lock = ENV_LOCK
         .lock()
@@ -84,7 +84,7 @@ fn whoami_falls_back_to_a_placeholder_when_unset() {
     assert_eq!(whoami(), "$USER");
 }
 
-#[test]
+#[quench_test::test]
 fn user_unit_dir_is_under_home_config_systemd_user() {
     let _lock = ENV_LOCK
         .lock()
@@ -96,7 +96,7 @@ fn user_unit_dir_is_under_home_config_systemd_user() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn user_unit_dir_errors_without_home() {
     let _lock = ENV_LOCK
         .lock()

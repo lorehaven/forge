@@ -6,7 +6,7 @@
 //! `Given <service> API is available` background step sets.
 
 use crate::world::{ForgeWorld, Target};
-use cucumber::{given, then, when};
+use quench_test_bdd::{given, then, when};
 use std::time::{Duration, Instant};
 
 // ---------------------------------------------------------------------------
@@ -63,7 +63,10 @@ async fn await_service(world: &ForgeWorld, url: &str, name: &str) {
 async fn send_get_request(world: &mut ForgeWorld, path: String) {
     let url = world.resolve_url(&path);
     let request = world.apply_auth(world.client.get(&url));
-    let res = request.send().await.expect("Failed to send GET request");
+    let res = request
+        .send_streaming()
+        .await
+        .expect("Failed to send GET request");
     world.record_response(res).await;
 }
 
@@ -192,7 +195,7 @@ async fn check_json_object(world: &mut ForgeWorld) {
 async fn check_content_type(world: &mut ForgeWorld, expected: String) {
     let actual = world
         .last_response_headers
-        .get(reqwest::header::CONTENT_TYPE)
+        .get(&quench_client::transport::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .expect("No Content-Type header");
     assert!(
@@ -258,7 +261,7 @@ async fn check_response_header(world: &mut ForgeWorld, name: String, expected: S
 async fn redirect_location(world: &mut ForgeWorld, expected: String) {
     let location = world
         .last_response_headers
-        .get(reqwest::header::LOCATION)
+        .get(&quench_client::transport::header::LOCATION)
         .and_then(|value| value.to_str().ok())
         .expect("no Location header");
     assert!(

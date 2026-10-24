@@ -147,7 +147,7 @@ async fn perform_run(origin: &Origin, git_ref: &str, work: &Path) -> (Workspace,
 // Tests
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_commit_on_master_runs_every_stage_in_order() {
     let origin = Origin::with_pipeline(PIPELINE);
     let work = quench_core::tmp::TempDir::new().expect("temp dir");
@@ -171,7 +171,7 @@ async fn a_commit_on_master_runs_every_stage_in_order() {
     assert!(workspace.root().join("deployed.txt").exists());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_commit_on_a_topic_branch_skips_the_deploy() {
     let origin = Origin::with_pipeline(PIPELINE);
     let work = quench_core::tmp::TempDir::new().expect("temp dir");
@@ -188,7 +188,7 @@ async fn a_commit_on_a_topic_branch_skips_the_deploy() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_ref_the_pipeline_does_not_want_is_not_triggered() {
     let origin = Origin::with_pipeline(PIPELINE);
     let work = quench_core::tmp::TempDir::new().expect("temp dir");
@@ -216,7 +216,7 @@ async fn a_ref_the_pipeline_does_not_want_is_not_triggered() {
     assert!(!spec.on.allows("push", "refs/tags/v1.0.0"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failing_stage_stops_the_run() {
     let origin = Origin::with_pipeline(PIPELINE);
     let work = quench_core::tmp::TempDir::new().expect("temp dir");
@@ -263,7 +263,7 @@ async fn a_failing_stage_stops_the_run() {
     assert!(!workspace.root().join("must-not-exist").exists());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_workspace_is_removable_once_the_run_is_over() {
     let origin = Origin::with_pipeline(PIPELINE);
     let work = quench_core::tmp::TempDir::new().expect("temp dir");

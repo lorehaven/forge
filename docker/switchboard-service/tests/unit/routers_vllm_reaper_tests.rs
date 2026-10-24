@@ -62,7 +62,7 @@ impl VllmEngine for RecordingEngine {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reap_failed_stops_only_failed_instances() {
     let stopped = Arc::new(Mutex::new(Vec::new()));
     let engine: Arc<dyn VllmEngine> = Arc::new(RecordingEngine {
@@ -86,7 +86,7 @@ async fn reap_failed_stops_only_failed_instances() {
     assert_eq!(stopped, vec!["failed-2".to_string()]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reap_failed_does_nothing_when_listing_fails() {
     let stopped = Arc::new(Mutex::new(Vec::new()));
     let engine: Arc<dyn VllmEngine> = Arc::new(RecordingEngine {
@@ -101,7 +101,7 @@ async fn reap_failed_does_nothing_when_listing_fails() {
     assert!(stopped.lock().unwrap().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reap_failed_continues_past_a_stop_failure_to_reap_the_rest() {
     let stopped = Arc::new(Mutex::new(Vec::new()));
     let engine: Arc<dyn VllmEngine> = Arc::new(RecordingEngine {
@@ -119,7 +119,7 @@ async fn reap_failed_continues_past_a_stop_failure_to_reap_the_rest() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reap_failed_is_a_no_op_when_nothing_is_failed() {
     let stopped = Arc::new(Mutex::new(Vec::new()));
     let engine: Arc<dyn VllmEngine> = Arc::new(RecordingEngine {

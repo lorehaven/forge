@@ -13,7 +13,7 @@ use crate::util::{run_command, run_command_json, run_command_streamed};
 /// before shelling out to a cargo subcommand plugin - factored out once so
 /// the five call sites don't duplicate the same context-message shape.
 pub fn ensure_tool_installed(binary: &str, install_hint: &str) -> Result<()> {
-    which::which(binary)
+    quench_core::process::which(binary)
         .map(|_| ())
         .with_context(|| format!("{binary} not found. Install with: {install_hint}"))
 }

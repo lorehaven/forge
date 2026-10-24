@@ -94,7 +94,7 @@ pub fn validate(step: &Step) -> Result<(), StepError> {
 
 /// Splits a tool step's arguments the way a shell would, without a shell.
 fn split(program: &'static str, args: &str) -> Result<Vec<String>, StepError> {
-    let split = shlex::split(args).ok_or_else(|| StepError::Unparseable {
+    let split = quench_core::shell::split(args).ok_or_else(|| StepError::Unparseable {
         kind: program,
         command: args.to_string(),
     })?;

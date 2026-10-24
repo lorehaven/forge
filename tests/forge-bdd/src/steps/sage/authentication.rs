@@ -1,7 +1,7 @@
 use crate::world::ForgeWorld;
-use serde_json::json;
+use quench_serde::json;
 
-#[cucumber::when("I send a chat message without authentication")]
+#[quench_test_bdd::when("I send a chat message without authentication")]
 async fn send_without_auth(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
 
@@ -21,7 +21,7 @@ async fn send_without_auth(world: &mut ForgeWorld) -> Result<(), String> {
     }
 }
 
-#[cucumber::when("I send a chat message with invalid token")]
+#[quench_test_bdd::when("I send a chat message with invalid token")]
 async fn send_with_invalid_token(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
 
@@ -48,7 +48,7 @@ async fn send_with_invalid_token(world: &mut ForgeWorld) -> Result<(), String> {
     }
 }
 
-#[cucumber::when("I send a chat message with expired token")]
+#[quench_test_bdd::when("I send a chat message with expired token")]
 async fn send_with_expired_token(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
 
@@ -79,7 +79,7 @@ async fn send_with_expired_token(world: &mut ForgeWorld) -> Result<(), String> {
     }
 }
 
-#[cucumber::when("I send a chat message with valid token")]
+#[quench_test_bdd::when("I send a chat message with valid token")]
 async fn send_with_valid_token(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
 
@@ -111,7 +111,7 @@ async fn send_with_valid_token(world: &mut ForgeWorld) -> Result<(), String> {
     }
 }
 
-#[cucumber::when("I send a chat message with token missing scope")]
+#[quench_test_bdd::when("I send a chat message with token missing scope")]
 async fn send_with_missing_scope(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
 
@@ -119,7 +119,7 @@ async fn send_with_missing_scope(world: &mut ForgeWorld) -> Result<(), String> {
     let token_without_scope =
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0IiwiZXhwIjoxMDAwMDAwMDAwMH0.invalid";
 
-    let body = serde_json::json!({
+    let body = quench_serde::json!({
         "conversation_id": "test-conv",
         "message": "Hello",
         "model": "test-model",
@@ -142,11 +142,11 @@ async fn send_with_missing_scope(world: &mut ForgeWorld) -> Result<(), String> {
     }
 }
 
-#[cucumber::when(expr = "I send a chat message with token for service {string}")]
+#[quench_test_bdd::when(expr = "I send a chat message with token for service {string}")]
 async fn send_with_wrong_service(world: &mut ForgeWorld, _service: String) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
 
-    let body = serde_json::json!({
+    let body = quench_serde::json!({
         "conversation_id": "test-conv",
         "message": "Hello",
         "model": "test-model",

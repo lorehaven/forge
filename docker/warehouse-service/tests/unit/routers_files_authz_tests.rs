@@ -29,7 +29,7 @@ fn storage_owned_by(owner: &str) -> DynamicStorage {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn the_owner_has_full_access_with_no_grant_at_all() {
     let claims = claims_with("alice", "");
     let storage = storage_owned_by("alice");
@@ -37,7 +37,7 @@ fn the_owner_has_full_access_with_no_grant_at_all() {
     assert!(can_on_storage_claims(&claims, &storage, "write"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_non_owner_with_no_grant_has_no_access() {
     let claims = claims_with("mallory", "");
     let storage = storage_owned_by("alice");
@@ -48,7 +48,7 @@ fn a_non_owner_with_no_grant_has_no_access() {
 /// The one deliberate divergence from conveyor/workbench's resource-scoped
 /// grants: a blanket `warehouse:read`/`write` grant does **not** unlock a
 /// dynamic storage on its own, because private-by-default is the point.
-#[test]
+#[quench_test::test]
 fn the_blanket_warehouse_grant_does_not_unlock_a_dynamic_storage() {
     let claims = claims_with("mallory", "warehouse:read warehouse:write");
     let storage = storage_owned_by("alice");
@@ -56,7 +56,7 @@ fn the_blanket_warehouse_grant_does_not_unlock_a_dynamic_storage() {
     assert!(!can_on_storage_claims(&claims, &storage, "write"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_scoped_grant_covers_only_its_own_storage_and_action() {
     let claims = claims_with("bob", "warehouse:storage:backups:read");
     let storage = storage_owned_by("alice");
@@ -69,7 +69,7 @@ fn a_scoped_grant_covers_only_its_own_storage_and_action() {
     assert!(!can_on_storage_claims(&claims, &other, "read"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_wildcard_role_covers_every_storage() {
     let claims = claims_with("root", "admin");
     let storage = storage_owned_by("alice");

@@ -21,7 +21,7 @@ fn estate() -> (
     (temp, root, outside)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_file_inside_the_storage_is_confined() {
     let (_temp, root, _outside) = estate();
     std::fs::write(root.join("thing"), b"content").expect("write");
@@ -29,7 +29,7 @@ async fn a_file_inside_the_storage_is_confined() {
     assert!(confined(&root, &root.join("thing")).await);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_path_that_does_not_exist_yet_is_confined_by_its_parent() {
     let (_temp, root, _outside) = estate();
 
@@ -38,14 +38,14 @@ async fn a_path_that_does_not_exist_yet_is_confined_by_its_parent() {
     assert!(confined(&root, &root.join("new/deep/file")).await);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_storage_root_itself_is_confined() {
     let (_temp, root, _outside) = estate();
 
     assert!(confined(&root, &root).await);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_symlinked_file_pointing_outside_is_refused() {
     let (_temp, root, outside) = estate();
     let secret = outside.join("secret");
@@ -58,7 +58,7 @@ async fn a_symlinked_file_pointing_outside_is_refused() {
     assert!(!confined(&root, &root.join("innocent")).await);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_symlinked_directory_pointing_outside_is_refused() {
     let (_temp, root, outside) = estate();
 
@@ -70,7 +70,7 @@ async fn a_symlinked_directory_pointing_outside_is_refused() {
     assert!(!confined(&root, &root.join("escape/new-file")).await);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_symlink_that_stays_inside_is_still_confined() {
     let (_temp, root, _outside) = estate();
     let real = root.join("real");
@@ -84,7 +84,7 @@ async fn a_symlink_that_stays_inside_is_still_confined() {
     assert!(confined(&root, &root.join("alias/file")).await);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_missing_storage_root_confines_nothing() {
     let (_temp, root, _outside) = estate();
     let absent = root.join("not-created");
@@ -94,7 +94,7 @@ async fn a_missing_storage_root_confines_nothing() {
     assert!(!confined(&absent, &absent.join("file")).await);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_sibling_directory_sharing_a_name_prefix_is_refused() {
     let (_temp, root, _outside) = estate();
 

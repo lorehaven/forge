@@ -10,6 +10,7 @@ homepage = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
 readme = "README.md"
+autotests = false
 
 [lib]
 name = "rivet_package"
@@ -22,11 +23,12 @@ workspace = true
 quench-serde = { workspace = true }
 quench-core = { workspace = true }
 quench-crypto = { workspace = true }
-tar = { workspace = true }
-zstd = { workspace = true }
+quench-archive = { workspace = true }
 
 [dev-dependencies]
+quench-test = { workspace = true }
 
 [[test]]
 name = "unit"
 path = "tests/unit.rs"
+harness = false

@@ -31,14 +31,14 @@ fn crd_json(group: &str, kind: &str, plural: &str) -> Value {
 
 // --- documents -----------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn every_document_of_a_multi_document_file_is_read() {
     let docs = parse_documents("kind: A\n---\nkind: B\n---\n---\nkind: C\n").unwrap();
     let kinds: Vec<&str> = docs.iter().map(|d| d["kind"].as_str().unwrap()).collect();
     assert_eq!(kinds, ["A", "B", "C"], "empty documents are skipped");
 }
 
-#[test]
+#[quench_test::test]
 fn a_list_is_flattened_into_its_items() {
     let text = "apiVersion: v1\nkind: List\nitems:\n  - {kind: A, metadata: {name: a}}\n  - {kind: B, metadata: {name: b}}\n";
     assert_eq!(parse_documents(text).unwrap().len(), 2);
@@ -51,13 +51,13 @@ fn a_list_is_flattened_into_its_items() {
     assert_eq!(parse_documents(not_list).unwrap().len(), 1);
 }
 
-#[test]
+#[quench_test::test]
 fn invalid_yaml_is_an_error_naming_the_document() {
     let err = parse_documents("kind: A\n---\nkind: [unclosed\n").unwrap_err();
     assert!(format!("{err:#}").contains("document 2"), "{err:#}");
 }
 
-#[test]
+#[quench_test::test]
 fn resources_are_named_kind_slash_name() {
     assert_eq!(
         label(&json!({"kind": "Certificate", "metadata": {"name": "api"}})),
@@ -66,7 +66,7 @@ fn resources_are_named_kind_slash_name() {
     assert_eq!(label(&json!({})), "?/?");
 }
 
-#[test]
+#[quench_test::test]
 fn a_report_counts_valid_skipped_and_failed_separately() {
     let mut set = SchemaSet::empty();
     set.insert(
@@ -96,7 +96,7 @@ fn a_report_counts_valid_skipped_and_failed_separately() {
     assert_eq!(report.skipped.get("gadget"), Some(&1));
 }
 
-#[test]
+#[quench_test::test]
 fn built_in_groups_are_recognised_by_their_api_version() {
     for built_in in [
         "v1",
@@ -122,7 +122,7 @@ fn built_in_groups_are_recognised_by_their_api_version() {
 
 // --- what kubectl prints ---------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn one_crd_is_an_object_and_several_are_a_list() {
     let one = crd_json("a.io", "A", "as").to_string();
     assert_eq!(crds_from_kubectl(&one).unwrap().len(), 1);
@@ -174,7 +174,7 @@ fn with_fake_kubectl<T>(
     result
 }
 
-#[test]
+#[quench_test::test]
 fn fetch_asks_for_the_templated_crds_by_default_and_writes_one_file_each() {
     let out = quench_core::tmp::TempDir::new().unwrap();
     let args = out.path().join("args");
@@ -224,7 +224,7 @@ fn fetch_asks_for_the_templated_crds_by_default_and_writes_one_file_each() {
     assert_eq!(set.list().len(), 2);
 }
 
-#[test]
+#[quench_test::test]
 fn fetch_can_name_crds_take_everything_and_choose_a_context() {
     let out = quench_core::tmp::TempDir::new().unwrap();
     let args = out.path().join("args");
@@ -266,7 +266,7 @@ fn fetch_can_name_crds_take_everything_and_choose_a_context() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn fetch_fails_clearly_when_kubectl_does_or_nothing_comes_back() {
     let out = quench_core::tmp::TempDir::new().unwrap();
     let args = out.path().join("args");
@@ -291,7 +291,7 @@ fn fetch_fails_clearly_when_kubectl_does_or_nothing_comes_back() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn schemas_fetch_refuses_all_together_with_named_crds() {
     let err = schemas_command(&SchemasCmd::Fetch {
         crd: vec!["x.y".to_string()],
@@ -352,7 +352,7 @@ resources:
     image: nginx:1.27
 ";
 
-#[test]
+#[quench_test::test]
 fn an_environment_whose_custom_resources_conform_validates() {
     let (dir, workspace) = workspace_with_overlay(GOOD_OVERLAY);
     with_empty_cache(|| {
@@ -367,7 +367,7 @@ fn an_environment_whose_custom_resources_conform_validates() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_typo_in_a_raw_custom_resource_fails_the_environment() {
     let overlay = "\
 env: demo
@@ -398,7 +398,7 @@ resources:
     );
 }
 
-#[test]
+#[quench_test::test]
 fn targets_narrow_what_is_validated() {
     let overlay = format!(
         "{GOOD_OVERLAY}  - kind: raw\n    name: route\n    manifest:\n      apiVersion: traefik.io/v1alpha1\n      kind: IngressRoute\n      metadata: {{name: route}}\n      spec: {{typo: 1}}\n"
@@ -432,7 +432,7 @@ fn targets_narrow_what_is_validated() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn files_are_validated_and_a_failure_in_any_fails_the_run() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let good = dir.path().join("good.yaml");
@@ -445,7 +445,7 @@ fn files_are_validated_and_a_failure_in_any_fails_the_run() {
     assert!(validate_files(&[dir.path().join("missing.yaml")]).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_fetched_schema_in_the_cache_is_what_validate_uses() {
     let cache = quench_core::tmp::TempDir::new().unwrap();
     let widget = schema::CrdSchema::from_crd(&crd_json("example.io", "Widget", "widgets")).unwrap();
@@ -491,7 +491,7 @@ fn dir_file(text: &str) -> (quench_core::tmp::TempDir, std::path::PathBuf) {
 /// golden fixture and checking what comes out against the real schemas is what notices a template
 /// emitting something the cluster would reject - which `kubectl apply` would only say after the rest of
 /// an overlay had gone out.
-#[test]
+#[quench_test::test]
 fn what_riveters_own_templates_emit_satisfies_the_real_crd_schemas() {
     let set = bundled().unwrap();
     let vars: HashMap<String, String> = [

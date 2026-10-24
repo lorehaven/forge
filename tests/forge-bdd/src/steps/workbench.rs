@@ -7,12 +7,12 @@
 //! `docker/workbench-service/tests/integration`, against a real Postgres.
 
 use crate::world::ForgeWorld;
-use cucumber::{given, when};
+use quench_test_bdd::{given, when};
 
-fn no_redirect_client() -> reqwest::Client {
-    reqwest::Client::builder()
+fn no_redirect_client() -> quench_client::transport::Client {
+    quench_client::transport::Client::builder()
         .danger_accept_invalid_certs(true)
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(quench_client::transport::Redirect::None)
         .build()
         .expect("http client")
 }
@@ -79,7 +79,7 @@ async fn authenticated_get(world: &mut ForgeWorld, path: String) {
 }
 
 #[when(expr = "an authenticated POST is sent to {string} with body:")]
-async fn authenticated_post(world: &mut ForgeWorld, path: String, step: &cucumber::gherkin::Step) {
+async fn authenticated_post(world: &mut ForgeWorld, path: String, step: &quench_test_bdd::Step) {
     let body = step.docstring().expect("step must have a docstring");
     let url = format!("{}{path}", world.workbench_url);
     let mut request = no_redirect_client()

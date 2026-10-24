@@ -24,7 +24,7 @@ async fn new_issue_in(db: &quench_db::prelude::Db, project_id: &str) -> issue::I
     .expect("create issue")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn comments_list_oldest_first_and_can_be_deleted() {
     let Some((db, _guard)) = database().await else {
         return skipped("comments_list_oldest_first_and_can_be_deleted");
@@ -69,7 +69,7 @@ async fn comments_list_oldest_first_and_can_be_deleted() {
     assert_eq!(remaining[0].id, second.id);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn attaching_a_label_twice_is_idempotent() {
     let Some((db, _guard)) = database().await else {
         return skipped("attaching_a_label_twice_is_idempotent");
@@ -110,7 +110,7 @@ async fn attaching_a_label_twice_is_idempotent() {
     assert!(labels.is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_second_label_with_the_same_name_in_a_project_is_rejected() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_second_label_with_the_same_name_in_a_project_is_rejected");

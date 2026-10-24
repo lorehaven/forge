@@ -38,7 +38,7 @@ fn repo() -> Repo {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn project_path_walks_up_to_the_root() {
     let root = project("root-1", "root-group", None);
     let child = project("child-1", "child-project", Some("root-1"));
@@ -49,13 +49,13 @@ fn project_path_walks_up_to_the_root() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn project_path_of_an_unknown_id_is_empty() {
     let root = project("root-1", "root-group", None);
     assert_eq!(project_path("missing", std::slice::from_ref(&root)), "");
 }
 
-#[test]
+#[quench_test::test]
 fn a_repo_row_only_gets_an_edit_link_when_the_project_is_writable() {
     let html = repo_row(&repo(), "root-group/child-project", false).render();
     assert!(!html.contains("repos-edit"));
@@ -66,13 +66,13 @@ fn a_repo_row_only_gets_an_edit_link_when_the_project_is_writable() {
     assert!(editable_html.contains("/repos/lorehaven/palantir/edit"));
 }
 
-#[test]
+#[quench_test::test]
 fn the_create_panel_is_omitted_with_nowhere_writable_to_register_into() {
     let all_projects = vec![project("root-1", "root-group", None)];
     assert!(create_panel(&[], &all_projects).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn the_create_panel_offers_every_writable_project() {
     let root = project("root-1", "root-group", None);
     let child = project("child-1", "child-project", Some("root-1"));
@@ -86,7 +86,7 @@ fn the_create_panel_offers_every_writable_project() {
     assert!(html.contains("root-group/child-project"));
 }
 
-#[test]
+#[quench_test::test]
 fn edit_fields_are_disabled_and_collapsed_to_the_current_project_without_write_access() {
     let repo = repo();
     let child = project("child-1", "child-project", None);
@@ -101,7 +101,7 @@ fn edit_fields_are_disabled_and_collapsed_to_the_current_project_without_write_a
     assert!(html.contains("child-project"));
 }
 
-#[test]
+#[quench_test::test]
 fn edit_fields_offer_only_writable_projects_when_editable() {
     let repo = repo();
     let writable = project("child-1", "child-project", None);
@@ -115,7 +115,7 @@ fn edit_fields_offer_only_writable_projects_when_editable() {
     assert!(!html.contains("other-project"));
 }
 
-#[test]
+#[quench_test::test]
 fn only_known_error_slugs_translate_to_a_notice() {
     assert_eq!(known_error_key("forbidden"), Some("ui_repos_err_forbidden"));
     // A hand-crafted `?err=` cannot smuggle an arbitrary translation key onto
@@ -123,7 +123,7 @@ fn only_known_error_slugs_translate_to_a_notice() {
     assert_eq!(known_error_key("<script>alert(1)</script>"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn an_unknown_ok_value_renders_no_banner() {
     let notice = Notice {
         err: None,
@@ -132,7 +132,7 @@ fn an_unknown_ok_value_renders_no_banner() {
     assert!(notice_banner(&notice).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn a_known_ok_value_renders_its_own_key() {
     let notice = Notice {
         err: None,
@@ -142,7 +142,7 @@ fn a_known_ok_value_renders_its_own_key() {
     assert!(html.contains("ui_repos_ok_deleted"));
 }
 
-#[test]
+#[quench_test::test]
 fn the_follow_button_offers_the_opposite_of_what_is_true_now() {
     use conveyor_service::routers::ui::pages::repos::follow_form;
 
@@ -158,7 +158,7 @@ fn the_follow_button_offers_the_opposite_of_what_is_true_now() {
     assert!(following.contains("repos-following"));
 }
 
-#[test]
+#[quench_test::test]
 fn the_follow_projects_panel_lists_projects_by_path_and_is_omitted_when_empty() {
     use conveyor_service::routers::ui::pages::repos::follow_projects_panel;
     use std::collections::HashSet;
@@ -178,7 +178,7 @@ fn the_follow_projects_panel_lists_projects_by_path_and_is_omitted_when_empty() 
     assert!(html.contains("/projects/child-1/unfollow"));
 }
 
-#[test]
+#[quench_test::test]
 fn only_the_known_follow_notices_are_shown() {
     let followed = Notice {
         err: None,

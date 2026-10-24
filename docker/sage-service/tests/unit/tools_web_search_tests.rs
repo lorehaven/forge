@@ -2,7 +2,7 @@
 
 use sage_service::tools::web_search::*;
 
-#[test]
+#[quench_test::test]
 fn test_web_search_definition() {
     let def = get_definition();
     assert_eq!(def.name, "web_search");

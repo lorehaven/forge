@@ -5,9 +5,9 @@
 //! request is sent to …") resolve against [`ForgeWorld::target`], which each
 //! feature's `Given <service> API is available` background step sets.
 
-use cucumber::World;
-use reqwest::Response;
-use serde_json::Value;
+use quench_client::transport::Response;
+use quench_serde::Value;
+use quench_test_bdd::World;
 use std::env;
 
 /// Which service the generic steps talk to.
@@ -76,14 +76,14 @@ pub struct ForgeWorld {
     pub daybook_base_url: String,
     pub daybook_url: String,
 
-    pub client: reqwest::Client,
+    pub client: quench_client::transport::Client,
 
     // Last response, shared by every suite.
     pub last_status: Option<u16>,
     pub last_json: Option<Value>,
     pub last_body: Option<String>,
-    pub last_headers: reqwest::header::HeaderMap,
-    pub last_response_headers: reqwest::header::HeaderMap,
+    pub last_headers: quench_client::transport::header::HeaderMap,
+    pub last_response_headers: quench_client::transport::header::HeaderMap,
 
     // sage
     pub jwt_token: String,
@@ -131,10 +131,10 @@ impl ForgeWorld {
         let workbench_base_url = service_url("WORKBENCH_API_URL", "http://127.0.0.1:10443");
         let daybook_base_url = service_url("DAYBOOK_API_URL", "http://127.0.0.1:12443");
 
-        let client = reqwest::Client::builder()
+        let client = quench_client::transport::Client::builder()
             .danger_accept_invalid_certs(true)
             .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+            .unwrap_or_else(|_| quench_client::transport::Client::new());
 
         let gatehouse_url = format!("{gatehouse_base_url}/gatehouse");
         let jwt_token = mint_test_token(
@@ -174,8 +174,8 @@ impl ForgeWorld {
             last_status: None,
             last_json: None,
             last_body: None,
-            last_headers: reqwest::header::HeaderMap::new(),
-            last_response_headers: reqwest::header::HeaderMap::new(),
+            last_headers: quench_client::transport::header::HeaderMap::new(),
+            last_response_headers: quench_client::transport::header::HeaderMap::new(),
             jwt_token,
             current_conversation_id: None,
             last_id: None,
@@ -263,7 +263,10 @@ impl ForgeWorld {
         }
     }
 
-    pub fn apply_auth(&self, mut rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    pub fn apply_auth(
+        &self,
+        mut rb: quench_client::transport::RequestBuilder,
+    ) -> quench_client::transport::RequestBuilder {
         if self.target == Target::Switchboard {
             rb = rb.bearer_auth(&self.switchboard_token);
         } else if self.target == Target::Daybook {
@@ -283,7 +286,7 @@ impl ForgeWorld {
 
         let content_type = res
             .headers()
-            .get(reqwest::header::CONTENT_TYPE)
+            .get(&quench_client::transport::header::CONTENT_TYPE)
             .and_then(|h| h.to_str().ok())
             .unwrap_or("")
             .to_string();
@@ -296,7 +299,7 @@ impl ForgeWorld {
 
         if content_type.contains("application/json") {
             let json_text = res.text().await.ok().unwrap_or_default();
-            let json: Option<Value> = serde_json::from_str(&json_text).ok();
+            let json: Option<Value> = quench_serde::json::from_str(&json_text).ok();
             if let Some(json) = &json
                 && let Some(id) = json.get("id").and_then(|value| value.as_str())
             {
@@ -319,7 +322,7 @@ impl ForgeWorld {
 /// against one shared HS256 secret, now routed through gatehouse's real
 /// signing key so a relying party's JWKS-based verification accepts it.
 pub async fn mint_test_token(
-    client: &reqwest::Client,
+    client: &quench_client::transport::Client,
     gatehouse_url: &str,
     sub: &str,
     aud: &[&str],
@@ -331,7 +334,7 @@ pub async fn mint_test_token(
 /// Same, with explicit `iat`/`exp` (unix seconds) - what an expired-token or
 /// future-`iat` scenario needs, since a real login can never produce either.
 pub async fn mint_test_token_at(
-    client: &reqwest::Client,
+    client: &quench_client::transport::Client,
     gatehouse_url: &str,
     sub: &str,
     aud: &[&str],
@@ -341,7 +344,7 @@ pub async fn mint_test_token_at(
 ) -> String {
     let response = client
         .post(format!("{gatehouse_url}/api/v1/test/token"))
-        .json(&serde_json::json!({
+        .json(&quench_serde::json!({
             "sub": sub,
             "aud": aud,
             "scope": scope,
@@ -360,7 +363,7 @@ pub async fn mint_test_token_at(
         );
     }
 
-    #[derive(serde::Deserialize)]
+    #[derive(quench_serde::Deserialize)]
     struct TokenResponse {
         access_token: String,
     }

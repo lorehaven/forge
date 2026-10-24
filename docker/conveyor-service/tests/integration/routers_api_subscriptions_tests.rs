@@ -34,7 +34,7 @@ async fn app(db: Db, with_admin: bool) -> (Arc<dyn Endpoint>, Arc<quench_http::d
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn following_a_repo_then_listing_then_leaving() {
     let Some((db, _guard)) = database().await else {
         return skipped("following_a_repo_then_listing_then_leaving");
@@ -68,7 +68,7 @@ async fn following_a_repo_then_listing_then_leaving() {
     assert!(json_body(listed).await.as_array().unwrap().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn following_a_project_covers_it_by_project_id() {
     let Some((db, _guard)) = database().await else {
         return skipped("following_a_project_covers_it_by_project_id");
@@ -90,7 +90,7 @@ async fn following_a_project_covers_it_by_project_id() {
     assert_eq!(left.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn following_something_that_does_not_exist_is_not_found() {
     let Some((db, _guard)) = database().await else {
         return skipped("following_something_that_does_not_exist_is_not_found");
@@ -106,7 +106,7 @@ async fn following_something_that_does_not_exist_is_not_found() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn someone_who_is_not_in_the_realm_is_told_so_rather_than_getting_a_500() {
     let Some((db, _guard)) = database().await else {
         return skipped("someone_who_is_not_in_the_realm_is_told_so_rather_than_getting_a_500");

@@ -19,7 +19,7 @@ fn default_model(name: &str, task: Option<&str>) -> DefaultModel {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn model_label_tags_embedding_models_but_not_chat_models() {
     let chat = default_model("llama", None);
     assert!(!model_label(&chat).render().contains("embedding"));
@@ -32,7 +32,7 @@ fn model_label_tags_embedding_models_but_not_chat_models() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn state_presentation_covers_every_state() {
     for state in [
         ModelState::Running,
@@ -49,7 +49,7 @@ fn state_presentation_covers_every_state() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn render_model_rows_shows_unknown_state_when_switchboard_is_unreachable() {
     let defaults = vec![default_model("llama", None)];
     let err: quench_core::Result<Vec<VllmInstance>> = Err(quench_core::err!("unreachable"));
@@ -57,7 +57,7 @@ fn render_model_rows_shows_unknown_state_when_switchboard_is_unreachable() {
     assert!(html.contains("model-row--unknown"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_model_rows_reflects_each_models_own_state() {
     let defaults = vec![default_model("llama", None), default_model("mistral", None)];
     let instances = Ok(vec![VllmInstance {
@@ -81,7 +81,7 @@ fn render_model_rows_reflects_each_models_own_state() {
     assert!(html.contains("model-row--pending"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_initializing_page_shows_a_warning_only_when_switchboard_is_down() {
     let defaults = vec![default_model("llama", None)];
 

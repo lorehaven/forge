@@ -3,7 +3,7 @@ use anvil::commands::config_check::validate;
 use crate::support;
 use support::stable_cwd_lock;
 
-#[test]
+#[quench_test::test]
 fn a_minimal_valid_config_has_no_issues() {
     let toml = r#"
 [docker.modules.core]
@@ -20,19 +20,19 @@ packages = ["service"]
     assert_eq!(validate(toml).expect("parses"), Vec::new());
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_file_has_no_issues() {
     // Every top-level section is `#[serde(default)]` - an empty file is a
     // config with nothing configured, not a malformed one.
     assert_eq!(validate("").expect("parses"), Vec::new());
 }
 
-#[test]
+#[quench_test::test]
 fn malformed_toml_syntax_is_a_parse_error() {
     assert!(validate("not [ valid toml").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn an_unknown_top_level_field_is_reported() {
     let issues = validate("bogus = true\n").expect("parses");
     assert_eq!(issues.len(), 1);
@@ -40,7 +40,7 @@ fn an_unknown_top_level_field_is_reported() {
     assert!(issues[0].message.contains("unknown field"));
 }
 
-#[test]
+#[quench_test::test]
 fn an_unknown_docker_field_is_reported() {
     let issues = validate("[docker]\nbogus = 1\n").expect("parses");
     assert!(
@@ -50,7 +50,7 @@ fn an_unknown_docker_field_is_reported() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_module_missing_packages_and_dockerfile_reports_both() {
     let issues = validate("[docker.modules.core]\n").expect("parses");
     assert_eq!(
@@ -73,7 +73,7 @@ fn a_module_missing_packages_and_dockerfile_reports_both() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_packages_list_is_reported() {
     let toml = "[docker.modules.core]\npackages = []\ndockerfile = \"Dockerfile\"\n";
     let issues = validate(toml).expect("parses");
@@ -82,7 +82,7 @@ fn an_empty_packages_list_is_reported() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_dockerfile_is_reported() {
     let toml = "[docker.modules.core]\npackages = [\"service\"]\ndockerfile = \"\"\n";
     let issues = validate(toml).expect("parses");
@@ -94,7 +94,7 @@ fn an_empty_dockerfile_is_reported() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn an_override_for_a_package_not_in_this_modules_list_is_reported() {
     let toml = r#"
 [docker.modules.core]
@@ -110,7 +110,7 @@ image_name = "other"
     }));
 }
 
-#[test]
+#[quench_test::test]
 fn an_unknown_override_field_is_reported() {
     let toml = r#"
 [docker.modules.core]
@@ -129,7 +129,7 @@ bogus = "x"
     );
 }
 
-#[test]
+#[quench_test::test]
 fn setting_both_registry_and_registries_on_an_override_is_reported() {
     let toml = r#"
 [docker.modules.core]
@@ -148,7 +148,7 @@ registries = ["acme"]
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_package_built_by_two_modules_is_reported() {
     let toml = r#"
 [docker.modules.a]
@@ -168,7 +168,7 @@ dockerfile = "Dockerfile"
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_non_string_entry_in_an_array_is_reported_by_position() {
     let toml = "[install]\npackages = [\"ok\", 1]\n";
     let issues = validate(toml).expect("parses");
@@ -179,7 +179,7 @@ fn a_non_string_entry_in_an_array_is_reported_by_position() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_non_string_build_arg_value_is_reported() {
     let toml = r#"
 [docker.modules.core]
@@ -196,13 +196,13 @@ FOO = 1
     }));
 }
 
-#[test]
+#[quench_test::test]
 fn a_release_commit_message_template_is_a_recognised_field() {
     let toml = "[release]\ncommit_message_template = \"release: {summary}\"\n";
     assert_eq!(validate(toml).expect("parses"), Vec::new());
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_release_commit_message_template_is_reported() {
     let toml = "[release]\ncommit_message_template = \"\"\n";
     let issues = validate(toml).expect("parses");
@@ -214,7 +214,7 @@ fn an_empty_release_commit_message_template_is_reported() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn several_simultaneous_problems_are_all_reported_at_once() {
     let toml = r#"
 bogus_top_level = 1
@@ -259,7 +259,7 @@ bogus_override_field = 1
     assert!(issues.len() >= 6, "{issues:?}");
 }
 
-#[test]
+#[quench_test::test]
 fn issues_are_sorted_by_path_for_stable_output() {
     let toml = "zeta = 1\nalpha = 1\n";
     let issues = validate(toml).expect("parses");
@@ -269,7 +269,7 @@ fn issues_are_sorted_by_path_for_stable_output() {
     assert_eq!(paths, sorted);
 }
 
-#[test]
+#[quench_test::test]
 fn the_estates_own_anvil_toml_has_no_issues() {
     // Regression guard: this validator must agree the real config is clean,
     // not just that a hand-written fixture is.

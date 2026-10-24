@@ -1,3 +1,6 @@
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
 #[path = "support.rs"]
 mod support;
 
@@ -25,3 +28,5 @@ mod run_tests;
 mod switchboard_client_tests;
 #[path = "unit/vllm_client_tests.rs"]
 mod vllm_client_tests;
+
+quench_test::main!();

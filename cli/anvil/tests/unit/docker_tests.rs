@@ -42,7 +42,7 @@ fn sample_config() -> Config {
     )
 }
 
-#[test]
+#[quench_test::test]
 fn find_module_for_package_locates_the_owning_module() {
     let config = sample_config();
     assert_eq!(
@@ -55,13 +55,13 @@ fn find_module_for_package_locates_the_owning_module() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn find_module_for_package_errors_for_an_unknown_package() {
     let config = sample_config();
     assert!(find_module_for_package(&config, "not-configured").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn find_module_name_overwrite_uses_the_override_when_present() {
     let config = sample_config();
     assert_eq!(
@@ -70,7 +70,7 @@ fn find_module_name_overwrite_uses_the_override_when_present() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn find_module_name_overwrite_falls_back_to_the_module_name() {
     let config = sample_config();
     assert_eq!(
@@ -79,7 +79,7 @@ fn find_module_name_overwrite_falls_back_to_the_module_name() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn get_dockerfile_for_package_prefers_the_package_override() {
     let config = sample_config();
     assert_eq!(
@@ -88,7 +88,7 @@ fn get_dockerfile_for_package_prefers_the_package_override() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn get_dockerfile_for_package_falls_back_to_the_module_dockerfile() {
     let config = sample_config();
     assert_eq!(
@@ -97,7 +97,7 @@ fn get_dockerfile_for_package_falls_back_to_the_module_dockerfile() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn get_build_args_for_package_returns_the_overrides_map() {
     let config = sample_config();
     let args = get_build_args_for_package(&config, "service-a").unwrap();
@@ -107,14 +107,14 @@ fn get_build_args_for_package_returns_the_overrides_map() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn get_build_args_for_package_is_empty_without_an_override() {
     let config = sample_config();
     let args = get_build_args_for_package(&config, "service-b").unwrap();
     assert!(args.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn get_image_name_for_package_prefers_the_override() {
     let config = sample_config();
     assert_eq!(
@@ -123,7 +123,7 @@ fn get_image_name_for_package_prefers_the_override() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn get_image_name_for_package_defaults_to_the_package_name() {
     let config = sample_config();
     assert_eq!(
@@ -132,7 +132,7 @@ fn get_image_name_for_package_defaults_to_the_package_name() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn get_registries_for_package_prefers_the_override_list() {
     let config = sample_config();
     assert_eq!(
@@ -144,7 +144,7 @@ fn get_registries_for_package_prefers_the_override_list() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn get_registries_for_package_falls_back_to_the_global_registry() {
     let config = sample_config();
     assert_eq!(
@@ -153,7 +153,7 @@ fn get_registries_for_package_falls_back_to_the_global_registry() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn get_registries_for_package_falls_back_to_the_deprecated_single_registry_override() {
     let config = config_from_toml(
         r#"
@@ -171,7 +171,7 @@ fn get_registries_for_package_falls_back_to_the_deprecated_single_registry_overr
     );
 }
 
-#[test]
+#[quench_test::test]
 fn get_registries_for_package_errors_when_nothing_is_configured_anywhere() {
     let config = config_from_toml(
         r#"
@@ -184,7 +184,7 @@ fn get_registries_for_package_errors_when_nothing_is_configured_anywhere() {
     assert!(error.to_string().contains("No Docker registry configured"));
 }
 
-#[test]
+#[quench_test::test]
 fn get_registries_for_package_errors_when_the_configured_registries_are_blank() {
     let config = config_from_toml(
         r#"
@@ -200,7 +200,7 @@ fn get_registries_for_package_errors_when_the_configured_registries_are_blank() 
     assert!(error.to_string().contains("are empty"));
 }
 
-#[test]
+#[quench_test::test]
 fn env_var_name_for_registry_uppercases_and_replaces_hyphens() {
     assert_eq!(
         env_var_name_for_registry("my-private-registry", "INDEX"),
@@ -212,7 +212,7 @@ fn env_var_name_for_registry_uppercases_and_replaces_hyphens() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn cargo_home_prefers_cargo_home_env_var() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -221,7 +221,7 @@ fn cargo_home_prefers_cargo_home_env_var() {
     assert_eq!(cargo_home(), Some(PathBuf::from("/explicit/cargo/home")));
 }
 
-#[test]
+#[quench_test::test]
 fn cargo_home_falls_back_to_home_joined_with_dot_cargo() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -232,7 +232,7 @@ fn cargo_home_falls_back_to_home_joined_with_dot_cargo() {
     assert_eq!(cargo_home(), Some(PathBuf::from("/home/example/.cargo")));
 }
 
-#[test]
+#[quench_test::test]
 fn cargo_registry_index_prefers_the_env_var_override() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -248,7 +248,7 @@ fn cargo_registry_index_prefers_the_env_var_override() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn cargo_registry_index_falls_back_to_anvil_toml_when_env_is_unset() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -266,7 +266,7 @@ fn cargo_registry_index_falls_back_to_anvil_toml_when_env_is_unset() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn cargo_registry_index_is_none_when_nothing_resolves_it() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -277,7 +277,7 @@ fn cargo_registry_index_is_none_when_nothing_resolves_it() {
     assert_eq!(cargo_registry_index(&config, "unknownreg"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn cargo_registry_token_prefers_the_env_var_and_ignores_blank_values() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -296,7 +296,7 @@ fn cargo_registry_token_prefers_the_env_var_and_ignores_blank_values() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn full_tags_for_package_combines_registry_module_image_and_version() {
     // `full_tags_for_package` calls `cargo_meta::resolve_package`, which
     // shells out to real `cargo metadata` with no explicit
@@ -323,7 +323,7 @@ fn full_tags_for_package_combines_registry_module_image_and_version() {
     assert!(tags[0].starts_with("registry.internal/tools/anvil-image:"));
 }
 
-#[test]
+#[quench_test::test]
 fn process_all_packages_reports_success_when_every_op_succeeds() {
     let config = sample_config();
     let mut seen = Vec::new();
@@ -340,7 +340,7 @@ fn process_all_packages_reports_success_when_every_op_succeeds() {
     assert_eq!(seen, vec!["service-a".to_string(), "service-b".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn process_all_packages_collects_every_failure_and_still_runs_the_rest() {
     let config = sample_config();
     let mut attempted = Vec::new();
@@ -370,7 +370,7 @@ fn process_all_packages_collects_every_failure_and_still_runs_the_rest() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn process_all_packages_is_a_no_op_success_for_an_empty_config() {
     let config = Config::default();
     let result = process_all_packages(&config, |_| Ok(()), "test-op");

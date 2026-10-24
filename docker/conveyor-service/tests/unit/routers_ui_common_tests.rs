@@ -3,7 +3,7 @@
 use conveyor_service::domain::Status;
 use conveyor_service::routers::ui::common::status_pill;
 
-#[test]
+#[quench_test::test]
 fn every_status_gets_its_own_class_and_translation_key() {
     for status in [
         Status::Queued,

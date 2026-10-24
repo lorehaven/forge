@@ -14,7 +14,7 @@ use warehouse_service::utils::sha256::sha256_hex;
 // normalize_media_type / is_supported_manifest_media_type
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn normalize_media_type_strips_parameters_and_trims() {
     assert_eq!(
         normalize_media_type(" application/json ; charset=utf-8"),
@@ -22,12 +22,12 @@ fn normalize_media_type_strips_parameters_and_trims() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn normalize_media_type_is_none_for_an_empty_value() {
     assert_eq!(normalize_media_type("  ;charset=utf-8"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn is_supported_manifest_media_type_accepts_every_known_type_and_rejects_others() {
     for mt in [
         DOCKER_MANIFEST_V2,
@@ -44,12 +44,12 @@ fn is_supported_manifest_media_type_accepts_every_known_type_and_rejects_others(
 // normalize_manifest_body / populate_descriptor_size
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn normalize_manifest_body_rejects_invalid_json() {
     assert!(normalize_manifest_body(b"not json").await.is_err());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn normalize_manifest_body_rejects_a_schema_version_other_than_2() {
     assert!(
         normalize_manifest_body(br#"{"schemaVersion": 1}"#)
@@ -58,7 +58,7 @@ async fn normalize_manifest_body_rejects_a_schema_version_other_than_2() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn normalize_manifest_body_leaves_a_manifest_with_no_descriptors_untouched() {
     let body = normalize_manifest_body(br#"{"schemaVersion": 2}"#)
         .await
@@ -67,7 +67,7 @@ async fn normalize_manifest_body_leaves_a_manifest_with_no_descriptors_untouched
     assert_eq!(value["schemaVersion"], 2);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn normalize_manifest_body_keeps_an_explicit_nonzero_size_as_is() {
     let json = r#"{"schemaVersion": 2, "config": {"digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "size": 42}}"#;
     let body = normalize_manifest_body(json.as_bytes()).await.unwrap();
@@ -75,7 +75,7 @@ async fn normalize_manifest_body_keeps_an_explicit_nonzero_size_as_is() {
     assert_eq!(value["config"]["size"], 42);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn populate_descriptor_size_rejects_a_descriptor_that_is_not_an_object() {
     let mut descriptor = Value::String("not an object".to_string());
     let err = populate_descriptor_size(&mut descriptor, DescriptorKind::Blob)
@@ -84,7 +84,7 @@ async fn populate_descriptor_size_rejects_a_descriptor_that_is_not_an_object() {
     assert_eq!(err, "invalid manifest descriptor");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn populate_descriptor_size_requires_a_digest_field() {
     let mut descriptor = quench_serde::json!({});
     let err = populate_descriptor_size(&mut descriptor, DescriptorKind::Blob)
@@ -93,7 +93,7 @@ async fn populate_descriptor_size_requires_a_digest_field() {
     assert_eq!(err, "manifest descriptor is missing digest");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn populate_descriptor_size_rejects_a_malformed_digest() {
     let mut descriptor = quench_serde::json!({"digest": "not-a-digest"});
     let err = populate_descriptor_size(&mut descriptor, DescriptorKind::Blob)
@@ -135,7 +135,7 @@ fn put(
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_an_unsupported_content_type() {
     let _storage = WithStorageRoot::new();
     let (app, container) = app().await;
@@ -150,7 +150,7 @@ async fn handle_rejects_an_unsupported_content_type() {
     assert_eq!(resp.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_an_invalid_manifest_body() {
     let _storage = WithStorageRoot::new();
     let (app, container) = app().await;
@@ -165,7 +165,7 @@ async fn handle_rejects_an_invalid_manifest_body() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_stores_the_manifest_by_digest_and_writes_the_tag() {
     let storage = WithStorageRoot::new();
     let body = br#"{"schemaVersion": 2}"#;
@@ -206,7 +206,7 @@ async fn handle_stores_the_manifest_by_digest_and_writes_the_tag() {
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_does_not_write_a_tag_when_the_reference_is_already_a_digest() {
     let storage = WithStorageRoot::new();
     let body = br#"{"schemaVersion": 2}"#;
@@ -228,7 +228,7 @@ async fn handle_does_not_write_a_tag_when_the_reference_is_already_a_digest() {
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_fills_in_descriptor_sizes_from_blobs_already_on_disk() {
     let storage = WithStorageRoot::new();
     let blob_digest = write_blob(&storage, b"layer content");
@@ -267,7 +267,7 @@ async fn handle_fills_in_descriptor_sizes_from_blobs_already_on_disk() {
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_a_manifest_referencing_a_blob_that_does_not_exist() {
     let _storage = WithStorageRoot::new();
     let missing_digest = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";

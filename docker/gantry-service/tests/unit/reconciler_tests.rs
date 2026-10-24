@@ -62,7 +62,7 @@ fn plan() -> Plan {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_submitted_operation_becomes_a_runner_job() {
     let rig = Rig::new();
     let gantry = rig.gantry();
@@ -86,7 +86,7 @@ async fn a_submitted_operation_becomes_a_runner_job() {
     assert_eq!(stored.requested_by, "ana");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_job_manifest_carries_the_plan_and_secret_mounts_but_never_a_secret_value() {
     let rig = Rig::new();
     let gantry = rig.gantry();
@@ -137,7 +137,7 @@ async fn a_job_manifest_carries_the_plan_and_secret_mounts_but_never_a_secret_va
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_restarted_service_adopts_the_runner_a_previous_one_started() {
     let rig = Rig::new();
     let first = rig.gantry();
@@ -182,7 +182,7 @@ async fn a_restarted_service_adopts_the_runner_a_previous_one_started() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_service_that_died_between_claiming_and_creating_starts_the_runner_on_restart() {
     let rig = Rig::new();
     let gantry = rig.gantry();
@@ -200,7 +200,7 @@ async fn a_service_that_died_between_claiming_and_creating_starts_the_runner_on_
     assert!(rig.cluster.job(&job_name(&operation.id)).is_some());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn failure_and_rollback_are_told_apart_by_the_runners_own_marker() {
     let rig = Rig::new();
     let gantry = rig.gantry();
@@ -236,7 +236,7 @@ async fn failure_and_rollback_are_told_apart_by_the_runners_own_marker() {
     assert!(undone.error.unwrap().contains("never became ready"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_job_that_failed_without_saying_why_is_still_recorded_as_failed() {
     let rig = Rig::new();
     let gantry = rig.gantry();
@@ -254,7 +254,7 @@ async fn a_job_that_failed_without_saying_why_is_still_recorded_as_failed() {
     assert_eq!(stored.error.as_deref(), Some("DeadlineExceeded"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn only_one_operation_runs_at_a_time_and_the_next_starts_when_it_ends() {
     let rig = Rig::new();
     let gantry = rig.gantry();
@@ -287,7 +287,7 @@ async fn only_one_operation_runs_at_a_time_and_the_next_starts_when_it_ends() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn cancelling_a_queued_operation_is_immediate_and_a_running_one_stops_its_job() {
     let rig = Rig::new();
     let gantry = rig.gantry();
@@ -314,7 +314,7 @@ async fn cancelling_a_queued_operation_is_immediate_and_a_running_one_stops_its_
     assert!(rig.cluster.job_names().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_invalid_plan_is_refused_and_never_queued() {
     let mut rig = Rig::new();
     rig.settings.allowed_namespaces = vec!["scratch".into()];
@@ -335,7 +335,7 @@ async fn an_invalid_plan_is_refused_and_never_queued() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn history_is_newest_first() {
     let rig = Rig::new();
     let gantry = rig.gantry();
@@ -360,7 +360,7 @@ async fn history_is_newest_first() {
     assert_eq!(titles, ["second", "first"]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn every_job_gets_the_age_key_that_opens_a_packages_encrypted_values_as_an_optional_file() {
     let rig = Rig::new();
     let gantry = rig.gantry();

@@ -71,7 +71,7 @@ fn succeeded() -> &'static catalog::Template {
 
 // -- the catalog ------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn every_template_is_well_formed() {
     let mut ids: Vec<&str> = TEMPLATES.iter().map(|t| t.id).collect();
     ids.sort_unstable();
@@ -94,18 +94,18 @@ fn every_template_is_well_formed() {
     assert_eq!(catalog::all().len(), TEMPLATES.len());
 }
 
-#[test]
+#[quench_test::test]
 fn failures_default_on_and_successes_default_off() {
     assert!(failed().default_on);
     assert!(!succeeded().default_on);
 }
 
-#[test]
+#[quench_test::test]
 fn good_variables_validate() {
     assert_eq!(failed().validate(&vars(), ORIGIN), Ok(()));
 }
 
-#[test]
+#[quench_test::test]
 fn a_missing_extra_or_empty_variable_is_refused() {
     let mut missing = vars();
     missing.remove("run");
@@ -136,7 +136,7 @@ fn a_missing_extra_or_empty_variable_is_refused() {
     assert!(failed().validate(&BTreeMap::new(), ORIGIN).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn line_breaks_and_control_characters_are_refused_everywhere() {
     for bad in [
         "a\nb",
@@ -155,7 +155,7 @@ fn line_breaks_and_control_characters_are_refused_everywhere() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn oversized_values_are_refused() {
     let mut v = vars();
     v.insert("project".into(), "x".repeat(MAX_VALUE_LEN));
@@ -182,7 +182,7 @@ fn oversized_values_are_refused() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn links_must_stay_inside_the_estate() {
     for bad in [
         "https://evil.example/conveyor/runs/1",
@@ -210,7 +210,7 @@ fn pairs(v: &BTreeMap<String, String>) -> Vec<(&str, &str)> {
     v.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
 }
 
-#[test]
+#[quench_test::test]
 fn every_template_renders_in_every_language() {
     let v = vars();
     let unsubscribe = "https://mail.example.test/gatehouse/ui/unsubscribe?token=abc";
@@ -248,7 +248,7 @@ fn every_template_renders_in_every_language() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn unknown_locales_get_english_and_the_two_kinds_differ() {
     let v = vars();
     let en = failed().render(Some("en"), "a", &pairs(&v), "u");
@@ -260,7 +260,7 @@ fn unknown_locales_get_english_and_the_two_kinds_differ() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn values_are_escaped_in_html_and_never_re_read_as_placeholders() {
     let mut v = vars();
     v.insert("project".into(), "<b>{username}</b> & \"co\"".into());
@@ -288,7 +288,7 @@ fn values_are_escaped_in_html_and_never_re_read_as_placeholders() {
 
 // -- preferences -------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn with_no_choice_the_templates_default_applies() {
     let db = db().await;
     let prefs = Preferences::new(&db);
@@ -299,7 +299,7 @@ async fn with_no_choice_the_templates_default_applies() {
     assert!(prefs.overrides("alice").await.unwrap().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_choice_is_stored_and_only_when_it_differs_from_the_default() {
     let db = db().await;
     let prefs = Preferences::new(&db);
@@ -325,7 +325,7 @@ async fn a_choice_is_stored_and_only_when_it_differs_from_the_default() {
     assert!(prefs.is_subscribed("alice", failed()).await.unwrap());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn setting_the_same_choice_twice_and_forgetting_a_missing_one_are_fine() {
     let db = db().await;
     let prefs = Preferences::new(&db);
@@ -336,7 +336,7 @@ async fn setting_the_same_choice_twice_and_forgetting_a_missing_one_are_fine() {
     assert!(prefs.overrides("bob").await.unwrap().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn people_do_not_share_choices() {
     let db = db().await;
     let prefs = Preferences::new(&db);
@@ -348,7 +348,7 @@ async fn people_do_not_share_choices() {
     assert!(prefs.is_subscribed("xalice", failed()).await.unwrap());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_effective_list_reflects_the_choices() {
     let db = db().await;
     let prefs = Preferences::new(&db);
@@ -367,7 +367,7 @@ async fn the_effective_list_reflects_the_choices() {
 
 // -- unsubscribe tokens -------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn an_unsubscribe_ticket_round_trips_and_junk_is_not_one() {
     let t = Unsubscribe {
         username: "alice".into(),
@@ -379,7 +379,7 @@ fn an_unsubscribe_ticket_round_trips_and_junk_is_not_one() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_unsubscribe_link_is_public_long_lived_and_reusable() {
     let tokens = VerificationTokens::in_memory();
     let link = issue_link(&tokens, &base(), "alice", "conveyor.run.failed")
@@ -477,7 +477,7 @@ fn request(username: &str, template: &str) -> NotifyRequest {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_subscribed_person_with_a_confirmed_address_is_emailed() {
     let w = World::new().await;
     w.user("alice", Some("alice@example.test"), true).await;
@@ -499,7 +499,7 @@ async fn a_subscribed_person_with_a_confirmed_address_is_emailed() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_message_follows_the_persons_saved_language() {
     let w = World::new().await;
     w.user("alice", Some("alice@example.test"), true).await;
@@ -523,7 +523,7 @@ async fn the_message_follows_the_persons_saved_language() {
     assert_eq!(w.recorder.sent()[0].locale.as_deref(), Some("pl-PL"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unknown_accounts_and_unconfirmed_or_missing_addresses_are_skipped() {
     let w = World::new().await;
     w.user("unconfirmed", Some("u@example.test"), false).await;
@@ -542,7 +542,7 @@ async fn unknown_accounts_and_unconfirmed_or_missing_addresses_are_skipped() {
     assert!(w.recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_default_off_kind_is_not_sent_until_the_person_subscribes() {
     let w = World::new().await;
     w.user("alice", Some("alice@example.test"), true).await;
@@ -564,7 +564,7 @@ async fn a_default_off_kind_is_not_sent_until_the_person_subscribes() {
     assert_eq!(w.recorder.sent_of("notification").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_requested_notification_goes_out_though_the_kind_is_off_by_default() {
     let w = World::new().await;
     w.user("alice", Some("alice@example.test"), true).await;
@@ -574,7 +574,7 @@ async fn a_requested_notification_goes_out_though_the_kind_is_off_by_default() {
     assert_eq!(w.recorder.sent_of("notification").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_explicit_opt_out_beats_a_requested_notification() {
     let w = World::new().await;
     w.user("alice", Some("alice@example.test"), true).await;
@@ -591,7 +591,7 @@ async fn an_explicit_opt_out_beats_a_requested_notification() {
     assert!(w.recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_recovered_kind_is_off_by_default_and_renders() {
     let recovered = catalog::find("conveyor.run.recovered").unwrap();
     assert!(!recovered.default_on);
@@ -605,7 +605,7 @@ async fn the_recovered_kind_is_off_by_default_and_renders() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unsubscribing_from_a_default_on_kind_stops_it() {
     let w = World::new().await;
     w.user("alice", Some("alice@example.test"), true).await;
@@ -621,7 +621,7 @@ async fn unsubscribing_from_a_default_on_kind_stops_it() {
     assert!(w.recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn declining_costs_nothing_a_skipped_message_spends_no_dedupe_key_or_limit() {
     let w = World::new().await;
     w.user("alice", Some("alice@example.test"), true).await;
@@ -640,7 +640,7 @@ async fn declining_costs_nothing_a_skipped_message_spends_no_dedupe_key_or_limit
     assert_eq!(w.notify(&req).await.unwrap(), Outcome::Accepted);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_same_dedupe_key_is_sent_once() {
     let w = World::new().await;
     w.user("alice", Some("alice@example.test"), true).await;
@@ -662,7 +662,7 @@ async fn the_same_dedupe_key_is_sent_once() {
     assert_eq!(w.notify(&other).await.unwrap(), Outcome::Accepted);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn one_kind_for_one_person_is_limited_per_hour() {
     let w = World::new().await;
     w.user("alice", Some("alice@example.test"), true).await;
@@ -691,7 +691,7 @@ async fn one_kind_for_one_person_is_limited_per_hour() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn one_person_is_limited_across_kinds_too() {
     let w = World::new().await;
     w.user("alice", Some("alice@example.test"), true).await;
@@ -714,7 +714,7 @@ async fn one_person_is_limited_across_kinds_too() {
     assert_eq!(sent, policy::NOTIFY_USER.max);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_bad_request_is_the_callers_error_and_reveals_nothing_about_accounts() {
     let w = World::new().await;
     w.user("alice", Some("alice@example.test"), true).await;
@@ -740,7 +740,7 @@ async fn a_bad_request_is_the_callers_error_and_reveals_nothing_about_accounts()
     assert!(w.recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failing_mail_server_is_reported_with_whether_to_retry() {
     struct Failing(bool);
     #[quench_core::async_trait]
@@ -836,7 +836,7 @@ fn smtp_sender(port: u16) -> SmtpSender {
     .unwrap()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_notification_goes_out_with_the_standard_one_click_unsubscribe_header() {
     let (port, received) = fake_smtp().await;
     let sender = smtp_sender(port);
@@ -872,7 +872,7 @@ async fn a_notification_goes_out_with_the_standard_one_click_unsubscribe_header(
     drop(mails);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unknown_template_reaching_the_sender_is_a_permanent_failure() {
     let (port, received) = fake_smtp().await;
     let err = smtp_sender(port)
@@ -978,7 +978,7 @@ async fn endpoint_world() -> (
     (recorder, app, container, db)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_endpoint_accepts_a_notification() {
     let _guard = gatehouse_service::test_support::auth_disabled_guard().await;
     let (recorder, app, container, _db) = endpoint_world().await;
@@ -996,7 +996,7 @@ async fn the_endpoint_accepts_a_notification() {
     assert_eq!(recorder.sent_of("notification").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_endpoint_says_why_it_skipped() {
     let _guard = gatehouse_service::test_support::auth_disabled_guard().await;
     let (recorder, app, container, _db) = endpoint_world().await;
@@ -1015,7 +1015,7 @@ async fn the_endpoint_says_why_it_skipped() {
     assert!(recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_endpoint_rejects_a_malformed_request_with_the_reason() {
     let _guard = gatehouse_service::test_support::auth_disabled_guard().await;
     let (recorder, app, container, _db) = endpoint_world().await;
@@ -1046,7 +1046,7 @@ async fn the_endpoint_rejects_a_malformed_request_with_the_reason() {
     assert!(recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_endpoint_reports_a_mail_failure_as_a_bad_gateway_with_retryable() {
     struct Failing;
     #[quench_core::async_trait]
@@ -1084,7 +1084,7 @@ async fn the_endpoint_reports_a_mail_failure_as_a_bad_gateway_with_retryable() {
     assert_eq!(json["retryable"], true);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_retry_with_the_same_dedupe_key_is_not_sent_twice() {
     let _guard = gatehouse_service::test_support::auth_disabled_guard().await;
     let (recorder, app, container, _db) = endpoint_world().await;
@@ -1133,12 +1133,12 @@ async fn authed(scope: Option<&str>) -> StatusCode {
     .status()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn with_auth_on_no_token_is_unauthorized() {
     assert_eq!(authed(None).await, StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_token_without_the_notify_grant_is_forbidden() {
     for scope in [
         "gatehouse:read-users",
@@ -1150,7 +1150,7 @@ async fn a_token_without_the_notify_grant_is_forbidden() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_notify_grant_a_service_role_and_an_admin_may_send() {
     for scope in ["gatehouse:notify", "service", "admin"] {
         // A skipped result (nobody exists) is a 200: what matters is getting past the gate.

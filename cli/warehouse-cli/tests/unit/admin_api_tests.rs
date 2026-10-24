@@ -25,7 +25,7 @@ fn registry(docker_url: &str, crates_url: &str, base_path: &str) -> RegistryConf
 /// Both admin endpoints sit in the same server-side scope, so they have to
 /// resolve the same way. Resolving them differently is what made
 /// `admin gc --docker` 404 while `--crates` worked.
-#[test]
+#[quench_test::test]
 fn both_gc_endpoints_resolve_against_the_same_base() {
     let reg = registry("https://example.net", "https://example.net/warehouse", "");
 
@@ -39,7 +39,7 @@ fn both_gc_endpoints_resolve_against_the_same_base() {
 /// A registry may carry the service prefix in the crates URL instead of in
 /// `base_path` — the docker URL stays bare, because `/v2` is served outside
 /// the base-path scope.
-#[test]
+#[quench_test::test]
 fn the_base_path_may_live_in_the_crates_url() {
     let reg = registry("https://example.net", "https://example.net/warehouse", "");
 
@@ -50,7 +50,7 @@ fn the_base_path_may_live_in_the_crates_url() {
 }
 
 /// ... or in `base_path`, with both URLs bare.
-#[test]
+#[quench_test::test]
 fn the_base_path_may_live_in_the_base_path_field() {
     let reg = registry("https://example.net", "https://example.net", "/warehouse");
 
@@ -60,7 +60,7 @@ fn the_base_path_may_live_in_the_base_path_field() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_service_at_the_root_needs_no_prefix() {
     let reg = registry(
         "https://registry.local:8443",
@@ -74,7 +74,7 @@ fn a_service_at_the_root_needs_no_prefix() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_docker_only_registry_falls_back_to_the_docker_host() {
     let reg = registry("https://example.net", "", "/warehouse");
 
@@ -87,7 +87,7 @@ fn a_docker_only_registry_falls_back_to_the_docker_host() {
 
 /// The docker registry itself is mounted at the server root, outside the
 /// base path — so admin resolution must not be reused for `/v2`.
-#[test]
+#[quench_test::test]
 fn the_docker_registry_root_stays_unprefixed() {
     let reg = registry("https://example.net", "https://example.net/warehouse", "");
 
@@ -98,10 +98,10 @@ fn the_docker_registry_root_stays_unprefixed() {
 }
 
 use quench_core::base64::STANDARD;
-use wiremock::matchers::{header, method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use quench_test::mock::matchers::{header, method, path};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_crates_gc_parses_the_report_and_sends_a_bearer_token() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -132,7 +132,7 @@ async fn run_crates_gc_parses_the_report_and_sends_a_bearer_token() {
     assert_eq!(report.removed_empty_dirs, 2);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_crates_gc_omits_the_auth_header_without_a_token() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -157,7 +157,7 @@ async fn run_crates_gc_omits_the_auth_header_without_a_token() {
     api.run_crates_gc(&reg, CRATES_GC).await.expect("gc report");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_crates_gc_reports_a_non_success_status_with_the_body() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -172,7 +172,7 @@ async fn run_crates_gc_reports_a_non_success_status_with_the_body() {
     assert!(error.to_string().contains("boom"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_docker_gc_parses_the_report_and_sends_basic_auth() {
     let server = MockServer::start().await;
     let expected = format!(
@@ -204,7 +204,7 @@ async fn run_docker_gc_parses_the_report_and_sends_basic_auth() {
     assert_eq!(report.kept, 7);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_docker_gc_errors_when_username_is_set_without_a_password() {
     let server = MockServer::start().await;
     let mut reg = registry(&server.uri(), "", "");
@@ -215,7 +215,7 @@ async fn run_docker_gc_errors_when_username_is_set_without_a_password() {
     assert!(error.to_string().contains("missing password"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_docker_gc_reports_a_non_success_status_with_the_body() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

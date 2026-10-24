@@ -121,7 +121,7 @@ async fn query<T: quench_serde::DeserializeOwned + Send>(uri: &str) -> Query<T> 
         .expect("query deserializes")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_list_returns_models_matching_the_stored_source() {
     ensure_store().await;
     let _store_guard = store_lock().lock().await;
@@ -133,7 +133,7 @@ async fn handle_list_returns_models_matching_the_stored_source() {
     assert!(body.iter().any(|m| m.path == model.path));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_grid_renders_html_containing_the_model_name() {
     ensure_store().await;
     let _store_guard = store_lock().lock().await;
@@ -148,7 +148,7 @@ async fn handle_grid_renders_html_containing_the_model_name() {
     assert!(html.contains(&model.name));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn estimates_modal_renders_the_empty_state_for_an_unknown_path() {
     ensure_store().await;
 
@@ -160,7 +160,7 @@ async fn estimates_modal_renders_the_empty_state_for_an_unknown_path() {
     assert!(html.contains("estimates-modal") && !html.contains("estimates-modal-content"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn empty_estimates_modal_endpoint_renders_the_shell() {
     ensure_store().await;
 
@@ -168,7 +168,7 @@ async fn empty_estimates_modal_endpoint_renders_the_shell() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_modal_renders_the_provided_name() {
     ensure_store().await;
 
@@ -180,7 +180,7 @@ async fn delete_modal_renders_the_provided_name() {
     assert!(html.contains("My Model"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_model_rejects_a_path_outside_the_configured_roots() {
     ensure_store().await;
 
@@ -195,7 +195,7 @@ async fn delete_model_rejects_a_path_outside_the_configured_roots() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_model_reports_not_found_for_a_path_that_does_not_exist_on_disk() {
     ensure_store().await;
 
@@ -213,7 +213,7 @@ async fn delete_model_reports_not_found_for_a_path_that_does_not_exist_on_disk()
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_model_is_forbidden_without_the_delete_model_permission() {
     ensure_store().await;
 
@@ -228,7 +228,7 @@ async fn delete_model_is_forbidden_without_the_delete_model_permission() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_model_form_is_forbidden_without_permission() {
     ensure_store().await;
 
@@ -243,7 +243,7 @@ async fn delete_model_form_is_forbidden_without_permission() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_running_models_is_forbidden_when_auth_is_on_and_the_caller_is_not_admin() {
     let resp = list_running_models(
         OptionalClaims(None),
@@ -255,7 +255,7 @@ async fn list_running_models_is_forbidden_when_auth_is_on_and_the_caller_is_not_
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_running_models_returns_the_mock_engines_instances_when_admin() {
     let resp = list_running_models(
         OptionalClaims(None),
@@ -267,7 +267,7 @@ async fn list_running_models_returns_the_mock_engines_instances_when_admin() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_running_models_maps_an_engine_error_to_500() {
     let failing: std::sync::Arc<dyn switchboard_service::routers::vllm::engine::VllmEngine> =
         std::sync::Arc::new(FailingEngine);
@@ -281,7 +281,7 @@ async fn list_running_models_maps_an_engine_error_to_500() {
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn sync_models_removes_stale_entries_not_present_on_disk() {
     ensure_store().await;
     // This wipes every model currently in the shared store (see

@@ -9,7 +9,7 @@ fn hit(snippet: &str, url: &str) -> Hit {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_search_output_reads_header_snippets_and_urls() {
     let text = "Search results for 'rust' (via DuckDuckGo)\n\nRust is a language.\nSource: https://rust-lang.org/\n---\nCargo is the package manager.\nSource: https://doc.rust-lang.org/cargo";
     let hits = parse_search_output(text);
@@ -25,7 +25,7 @@ fn parse_search_output_reads_header_snippets_and_urls() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn parse_search_output_skips_entries_without_a_usable_url() {
     let text = "Search results for 'x'\n\nno source here\n---\nbad\nSource: javascript:alert(1)\n---\nok\nSource: https://example.com";
     assert_eq!(
@@ -34,7 +34,7 @@ fn parse_search_output_skips_entries_without_a_usable_url() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn decode_redirect_unwraps_duckduckgo_links() {
     let href = "//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa%3Fb%3D1&rut=abc";
     assert_eq!(decode_redirect(href), "https://example.com/a?b=1");
@@ -45,7 +45,7 @@ fn decode_redirect_unwraps_duckduckgo_links() {
     assert_eq!(decode_redirect("//example.com/x"), "https://example.com/x");
 }
 
-#[test]
+#[quench_test::test]
 fn merge_hits_round_robins_and_dedupes() {
     let merged = merge_hits(
         &[
@@ -69,7 +69,7 @@ fn merge_hits_round_robins_and_dedupes() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn parse_plan_handles_search_skip_and_garbage() {
     let plan = parse_plan(
         r#"{"needs_search":true,"queries":["  a  ","A","b","c","d"]}"#,
@@ -91,14 +91,14 @@ fn parse_plan_handles_search_skip_and_garbage() {
     assert_eq!(garbage.queries, ["the question"]);
 }
 
-#[test]
+#[quench_test::test]
 fn cosine_of_parallel_orthogonal_and_zero_vectors() {
     assert!((cosine(&[1.0, 0.0], &[2.0, 0.0]) - 1.0).abs() < 1e-6);
     assert!(cosine(&[1.0, 0.0], &[0.0, 1.0]).abs() < 1e-6);
     assert!(cosine(&[0.0, 0.0], &[1.0, 1.0]).abs() < 1e-9);
 }
 
-#[test]
+#[quench_test::test]
 fn domain_of_strips_scheme_path_and_www() {
     assert_eq!(domain_of("https://www.example.com/a/b?c=d"), "example.com");
     assert_eq!(
@@ -107,7 +107,7 @@ fn domain_of_strips_scheme_path_and_www() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn strip_invalid_citations_keeps_real_numbers_and_drops_invented_ones() {
     let text = "Rust is fast [1] and safe [2] (see [7]). Also [0].";
     assert_eq!(
@@ -117,7 +117,7 @@ fn strip_invalid_citations_keeps_real_numbers_and_drops_invented_ones() {
     assert_eq!(strip_invalid_citations("No sources [1].", 0), "No sources.");
 }
 
-#[test]
+#[quench_test::test]
 fn strip_invalid_citations_ignores_indexing_and_code_fences() {
     let text = "Use items[1] here.\n```\nlet x = [3];\n```\nDone [3].";
     assert_eq!(
@@ -126,7 +126,7 @@ fn strip_invalid_citations_ignores_indexing_and_code_fences() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn format_verdict_lists_unsupported_claims_under_the_models_notice() {
     let json = r#"{"notice":"Some parts could not be verified.","unsupported":[
         {"claim":"The race was on October 4, 2026","reason":"that date is in the future"},
@@ -137,7 +137,7 @@ fn format_verdict_lists_unsupported_claims_under_the_models_notice() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn format_verdict_is_none_when_nothing_is_flagged_or_json_is_unusable() {
     assert!(format_verdict(r#"{"notice":"x","unsupported":[]}"#).is_none());
     assert!(
@@ -146,14 +146,14 @@ fn format_verdict_is_none_when_nothing_is_flagged_or_json_is_unusable() {
     assert!(format_verdict("not json").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn format_verdict_falls_back_to_a_default_notice() {
     let out =
         format_verdict(r#"{"notice":"","unsupported":[{"claim":"c","reason":"r"}]}"#).unwrap();
     assert!(out.starts_with("\n\n⚠ Parts of this answer could not be verified"));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_plan_uses_the_kind_to_decide_whether_to_search() {
     for kind in ["factual", "current", "technical"] {
         let plan = parse_plan(&format!(r#"{{"kind":"{kind}","queries":["q"]}}"#), "q", 3);
@@ -171,7 +171,7 @@ fn parse_plan_uses_the_kind_to_decide_whether_to_search() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn from_evidence_numbers_the_sources_and_flags_empty_input() {
     let items = vec![
         EvidenceItem {
@@ -200,7 +200,7 @@ fn from_evidence_numbers_the_sources_and_flags_empty_input() {
     assert!(none.sources.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn strip_tool_calls_removes_both_tag_spellings() {
     let text = "I need to search.\n<toolcall>{\"a\":1}</toolcall>\nDone <tool_call>{}</tool_call>";
     assert_eq!(strip_tool_calls(text), "I need to search.\n\nDone");
@@ -235,7 +235,7 @@ fn registry(
 
 const GOOD: &str = "Search results for 'q'\n\nA snippet.\nSource: https://example.com/a";
 
-#[tokio::test]
+#[quench_test::test]
 async fn search_with_fallback_uses_the_primary_when_it_works() {
     let reg = registry(vec![
         ("searxng", Ok(GOOD.into())),
@@ -245,7 +245,7 @@ async fn search_with_fallback_uses_the_primary_when_it_works() {
     assert_eq!(hits, vec![hit("A snippet.", "https://example.com/a")]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn search_with_fallback_moves_on_after_an_error_or_an_empty_result() {
     let reg = registry(vec![
         ("searxng", Err("down".into())),
@@ -260,7 +260,7 @@ async fn search_with_fallback_moves_on_after_an_error_or_an_empty_result() {
     assert_eq!(hits[0].url, "https://example.com/a");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn search_with_fallback_is_empty_when_every_provider_fails_or_none_is_registered() {
     let reg = registry(vec![
         ("searxng", Err("down".into())),
@@ -275,7 +275,7 @@ async fn search_with_fallback_is_empty_when_every_provider_fails_or_none_is_regi
     );
 }
 
-#[test]
+#[quench_test::test]
 fn strip_invalid_citations_handles_grouped_citations() {
     assert_eq!(strip_invalid_citations("Fact [1, 2].", 2), "Fact [1, 2].");
     assert_eq!(strip_invalid_citations("Fact [1, 7].", 2), "Fact [1].");
@@ -286,7 +286,7 @@ fn strip_invalid_citations_handles_grouped_citations() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn web_source_label_pairs_the_numbered_domain_with_the_url() {
     let src = WebSource {
         index: 2,
@@ -302,7 +302,7 @@ fn web_source_label_pairs_the_numbered_domain_with_the_url() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn metered_providers_are_not_fallbacks_unless_listed() {
     let reg = registry(vec![
         ("searxng", Err("down".into())),
@@ -322,7 +322,7 @@ async fn metered_providers_are_not_fallbacks_unless_listed() {
     assert_eq!(hits.len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_metered_primary_is_still_used_when_chosen_explicitly() {
     let reg = registry(vec![("serpapi", Ok(GOOD.into()))]);
     let hits =
@@ -330,7 +330,7 @@ async fn a_metered_primary_is_still_used_when_chosen_explicitly() {
     assert_eq!(hits.len(), 1);
 }
 
-#[test]
+#[quench_test::test]
 fn sources_are_quoted_data_and_forged_markers_are_defanged() {
     let items = vec![EvidenceItem {
         url: "https://a.example/x".into(),
@@ -355,7 +355,7 @@ fn sources_are_quoted_data_and_forged_markers_are_defanged() {
     assert!(!g.evidence.contains("<<<SOURCE 1:"));
 }
 
-#[test]
+#[quench_test::test]
 fn format_verdict_drops_detail_quibbles_and_keeps_core_and_contradicted() {
     let only_detail =
         r#"{"notice":"n","unsupported":[{"claim":"c","severity":"detail","reason":"r"}]}"#;
@@ -376,7 +376,7 @@ fn format_verdict_drops_detail_quibbles_and_keeps_core_and_contradicted() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn has_valid_citation_accepts_single_and_grouped_markers_for_real_sources() {
     assert!(has_valid_citation("Fact [1].", 2));
     assert!(has_valid_citation("Fact [5, 2].", 2));
@@ -386,7 +386,7 @@ fn has_valid_citation_accepts_single_and_grouped_markers_for_real_sources() {
     assert!(!has_valid_citation("items[1] is not a citation", 2));
 }
 
-#[test]
+#[quench_test::test]
 fn needs_citation_repair_only_for_uncited_statements_that_are_not_refusals() {
     assert!(needs_citation_repair(
         "The tower is 300 metres tall and opened in 1889.",
@@ -413,7 +413,7 @@ fn needs_citation_repair_only_for_uncited_statements_that_are_not_refusals() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn strip_untrusted_urls_keeps_known_links_and_removes_invented_ones() {
     let allowed = "[1] example.com — https://example.com/page\nSee also http://known.example/a";
     assert_eq!(
@@ -433,7 +433,7 @@ fn strip_untrusted_urls_keeps_known_links_and_removes_invented_ones() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn detect_lang_picks_the_question_language_and_defaults_to_english() {
     assert_eq!(detect_lang("Jaka jest stolica Republiki Zanthory?"), "pl");
     assert_eq!(detect_lang("Wie hoch ist der Brandberg-Turm?"), "de");
@@ -446,7 +446,7 @@ fn detect_lang_picks_the_question_language_and_defaults_to_english() {
     assert_eq!(detect_lang("1987"), "en");
 }
 
-#[test]
+#[quench_test::test]
 fn mark_unsourced_appends_a_notice_in_the_questions_language() {
     let out = mark_unsourced(
         "Zanthora might be a fictional place.  ",
@@ -459,7 +459,7 @@ fn mark_unsourced_appends_a_notice_in_the_questions_language() {
     assert!(pl.contains("ℹ Nie znaleziono żadnych źródeł"));
 }
 
-#[test]
+#[quench_test::test]
 fn an_unavailable_search_asks_for_a_brief_generative_answer_and_says_so() {
     let g = from_evidence(&[], "2026-10-05");
     assert!(g.unavailable && g.sources.is_empty() && g.evidence.is_empty());
@@ -472,7 +472,7 @@ fn an_unavailable_search_asks_for_a_brief_generative_answer_and_says_so() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn strip_refusal_leaks_removes_contact_details_and_foreign_numbers_after_a_refusal() {
     // volunteering another business's phone number
     let out = strip_refusal_leaks(
@@ -499,7 +499,7 @@ fn strip_refusal_leaks_removes_contact_details_and_foreign_numbers_after_a_refus
     assert_eq!(out, "A registrar address is not listed.");
 }
 
-#[test]
+#[quench_test::test]
 fn strip_refusal_leaks_leaves_other_answers_alone() {
     // not a refusal: untouched, numbers and all
     let ok = "The tower opened in 1889 [1]. It is 330 metres tall [2].";

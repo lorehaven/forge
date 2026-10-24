@@ -3,11 +3,10 @@ use crate::env::{
 };
 pub use crate::order::{Gate, Phase, WaitFor};
 use crate::order::{gates_of, order_by_dependencies};
-use minijinja::value::ValueKind;
-use minijinja::{Environment, Output, State, Value, context, escape_formatter};
 use quench_core::Context;
+use quench_regex::Regex;
 use quench_serde::Value as YamlValue;
-use regex::Regex;
+use quench_template::{Args, Environment, ErrorKind};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fs;
@@ -528,11 +527,27 @@ fn overlay_data<S: std::hash::BuildHasher>(
     env_source: Option<&str>,
 ) -> quench_core::Result<YamlValue> {
     let mut overlay_jinja = Environment::new();
-    overlay_jinja.set_loader(minijinja::path_loader(overlay_dir()));
+    let root = overlay_dir();
+    overlay_jinja.set_loader(move |name: &str| {
+        if name
+            .split('/')
+            .any(|part| part == ".." || part.contains('\\'))
+        {
+            return Ok(None);
+        }
+        match fs::read_to_string(root.join(name)) {
+            Ok(text) => Ok(Some(text)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(quench_template::Error::new(
+                ErrorKind::Custom,
+                format!("could not read template: {e}"),
+            )),
+        }
+    });
     overlay_jinja.add_global("env", env_name);
     overlay_jinja.set_formatter(yaml_bool_formatter);
 
-    let rendered_overlay = overlay_jinja.render_str(overlay_src, Value::UNDEFINED)?;
+    let rendered_overlay = overlay_jinja.render_str(overlay_src, &YamlValue::Null)?;
     let mut data: YamlValue = quench_serde::yaml::from_str(&rendered_overlay).map_err(|e| {
         let msg = format!("Failed to parse overlay.yaml after rendering: {e}");
         // Print with line numbers for easier debugging
@@ -683,8 +698,10 @@ fn render_resources(
             .unwrap_or_default()
             .to_ascii_lowercase();
         if matches!(kind.as_str(), "configmap" | "secret") {
-            let tpl = tpl_env.get_template(&template_name_for_kind(&kind))?;
-            let y = tpl.render(context! { data => crate::bridge::to_jinja(data), res => crate::bridge::to_jinja(res), env => env_name })?;
+            let y = tpl_env.render(
+                &template_name_for_kind(&kind),
+                &quench_serde::json!({ "data": data, "res": res, "env": env_name }),
+            )?;
             config_docs.insert((kind, res_ref.name.clone()), y);
         }
     }
@@ -698,15 +715,14 @@ fn render_resources(
         let kind = res["kind"].as_str().context("kind missing")?;
         let tpl_name = template_name_for_kind(kind);
 
-        let tpl = tpl_env
-            .get_template(&tpl_name)
+        tpl_env
+            .template(&tpl_name)
             .with_context(|| format!("template for kind `{kind}` not found or invalid. ensure `{tpl_name}` exists in embedded templates."))?;
 
-        let y = tpl.render(context! {
-            data => crate::bridge::to_jinja(data),
-            res => crate::bridge::to_jinja(res),
-            env => env_name,
-        })?;
+        let y = tpl_env.render(
+            &tpl_name,
+            &quench_serde::json!({ "data": data, "res": res, "env": env_name }),
+        )?;
         let y = if labels.is_empty() && annotations.is_empty() {
             y.trim().to_string()
         } else {
@@ -960,17 +976,16 @@ pub fn scan_overlay(env_name: &str, overlays_dir: &Path) -> quench_core::Result<
                 Ok(Some(text))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(minijinja::Error::new(
-                minijinja::ErrorKind::InvalidOperation,
-                "could not read template",
-            )
-            .with_source(e)),
+            Err(e) => Err(quench_template::Error::new(
+                ErrorKind::Custom,
+                format!("could not read template: {e}"),
+            )),
         }
     });
     jinja.add_global("env", env_name);
     jinja.set_formatter(yaml_bool_formatter);
 
-    let rendered = jinja.render_str(&source, Value::UNDEFINED)?;
+    let rendered = jinja.render_str(&source, &YamlValue::Null)?;
 
     let mut includes = loaded
         .lock()
@@ -1293,7 +1308,7 @@ pub fn template_name_for_kind(kind: &str) -> String {
     format!("{}.yaml.j2", canonical_kind(&kind.to_lowercase()))
 }
 
-fn load_embedded_templates(env: &mut Environment<'_>) -> quench_core::Result<()> {
+fn load_embedded_templates(env: &mut Environment) -> quench_core::Result<()> {
     for (name, source) in TEMPLATES {
         env.add_template(name, source)
             .with_context(|| format!("failed to load embedded template: {name}"))?;
@@ -1312,33 +1327,44 @@ pub fn check_embedded_templates() -> quench_core::Result<Vec<&'static str>> {
     Ok(TEMPLATES.iter().map(|(name, _)| *name).collect())
 }
 
-/// minijinja mirrors Jinja2/Python and prints bools as `True`/`False`, which
-/// YAML treats as a plain string rather than a boolean — Kubernetes then
-/// rejects the field as the wrong type. Every other value keeps the default
-/// formatting.
-fn yaml_bool_formatter(
-    out: &mut Output<'_>,
-    state: &mut State<'_, '_>,
-    value: &Value,
-) -> Result<(), minijinja::Error> {
-    if value.kind() == ValueKind::Bool {
-        return out
-            .write_str(if value.is_true() { "true" } else { "false" })
-            .map_err(|e| minijinja::Error::new(minijinja::ErrorKind::WriteFailure, e.to_string()));
+/// Jinja prints bools as `True`/`False`, which YAML treats as a plain string
+/// rather than a boolean — Kubernetes then rejects the field as the wrong
+/// type. Every other value keeps the default formatting.
+fn yaml_bool_formatter(value: &YamlValue) -> Option<String> {
+    match value {
+        YamlValue::Bool(b) => Some(b.to_string()),
+        _ => None,
     }
-    escape_formatter(out, state, value)
+}
+
+/// The value with every mapping's keys in sorted order, so rendered YAML does not depend on how the
+/// overlay happened to order them.
+fn sorted_keys(value: &YamlValue) -> YamlValue {
+    match value {
+        YamlValue::Object(map) => {
+            let mut pairs: Vec<_> = map.iter().collect();
+            pairs.sort_by(|a, b| a.0.cmp(b.0));
+            YamlValue::Object(
+                pairs
+                    .into_iter()
+                    .map(|(k, v)| (k.clone(), sorted_keys(v)))
+                    .collect(),
+            )
+        }
+        YamlValue::Array(items) => YamlValue::Array(items.iter().map(sorted_keys).collect()),
+        other => other.clone(),
+    }
 }
 
 /// Renders a value as YAML at column 0, for overlay fields that are passed
 /// straight through to Kubernetes (tolerations, affinity, webhooks, ...).
-/// Nest the result with minijinja's `indent` filter.
-fn to_yaml(value: &Value) -> Result<String, minijinja::Error> {
-    crate::bridge::from_jinja(value)
-        .and_then(|value| quench_serde::yaml::to_string(&value).map_err(|e| e.to_string()))
-        .map(|s| s.trim_end().to_string())
+/// Nest the result with the `indent` filter.
+fn to_yaml(value: &YamlValue, _args: &Args) -> Result<YamlValue, quench_template::Error> {
+    quench_serde::yaml::to_string(&sorted_keys(value))
+        .map(|s| YamlValue::String(s.trim_end().to_string()))
         .map_err(|e| {
-            minijinja::Error::new(
-                minijinja::ErrorKind::InvalidOperation,
+            quench_template::Error::new(
+                ErrorKind::InvalidOperation,
                 format!("failed to serialize value as yaml: {e}"),
             )
         })
@@ -1391,7 +1417,7 @@ fn substitute<S: std::hash::BuildHasher>(
     match value {
         YamlValue::String(s) => {
             *s = re
-                .replace_all(s, |c: &regex::Captures<'_>| {
+                .replace_all(s, |c: &quench_regex::Captures<'_>| {
                     let name = &c[2];
                     if c.get(1).is_some() {
                         return format!("${{{name}}}");

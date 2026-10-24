@@ -1,7 +1,7 @@
+use quench_test::mock::matchers::{header, method, path, path_regex, query_param};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use warehouse_cli::api::crates_api::{CratesApi, urlencoding_simple};
 use warehouse_cli::domain::{RegistryConfig, RegistryCratesConfig, RegistryDockerConfig};
-use wiremock::matchers::{header, method, path, path_regex, query_param};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn registry(url: &str, token: Option<&str>) -> RegistryConfig {
     RegistryConfig {
@@ -16,14 +16,14 @@ fn registry(url: &str, token: Option<&str>) -> RegistryConfig {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn urlencoding_simple_escapes_reserved_bytes_and_spaces() {
     assert_eq!(urlencoding_simple("hello world"), "hello+world");
     assert_eq!(urlencoding_simple("a/b"), "a%2Fb");
     assert_eq!(urlencoding_simple("safe-._~09AZaz"), "safe-._~09AZaz");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn search_parses_crates_and_total_and_sends_the_query() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -50,7 +50,7 @@ async fn search_parses_crates_and_total_and_sends_the_query() {
     assert_eq!(crates[0].name, "foo");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn search_surfaces_a_non_success_status() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -65,7 +65,7 @@ async fn search_surfaces_a_non_success_status() {
     assert!(error.to_string().contains("request failed"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn versions_parses_every_index_line() {
     let server = MockServer::start().await;
     let body = format!(
@@ -93,7 +93,7 @@ async fn versions_parses_every_index_line() {
     assert!(records[1].yanked);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn versions_reports_not_found_as_a_named_error() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -108,7 +108,7 @@ async fn versions_reports_not_found_as_a_named_error() {
     assert!(error.to_string().contains("'missing' not found"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn versions_errors_when_every_line_fails_to_parse() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -123,7 +123,7 @@ async fn versions_errors_when_every_line_fails_to_parse() {
     assert!(error.to_string().contains("no version records found"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn yank_succeeds_when_the_server_reports_ok() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
@@ -140,7 +140,7 @@ async fn yank_succeeds_when_the_server_reports_ok() {
     api.yank(&reg, "foo", "1.0.0").await.expect("yank");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn yank_errors_when_the_server_reports_ok_false() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
@@ -158,7 +158,7 @@ async fn yank_errors_when_the_server_reports_ok_false() {
     assert!(error.to_string().contains("ok=false"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unyank_succeeds_when_the_server_reports_ok() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))

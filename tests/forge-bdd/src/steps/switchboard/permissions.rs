@@ -4,7 +4,7 @@
 //! be refused by the others.
 
 use crate::world::{ForgeWorld, mint_test_token};
-use cucumber::given;
+use quench_test_bdd::given;
 
 #[given(expr = "I hold a switchboard token scoped {string}")]
 async fn hold_switchboard_token(world: &mut ForgeWorld, scope: String) {

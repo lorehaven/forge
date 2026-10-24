@@ -1,5 +1,5 @@
 use crate::world::ForgeWorld;
-use reqwest::multipart::{Form, Part};
+use quench_client::multipart::{Form, Part};
 
 fn file_part(file_name: &str) -> Part {
     let content: &[u8] = match file_name.rsplit('.').next() {
@@ -13,7 +13,7 @@ fn file_part(file_name: &str) -> Part {
 
 async fn record_response(
     world: &mut ForgeWorld,
-    response: Result<reqwest::Response, reqwest::Error>,
+    response: Result<quench_client::transport::Response, quench_client::transport::Error>,
 ) {
     match response {
         Ok(resp) => {
@@ -27,14 +27,14 @@ async fn record_response(
     }
 }
 
-#[cucumber::when("I request the file list without authentication")]
+#[quench_test_bdd::when("I request the file list without authentication")]
 async fn list_files_unauthenticated(world: &mut ForgeWorld) {
     let url = format!("{}/sage/api/v1/files?project_id=any", world.sage_base_url);
     let response = world.client.get(&url).send().await;
     record_response(world, response).await;
 }
 
-#[cucumber::when("I request the file list without a scope")]
+#[quench_test_bdd::when("I request the file list without a scope")]
 async fn list_files_without_scope(world: &mut ForgeWorld) {
     let url = format!("{}/sage/api/v1/files", world.sage_base_url);
     let response = world
@@ -46,7 +46,7 @@ async fn list_files_without_scope(world: &mut ForgeWorld) {
     record_response(world, response).await;
 }
 
-#[cucumber::when(expr = "I request the file list for conversation {string}")]
+#[quench_test_bdd::when(expr = "I request the file list for conversation {string}")]
 async fn list_files_for_conversation(world: &mut ForgeWorld, conversation_id: String) {
     let url = format!(
         "{}/sage/api/v1/files?conversation_id={}",
@@ -61,7 +61,7 @@ async fn list_files_for_conversation(world: &mut ForgeWorld, conversation_id: St
     record_response(world, response).await;
 }
 
-#[cucumber::when(expr = "I request the file list for project {string}")]
+#[quench_test_bdd::when(expr = "I request the file list for project {string}")]
 async fn list_files_for_project(world: &mut ForgeWorld, project_id: String) {
     let url = format!(
         "{}/sage/api/v1/files?project_id={}",
@@ -76,7 +76,7 @@ async fn list_files_for_project(world: &mut ForgeWorld, project_id: String) {
     record_response(world, response).await;
 }
 
-#[cucumber::when(expr = "I upload file {string} to project {string}")]
+#[quench_test_bdd::when(expr = "I upload file {string} to project {string}")]
 async fn upload_file_to_project(world: &mut ForgeWorld, file_name: String, project_id: String) {
     let url = format!("{}/sage/api/v1/files", world.sage_base_url);
     let form = Form::new()
@@ -92,7 +92,7 @@ async fn upload_file_to_project(world: &mut ForgeWorld, file_name: String, proje
     record_response(world, response).await;
 }
 
-#[cucumber::when(expr = "I upload file {string} to conversation {string}")]
+#[quench_test_bdd::when(expr = "I upload file {string} to conversation {string}")]
 async fn upload_file_to_conversation(
     world: &mut ForgeWorld,
     file_name: String,
@@ -112,7 +112,7 @@ async fn upload_file_to_conversation(
     record_response(world, response).await;
 }
 
-#[cucumber::when(expr = "I upload file {string} without a target scope")]
+#[quench_test_bdd::when(expr = "I upload file {string} without a target scope")]
 async fn upload_file_without_scope(world: &mut ForgeWorld, file_name: String) {
     let url = format!("{}/sage/api/v1/files", world.sage_base_url);
     let form = Form::new().part("file", file_part(&file_name));
@@ -126,7 +126,7 @@ async fn upload_file_without_scope(world: &mut ForgeWorld, file_name: String) {
     record_response(world, response).await;
 }
 
-#[cucumber::when(expr = "I upload file {string} to project {string} without authentication")]
+#[quench_test_bdd::when(expr = "I upload file {string} to project {string} without authentication")]
 async fn upload_file_unauthenticated(
     world: &mut ForgeWorld,
     file_name: String,
@@ -140,7 +140,7 @@ async fn upload_file_unauthenticated(
     record_response(world, response).await;
 }
 
-#[cucumber::when(expr = "I request metadata for file {string}")]
+#[quench_test_bdd::when(expr = "I request metadata for file {string}")]
 async fn get_file_metadata(world: &mut ForgeWorld, file_id: String) {
     let url = format!("{}/sage/api/v1/files/{}", world.sage_base_url, file_id);
     let response = world
@@ -152,7 +152,7 @@ async fn get_file_metadata(world: &mut ForgeWorld, file_id: String) {
     record_response(world, response).await;
 }
 
-#[cucumber::when(expr = "I delete file {string}")]
+#[quench_test_bdd::when(expr = "I delete file {string}")]
 async fn delete_file(world: &mut ForgeWorld, file_id: String) {
     let url = format!("{}/sage/api/v1/files/{}", world.sage_base_url, file_id);
     let response = world
@@ -164,7 +164,7 @@ async fn delete_file(world: &mut ForgeWorld, file_id: String) {
     record_response(world, response).await;
 }
 
-#[cucumber::when(expr = "I reprocess file {string}")]
+#[quench_test_bdd::when(expr = "I reprocess file {string}")]
 async fn reprocess_file(world: &mut ForgeWorld, file_id: String) {
     let url = format!(
         "{}/sage/api/v1/files/{}/reprocess",
@@ -179,7 +179,7 @@ async fn reprocess_file(world: &mut ForgeWorld, file_id: String) {
     record_response(world, response).await;
 }
 
-#[cucumber::when(expr = "I download file {string}")]
+#[quench_test_bdd::when(expr = "I download file {string}")]
 async fn download_file(world: &mut ForgeWorld, file_id: String) {
     let url = format!(
         "{}/sage/api/v1/files/{}/download",
@@ -194,7 +194,7 @@ async fn download_file(world: &mut ForgeWorld, file_id: String) {
     record_response(world, response).await;
 }
 
-#[cucumber::when(expr = "I download file {string} without authentication")]
+#[quench_test_bdd::when(expr = "I download file {string} without authentication")]
 async fn download_file_unauthenticated(world: &mut ForgeWorld, file_id: String) {
     let url = format!(
         "{}/sage/api/v1/files/{}/download",
@@ -204,7 +204,7 @@ async fn download_file_unauthenticated(world: &mut ForgeWorld, file_id: String) 
     record_response(world, response).await;
 }
 
-#[cucumber::when(expr = "I request chunks for file {string}")]
+#[quench_test_bdd::when(expr = "I request chunks for file {string}")]
 async fn request_chunks(world: &mut ForgeWorld, file_id: String) {
     let url = format!(
         "{}/sage/api/v1/files/{}/chunks",
@@ -219,7 +219,7 @@ async fn request_chunks(world: &mut ForgeWorld, file_id: String) {
     record_response(world, response).await;
 }
 
-#[cucumber::when("I request the chat capabilities")]
+#[quench_test_bdd::when("I request the chat capabilities")]
 async fn get_capabilities(world: &mut ForgeWorld) {
     let url = format!("{}/sage/api/v1/chat/capabilities", world.sage_base_url);
     let response = world
@@ -231,14 +231,14 @@ async fn get_capabilities(world: &mut ForgeWorld) {
     record_response(world, response).await;
 }
 
-#[cucumber::when("I request the files panel without authentication")]
+#[quench_test_bdd::when("I request the files panel without authentication")]
 async fn files_panel_unauthenticated(world: &mut ForgeWorld) {
     let url = format!("{}/sage/ui/files/panel?project_id=any", world.sage_base_url);
     let response = world.client.get(&url).send().await;
     record_response(world, response).await;
 }
 
-#[cucumber::then(expr = "the response should mention {string}")]
+#[quench_test_bdd::then(expr = "the response should mention {string}")]
 async fn response_should_mention(world: &mut ForgeWorld, needle: String) -> Result<(), String> {
     match &world.last_body {
         Some(body) if body.contains(&needle) => Ok(()),

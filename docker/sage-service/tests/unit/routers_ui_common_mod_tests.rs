@@ -7,20 +7,20 @@ use sage_service::routers::ui::common::supported_locales;
 use sage_service::routers::ui::common::{SUPPORTED_LOCALES, render_page};
 use std::sync::Arc;
 
-#[test]
+#[quench_test::test]
 fn supported_locales_matches_the_fixed_list() {
     let locales = supported_locales();
     assert_eq!(locales.len(), SUPPORTED_LOCALES.len());
     assert!(locales.contains(&"en-US".to_string()));
 }
 
-#[test]
+#[quench_test::test]
 fn render_page_produces_html_wrapping_the_given_content() {
     let response = render_page(StatusCode::OK, div().text("hello from a test"));
     assert_eq!(response.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn assets_reports_not_found_for_a_missing_file() {
     sage_service::routers::ui::common::register_routes();
     let container = Arc::new(ContainerBuilder::new().build().await.unwrap());

@@ -2,7 +2,7 @@
 
 use sage_service::tools::capabilities::*;
 
-#[test]
+#[quench_test::test]
 fn test_web_assistant_profile() {
     let profile = get_profile("web_assistant").unwrap();
     assert!(profile.is_enabled(Tool::WebSearch));
@@ -12,7 +12,7 @@ fn test_web_assistant_profile() {
     assert!(!profile.is_enabled(Tool::CodeExecutor));
 }
 
-#[test]
+#[quench_test::test]
 fn test_code_assistant_profile() {
     let profile = get_profile("code_assistant").unwrap();
     assert!(profile.is_enabled(Tool::CodeExecutor));
@@ -20,7 +20,7 @@ fn test_code_assistant_profile() {
     assert!(!profile.is_enabled(Tool::Command));
 }
 
-#[test]
+#[quench_test::test]
 fn test_cli_agent_profile() {
     let profile = get_profile("cli_agent").unwrap();
     assert!(profile.is_enabled(Tool::Command));
@@ -28,13 +28,13 @@ fn test_cli_agent_profile() {
     assert!(profile.is_enabled(Tool::FileOps));
 }
 
-#[test]
+#[quench_test::test]
 fn test_profile_case_insensitive() {
     assert!(get_profile("WEB_ASSISTANT").is_some());
     assert!(get_profile("Web_Assistant").is_some());
 }
 
-#[test]
+#[quench_test::test]
 fn test_invalid_profile() {
     assert!(get_profile("nonexistent").is_none());
 }

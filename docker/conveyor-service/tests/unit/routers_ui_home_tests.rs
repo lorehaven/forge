@@ -55,21 +55,21 @@ fn check(passed: bool, findings: usize) -> CheckResult {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_check_that_never_ran_is_a_dashed_chip() {
     let html = chip(CheckKind::Lint, None).render();
     assert!(html.contains("chip-none"));
     assert!(html.contains("L -"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_clean_check_is_green_even_with_no_findings_to_count() {
     let html = chip(CheckKind::Machete, Some(&check(true, 0))).render();
     assert!(html.contains("chip-clean"));
     assert!(html.contains("M 0"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_passing_check_with_findings_is_amber_not_red() {
     // Lint can pass with warnings - that is not the same as failing, and the
     // chip's colour is the whole point of it existing over a bare number.
@@ -79,7 +79,7 @@ fn a_passing_check_with_findings_is_amber_not_red() {
     assert!(!html.contains("chip-danger"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_check_with_a_metric_shows_that_instead_of_the_capped_finding_count() {
     // Coverage's finding count is "how many files have any gap at all",
     // which hits the 50-finding cap on nearly any real codebase - that is
@@ -95,14 +95,14 @@ fn a_check_with_a_metric_shows_that_instead_of_the_capped_finding_count() {
     assert!(!html.contains("C 50"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_failed_check_is_red() {
     let html = chip(CheckKind::Audit, Some(&check(false, 1))).render();
     assert!(html.contains("chip-danger"));
     assert!(html.contains("A 1"));
 }
 
-#[test]
+#[quench_test::test]
 fn four_chips_come_out_in_a_fixed_order_regardless_of_which_checks_ran() {
     let summary = ScanSummary {
         run: None,
@@ -124,7 +124,7 @@ fn four_chips_come_out_in_a_fixed_order_regardless_of_which_checks_ran() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_repo_with_no_summary_at_all_shows_four_unrun_chips() {
     let html = check_chips(None).render();
     assert!(html.contains("L -"));
@@ -133,7 +133,7 @@ fn a_repo_with_no_summary_at_all_shows_four_unrun_chips() {
     assert!(html.contains("C -"));
 }
 
-#[test]
+#[quench_test::test]
 fn an_enabled_repo_gets_a_run_button_that_posts_to_its_own_id() {
     let html = run_button(&repo(true), None).render();
     assert!(html.contains("<button"));
@@ -142,7 +142,7 @@ fn an_enabled_repo_gets_a_run_button_that_posts_to_its_own_id() {
     assert!(html.contains("hx-target=\"#home-state\""));
 }
 
-#[test]
+#[quench_test::test]
 fn a_disabled_repo_gets_no_run_button() {
     // The API rejects a manual run on a disabled repository with a 409; a
     // button that only ever fails is worse than no button at all.
@@ -151,7 +151,7 @@ fn a_disabled_repo_gets_no_run_button() {
     assert!(!html.contains("hx-post"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_run_button_on_a_scoped_page_carries_the_scope_along() {
     // Clicking "run now" from a project's own branch of the page has to come
     // back to that same branch, not silently jump to the unscoped front page.
@@ -159,7 +159,7 @@ fn a_run_button_on_a_scoped_page_carries_the_scope_along() {
     assert!(html.contains("repos/repo-1/run?project=project-9"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_leaf_child_folds_into_its_parents_table_with_no_details_of_its_own() {
     let root = project("root-1", "root-group", None);
     let child = project("child-1", "child-project", Some("root-1"));
@@ -178,7 +178,7 @@ fn a_leaf_child_folds_into_its_parents_table_with_no_details_of_its_own() {
     assert!(html.contains("palantir"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_container_with_its_own_children_still_gets_a_nested_details() {
     let root = project("root-1", "root-group", None);
     let mid = project("mid-1", "mid-group", Some("root-1"));
@@ -199,7 +199,7 @@ fn a_container_with_its_own_children_still_gets_a_nested_details() {
     assert!(!html.contains("leaf-project"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_repo_appears_under_its_own_branch_and_nowhere_else() {
     let a = project("a", "project-a", None);
     let a_child = project("a-child", "a-child", Some("a"));
@@ -229,7 +229,7 @@ fn a_repo_appears_under_its_own_branch_and_nowhere_else() {
     assert!(b_section.contains("in-b"));
 }
 
-#[test]
+#[quench_test::test]
 fn two_leaf_repos_under_the_same_parent_share_one_table() {
     let root = project("root-1", "root-group", None);
     let a = project("a", "child-a", Some("root-1"));
@@ -253,7 +253,7 @@ fn two_leaf_repos_under_the_same_parent_share_one_table() {
     assert!(html.contains("in-b"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_project_with_no_repo_and_no_children_is_still_a_valid_leaf() {
     let empty = project("solo", "just-a-group", None);
     let html = project_tree_panel(&[empty], &[], &HashMap::new()).render();
@@ -262,14 +262,14 @@ fn a_project_with_no_repo_and_no_children_is_still_a_valid_leaf() {
     assert!(!html.contains("<table"));
 }
 
-#[test]
+#[quench_test::test]
 fn no_projects_at_all_shows_the_empty_message() {
     let html = project_tree_panel(&[], &[], &HashMap::new()).render();
     assert!(html.contains("ui_repos_empty"));
     assert!(!html.contains("project-node"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_container_node_name_is_a_link_to_its_own_project_page() {
     let root = project("root-1", "root-group", None);
     let child = project("child-1", "child-project", Some("root-1"));
@@ -285,7 +285,7 @@ fn a_container_node_name_is_a_link_to_its_own_project_page() {
     assert!(html.contains(">root-group<"));
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_leaf_is_still_a_link_to_its_own_project_page() {
     let empty = project("solo", "just-a-group", None);
     let html = project_tree_panel(&[empty], &[], &HashMap::new()).render();
@@ -294,7 +294,7 @@ fn an_empty_leaf_is_still_a_link_to_its_own_project_page() {
     assert!(html.contains("just-a-group"));
 }
 
-#[test]
+#[quench_test::test]
 fn scoping_to_a_root_shows_only_that_branch_and_hides_the_root_itself() {
     let root = project("root-1", "root-group", None);
     let child = project("child-1", "child-project", Some("root-1"));
@@ -325,7 +325,7 @@ fn scoping_to_a_root_shows_only_that_branch_and_hides_the_root_itself() {
     assert!(!html.contains("in-other"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_root_with_its_own_direct_repo_shows_it_even_with_no_children() {
     let root = project("root-1", "root-group", None);
     let mut direct_repo = repo(true);

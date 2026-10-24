@@ -1,9 +1,9 @@
 use quench_client::transport::header::WWW_AUTHENTICATE;
 use quench_client::transport::{HeaderMap, HeaderValue};
+use quench_test::mock::matchers::{basic_auth, header, method, path, query_param};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use warehouse_cli::api::docker_api::{DockerApi, parse_bearer_challenge, to_https_url};
 use warehouse_cli::domain::{RegistryConfig, RegistryDockerConfig};
-use wiremock::matchers::{basic_auth, header, method, path, query_param};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn registry(url: &str) -> RegistryConfig {
     RegistryConfig {
@@ -17,7 +17,7 @@ fn registry(url: &str) -> RegistryConfig {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn should_try_https_fallback_only_for_http_urls_with_the_tls_mismatch_error() {
     assert_eq!(
         to_https_url("http://example.net/x"),
@@ -26,7 +26,7 @@ fn should_try_https_fallback_only_for_http_urls_with_the_tls_mismatch_error() {
     assert_eq!(to_https_url("https://example.net/x"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_bearer_challenge_reads_realm_and_service() {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -40,7 +40,7 @@ fn parse_bearer_challenge_reads_realm_and_service() {
     assert_eq!(challenge.service.as_deref(), Some("registry.example.net"));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_bearer_challenge_is_none_without_a_bearer_prefix() {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -50,7 +50,7 @@ fn parse_bearer_challenge_is_none_without_a_bearer_prefix() {
     assert!(parse_bearer_challenge(&headers).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_bearer_challenge_is_none_without_a_realm() {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -60,7 +60,7 @@ fn parse_bearer_challenge_is_none_without_a_realm() {
     assert!(parse_bearer_challenge(&headers).is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn catalog_returns_repositories_when_unauthenticated_access_is_allowed() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -83,7 +83,7 @@ async fn catalog_returns_repositories_when_unauthenticated_access_is_allowed() {
     assert_eq!(repos, vec!["a/b".to_string(), "c/d".to_string()]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn catalog_surfaces_a_non_401_failure_directly() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -98,7 +98,7 @@ async fn catalog_surfaces_a_non_401_failure_directly() {
     assert!(error.to_string().contains("boom"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn catalog_errors_on_a_401_without_a_bearer_challenge() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -113,7 +113,7 @@ async fn catalog_errors_on_a_401_without_a_bearer_challenge() {
     assert!(error.to_string().contains("without a Bearer challenge"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn catalog_errors_on_a_401_challenge_without_credentials_configured() {
     let server = MockServer::start().await;
     let challenge = format!(r#"Bearer realm="{}/token",service="reg""#, server.uri());
@@ -131,7 +131,7 @@ async fn catalog_errors_on_a_401_challenge_without_credentials_configured() {
     assert!(error.to_string().contains("missing username"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn catalog_fetches_a_token_and_retries_on_401() {
     let server = MockServer::start().await;
     let challenge = format!(r#"Bearer realm="{}/token",service="reg""#, server.uri());
@@ -174,7 +174,7 @@ async fn catalog_fetches_a_token_and_retries_on_401() {
     assert_eq!(repos, vec!["a/b".to_string()]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn tags_scopes_the_token_request_to_the_repository() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

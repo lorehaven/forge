@@ -51,14 +51,14 @@ fn jwt_config(auth_enabled: bool) -> JwtConfig {
 // render_rivets_page
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_with_no_packages_shows_the_empty_state() {
     let resp = render_rivets_page(&[], None, None, false);
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(body_html(resp).await.contains("ui_rivet_empty"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_lists_packages_in_the_tree_and_asks_for_a_selection() {
     let packages = vec![
         package("forge", "1.0.0", false),
@@ -70,7 +70,7 @@ async fn render_lists_packages_in_the_tree_and_asks_for_a_selection() {
     assert!(html.contains("ui_rivet_empty_select_version"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_opens_on_the_newest_version_by_semver_not_text_order() {
     let packages = vec![
         package("forge", "0.9.0", false),
@@ -87,7 +87,7 @@ async fn render_opens_on_the_newest_version_by_semver_not_text_order() {
     assert!(tree_ten < tree_nine && tree_nine < tree_two, "{html}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_prefers_an_offerable_version_over_a_yanked_newest() {
     let packages = vec![
         package("forge", "1.0.0", false),
@@ -108,7 +108,7 @@ async fn render_prefers_an_offerable_version_over_a_yanked_newest() {
     assert!(html.contains("ui_status_yanked"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_falls_back_when_all_versions_are_yanked_or_the_name_is_unknown() {
     let packages = vec![package("forge", "1.0.0", true)];
     let html = body_html(render_rivets_page(&packages, Some("forge"), None, false)).await;
@@ -118,7 +118,7 @@ async fn render_falls_back_when_all_versions_are_yanked_or_the_name_is_unknown()
     assert!(html.contains("ui_rivet_empty_select_version"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_shows_what_the_manifest_declares() {
     let packages = vec![package("forge", "1.0.0", false)];
     let html = body_html(render_rivets_page(
@@ -141,7 +141,7 @@ async fn render_shows_what_the_manifest_declares() {
     assert!(html.contains("ci"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_escapes_what_a_publisher_controls() {
     let mut hostile = package("forge", "1.0.0", false);
     hostile.description = Some("<script>alert(1)</script>".to_string());
@@ -155,7 +155,7 @@ async fn render_escapes_what_a_publisher_controls() {
     assert!(!html.contains("<b>bold</b>"), "{html}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_shows_yank_controls_only_to_a_caller_who_may_manage() {
     let packages = vec![package("forge", "1.0.0", false)];
 
@@ -180,7 +180,7 @@ async fn render_shows_yank_controls_only_to_a_caller_who_may_manage() {
     assert!(!without.contains("/rivets/yank"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_offers_unyank_for_a_yanked_version() {
     let packages = vec![package("forge", "1.0.0", true)];
     let html = body_html(render_rivets_page(
@@ -221,7 +221,7 @@ async fn db_with(packages: &[RivetPackage]) -> Db {
     db
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_catalog_redirects_to_login_without_a_session() {
     let _rivets = WithRivets::new();
     let (app, container) = app(jwt_config(true), db_with(&[]).await).await;
@@ -231,7 +231,7 @@ async fn the_catalog_redirects_to_login_without_a_session() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_catalog_lists_what_the_database_holds() {
     let _rivets = WithRivets::new();
     let db = db_with(&[
@@ -260,7 +260,7 @@ async fn the_catalog_lists_what_the_database_holds() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_catalog_is_empty_when_the_registry_is_disabled() {
     let _rivets = WithRivets::disabled();
     let db = db_with(&[package("hidden-pkg", "1.0.0", false)]).await;
@@ -275,7 +275,7 @@ async fn the_catalog_is_empty_when_the_registry_is_disabled() {
     assert!(!html.contains("hidden-pkg"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_root_redirects_to_the_catalog() {
     let _rivets = WithRivets::new();
     let (app, container) = app(jwt_config(false), db_with(&[]).await).await;
@@ -297,7 +297,7 @@ async fn the_root_redirects_to_the_catalog() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn yank_and_unyank_flip_the_flag_and_send_the_page_back_to_the_version() {
     let _rivets = WithRivets::new();
     let db = db_with(&[package("forge", "0.4.0+b1", false)]).await;
@@ -352,7 +352,7 @@ async fn yank_and_unyank_flip_the_flag_and_send_the_page_back_to_the_version() {
     assert!(!row.yanked);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn yanking_something_that_does_not_exist_is_not_found() {
     let _rivets = WithRivets::new();
     let (app, container) = app(jwt_config(false), db_with(&[]).await).await;
@@ -368,7 +368,7 @@ async fn yanking_something_that_does_not_exist_is_not_found() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn yank_and_unyank_redirect_to_login_without_a_session() {
     let _rivets = WithRivets::new();
     let (app, container) = app(jwt_config(true), db_with(&[]).await).await;
@@ -386,7 +386,7 @@ async fn yank_and_unyank_redirect_to_login_without_a_session() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn yank_and_unyank_are_not_found_when_the_registry_is_disabled() {
     let _rivets = WithRivets::disabled();
     let db = db_with(&[package("forge", "1.0.0", false)]).await;
@@ -416,7 +416,7 @@ async fn yank_and_unyank_are_not_found_when_the_registry_is_disabled() {
 // Home card
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_home_page_links_to_the_rivet_catalog_only_when_enabled() {
     {
         let _rivets = WithRivets::new();

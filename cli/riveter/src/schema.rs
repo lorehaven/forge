@@ -282,7 +282,7 @@ struct Entry {
 #[derive(Default)]
 pub struct SchemaSet {
     entries: HashMap<(String, String), Entry>,
-    compiled: std::cell::RefCell<HashMap<VersionKey, Option<std::rc::Rc<jsonschema::Validator>>>>,
+    compiled: std::cell::RefCell<HashMap<VersionKey, Option<std::rc::Rc<quench_schema::Schema>>>>,
 }
 
 impl std::fmt::Debug for SchemaSet {
@@ -356,7 +356,7 @@ impl SchemaSet {
         group: &str,
         kind: &str,
         version: &str,
-    ) -> Option<std::rc::Rc<jsonschema::Validator>> {
+    ) -> Option<std::rc::Rc<quench_schema::Schema>> {
         let key = (group.to_string(), kind.to_string(), version.to_string());
         if let Some(found) = self.compiled.borrow().get(&key) {
             return found.clone();
@@ -364,9 +364,7 @@ impl SchemaSet {
         let built = self
             .get(group, kind)
             .and_then(|s| s.versions.get(version))
-            .and_then(|schema| {
-                jsonschema::validator_for(&crate::bridge::to_json(&normalize(schema))).ok()
-            })
+            .and_then(|schema| quench_schema::Schema::new(&normalize(schema)).ok())
             .map(std::rc::Rc::new);
         self.compiled.borrow_mut().insert(key, built.clone());
         built
@@ -400,10 +398,10 @@ impl SchemaSet {
 
         let normalized = schema.versions.get(version).map_or(Value::Null, normalize);
 
-        let instance = crate::bridge::to_json(document);
         let mut issues: Vec<Issue> = validator
-            .iter_errors(&instance)
-            .map(|error| issue_from(&error, &normalized))
+            .validate(document)
+            .iter()
+            .map(|error| issue_from(error, &normalized))
             .collect();
         issues.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.message.cmp(&b.message)));
         issues.dedup();
@@ -434,14 +432,12 @@ pub fn display_path(pointer: &str) -> String {
     out
 }
 
-fn issue_from(error: &jsonschema::ValidationError<'_>, root: &Value) -> Issue {
+fn issue_from(error: &quench_schema::ValidationError, root: &Value) -> Issue {
     let pointer = error.instance_path().to_string();
-    let mut message = error.to_string();
+    let mut message = error.message().to_string();
     let mut suggestion = None;
 
-    if let jsonschema::error::ValidationErrorKind::AdditionalProperties { unexpected } =
-        error.kind()
-    {
+    if let quench_schema::ErrorKind::AdditionalProperties { unexpected } = error.kind() {
         let names = unexpected.join("`, `");
         message = format!("unknown field `{names}`");
         if let [only] = unexpected.as_slice() {

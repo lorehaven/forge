@@ -1,7 +1,7 @@
 use anvil::cli::{Cli, Commands, ConfigCommands};
-use clap::Parser;
+use quench_args::Parser;
 
-#[test]
+#[quench_test::test]
 fn parse_run_defaults_to_build_and_run_mode() {
     let cli = Cli::parse_from(["anvil", "run"]);
     match cli.command {
@@ -18,7 +18,7 @@ fn parse_run_defaults_to_build_and_run_mode() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_run_supports_package_and_serve_mode() {
     let cli = Cli::parse_from([
         "anvil",
@@ -43,7 +43,7 @@ fn parse_run_supports_package_and_serve_mode() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_test_supports_package_name_and_ignored() {
     let cli = Cli::parse_from([
         "anvil",
@@ -73,7 +73,7 @@ fn parse_test_supports_package_name_and_ignored() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_test_supports_list_and_package_filter() {
     let cli = Cli::parse_from(["anvil", "test", "--package", "ferrous", "--list"]);
     match cli.command {
@@ -96,7 +96,7 @@ fn parse_test_supports_list_and_package_filter() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_test_supports_json_flag() {
     let cli = Cli::parse_from(["anvil", "test", "--json"]);
     match cli.command {
@@ -105,7 +105,7 @@ fn parse_test_supports_json_flag() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_nextest_supports_package_name_and_ignored() {
     let cli = Cli::parse_from([
         "anvil",
@@ -133,7 +133,7 @@ fn parse_nextest_supports_package_name_and_ignored() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_nextest_supports_json_flag() {
     let cli = Cli::parse_from(["anvil", "nextest", "--json"]);
     match cli.command {
@@ -142,7 +142,7 @@ fn parse_nextest_supports_json_flag() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_deny_takes_no_positional_arguments() {
     let cli = Cli::parse_from(["anvil", "deny"]);
     match cli.command {
@@ -151,7 +151,7 @@ fn parse_deny_takes_no_positional_arguments() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_deny_supports_json_flag() {
     let cli = Cli::parse_from(["anvil", "deny", "--json"]);
     match cli.command {
@@ -160,7 +160,7 @@ fn parse_deny_supports_json_flag() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_audit_supports_json_flag() {
     let cli = Cli::parse_from(["anvil", "audit", "--json"]);
     match cli.command {
@@ -169,7 +169,7 @@ fn parse_audit_supports_json_flag() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_machete_supports_json_flag() {
     let cli = Cli::parse_from(["anvil", "machete", "--json"]);
     match cli.command {
@@ -178,7 +178,7 @@ fn parse_machete_supports_json_flag() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_lint_supports_json_flag() {
     let cli = Cli::parse_from(["anvil", "lint", "--json"]);
     match cli.command {
@@ -187,7 +187,7 @@ fn parse_lint_supports_json_flag() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_config_check() {
     let cli = Cli::parse_from(["anvil", "config", "check"]);
     match cli.command {
@@ -196,12 +196,12 @@ fn parse_config_check() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_config_with_no_subcommand_is_rejected() {
     assert!(Cli::try_parse_from(["anvil", "config"]).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_semver_check_supports_package_and_baseline_rev() {
     let cli = Cli::parse_from([
         "anvil",
@@ -223,7 +223,7 @@ fn parse_semver_check_supports_package_and_baseline_rev() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_semver_check_baseline_rev_is_optional() {
     let cli = Cli::parse_from(["anvil", "semver-check", "--package", "conveyor-pipeline"]);
     match cli.command {
@@ -238,7 +238,7 @@ fn parse_semver_check_baseline_rev_is_optional() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_install_supports_package_flag() {
     let cli = Cli::parse_from(["anvil", "install", "--package", "ferrous"]);
     match cli.command {
@@ -250,7 +250,7 @@ fn parse_install_supports_package_flag() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_install_supports_all_flag() {
     let cli = Cli::parse_from(["anvil", "install", "--all"]);
     match cli.command {
@@ -262,7 +262,7 @@ fn parse_install_supports_all_flag() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_release_supports_package_flag() {
     let cli = Cli::parse_from(["anvil", "release", "--package", "ferrous"]);
     match cli.command {
@@ -279,7 +279,7 @@ fn parse_release_supports_package_flag() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_release_supports_all_flag() {
     let cli = Cli::parse_from(["anvil", "release", "--all"]);
     match cli.command {
@@ -296,7 +296,7 @@ fn parse_release_supports_all_flag() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn parse_release_supports_dry_run_flag() {
     let cli = Cli::parse_from(["anvil", "release", "--all", "--dry-run"]);
     match cli.command {

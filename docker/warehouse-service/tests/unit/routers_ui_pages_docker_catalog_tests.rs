@@ -42,7 +42,7 @@ async fn body_html(resp: quench_http::response::Response) -> String {
 // render_catalog_page
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_catalog_page_with_no_repositories_renders_ok() {
     let _storage = WithStorageRoot::new();
     let resp = render_catalog_page(None, None);
@@ -51,7 +51,7 @@ async fn render_catalog_page_with_no_repositories_renders_ok() {
     assert!(html.contains("ui_repositories"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_catalog_page_lists_repositories_in_the_tree() {
     let storage = WithStorageRoot::new();
     write_tag(&storage, "my/repo", "latest", DIGEST, None);
@@ -63,7 +63,7 @@ async fn render_catalog_page_lists_repositories_in_the_tree() {
     assert!(html.contains("my"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_catalog_page_with_an_unknown_selected_repo_ignores_the_selection() {
     let storage = WithStorageRoot::new();
     write_tag(&storage, "my-repo", "latest", DIGEST, None);
@@ -73,7 +73,7 @@ async fn render_catalog_page_with_an_unknown_selected_repo_ignores_the_selection
     assert!(html.contains("ui_empty_select_tag"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_catalog_page_with_a_selected_repo_and_tag_shows_metadata() {
     let storage = WithStorageRoot::new();
     let manifest = r#"{"mediaType": "application/vnd.oci.image.manifest.v1+json"}"#;
@@ -86,7 +86,7 @@ async fn render_catalog_page_with_a_selected_repo_and_tag_shows_metadata() {
     assert!(html.contains("ui_delete_image"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_catalog_page_with_a_selected_repo_but_unknown_tag_shows_the_tag_list_without_metadata()
  {
     let storage = WithStorageRoot::new();
@@ -101,7 +101,7 @@ async fn render_catalog_page_with_a_selected_repo_but_unknown_tag_shows_the_tag_
 // render_delete_image_modal / empty_delete_image_modal_html
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn render_delete_image_modal_with_a_tag_shows_repo_colon_tag() {
     let query = DeleteImageModalQuery {
         repository: "my-repo".to_string(),
@@ -113,7 +113,7 @@ fn render_delete_image_modal_with_a_tag_shows_repo_colon_tag() {
     assert!(html.contains("confirm-delete-image-modal"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_delete_image_modal_without_a_tag_shows_the_repo_alone() {
     let query = DeleteImageModalQuery {
         repository: "my-repo".to_string(),
@@ -125,7 +125,7 @@ fn render_delete_image_modal_without_a_tag_shows_the_repo_alone() {
     assert!(!html.contains("my-repo:"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_delete_image_modal_with_an_empty_tag_shows_the_repo_alone() {
     let query = DeleteImageModalQuery {
         repository: "my-repo".to_string(),
@@ -136,7 +136,7 @@ fn render_delete_image_modal_with_an_empty_tag_shows_the_repo_alone() {
     assert!(!html.contains("my-repo:"));
 }
 
-#[test]
+#[quench_test::test]
 fn empty_delete_image_modal_html_has_the_modal_id_but_no_content() {
     let html = empty_delete_image_modal_html();
     assert!(html.contains("confirm-delete-image-modal"));
@@ -169,7 +169,7 @@ async fn app(
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn docker_catalog_redirects_to_login_when_unauthenticated() {
     let (app, container) = app(jwt_config(true)).await;
     let resp = app
@@ -178,7 +178,7 @@ async fn docker_catalog_redirects_to_login_when_unauthenticated() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn docker_catalog_slash_redirects_to_login_when_unauthenticated() {
     let (app, container) = app(jwt_config(true)).await;
     let resp = app
@@ -187,7 +187,7 @@ async fn docker_catalog_slash_redirects_to_login_when_unauthenticated() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn docker_catalog_renders_the_page_when_authenticated() {
     let _storage = WithStorageRoot::new();
     let (app, container) = app(jwt_config(false)).await;
@@ -197,7 +197,7 @@ async fn docker_catalog_renders_the_page_when_authenticated() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_image_modal_redirects_to_login_when_unauthenticated() {
     let (app, container) = app(jwt_config(true)).await;
     let resp = app
@@ -210,7 +210,7 @@ async fn delete_image_modal_redirects_to_login_when_unauthenticated() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_image_modal_renders_when_authenticated() {
     let (app, container) = app(jwt_config(false)).await;
     let resp = app
@@ -223,7 +223,7 @@ async fn delete_image_modal_renders_when_authenticated() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn empty_delete_image_modal_redirects_to_login_when_unauthenticated() {
     let (app, container) = app(jwt_config(true)).await;
     let resp = app
@@ -236,7 +236,7 @@ async fn empty_delete_image_modal_redirects_to_login_when_unauthenticated() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn empty_delete_image_modal_renders_when_authenticated() {
     let (app, container) = app(jwt_config(false)).await;
     let resp = app
@@ -249,7 +249,7 @@ async fn empty_delete_image_modal_renders_when_authenticated() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_image_redirects_to_login_when_unauthenticated() {
     let (app, container) = app(jwt_config(true)).await;
     let resp = app
@@ -263,7 +263,7 @@ async fn delete_image_redirects_to_login_when_unauthenticated() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_image_rejects_an_invalid_digest_when_authenticated() {
     let _storage = WithStorageRoot::new();
     let (app, container) = app(jwt_config(false)).await;
@@ -278,7 +278,7 @@ async fn delete_image_rejects_an_invalid_digest_when_authenticated() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_image_reports_not_found_for_a_missing_manifest() {
     let _storage = WithStorageRoot::new();
     let (app, container) = app(jwt_config(false)).await;

@@ -1,8 +1,8 @@
-use clap::Parser;
 use foreman::cli::{Cli, Command};
 use foreman::estate::Estate;
 use foreman::repl::Picker;
 use foreman::{commands, ui};
+use quench_args::Parser;
 use quench_core::Result;
 
 fn main() -> std::process::ExitCode {

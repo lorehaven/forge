@@ -4,8 +4,8 @@
 //! requested modules and their dependencies, applies every outstanding
 //! migration in dependency order, and exits non-zero if anything fails.
 
-use clap::{Parser, Subcommand};
 use foundry_service::config::{ConfigInputs, RunConfig};
+use quench_args::{Parser, Subcommand};
 use quench_cli::prelude::{Tone, print_status};
 use quench_core::{Context, Result};
 use quench_db::prelude::{Catalog, MigrationPlan, MigrationRunner, PostgresDb};

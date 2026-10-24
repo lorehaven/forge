@@ -3,7 +3,7 @@ use quench_db::{Db, InMemoryDb};
 use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::artifacts;
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_when_artifact_storage_is_disabled() {
     artifacts::register_routes();
     let container = support::container_builder()

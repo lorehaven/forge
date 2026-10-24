@@ -183,7 +183,7 @@ pub fn nextest(
     ignored: bool,
     json: bool,
 ) -> Result<()> {
-    which::which("cargo-nextest")
+    quench_core::process::which("cargo-nextest")
         .context("cargo-nextest not found. Install with: cargo install cargo-nextest")?;
 
     let mut cmd = Command::new("cargo");

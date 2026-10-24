@@ -137,7 +137,7 @@ async fn run_to_end(gantry: &Gantry) {
 
 // ---------------------------------------------------------------- the list
 
-#[tokio::test]
+#[quench_test::test]
 async fn resources_are_grouped_by_package_with_what_is_missing_and_what_is_hidden() {
     let rig = rig().await;
     let groups = actions::groups(&rig.gantry).await.unwrap();
@@ -181,7 +181,7 @@ async fn resources_are_grouped_by_package_with_what_is_missing_and_what_is_hidde
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn something_owned_by_another_object_is_not_listed_as_the_packages() {
     let rig = rig().await;
     // cert-manager makes a Certificate from an Ingress and copies the Ingress's labels onto it.
@@ -203,7 +203,7 @@ async fn something_owned_by_another_object_is_not_listed_as_the_packages() {
     assert!(ml.rows.iter().any(|r| r.name == "stray"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn something_in_the_cluster_the_package_does_not_declare_is_flagged_and_an_edit_is_shown() {
     let rig = rig().await;
     rig.cluster.upsert_extra(Extra {
@@ -219,7 +219,7 @@ async fn something_in_the_cluster_the_package_does_not_declare_is_flagged_and_an
     assert_eq!(state("sage-config"), State::Edited);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_package_with_no_inventory_shows_only_what_is_live_and_says_so() {
     let cluster = Arc::new(FakeCluster::new());
     cluster.set_workloads(vec![workload("sage", 1)]);
@@ -245,7 +245,7 @@ async fn a_package_with_no_inventory_shows_only_what_is_live_and_says_so() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn kubectl_names_carry_the_group_so_a_crd_is_not_mistaken_for_a_core_kind() {
     assert_eq!(
         kubectl_name(Some("apps/v1"), "Deployment", "sage"),
@@ -259,7 +259,7 @@ fn kubectl_names_carry_the_group_so_a_crd_is_not_mistaken_for_a_core_kind() {
     assert_eq!(kubectl_name(None, "ConfigMap", "c"), "configmap/c");
 }
 
-#[test]
+#[quench_test::test]
 fn the_inventory_is_read_from_the_last_line_riveter_printed() {
     let log = "x\nriveter-inventory: [{\"kind\":\"Deployment\",\"name\":\"a\",\"namespace\":\"n\",\"apiVersion\":\"apps/v1\"}]\nmore\n";
     let items = inventory_from_log(log).unwrap();
@@ -274,7 +274,7 @@ fn the_inventory_is_read_from_the_last_line_riveter_printed() {
 
 // ---------------------------------------------------------------- delete and apply
 
-#[tokio::test]
+#[quench_test::test]
 async fn deleting_a_resource_deletes_exactly_that_resource_the_way_kubectl_names_it() {
     let rig = rig().await;
     let operation = actions::delete(
@@ -312,7 +312,7 @@ async fn deleting_a_resource_deletes_exactly_that_resource_the_way_kubectl_names
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn some_things_are_not_deleted_from_a_button() {
     let rig = rig().await;
     rig.cluster.upsert_extra(Extra {
@@ -393,7 +393,7 @@ async fn some_things_are_not_deleted_from_a_button() {
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn what_gantry_stands_on_cannot_be_deleted_either() {
     let mut settings = Settings::inert();
     settings.protected = vec![("ml".into(), "sage".into())];
@@ -410,7 +410,7 @@ async fn what_gantry_stands_on_cannot_be_deleted_either() {
     assert!(error.to_string().contains("protected"), "{error}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn applying_a_missing_resource_applies_only_it_from_the_installed_version_of_the_package() {
     let rig = rig().await;
     let operation = actions::apply(
@@ -450,7 +450,7 @@ async fn applying_a_missing_resource_applies_only_it_from_the_installed_version_
     assert!(except.is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn applying_with_no_resource_applies_everything_missing_and_refuses_when_nothing_is() {
     let rig = rig().await;
     let operation = actions::apply(&rig.gantry, "ml", None, "ana")
@@ -472,7 +472,7 @@ async fn applying_with_no_resource_applies_everything_missing_and_refuses_when_n
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_then_apply_puts_a_resource_back_from_what_the_package_declares() {
     let rig = rig().await;
     actions::delete(
@@ -511,7 +511,7 @@ async fn delete_then_apply_puts_a_resource_back_from_what_the_package_declares()
 
 // ---------------------------------------------------------------- edit
 
-#[tokio::test]
+#[quench_test::test]
 async fn editing_applies_the_yaml_as_written_marks_it_and_restarts_what_reads_a_configmap() {
     let rig = rig().await;
     let yaml = actions::yaml(
@@ -561,7 +561,7 @@ async fn editing_applies_the_yaml_as_written_marks_it_and_restarts_what_reads_a_
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn editing_a_workload_waits_for_the_rollout_it_causes() {
     let rig = rig().await;
     let yaml = actions::yaml(&rig.gantry, "ml", &target("Deployment", "sage", Some("ml")))
@@ -584,7 +584,7 @@ async fn editing_a_workload_waits_for_the_rollout_it_causes() {
     assert_eq!(rig.cluster.workloads()[0].desired, 3);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_edit_must_describe_the_resource_that_was_opened() {
     let rig = rig().await;
     let other =
@@ -628,7 +628,7 @@ async fn an_edit_must_describe_the_resource_that_was_opened() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_secret_is_never_shown_or_edited_and_a_missing_resource_cannot_be_opened() {
     let rig = rig().await;
     let secret = target("Secret", "sage-secret", Some("ml"));
@@ -652,7 +652,7 @@ async fn a_secret_is_never_shown_or_edited_and_a_missing_resource_cannot_be_open
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn refreshing_reads_the_package_and_changes_nothing_but_the_record() {
     let rig = rig().await;
     let operation = actions::refresh(&rig.gantry, "ml", "ana").await.unwrap();
@@ -707,7 +707,7 @@ impl Exec for Recorder {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn the_edited_yaml_is_written_to_a_file_named_by_its_content_and_applied() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let yaml = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: c\n  namespace: ml\n";
@@ -727,7 +727,7 @@ fn the_edited_yaml_is_written_to_a_file_named_by_its_content_and_applied() {
     assert_eq!(exec.ran, [format!("kubectl apply -f {}", file.display())]);
 }
 
-#[test]
+#[quench_test::test]
 fn a_dry_run_writes_nothing_to_the_cluster_but_still_shows_the_command() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let yaml = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: c\n";
@@ -751,7 +751,7 @@ fn a_dry_run_writes_nothing_to_the_cluster_but_still_shows_the_command() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_changed_configmap_restarts_exactly_the_workloads_that_use_it() {
     let listing = quench_serde::json!({"items": [
         {"kind": "Deployment", "metadata": {"name": "by-env-from"},
@@ -810,7 +810,7 @@ fn a_changed_configmap_restarts_exactly_the_workloads_that_use_it() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn nothing_using_it_is_not_an_error() {
     let plan = Plan {
         steps: vec![Step::RestartUsers {
@@ -832,7 +832,7 @@ fn nothing_using_it_is_not_an_error() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn edit_and_delete_steps_are_validated_like_every_other() {
     let bad = |step: Step| {
         Plan {
@@ -947,13 +947,13 @@ mod summary {
         }
     }
 
-    #[test]
+    #[quench_test::test]
     fn nothing_in_the_cluster_is_not_installed() {
         let g = group(Status::NotInstalled, None, vec![]);
         assert_eq!(g.summary().sync, SyncState::NotInstalled);
     }
 
-    #[test]
+    #[quench_test::test]
     fn a_missing_resource_makes_the_application_missing_before_anything_else() {
         let g = group(
             Status::UpdateAvailable,
@@ -968,7 +968,7 @@ mod summary {
         assert_eq!((summary.missing, summary.edited, summary.total), (1, 1, 2));
     }
 
-    #[test]
+    #[quench_test::test]
     fn an_edit_or_a_newer_version_is_out_of_sync_but_an_extra_is_not() {
         let edited = group(
             Status::Current,
@@ -994,7 +994,7 @@ mod summary {
         assert_eq!(summary.update_to.as_deref(), Some("2.0.0"));
     }
 
-    #[test]
+    #[quench_test::test]
     fn a_secret_that_is_not_looked_at_does_not_spoil_synced() {
         let g = group(
             Status::Current,
@@ -1012,7 +1012,7 @@ mod summary {
         );
     }
 
-    #[test]
+    #[quench_test::test]
     fn a_workload_with_fewer_ready_than_desired_is_counted_not_ready() {
         let g = group(
             Status::Current,
@@ -1026,7 +1026,7 @@ mod summary {
         assert_eq!(g.summary().not_ready, 1);
     }
 
-    #[test]
+    #[quench_test::test]
     fn running_but_unpublished_is_unlisted() {
         let g = group(
             Status::Unlisted,
@@ -1036,7 +1036,7 @@ mod summary {
         assert_eq!(g.summary().sync, SyncState::Unlisted);
     }
 
-    #[test]
+    #[quench_test::test]
     fn the_kinds_are_listed_once_each() {
         let g = group(
             Status::Current,
@@ -1051,7 +1051,7 @@ mod summary {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn rows_filter_by_kind_state_and_a_piece_of_the_name() {
     use gantry_service::domain::resources::{Group, Row};
     use gantry_service::domain::targets::Status;

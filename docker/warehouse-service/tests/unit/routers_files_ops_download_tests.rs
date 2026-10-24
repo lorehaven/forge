@@ -5,7 +5,7 @@ use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::files;
 use warehouse_service::routers::files::ops::download::{download_name, is_file};
 
-#[test]
+#[quench_test::test]
 fn download_name_uses_the_target_s_file_name() {
     assert_eq!(
         download_name(std::path::Path::new("/a/b/report.pdf")),
@@ -13,7 +13,7 @@ fn download_name_uses_the_target_s_file_name() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn download_name_strips_quotes_backslashes_and_control_bytes() {
     assert_eq!(
         download_name(std::path::Path::new("weird\"name\\with\x01control")),
@@ -21,13 +21,13 @@ fn download_name_strips_quotes_backslashes_and_control_bytes() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn download_name_falls_back_to_download_when_nothing_usable_remains() {
     assert_eq!(download_name(std::path::Path::new("/")), "download");
     assert_eq!(download_name(std::path::Path::new("\"\\")), "download");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn is_file_is_true_only_for_a_real_file_not_a_directory_or_missing_path() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let file = dir.path().join("f.txt");
@@ -38,7 +38,7 @@ async fn is_file_is_true_only_for_a_real_file_not_a_directory_or_missing_path() 
     assert!(!is_file(&dir.path().join("missing")).await);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_when_file_storage_is_disabled() {
     // `FEATURE_FILES_ENABLED` is unset in this sandbox, and the flag is
     // a `LazyLock` fixed for the whole test binary - so this deterministically
@@ -62,7 +62,7 @@ async fn handle_reports_not_found_when_file_storage_is_disabled() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn head_reports_not_found_when_file_storage_is_disabled() {
     files::register_routes();
     let container = support::container_builder()

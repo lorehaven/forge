@@ -1,13 +1,13 @@
 use crate::env_support::cwd_lock;
 use riveter::config::{RiveterConfig, load_config, save_config};
 
-#[test]
+#[quench_test::test]
 fn test_default_config() {
     let config = RiveterConfig::default();
     assert!(config.env.current.is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn test_parse_config() {
     let toml_str = r#"
         [env]
@@ -32,7 +32,7 @@ fn in_temp_cwd<T>(body: impl FnOnce() -> T) -> T {
     result
 }
 
-#[test]
+#[quench_test::test]
 fn load_config_defaults_when_no_file_exists() {
     in_temp_cwd(|| {
         let config = load_config().unwrap();
@@ -40,7 +40,7 @@ fn load_config_defaults_when_no_file_exists() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn save_then_load_round_trips_the_current_environment() {
     in_temp_cwd(|| {
         let mut config = RiveterConfig::default();
@@ -52,7 +52,7 @@ fn save_then_load_round_trips_the_current_environment() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn load_config_reports_invalid_toml() {
     in_temp_cwd(|| {
         std::fs::write(".riveter.toml", "not = [valid").unwrap();

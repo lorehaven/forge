@@ -13,7 +13,7 @@ use quench_http::response::Response;
 use std::sync::Arc;
 use switchboard_service::routers::gpu::{GpuBroadcaster, get_status, handle_sse, wrap_auth};
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_status_returns_gpu_info_as_json() {
     let info = get_status().await.0;
     // `GpuInfo` only derives `Serialize` (it's a broadcast payload, never
@@ -32,7 +32,7 @@ async fn get_status_returns_gpu_info_as_json() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn gpu_sse_route_streams_a_broadcast_message() {
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let broadcaster = Inject(Arc::new(GpuBroadcaster(tx.clone())));
@@ -79,7 +79,7 @@ fn get(path: &str, container: &Arc<quench_http::di::Container>) -> Request {
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn wrap_auth_lets_matching_requests_through_when_auth_is_disabled() {
     let container = Arc::new(ContainerBuilder::new().build().await.unwrap());
     let app: Arc<dyn Endpoint> = Arc::new(AlwaysOk);
@@ -89,7 +89,7 @@ async fn wrap_auth_lets_matching_requests_through_when_auth_is_disabled() {
     assert!(resp.status().is_success());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn wrap_auth_does_not_apply_outside_its_prefix() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;

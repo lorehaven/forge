@@ -464,7 +464,7 @@ impl Fixture {
 /// Waits until every started service answers, so a slow boot does not surface
 /// as a scenario failure.
 pub async fn wait_until_ready(urls: &[(Target, String)]) {
-    let client = reqwest::Client::builder()
+    let client = quench_client::transport::Client::builder()
         .danger_accept_invalid_certs(true)
         .build()
         .expect("http client");

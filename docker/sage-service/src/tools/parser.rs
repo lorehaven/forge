@@ -1,5 +1,5 @@
 use super::ToolCall;
-use regex::Regex;
+use quench_regex::Regex;
 
 /// Matches either spelling of a tool-call opening tag (`<tool_call>` or `<toolcall>`).
 fn tool_tag_regex() -> Regex {

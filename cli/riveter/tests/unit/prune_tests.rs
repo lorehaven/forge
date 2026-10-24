@@ -15,7 +15,7 @@ fn names(listing: &str) -> Vec<String> {
         .collect()
 }
 
-#[test]
+#[quench_test::test]
 fn objects_riveter_created_are_listed_by_lowercased_kind() {
     let listing = [
         row(
@@ -35,7 +35,7 @@ fn objects_riveter_created_are_listed_by_lowercased_kind() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn what_another_controller_created_is_never_an_orphan() {
     // cert-manager's Certificate for an Ingress, a Service's EndpointSlice, a Deployment's ReplicaSet and
     // Pod: all carry riveter's labels (copied down), all have an owner.
@@ -50,12 +50,12 @@ fn what_another_controller_created_is_never_an_orphan() {
     assert!(names(&listing).is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn an_object_with_several_owners_is_still_owned() {
     assert!(names(&row("Pod", "p", "ReplicaSet StatefulSet", "")).is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn a_certificate_riveter_rendered_itself_has_no_owner_so_it_stays_prunable() {
     assert_eq!(
         names(&row("Certificate", "hand-written", "", "")),
@@ -63,7 +63,7 @@ fn a_certificate_riveter_rendered_itself_has_no_owner_so_it_stays_prunable() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn the_endpoints_of_a_service_with_a_selector_are_kubernetes_own() {
     // Endpoints carry no owner reference, so the only tell is the Service of the same name.
     let listing = [
@@ -75,7 +75,7 @@ fn the_endpoints_of_a_service_with_a_selector_are_kubernetes_own() {
     assert_eq!(names(&listing), ["service/api"]);
 }
 
-#[test]
+#[quench_test::test]
 fn the_endpoints_of_a_selectorless_service_are_hand_written_and_stay_prunable() {
     // The case riveter's `endpoints` template exists for: a Service pointing at something outside the
     // cluster, with its Endpoints written by hand.
@@ -91,7 +91,7 @@ fn the_endpoints_of_a_selectorless_service_are_hand_written_and_stay_prunable() 
     );
 }
 
-#[test]
+#[quench_test::test]
 fn endpoints_with_no_service_in_the_listing_stay_prunable() {
     assert_eq!(
         names(&row("Endpoints", "stray", "", "")),
@@ -99,7 +99,7 @@ fn endpoints_with_no_service_in_the_listing_stay_prunable() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_selecting_service_only_hides_the_endpoints_of_its_own_name() {
     let listing = [
         row("Service", "api", "", "{\"app\":\"api\"}"),
@@ -111,7 +111,7 @@ fn a_selecting_service_only_hides_the_endpoints_of_its_own_name() {
     assert_eq!(names(&listing), ["service/api", "endpoints/other"]);
 }
 
-#[test]
+#[quench_test::test]
 fn a_service_of_another_kind_with_the_same_name_does_not_hide_anything() {
     // Only a *Service's* selector counts, not any object that happens to have the name.
     let listing = [
@@ -123,7 +123,7 @@ fn a_service_of_another_kind_with_the_same_name_does_not_hide_anything() {
     assert_eq!(names(&listing), ["deployment/api", "endpoints/api"]);
 }
 
-#[test]
+#[quench_test::test]
 fn the_forge_namespace_that_proposed_31_deletions_now_proposes_only_the_stale_jobs() {
     // The shape that showed the bug: every service has an Ingress-owned Certificate, an owned
     // EndpointSlice and kubernetes' own Endpoints, around two old release Jobs that really are orphans.
@@ -152,7 +152,7 @@ fn the_forge_namespace_that_proposed_31_deletions_now_proposes_only_the_stale_jo
     assert_eq!(live.len(), 4 * 2 + 2);
 }
 
-#[test]
+#[quench_test::test]
 fn blank_malformed_and_empty_output_is_ignored() {
     assert!(names("").is_empty());
     assert!(names("\n\n").is_empty());

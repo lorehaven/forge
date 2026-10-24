@@ -36,42 +36,42 @@ const CATALOG: &str = r#"
         command = ["true"]
     "#;
 
-#[test]
+#[quench_test::test]
 fn list_prints_containers_services_and_tasks_without_error() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
     list(&estate).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn list_handles_an_estate_with_nothing_configured() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
     list(&estate).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn env_prints_a_services_resolved_settings() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
     env(&estate, "web").unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn env_errors_for_an_unknown_service() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
     assert!(env(&estate, "no-such-service").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn status_reports_every_container_and_service_without_a_pid_file() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
     status(&estate).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn status_reports_a_service_with_a_live_pid() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
@@ -80,7 +80,7 @@ fn status_reports_a_service_with_a_live_pid() {
     status(&estate).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn stop_reports_not_running_for_every_named_service() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
@@ -88,7 +88,7 @@ fn stop_reports_not_running_for_every_named_service() {
     stop(&estate, &["web".to_string()]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn stop_all_also_stops_the_estates_containers() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
@@ -98,14 +98,14 @@ fn stop_all_also_stops_the_estates_containers() {
     stop(&estate, &["all".to_string()]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn logs_errors_for_an_unknown_service() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
     assert!(logs(&estate, "no-such-service").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn reset_errors_without_a_reset_role_task() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
@@ -113,7 +113,7 @@ fn reset_errors_without_a_reset_role_task() {
     assert!(error.to_string().contains("no task with"));
 }
 
-#[test]
+#[quench_test::test]
 fn reset_runs_every_reset_role_task() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
@@ -127,28 +127,28 @@ fn reset_runs_every_reset_role_task() {
     reset(&estate).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn db_runs_every_migrate_role_task_with_no_containers() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
     db(&estate).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn run_task_errors_for_an_unknown_task() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
     assert!(run_task(&estate, "no-such-task", &[]).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn run_task_runs_a_known_task_with_no_selection() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
     run_task(&estate, "migrate", &[]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn start_errors_when_nothing_is_configured() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
@@ -156,14 +156,14 @@ fn start_errors_when_nothing_is_configured() {
     assert!(error.to_string().contains("no services are configured"));
 }
 
-#[test]
+#[quench_test::test]
 fn test_errors_without_a_test_section() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
     assert!(test(&estate, &[]).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn test_errors_on_an_empty_command() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
@@ -176,7 +176,7 @@ fn test_errors_on_an_empty_command() {
     assert!(test(&estate, &[]).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn test_runs_the_configured_suite_and_reports_its_exit_code() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
@@ -190,7 +190,7 @@ fn test_runs_the_configured_suite_and_reports_its_exit_code() {
     assert_eq!(test(&estate, &[]).unwrap(), 0);
 }
 
-#[test]
+#[quench_test::test]
 fn test_reports_a_nonzero_exit_code_on_failure() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
@@ -212,7 +212,7 @@ fn cwd_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-#[test]
+#[quench_test::test]
 fn init_writes_the_starter_config_when_none_exists() {
     let _guard = cwd_lock().lock().unwrap_or_else(|p| p.into_inner());
     let dir = quench_core::tmp::TempDir::new().unwrap();
@@ -226,7 +226,7 @@ fn init_writes_the_starter_config_when_none_exists() {
     assert!(dir.path().join("foreman.toml").exists());
 }
 
-#[test]
+#[quench_test::test]
 fn init_refuses_to_overwrite_without_force() {
     let _guard = cwd_lock().lock().unwrap_or_else(|p| p.into_inner());
     let dir = quench_core::tmp::TempDir::new().unwrap();
@@ -244,7 +244,7 @@ fn init_refuses_to_overwrite_without_force() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn init_overwrites_with_force() {
     let _guard = cwd_lock().lock().unwrap_or_else(|p| p.into_inner());
     let dir = quench_core::tmp::TempDir::new().unwrap();
@@ -262,7 +262,7 @@ fn init_overwrites_with_force() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn summary_prints_urls_for_the_selection_and_applicable_notes() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let config_text = r#"
@@ -291,7 +291,7 @@ fn summary_prints_urls_for_the_selection_and_applicable_notes() {
     summary(&estate, &["web".to_string()]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn summary_skips_a_note_scoped_to_a_service_not_in_the_selection() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let config_text = r#"
@@ -310,7 +310,7 @@ fn summary_skips_a_note_scoped_to_a_service_not_in_the_selection() {
     summary(&estate, &["web".to_string()]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn summary_with_an_empty_selection_still_succeeds() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);

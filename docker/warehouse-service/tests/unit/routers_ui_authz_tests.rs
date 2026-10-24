@@ -16,37 +16,37 @@ fn claims(scope: &str) -> Claims {
     )
 }
 
-#[test]
+#[quench_test::test]
 fn an_admin_wildcard_may_manage() {
     assert!(can_manage(&claims("admin")));
 }
 
-#[test]
+#[quench_test::test]
 fn a_service_wildcard_may_manage() {
     assert!(can_manage(&claims("service")));
 }
 
-#[test]
+#[quench_test::test]
 fn the_blanket_warehouse_write_grant_may_manage() {
     assert!(can_manage(&claims("warehouse:read warehouse:write")));
 }
 
-#[test]
+#[quench_test::test]
 fn a_read_only_grant_may_not_manage() {
     assert!(!can_manage(&claims("warehouse:read")));
 }
 
-#[test]
+#[quench_test::test]
 fn no_grants_at_all_may_not_manage() {
     assert!(!can_manage(&claims("")));
 }
 
-#[test]
+#[quench_test::test]
 fn write_on_a_different_service_does_not_carry_over() {
     assert!(!can_manage(&claims("conveyor:write")));
 }
 
-#[test]
+#[quench_test::test]
 fn a_storage_scoped_grant_is_not_blanket_write() {
     // `warehouse:storage:<name>:write` unlocks one storage's contents, not
     // storage administration - provisioning stays admin/editor only.

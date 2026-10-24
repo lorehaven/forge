@@ -52,7 +52,7 @@ fn render_fixture(path: &Path) -> String {
         .unwrap_or_else(|e| panic!("rendering {} failed: {e:#}", path.display()))
 }
 
-#[test]
+#[quench_test::test]
 fn fixtures_render_to_their_golden_output() {
     let update = std::env::var_os("UPDATE_GOLDEN").is_some();
     let mut stale = Vec::new();
@@ -107,7 +107,7 @@ fn first_difference(expected: &str, actual: &str) -> String {
     )
 }
 
-#[test]
+#[quench_test::test]
 fn every_rendered_document_is_valid_yaml() {
     for (name, path) in fixtures() {
         let rendered = render_fixture(&path);
@@ -129,7 +129,7 @@ fn every_rendered_document_is_valid_yaml() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn every_template_is_covered_by_a_fixture() {
     // Without this, a new kind can ship with no rendering test at all.
     let templates = check_embedded_templates().expect("templates should parse");

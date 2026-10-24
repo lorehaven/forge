@@ -77,7 +77,7 @@ async fn seed_user(db: &Db, username: &str, password: &str, roles: Vec<Role>) ->
 
 // -- RealmError ----------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn every_realm_error_has_a_status_message_and_i18n_key() {
     let errors = [
         RealmError::NotFound,
@@ -102,7 +102,7 @@ fn every_realm_error_has_a_status_message_and_i18n_key() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn unknown_grants_message_lists_the_offending_grants() {
     let error = RealmError::UnknownGrants(vec!["sage:oops".to_string()]);
     assert!(error.message().contains("sage:oops"));
@@ -111,7 +111,7 @@ fn unknown_grants_message_lists_the_offending_grants() {
 
 // -- create ----------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_rejects_an_empty_username() {
     let db = db().await;
     let error = create(
@@ -129,7 +129,7 @@ async fn create_rejects_an_empty_username() {
     assert!(matches!(error, RealmError::UsernameEmpty));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_rejects_an_empty_password() {
     let db = db().await;
     let error = create(
@@ -147,7 +147,7 @@ async fn create_rejects_an_empty_password() {
     assert!(matches!(error, RealmError::PasswordEmpty));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_rejects_a_wildcard_role_from_a_non_admin_actor() {
     let db = db().await;
     let error = create(
@@ -165,7 +165,7 @@ async fn create_rejects_a_wildcard_role_from_a_non_admin_actor() {
     assert!(matches!(error, RealmError::RolesRequireAdmin));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_allows_a_wildcard_role_from_an_admin_actor() {
     let db = db().await;
     let created = create(
@@ -183,7 +183,7 @@ async fn create_allows_a_wildcard_role_from_an_admin_actor() {
     assert!(created.get_roles().contains(&Role::Admin));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_defaults_to_role_user_when_none_given() {
     let db = db().await;
     let created = create(
@@ -201,7 +201,7 @@ async fn create_defaults_to_role_user_when_none_given() {
     assert_eq!(created.get_roles(), vec![Role::User]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_rejects_a_duplicate_username() {
     let db = db().await;
     seed_user(&db, "alice", "password", vec![]).await;
@@ -221,7 +221,7 @@ async fn create_rejects_a_duplicate_username() {
     assert!(matches!(error, RealmError::AlreadyExists));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_rejects_grants_the_catalog_does_not_recognize() {
     let db = db().await;
     let mut permissions = Permissions::new();
@@ -244,14 +244,14 @@ async fn create_rejects_grants_the_catalog_does_not_recognize() {
 
 // -- get / list --------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_returns_not_found_for_a_missing_user() {
     let db = db().await;
     let error = get(&db, "nobody").await.unwrap_err();
     assert!(matches!(error, RealmError::NotFound));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_returns_users_sorted_by_username() {
     let db = db().await;
     seed_user(&db, "zoe", "password", vec![]).await;
@@ -264,7 +264,7 @@ async fn list_returns_users_sorted_by_username() {
 
 // -- update --------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_rejects_self_demotion_from_admin() {
     let db = db().await;
     let sessions = sessions();
@@ -287,7 +287,7 @@ async fn update_rejects_self_demotion_from_admin() {
     assert!(matches!(error, RealmError::SelfDemote));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_rejects_demoting_the_last_admin() {
     let db = db().await;
     let sessions = sessions();
@@ -310,7 +310,7 @@ async fn update_rejects_demoting_the_last_admin() {
     assert!(matches!(error, RealmError::LastAdmin));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_allows_demoting_an_admin_when_another_admin_remains() {
     let db = db().await;
     let sessions = sessions();
@@ -334,7 +334,7 @@ async fn update_allows_demoting_an_admin_when_another_admin_remains() {
     assert_eq!(updated.get_roles(), vec![Role::User]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_rejects_an_empty_password() {
     let db = db().await;
     let sessions = sessions();
@@ -357,7 +357,7 @@ async fn update_rejects_an_empty_password() {
     assert!(matches!(error, RealmError::PasswordEmpty));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_changes_the_password_and_does_not_end_the_actors_own_session() {
     let db = db().await;
     let sessions = sessions();
@@ -390,7 +390,7 @@ async fn update_changes_the_password_and_does_not_end_the_actors_own_session() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_ends_sessions_when_someone_else_changes_the_users_access() {
     let db = db().await;
     let sessions = sessions();
@@ -424,7 +424,7 @@ async fn update_ends_sessions_when_someone_else_changes_the_users_access() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_rejects_unknown_grants() {
     let db = db().await;
     let sessions = sessions();
@@ -449,7 +449,7 @@ async fn update_rejects_unknown_grants() {
     assert!(matches!(error, RealmError::UnknownGrants(_)));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_updates_profile_fields() {
     let db = db().await;
     let sessions = sessions();
@@ -476,7 +476,7 @@ async fn update_updates_profile_fields() {
 
 // -- apply_template / register --------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn apply_template_rejects_an_unknown_template() {
     let db = db().await;
     let sessions = sessions();
@@ -495,7 +495,7 @@ async fn apply_template_rejects_an_unknown_template() {
     assert!(matches!(error, RealmError::UnknownTemplate));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn apply_template_replaces_permissions_with_the_named_templates_grants() {
     let db = db().await;
     let sessions = sessions();
@@ -516,7 +516,7 @@ async fn apply_template_replaces_permissions_with_the_named_templates_grants() {
     assert!(permissions.contains_key("sage"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn register_creates_an_ordinary_user_with_the_given_email() {
     let db = db().await;
     let user = register(
@@ -534,7 +534,7 @@ async fn register_creates_an_ordinary_user_with_the_given_email() {
 
 // -- mark_email_verified / reset_password / delete --------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn mark_email_verified_stamps_the_verification_time() {
     let db = db().await;
     seed_user(&db, "alice", "password", vec![]).await;
@@ -545,7 +545,7 @@ async fn mark_email_verified_stamps_the_verification_time() {
     assert!(user.email_verified_at.is_some());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reset_password_rejects_an_empty_password() {
     let db = db().await;
     let sessions = sessions();
@@ -557,7 +557,7 @@ async fn reset_password_rejects_an_empty_password() {
     assert!(matches!(error, RealmError::PasswordEmpty));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reset_password_changes_the_password_and_ends_every_session() {
     let db = db().await;
     let sessions = sessions();
@@ -582,7 +582,7 @@ async fn reset_password_changes_the_password_and_ends_every_session() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_rejects_deleting_yourself() {
     let db = db().await;
     let sessions = sessions();
@@ -592,7 +592,7 @@ async fn delete_rejects_deleting_yourself() {
     assert!(matches!(error, RealmError::SelfDelete));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_rejects_deleting_the_last_admin() {
     let db = db().await;
     let sessions = sessions();
@@ -604,7 +604,7 @@ async fn delete_rejects_deleting_the_last_admin() {
     assert!(matches!(error, RealmError::LastAdmin));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_removes_the_user_and_ends_their_sessions() {
     let db = db().await;
     let sessions = sessions();
@@ -633,7 +633,7 @@ async fn delete_removes_the_user_and_ends_their_sessions() {
 
 // -- authenticate ------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn authenticate_reports_not_found_for_an_unknown_user() {
     let db = db().await;
     let outcome = authenticate(&db, "nobody", "password")
@@ -642,7 +642,7 @@ async fn authenticate_reports_not_found_for_an_unknown_user() {
     assert!(matches!(outcome, AuthOutcome::NotFound));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn authenticate_succeeds_with_the_right_password() {
     let db = db().await;
     seed_user(&db, "alice", "correct-password", vec![]).await;
@@ -653,7 +653,7 @@ async fn authenticate_succeeds_with_the_right_password() {
     assert!(matches!(outcome, AuthOutcome::Success(_)));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn authenticate_rejects_the_wrong_password() {
     let db = db().await;
     seed_user(&db, "alice", "correct-password", vec![]).await;
@@ -664,7 +664,7 @@ async fn authenticate_rejects_the_wrong_password() {
     assert!(matches!(outcome, AuthOutcome::WrongPassword));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn authenticate_reports_disabled_accounts() {
     let db = db().await;
     seed_user(&db, "alice", "password", vec![]).await;
@@ -676,7 +676,7 @@ async fn authenticate_reports_disabled_accounts() {
     assert!(matches!(outcome, AuthOutcome::Disabled));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn authenticate_requires_mfa_when_enabled() {
     with_key();
     let db = db().await;
@@ -695,7 +695,7 @@ async fn authenticate_requires_mfa_when_enabled() {
 
 // -- MFA enrollment / authenticate_mfa --------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn enable_mfa_rejects_a_wrong_code() {
     with_key();
     let db = db().await;
@@ -708,7 +708,7 @@ async fn enable_mfa_rejects_a_wrong_code() {
     assert!(matches!(error, RealmError::MfaCodeInvalid));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn disable_mfa_turns_it_back_off() {
     with_key();
     let db = db().await;
@@ -720,7 +720,7 @@ async fn disable_mfa_turns_it_back_off() {
     assert!(user.mfa_secret.is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn authenticate_mfa_rejects_an_invalid_pending_token() {
     let db = db().await;
     let outcome = authenticate_mfa(&db, "not-a-real-token", "123456")
@@ -731,7 +731,7 @@ async fn authenticate_mfa_rejects_an_invalid_pending_token() {
 
 // -- set_disabled / unlock ---------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn set_disabled_toggles_the_disabled_timestamp() {
     let db = db().await;
     seed_user(&db, "alice", "password", vec![]).await;
@@ -743,7 +743,7 @@ async fn set_disabled_toggles_the_disabled_timestamp() {
     assert!(enabled.disabled_at.is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unlock_clears_the_lockout_state() {
     let db = db().await;
     seed_user(&db, "alice", "password", vec![]).await;
@@ -779,7 +779,7 @@ async fn seed_with_email(db: &Db, username: &str, roles: Vec<Role>, email: Optio
     .expect("seed user")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn login_is_refused_until_the_address_on_file_is_verified() {
     let db = db().await;
     seed_with_email(&db, "alice", vec![], Some("alice@example.com")).await;
@@ -796,7 +796,7 @@ async fn login_is_refused_until_the_address_on_file_is_verified() {
     assert!(matches!(outcome, AuthOutcome::Success(_)));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unverified_account_with_the_wrong_password_looks_like_any_wrong_password() {
     let db = db().await;
     seed_with_email(&db, "alice", vec![], Some("alice@example.com")).await;
@@ -807,7 +807,7 @@ async fn an_unverified_account_with_the_wrong_password_looks_like_any_wrong_pass
     assert!(matches!(outcome, AuthOutcome::WrongPassword));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_account_with_no_address_needs_no_verification() {
     let db = db().await;
     seed_with_email(&db, "alice", vec![], None).await;
@@ -821,7 +821,7 @@ async fn an_account_with_no_address_needs_no_verification() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn admin_and_service_accounts_are_exempt_from_verification() {
     let db = db().await;
     seed_with_email(&db, "root", vec![Role::Admin], Some("root@example.com")).await;
@@ -835,7 +835,7 @@ async fn admin_and_service_accounts_are_exempt_from_verification() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn verification_is_checked_before_asking_for_an_mfa_code() {
     with_key();
     let db = db().await;

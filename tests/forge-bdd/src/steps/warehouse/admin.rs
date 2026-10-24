@@ -3,7 +3,7 @@
 //! shared with the files steps (`src/steps/warehouse/files.rs`).
 
 use crate::world::ForgeWorld;
-use cucumber::when;
+use quench_test_bdd::when;
 
 async fn run_gc(world: &mut ForgeWorld, kind: &str) {
     let url = format!("{}/admin/{kind}/gc", world.warehouse_url);

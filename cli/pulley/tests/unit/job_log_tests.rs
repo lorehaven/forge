@@ -1,5 +1,5 @@
-use chrono::NaiveDate;
 use pulley::job_log::{append, prune_old_logs};
+use quench_core::date::Date;
 use std::fs;
 use std::path::PathBuf;
 
@@ -7,11 +7,11 @@ fn scratch(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("pulley-job-log-test-{name}-{}", std::process::id()))
 }
 
-fn date(y: i32, m: u32, d: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(y, m, d).unwrap()
+fn date(y: i32, m: u32, d: u32) -> Date {
+    Date::from_ymd(y, m, d).unwrap()
 }
 
-#[test]
+#[quench_test::test]
 fn prune_old_logs_removes_files_older_than_the_retention_window() {
     let dir = scratch("prune-basic");
     fs::create_dir_all(&dir).unwrap();
@@ -30,7 +30,7 @@ fn prune_old_logs_removes_files_older_than_the_retention_window() {
     fs::remove_dir_all(&dir).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn prune_old_logs_keeps_a_file_exactly_at_the_cutoff() {
     let dir = scratch("prune-boundary");
     fs::create_dir_all(&dir).unwrap();
@@ -38,24 +38,17 @@ fn prune_old_logs_keeps_a_file_exactly_at_the_cutoff() {
     // Exactly RETENTION_DAYS (7) days back: `date < cutoff` is false at
     // the boundary, so this file survives one more day than a strict
     // reading of "keep 7 days" might suggest.
-    let cutoff_date = today - chrono::Duration::days(7);
-    fs::write(
-        dir.join(format!("{}.log", cutoff_date.format("%Y-%m-%d"))),
-        "boundary",
-    )
-    .unwrap();
+    let cutoff_date = today.add_days(-7).unwrap();
+    fs::write(dir.join(format!("{}.log", cutoff_date)), "boundary").unwrap();
 
     prune_old_logs(&dir, today);
 
-    assert!(
-        dir.join(format!("{}.log", cutoff_date.format("%Y-%m-%d")))
-            .exists()
-    );
+    assert!(dir.join(format!("{}.log", cutoff_date)).exists());
 
     fs::remove_dir_all(&dir).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn prune_old_logs_ignores_files_that_are_not_dated_log_names() {
     let dir = scratch("prune-ignore");
     fs::create_dir_all(&dir).unwrap();
@@ -70,14 +63,14 @@ fn prune_old_logs_ignores_files_that_are_not_dated_log_names() {
     fs::remove_dir_all(&dir).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn prune_old_logs_on_a_missing_directory_does_nothing() {
     let dir = scratch("prune-missing");
     // Deliberately not created - must not panic.
     prune_old_logs(&dir, date(2026, 1, 15));
 }
 
-#[test]
+#[quench_test::test]
 fn append_is_best_effort_and_never_panics_regardless_of_home() {
     // `append` is documented as best-effort: a job whose log line can't be
     // written (no home dir resolvable, disk full, ...) must not propagate

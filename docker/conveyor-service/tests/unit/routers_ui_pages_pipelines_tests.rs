@@ -21,7 +21,7 @@ use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::sync::Arc;
 
-#[tokio::test]
+#[quench_test::test]
 async fn runs_list_page_redirects_to_login_when_auth_is_enabled_and_there_is_no_session() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;

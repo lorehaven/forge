@@ -1,4 +1,4 @@
-use clap::{CommandFactory, Parser};
+use quench_args::{CommandFactory, Parser};
 use quench_core::Result;
 use riveter::against::diff_against;
 use riveter::cli::{ApplyScope, Cli, Cmd, EnvCmd};
@@ -258,9 +258,9 @@ fn main() -> Result<()> {
 }
 
 /// Mirrors the REPL's `help [command]`: the whole tree, or one command's
-/// clap-generated detail.
+/// generated detail.
 fn print_help(topic: Option<&str>) -> Result<()> {
-    let mut cmd = Cli::command();
+    let cmd = Cli::command();
 
     let Some(topic) = topic else {
         cmd.print_help()?;
@@ -275,8 +275,8 @@ fn print_help(topic: Option<&str>) -> Result<()> {
     // Accept the same aliases the help table advertises.
     let canonical =
         riveter::help::find_on(topic, riveter::help::Surface::Cli).map_or(topic, |c| c.name);
-    match cmd.find_subcommand_mut(canonical) {
-        Some(sub) => sub.print_help()?,
+    match cmd.help_for(&[canonical], false) {
+        Some(text) => print!("{text}"),
         None => quench_core::bail!(
             "{}",
             riveter::help::unknown_topic(topic, riveter::help::Surface::Cli)

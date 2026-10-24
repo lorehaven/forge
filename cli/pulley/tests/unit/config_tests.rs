@@ -19,14 +19,14 @@ fn job(id: &str) -> Job {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn from_file_errors_when_the_file_is_missing() {
     let path = scratch("missing.toml");
     let err = Config::from_file(&path).unwrap_err();
     assert!(matches!(err, ConfigError::NotFound(_)));
 }
 
-#[test]
+#[quench_test::test]
 fn from_file_errors_on_malformed_toml() {
     let path = scratch("malformed.toml");
     std::fs::write(&path, "not = [valid").unwrap();
@@ -35,7 +35,7 @@ fn from_file_errors_on_malformed_toml() {
     std::fs::remove_file(&path).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn from_file_parses_a_valid_job() {
     let path = scratch("valid.toml");
     std::fs::write(
@@ -61,7 +61,7 @@ fn from_file_parses_a_valid_job() {
     std::fs::remove_file(&path).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn merge_job_appends_a_new_id() {
     let mut jobs = vec![job("a"), job("b")];
     Config::merge_job(&mut jobs, job("c"));
@@ -69,7 +69,7 @@ fn merge_job_appends_a_new_id() {
     assert_eq!(jobs[2].id, "c");
 }
 
-#[test]
+#[quench_test::test]
 fn merge_job_overwrites_an_existing_id_in_place() {
     let mut jobs = vec![job("a"), job("b")];
     let mut replacement = job("b");
@@ -81,7 +81,7 @@ fn merge_job_overwrites_an_existing_id_in_place() {
     assert_eq!(jobs[1].desc, "replaced");
 }
 
-#[test]
+#[quench_test::test]
 fn home_dir_prefers_home_over_userprofile() {
     let _lock = ENV_LOCK
         .lock()
@@ -92,7 +92,7 @@ fn home_dir_prefers_home_over_userprofile() {
     assert_eq!(home_dir(), Some(PathBuf::from("/home/me")));
 }
 
-#[test]
+#[quench_test::test]
 fn home_dir_falls_back_to_userprofile_without_home() {
     let _lock = ENV_LOCK
         .lock()
@@ -103,7 +103,7 @@ fn home_dir_falls_back_to_userprofile_without_home() {
     assert_eq!(home_dir(), Some(PathBuf::from("C:\\Users\\me")));
 }
 
-#[test]
+#[quench_test::test]
 fn home_dir_is_none_without_either_variable() {
     let _lock = ENV_LOCK
         .lock()
@@ -114,7 +114,7 @@ fn home_dir_is_none_without_either_variable() {
     assert_eq!(home_dir(), None);
 }
 
-#[test]
+#[quench_test::test]
 fn find_local_configs_matches_only_dot_pulley_toml_suffix() {
     let _lock = ENV_LOCK
         .lock()
@@ -139,7 +139,7 @@ fn find_local_configs_matches_only_dot_pulley_toml_suffix() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn find_global_configs_is_empty_when_the_global_config_dir_does_not_exist() {
     let _lock = ENV_LOCK
         .lock()
@@ -151,7 +151,7 @@ fn find_global_configs_is_empty_when_the_global_config_dir_does_not_exist() {
     assert!(Config::find_global_configs().is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn load_merged_errors_when_no_configs_are_found_anywhere() {
     let _lock = ENV_LOCK
         .lock()
@@ -173,7 +173,7 @@ fn load_merged_errors_when_no_configs_are_found_anywhere() {
     assert!(matches!(result, Err(ConfigError::NotFound(_))));
 }
 
-#[test]
+#[quench_test::test]
 fn load_merged_reads_local_configs_and_reports_their_jobs() {
     let _lock = ENV_LOCK
         .lock()

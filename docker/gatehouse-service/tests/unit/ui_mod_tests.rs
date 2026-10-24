@@ -45,7 +45,7 @@ fn location(resp: quench_http::response::Response) -> String {
         .to_string()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn ui_root_goes_straight_home_when_auth_is_disabled() {
     // `JwtConfig::for_tests()` reads `SERVICE_AUTH_ENABLED` (default
     // "false"), matching how every other service's dev/test bypass
@@ -59,7 +59,7 @@ async fn ui_root_goes_straight_home_when_auth_is_disabled() {
     assert!(location(resp).ends_with("/ui/home"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn ui_root_redirects_to_login_when_auth_is_enabled_and_there_is_no_session() {
     let _guard = service_auth_env_lock().lock().await;
 

@@ -32,7 +32,7 @@ fn write_index(storage: &WithStorageRoot, name: &str, entries: &[(&str, bool)]) 
     std::fs::write(dir.join(name), content).unwrap();
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn garbage_collect_deletes_yanked_and_orphaned_tarballs_but_keeps_indexed_ones() {
     let storage = WithStorageRoot::new();
 
@@ -78,7 +78,7 @@ async fn garbage_collect_deletes_yanked_and_orphaned_tarballs_but_keeps_indexed_
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn garbage_collect_repairs_an_index_entry_whose_tarball_is_missing() {
     let storage = WithStorageRoot::new();
 
@@ -94,7 +94,7 @@ async fn garbage_collect_repairs_an_index_entry_whose_tarball_is_missing() {
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn garbage_collect_deletes_an_orphaned_owners_json_with_no_index_file() {
     let storage = WithStorageRoot::new();
 
@@ -108,7 +108,7 @@ async fn garbage_collect_deletes_an_orphaned_owners_json_with_no_index_file() {
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn garbage_collect_on_an_empty_storage_root_reports_nothing() {
     let storage = WithStorageRoot::new();
     std::fs::create_dir_all(storage.dir.path()).unwrap();

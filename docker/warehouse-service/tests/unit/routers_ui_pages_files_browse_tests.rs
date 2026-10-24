@@ -52,7 +52,7 @@ fn view(selection: Selection, tree: TreeNode) -> BrowseView {
 // build_tree / preview_kind
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn build_tree_nests_paths_and_marks_leaves_as_files() {
     let tree = build_tree(&[
         file("photos/2024/a.jpg", 10),
@@ -69,7 +69,7 @@ fn build_tree_nests_paths_and_marks_leaves_as_files() {
     assert!(tree.children.get("notes.txt").unwrap().is_file);
 }
 
-#[test]
+#[quench_test::test]
 fn preview_kind_classifies_by_extension() {
     assert_eq!(preview_kind("a/b/IMG.JPG"), PreviewKind::Image);
     assert_eq!(preview_kind("clip.mp4"), PreviewKind::Video);
@@ -85,7 +85,7 @@ fn preview_kind_classifies_by_extension() {
 // render_browse_page
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unknown_storage_renders_a_not_found_notice() {
     let mut v = view(Selection::Dir(String::new()), TreeNode::default());
     v.access = Access::NoSuchStorage;
@@ -96,7 +96,7 @@ async fn an_unknown_storage_renders_a_not_found_notice() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_denied_read_renders_a_forbidden_notice_and_no_tree() {
     let mut v = view(Selection::Dir(String::new()), TreeNode::default());
     v.access = Access::Denied;
@@ -104,7 +104,7 @@ async fn a_denied_read_renders_a_forbidden_notice_and_no_tree() {
     assert!(html.contains("api_error_forbidden"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_selected_image_renders_an_inline_preview_and_a_download_link() {
     let tree = build_tree(&[file("photos/IMG_0001.jpg", 2048)]);
     let v = view(
@@ -129,7 +129,7 @@ async fn a_selected_image_renders_an_inline_preview_and_a_download_link() {
     assert!(!html.contains("/files/delete-file"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_delete_form_appears_only_for_a_manager() {
     let tree = build_tree(&[file("a.txt", 3)]);
     let mut v = view(
@@ -146,7 +146,7 @@ async fn the_delete_form_appears_only_for_a_manager() {
     assert!(html.contains("ui_file_delete"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unpreviewable_type_says_so() {
     let tree = build_tree(&[file("backup.zip", 9)]);
     let v = view(
@@ -161,7 +161,7 @@ async fn an_unpreviewable_type_says_so() {
     assert!(!html.contains("file-preview-media"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_directory_selection_lists_its_children_with_a_tree() {
     let tree = build_tree(&[
         file("photos/a.jpg", 1),
@@ -179,7 +179,7 @@ async fn a_directory_selection_lists_its_children_with_a_tree() {
     assert!(html.contains("ui_files_up"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_truncation_notice_shows_when_the_tree_was_capped() {
     let mut v = view(
         Selection::Dir(String::new()),
@@ -214,7 +214,7 @@ async fn app(
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn files_browse_redirects_to_login_when_unauthenticated() {
     let (app, container) = app(jwt_config(true), in_memory_db()).await;
     let resp = app
@@ -227,7 +227,7 @@ async fn files_browse_redirects_to_login_when_unauthenticated() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn files_browse_without_a_storage_sends_you_to_pick_one() {
     let (app, container) = app(jwt_config(false), in_memory_db()).await;
     let resp = app
@@ -239,7 +239,7 @@ async fn files_browse_without_a_storage_sends_you_to_pick_one() {
     assert!(location.contains("/ui/files/storages"), "{location}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn files_browse_renders_a_not_found_notice_for_an_unknown_storage() {
     let (app, container) = app(jwt_config(false), in_memory_db()).await;
     let resp = app

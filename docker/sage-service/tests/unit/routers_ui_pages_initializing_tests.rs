@@ -38,20 +38,20 @@ fn instance(model: &str, status: &str) -> VllmInstance {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn healthiest_matching_instance_wins() {
     let m = model("qwen");
     let insts = vec![instance("qwen", "failed"), instance("qwen", "running")];
     assert_eq!(model_state(&m, &insts), ModelState::Running);
 }
 
-#[test]
+#[quench_test::test]
 fn missing_instance_is_pending() {
     let m = model("qwen");
     assert_eq!(model_state(&m, &[]), ModelState::Pending);
 }
 
-#[test]
+#[quench_test::test]
 fn starting_and_pending_map_to_starting() {
     let m = model("qwen");
     assert_eq!(
@@ -64,7 +64,7 @@ fn starting_and_pending_map_to_starting() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn all_running_requires_every_default_model() {
     let defaults = vec![model("chat"), model("embed")];
     let insts = vec![instance("chat", "running"), instance("embed", "starting")];
@@ -74,7 +74,7 @@ fn all_running_requires_every_default_model() {
     assert!(all_models_running(&defaults, &ready));
 }
 
-#[test]
+#[quench_test::test]
 fn no_default_models_is_ready() {
     assert!(all_models_running(&[], &[]));
 }

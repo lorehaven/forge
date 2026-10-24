@@ -24,12 +24,12 @@ fn sample_repo() -> Repo {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn name_is_mock() {
     assert_eq!(MockProvider::new().name(), "mock");
 }
 
-#[test]
+#[quench_test::test]
 fn verify_reflects_the_scripted_answer() {
     let provider = MockProvider::new();
     assert!(provider.verify(&HeaderMap::new(), b"", b""));
@@ -38,7 +38,7 @@ fn verify_reflects_the_scripted_answer() {
     assert!(!provider.verify(&HeaderMap::new(), b"", b""));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_returns_the_scripted_event() {
     let provider = MockProvider::new();
     assert!(provider.parse(&HeaderMap::new(), b"").unwrap().is_none());
@@ -48,7 +48,7 @@ fn parse_returns_the_scripted_event() {
     assert_eq!(provider.parse(&HeaderMap::new(), b"").unwrap(), Some(event));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn report_status_records_every_call_in_order() {
     let provider = MockProvider::new();
     let repo = sample_repo();
@@ -88,7 +88,7 @@ async fn report_status_records_every_call_in_order() {
     assert_eq!(reports[1].repo, repo.slug());
 }
 
-#[test]
+#[quench_test::test]
 fn sample_event_is_a_push_with_a_message() {
     let event = MockProvider::sample_event();
     assert_eq!(event.trigger, conveyor_service::domain::Trigger::Push);

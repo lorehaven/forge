@@ -13,7 +13,7 @@ use quench_http::request::Request;
 use sage_service::routers;
 use std::sync::Arc;
 
-#[tokio::test]
+#[quench_test::test]
 async fn every_router_links_and_mounts_without_panicking() {
     routers::register_routes();
     let container = ContainerBuilder::new()
@@ -54,7 +54,7 @@ fn req(path: &str, container: &Arc<quench_http::di::Container>) -> Request {
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn root_redirects_to_login_when_unauthenticated_and_auth_required() {
     let mut jwt_config = JwtConfig::for_tests();
     jwt_config.auth_enabled = true;
@@ -78,7 +78,7 @@ async fn root_redirects_to_login_when_unauthenticated_and_auth_required() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn root_redirects_to_home_when_auth_is_disabled() {
     // `JwtConfig::for_tests()` defaults `auth_enabled` to false, so
     // `is_ui_authenticated` treats every request as authenticated.

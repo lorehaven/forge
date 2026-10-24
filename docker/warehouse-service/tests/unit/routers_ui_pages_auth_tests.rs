@@ -28,7 +28,7 @@ async fn app() -> (
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn login_reports_gatehouse_unconfigured_without_a_gatehouse_url() {
     let (app, container) = app().await;
     let resp = app
@@ -37,7 +37,7 @@ async fn login_reports_gatehouse_unconfigured_without_a_gatehouse_url() {
     assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn login_slash_delegates_the_same_way_as_login() {
     let (app, container) = app().await;
     let resp = app
@@ -46,7 +46,7 @@ async fn login_slash_delegates_the_same_way_as_login() {
     assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn callback_reports_gatehouse_unconfigured_without_a_gatehouse_url() {
     let (app, container) = app().await;
     let resp = app
@@ -55,7 +55,7 @@ async fn callback_reports_gatehouse_unconfigured_without_a_gatehouse_url() {
     assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn logout_reports_gatehouse_unconfigured_without_a_gatehouse_url() {
     let (app, container) = app().await;
     let resp = app
@@ -64,7 +64,7 @@ async fn logout_reports_gatehouse_unconfigured_without_a_gatehouse_url() {
     assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn status_reports_whether_the_caller_is_authenticated() {
     let (app, container) = app().await;
     let resp = app
@@ -73,7 +73,7 @@ async fn status_reports_whether_the_caller_is_authenticated() {
     assert!(resp.status().is_success() || resp.status().is_client_error());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn refresh_delegates_to_the_token_refresh_flow() {
     let (app, container) = app().await;
     let resp = app

@@ -3,7 +3,7 @@
 use crate::support::{database, new_project, skipped};
 use workbench_service::domain::project::{self, ProjectUpdate};
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_and_read_round_trip() {
     let Some((db, _guard)) = database().await else {
         return skipped("create_and_read_round_trip");
@@ -21,7 +21,7 @@ async fn create_and_read_round_trip() {
     assert!(read.description.is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_second_project_with_the_same_key_is_rejected() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_second_project_with_the_same_key_is_rejected");
@@ -41,7 +41,7 @@ async fn a_second_project_with_the_same_key_is_rejected() {
     assert!(result.is_err(), "duplicate key must be rejected");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn update_replaces_name_and_description() {
     let Some((db, _guard)) = database().await else {
         return skipped("update_replaces_name_and_description");
@@ -64,7 +64,7 @@ async fn update_replaces_name_and_description() {
     assert_eq!(updated.description.as_deref(), Some("now it has one"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_removes_the_project() {
     let Some((db, _guard)) = database().await else {
         return skipped("delete_removes_the_project");
@@ -80,7 +80,7 @@ async fn delete_removes_the_project() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_orders_by_key() {
     let Some((db, _guard)) = database().await else {
         return skipped("list_orders_by_key");

@@ -2,21 +2,21 @@ use conveyor_cli::config::{FileConfig, config_path, non_empty_env};
 use conveyor_cli::test_support::{ENV_LOCK, EnvGuard};
 use std::path::PathBuf;
 
-#[test]
+#[quench_test::test]
 fn non_empty_env_is_none_for_a_missing_var() {
     let _lock = ENV_LOCK.blocking_lock();
     let _guard = EnvGuard::unset("CONVEYOR_CONFIG_TEST_MISSING");
     assert_eq!(non_empty_env("CONVEYOR_CONFIG_TEST_MISSING"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn non_empty_env_is_none_for_an_empty_var() {
     let _lock = ENV_LOCK.blocking_lock();
     let _guard = EnvGuard::set("CONVEYOR_CONFIG_TEST_EMPTY", "");
     assert_eq!(non_empty_env("CONVEYOR_CONFIG_TEST_EMPTY"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn non_empty_env_returns_a_set_value() {
     let _lock = ENV_LOCK.blocking_lock();
     let _guard = EnvGuard::set("CONVEYOR_CONFIG_TEST_SET", "hello");
@@ -26,7 +26,7 @@ fn non_empty_env_returns_a_set_value() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn config_path_prefers_xdg_config_home_over_home() {
     let _lock = ENV_LOCK.blocking_lock();
     let _xdg = EnvGuard::set("XDG_CONFIG_HOME", "/xdg-root");
@@ -38,7 +38,7 @@ fn config_path_prefers_xdg_config_home_over_home() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn config_path_falls_back_to_home_without_xdg() {
     let _lock = ENV_LOCK.blocking_lock();
     let _xdg = EnvGuard::unset("XDG_CONFIG_HOME");
@@ -50,7 +50,7 @@ fn config_path_falls_back_to_home_without_xdg() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn config_path_is_none_without_either_variable() {
     let _lock = ENV_LOCK.blocking_lock();
     let _xdg = EnvGuard::unset("XDG_CONFIG_HOME");
@@ -59,7 +59,7 @@ fn config_path_is_none_without_either_variable() {
     assert_eq!(config_path(), None);
 }
 
-#[test]
+#[quench_test::test]
 fn config_path_treats_an_empty_xdg_as_unset() {
     let _lock = ENV_LOCK.blocking_lock();
     let _xdg = EnvGuard::set("XDG_CONFIG_HOME", "");
@@ -71,7 +71,7 @@ fn config_path_treats_an_empty_xdg_as_unset() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn load_returns_defaults_when_no_config_file_exists() {
     let _lock = ENV_LOCK.blocking_lock();
     let dir = std::env::temp_dir().join(format!(
@@ -85,7 +85,7 @@ fn load_returns_defaults_when_no_config_file_exists() {
     assert!(!config.insecure);
 }
 
-#[test]
+#[quench_test::test]
 fn load_parses_a_valid_config_file() {
     let _lock = ENV_LOCK.blocking_lock();
     let dir =
@@ -109,7 +109,7 @@ fn load_parses_a_valid_config_file() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn load_errors_on_malformed_toml() {
     let _lock = ENV_LOCK.blocking_lock();
     let dir = std::env::temp_dir().join(format!(

@@ -9,13 +9,14 @@ use crate::executors::manifest::{self, STEP_MARKER, Settings};
 use crate::secrets::Redactor;
 use crate::steps;
 use crate::workspace::Workspace;
-use futures_util::{AsyncBufReadExt, StreamExt};
-use k8s_openapi::api::batch::v1::Job;
-use k8s_openapi::api::core::v1::{Pod, Secret};
-use kube::api::{Api, DeleteParams, ListParams, LogParams, PostParams};
-use kube::{Client, ResourceExt};
 use quench_core::async_trait;
+use quench_core::stream::StreamExt;
 use quench_core::time::Time;
+use quench_k8s::{
+    Api, ApiResource, Client, DeleteParams, Error as KubeError, ListParams, LogParams, Object,
+    PostParams, lines,
+};
+use quench_serde::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
@@ -44,13 +45,9 @@ pub struct KubernetesExecutor {
 
 impl KubernetesExecutor {
     /// Uses the in-cluster service account, or a kubeconfig outside one.
-    pub async fn connect() -> Result<Self, String> {
-        // kube builds its TLS stack on rustls, which wants a crypto provider chosen once per process;
-        // nothing else in the service installs one.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let client = Client::try_default()
-            .await
-            .map_err(|error| format!("could not reach the cluster: {error}"))?;
+    pub fn connect() -> Result<Self, String> {
+        let client =
+            Client::infer().map_err(|error| format!("could not reach the cluster: {error}"))?;
 
         let namespace = quench_core::env::get_or("CONVEYOR_K8S_NAMESPACE", "")
             .trim()
@@ -82,16 +79,17 @@ impl KubernetesExecutor {
             .ok_or_else(|| ExecError::UnknownHandle(handle.clone()))
     }
 
-    fn jobs_api(&self) -> Api<Job> {
-        Api::namespaced(self.client.clone(), &self.namespace)
+    fn jobs_api(&self) -> Api {
+        self.client.namespaced(&ApiResource::job(), &self.namespace)
     }
 
-    fn secrets_api(&self) -> Api<Secret> {
-        Api::namespaced(self.client.clone(), &self.namespace)
+    fn secrets_api(&self) -> Api {
+        self.client
+            .namespaced(&ApiResource::secret(), &self.namespace)
     }
 
-    fn pods_api(&self) -> Api<Pod> {
-        Api::namespaced(self.client.clone(), &self.namespace)
+    fn pods_api(&self) -> Api {
+        self.client.namespaced(&ApiResource::pod(), &self.namespace)
     }
 }
 
@@ -125,9 +123,9 @@ impl JobExecutor for KubernetesExecutor {
         let built = manifest::build(spec, &commands, &self.namespace, &self.settings);
 
         // Secret first: a pod whose `envFrom` names a missing Secret stays pending, not failing.
-        if let Some(secret) = built.secret.clone() {
+        if let Some(secret) = &built.secret {
             self.secrets_api()
-                .create(&PostParams::default(), &secret)
+                .create(secret, &PostParams::default())
                 .await
                 .map_err(|error| ExecError::Unsupported {
                     executor: "kubernetes",
@@ -136,7 +134,7 @@ impl JobExecutor for KubernetesExecutor {
         }
 
         self.jobs_api()
-            .create(&PostParams::default(), &built.job)
+            .create(&built.job, &PostParams::default())
             .await
             .map_err(|error| ExecError::Unsupported {
                 executor: "kubernetes",
@@ -269,15 +267,15 @@ impl JobExecutor for KubernetesExecutor {
 }
 
 /// Already deleted, which is a success for a delete.
-fn is_gone(error: &kube::Error) -> bool {
-    matches!(error, kube::Error::Api(response) if response.code == 404)
+fn is_gone(error: &KubeError) -> bool {
+    error.is_not_found()
 }
 
 // Watching.
 /// Follows the job's pod, recording its output and its outcome.
 async fn watch(
-    pods: Api<Pod>,
-    jobs: Api<Job>,
+    pods: Api,
+    jobs: Api,
     object_name: String,
     job_name: String,
     redactor: Redactor,
@@ -315,7 +313,7 @@ async fn watch(
 }
 
 /// Waits for the Job's pod to appear and start.
-async fn await_pod(pods: &Api<Pod>, object_name: &str) -> Option<String> {
+async fn await_pod(pods: &Api, object_name: &str) -> Option<String> {
     let selector = ListParams::default().labels(&format!("job-name={object_name}"));
 
     for _ in 0..POD_WAIT_ATTEMPTS {
@@ -323,14 +321,13 @@ async fn await_pod(pods: &Api<Pod>, object_name: &str) -> Option<String> {
             && let Some(pod) = list.items.first()
         {
             let phase = pod
-                .status
-                .as_ref()
-                .and_then(|status| status.phase.as_deref())
+                .pointer("/status/phase")
+                .and_then(Value::as_str)
                 .unwrap_or("Pending");
 
             // `Pending` covers image pulls/init container, neither producing log output yet.
             if phase != "Pending" {
-                return Some(pod.name_any());
+                return Object(pod).name().map(str::to_string);
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -339,15 +336,15 @@ async fn await_pod(pods: &Api<Pod>, object_name: &str) -> Option<String> {
 }
 
 /// Streams the work container's output into the shared history and channel.
-async fn follow_logs(pods: &Api<Pod>, pod_name: &str, redactor: &Redactor, running: &Running) {
+async fn follow_logs(pods: &Api, pod_name: &str, redactor: &Redactor, running: &Running) {
     let params = LogParams {
         container: Some("steps".to_string()),
         follow: true,
         ..LogParams::default()
     };
 
-    let stream = match pods.log_stream(pod_name, &params).await {
-        Ok(stream) => stream,
+    let mut lines = match pods.log_stream(pod_name, &params).await {
+        Ok(stream) => lines(stream),
         Err(error) => {
             quench_log::warn!("could not follow logs for {pod_name}: {error}");
             return;
@@ -355,9 +352,8 @@ async fn follow_logs(pods: &Api<Pod>, pod_name: &str, redactor: &Redactor, runni
     };
 
     let mut seq: u64 = 0;
-    let mut lines = stream.lines();
 
-    while let Ok(Some(line)) = lines.next().await.transpose() {
+    while let Some(Ok(line)) = lines.next().await {
         // Conveyor's own bookkeeping marker, not build output - consumed, not recorded.
         if let Some(ordinal) = line.trim().strip_prefix(STEP_MARKER) {
             if let Ok(ordinal) = ordinal.trim().parse::<usize>() {
@@ -409,21 +405,29 @@ enum Outcome {
     Vanished,
 }
 
-async fn await_completion(jobs: &Api<Job>, object_name: &str) -> Outcome {
+async fn await_completion(jobs: &Api, object_name: &str) -> Outcome {
     loop {
         match jobs.get(object_name).await {
             Ok(job) => {
-                let status = job.status.unwrap_or_default();
-                if status.succeeded.unwrap_or(0) > 0 {
+                let count = |field: &str| {
+                    job.pointer(&format!("/status/{field}"))
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0)
+                };
+                if count("succeeded") > 0 {
                     return Outcome::Succeeded;
                 }
-                if status.failed.unwrap_or(0) > 0 {
-                    let reason = status
-                        .conditions
-                        .unwrap_or_default()
+                if count("failed") > 0 {
+                    let reason = job
+                        .pointer("/status/conditions")
+                        .and_then(Value::as_array)
                         .into_iter()
-                        .find(|condition| condition.type_ == "Failed")
-                        .and_then(|condition| condition.message);
+                        .flatten()
+                        .find(|condition| {
+                            condition.get("type").and_then(Value::as_str) == Some("Failed")
+                        })
+                        .and_then(|condition| condition.get("message")?.as_str())
+                        .map(str::to_string);
                     return Outcome::Failed(reason);
                 }
             }

@@ -101,7 +101,7 @@ const fn filters() -> ModelFilters {
 // apply_filters
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn apply_filters_defaults_the_source_to_hf() {
     let mut models = vec![
         model("a", "HF", Quant::FP16, Context::Size4096, 7.0),
@@ -112,7 +112,7 @@ fn apply_filters_defaults_the_source_to_hf() {
     assert_eq!(models[0].name, "a");
 }
 
-#[test]
+#[quench_test::test]
 fn apply_filters_matches_source_case_insensitively() {
     let mut models = vec![model("a", "GGUF", Quant::FP16, Context::Size4096, 7.0)];
     let mut f = filters();
@@ -121,7 +121,7 @@ fn apply_filters_matches_source_case_insensitively() {
     assert_eq!(models.len(), 1);
 }
 
-#[test]
+#[quench_test::test]
 fn apply_filters_by_search_term_is_case_insensitive_and_substring() {
     let mut models = vec![
         model("Llama Three", "HF", Quant::FP16, Context::Size4096, 7.0),
@@ -134,7 +134,7 @@ fn apply_filters_by_search_term_is_case_insensitive_and_substring() {
     assert_eq!(models[0].name, "Llama Three");
 }
 
-#[test]
+#[quench_test::test]
 fn apply_filters_by_search_ignores_an_empty_string() {
     let mut models = vec![
         model("a", "HF", Quant::FP16, Context::Size4096, 7.0),
@@ -146,7 +146,7 @@ fn apply_filters_by_search_ignores_an_empty_string() {
     assert_eq!(models.len(), 2);
 }
 
-#[test]
+#[quench_test::test]
 fn apply_filters_by_quant_matches_debug_format_or_known_alias() {
     let mut models = vec![
         model("a", "HF", Quant::Q80, Context::Size4096, 7.0),
@@ -159,7 +159,7 @@ fn apply_filters_by_quant_matches_debug_format_or_known_alias() {
     assert_eq!(models[0].quant, Quant::Q80);
 }
 
-#[test]
+#[quench_test::test]
 fn apply_filters_by_quant_all_or_empty_keeps_everything() {
     let mut models = vec![
         model("a", "HF", Quant::Q80, Context::Size4096, 7.0),
@@ -173,7 +173,7 @@ fn apply_filters_by_quant_all_or_empty_keeps_everything() {
     assert_eq!(models.len(), 2);
 }
 
-#[test]
+#[quench_test::test]
 fn apply_filters_by_context_as_number_and_string() {
     let mut models = vec![
         model("small", "HF", Quant::FP16, Context::Size4096, 7.0),
@@ -196,7 +196,7 @@ fn apply_filters_by_context_as_number_and_string() {
     assert_eq!(models[0].name, "big");
 }
 
-#[test]
+#[quench_test::test]
 fn apply_filters_by_context_zero_or_unparseable_keeps_everything() {
     let mut models = vec![model("a", "HF", Quant::FP16, Context::Size4096, 7.0)];
     let mut f = filters();
@@ -211,7 +211,7 @@ fn apply_filters_by_context_zero_or_unparseable_keeps_everything() {
     assert_eq!(models.len(), 1);
 }
 
-#[test]
+#[quench_test::test]
 fn apply_filters_by_vllm_only() {
     let mut supported = model("a", "HF", Quant::FP16, Context::Size4096, 7.0);
     supported.vllm_supported = true;
@@ -226,7 +226,7 @@ fn apply_filters_by_vllm_only() {
     assert_eq!(models[0].name, "a");
 }
 
-#[test]
+#[quench_test::test]
 fn apply_filters_sorts_by_name_asc_and_desc() {
     let mut models = vec![
         model("b", "HF", Quant::FP16, Context::Size4096, 7.0),
@@ -242,7 +242,7 @@ fn apply_filters_sorts_by_name_asc_and_desc() {
     assert_eq!(models[0].name, "b");
 }
 
-#[test]
+#[quench_test::test]
 fn apply_filters_sorts_by_params_asc_and_desc() {
     let mut models = vec![
         model("big", "HF", Quant::FP16, Context::Size4096, 70.0),
@@ -270,7 +270,7 @@ fn model_with_estimate(name: &str, total_gb: f64) -> Model {
     m
 }
 
-#[test]
+#[quench_test::test]
 fn apply_filters_sorts_by_vram_asc_and_desc_using_the_best_fitting_estimate() {
     let mut models = vec![
         model_with_estimate("high", 18.0),
@@ -286,7 +286,7 @@ fn apply_filters_sorts_by_vram_asc_and_desc_using_the_best_fitting_estimate() {
     assert_eq!(models[0].name, "high");
 }
 
-#[test]
+#[quench_test::test]
 fn apply_filters_unknown_sort_key_leaves_order_unchanged() {
     let mut models = vec![
         model("b", "HF", Quant::FP16, Context::Size4096, 7.0),
@@ -305,7 +305,7 @@ fn apply_filters_unknown_sort_key_leaves_order_unchanged() {
 // for the simpler no-estimates case.
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_grid_shows_a_fit_line_when_an_estimate_fits_with_a_small_margin() {
     ensure_store().await;
     let _store_guard = store_lock().lock().await;
@@ -332,7 +332,7 @@ async fn handle_grid_shows_a_fit_line_when_an_estimate_fits_with_a_small_margin(
     assert!(html.contains("fit-warn") || html.contains("fit-no"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_grid_shows_the_delete_button_when_the_caller_can_delete_models() {
     ensure_store().await;
     let _store_guard = store_lock().lock().await;
@@ -347,7 +347,7 @@ async fn handle_grid_shows_the_delete_button_when_the_caller_can_delete_models()
     assert!(html.contains("card-delete"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn estimates_modal_filters_by_fit_context_and_quant() {
     ensure_store().await;
     let _store_guard = store_lock().lock().await;

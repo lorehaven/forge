@@ -29,7 +29,7 @@ async fn app(db: Db, config: JwtConfig) -> (Arc<dyn Endpoint>, Arc<quench_http::
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_page_reports_not_found_for_an_unknown_run() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("run_page_reports_not_found_for_an_unknown_run");
@@ -46,7 +46,7 @@ async fn run_page_reports_not_found_for_an_unknown_run() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_page_renders_ok_for_a_queued_run() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("run_page_renders_ok_for_a_queued_run");
@@ -80,7 +80,7 @@ async fn run_page_renders_ok_for_a_queued_run() {
     assert!(html.contains("tests/widget"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_state_reports_not_found_for_an_unknown_run() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("run_state_reports_not_found_for_an_unknown_run");
@@ -97,7 +97,7 @@ async fn run_state_reports_not_found_for_an_unknown_run() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_state_renders_the_fragment_with_no_jobs_yet() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("run_state_renders_the_fragment_with_no_jobs_yet");
@@ -129,7 +129,7 @@ async fn run_state_renders_the_fragment_with_no_jobs_yet() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_state_with_a_matching_job_count_omits_the_job_list_swap() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("run_state_with_a_matching_job_count_omits_the_job_list_swap");

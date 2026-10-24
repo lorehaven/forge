@@ -2,16 +2,16 @@
 //! only the `SWITCHBOARD_URL`/`GATEHOUSE_URL`/`CLIENT_SECRET_SAGE_SWITCHBOARD`
 //! env vars read once at construction (`SwitchboardClient::new()`) - but
 //! that's still an injection point: pointing both `SWITCHBOARD_URL` and
-//! `GATEHOUSE_URL` at the same `wiremock` server lets it stand in for both
+//! `GATEHOUSE_URL` at the same `quench_test` mock server lets it stand in for both
 //! the client-credentials token endpoint (`{GATEHOUSE_URL}/api/v1/token`)
 //! and the switchboard API itself, so the real HTTP methods can be
 //! exercised end to end without a real gatehouse or switchboard.
 
 use crate::env_support::env_lock;
 use quench_core::time::Time;
+use quench_test::mock::matchers::{method, path};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use sage_service::clients::switchboard::{SwitchboardClient, VllmInstance};
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Points `SWITCHBOARD_URL`/`GATEHOUSE_URL` at `server` and mocks a
 /// successful `client_credentials` token exchange, so any `SwitchboardClient`
@@ -43,7 +43,7 @@ async fn mock_switchboard() -> MockServer {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn get_vllm_instances_parses_a_successful_response() {
     let _guard = env_lock()
         .lock()
@@ -83,7 +83,7 @@ async fn get_vllm_instances_parses_a_successful_response() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn get_vllm_instances_errors_when_the_token_exchange_is_refused() {
     let _guard = env_lock()
         .lock()
@@ -103,7 +103,7 @@ async fn get_vllm_instances_errors_when_the_token_exchange_is_refused() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn stop_instance_succeeds_against_a_mocked_delete() {
     let _guard = env_lock()
         .lock()
@@ -120,7 +120,7 @@ async fn stop_instance_succeeds_against_a_mocked_delete() {
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[tokio::test]
+#[quench_test::test]
 async fn launch_instance_parses_the_created_instance() {
     let _guard = env_lock()
         .lock()
@@ -187,22 +187,22 @@ fn instance(task: Option<&str>) -> VllmInstance {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn chat_instance_with_no_task_is_chat_capable() {
     assert!(instance(None).is_chat_capable());
 }
 
-#[test]
+#[quench_test::test]
 fn embed_task_is_not_chat_capable() {
     assert!(!instance(Some("embed")).is_chat_capable());
 }
 
-#[test]
+#[quench_test::test]
 fn embedding_task_is_not_chat_capable() {
     assert!(!instance(Some("embedding")).is_chat_capable());
 }
 
-#[test]
+#[quench_test::test]
 fn an_unrelated_task_value_is_still_chat_capable() {
     assert!(instance(Some("generate")).is_chat_capable());
 }

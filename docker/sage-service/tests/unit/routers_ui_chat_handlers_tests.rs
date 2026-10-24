@@ -131,7 +131,7 @@ async fn parts(resp: quench_http::response::Response) -> (quench_http::http::Hea
 // send_message
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn send_message_is_unauthorized_without_a_session_when_auth_is_enabled() {
     let (app, container) = app(ContainerBuilder::new()
         .provide(auth_enabled())
@@ -154,7 +154,7 @@ async fn send_message_is_unauthorized_without_a_session_when_auth_is_enabled() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn send_message_renders_a_thinking_block_and_registers_the_pending_message() {
     let (app, container) = app(ContainerBuilder::new()
         .provide(auth_disabled())
@@ -183,7 +183,7 @@ async fn send_message_renders_a_thinking_block_and_registers_the_pending_message
     assert!(html.contains("sse-connect"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn send_message_with_skip_user_message_only_renders_the_regenerating_block() {
     let (app, container) = app(ContainerBuilder::new()
         .provide(auth_disabled())
@@ -215,7 +215,7 @@ async fn send_message_with_skip_user_message_only_renders_the_regenerating_block
 // delete_modal / delete_modal_empty / delete_conversation
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_modal_empty_renders_a_closed_shell() {
     let (app, container) = app(ContainerBuilder::new().provide(db())).await;
     let resp = app
@@ -231,7 +231,7 @@ async fn delete_modal_empty_renders_a_closed_shell() {
     assert!(!html.contains("open"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_modal_names_the_conversation_when_it_exists() {
     let db = db();
     let repo = db.repository::<Conversation>();
@@ -259,7 +259,7 @@ async fn delete_modal_names_the_conversation_when_it_exists() {
     assert!(html.contains("My chat"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_modal_falls_back_to_a_generic_label_for_an_unknown_conversation() {
     let (app, container) = app(ContainerBuilder::new().provide(db())).await;
     let resp = app
@@ -274,7 +274,7 @@ async fn delete_modal_falls_back_to_a_generic_label_for_an_unknown_conversation(
     assert!(html.contains("ui_chat_this_conversation"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_conversation_redirects_home_when_it_was_the_active_conversation() {
     let db = db();
     let repo = db.repository::<Conversation>();
@@ -302,7 +302,7 @@ async fn delete_conversation_redirects_home_when_it_was_the_active_conversation(
     assert!(headers.contains_key("hx-redirect"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_conversation_returns_an_oob_removal_when_it_was_not_active() {
     let db = db();
     let repo = db.repository::<Conversation>();
@@ -379,7 +379,7 @@ async fn seed_thread(db: &Db) {
         .unwrap();
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn switch_active_message_follows_the_newest_child_chain_to_the_tip() {
     let db = db();
     seed_thread(&db).await;
@@ -396,7 +396,7 @@ async fn switch_active_message_follows_the_newest_child_chain_to_the_tip() {
     assert_eq!(conv.active_message_id.as_deref(), Some("a-child"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn switch_branch_redirects_with_the_conversation_id() {
     let db = db();
     seed_thread(&db).await;
@@ -420,7 +420,7 @@ async fn switch_branch_redirects_with_the_conversation_id() {
     assert!(location.contains("conversation_id=conv"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_siblings_returns_only_messages_sharing_the_same_parent() {
     let db = db();
     seed_thread(&db).await;
@@ -434,7 +434,7 @@ async fn get_siblings_returns_only_messages_sharing_the_same_parent() {
     assert_eq!(roots[0].id, "root");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_conversation_message_nodes_walks_the_active_chain_in_order() {
     let db = db();
     seed_thread(&db).await;
@@ -446,7 +446,7 @@ async fn get_conversation_message_nodes_walks_the_active_chain_in_order() {
     assert_eq!(ids, vec!["root", "a", "a-child"]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_conversation_messages_is_empty_without_an_active_message() {
     let db = db();
     let messages = get_conversation_messages(&db, None).await.unwrap();
@@ -457,7 +457,7 @@ async fn get_conversation_messages_is_empty_without_an_active_message() {
 // edit_form / handle_edit
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn edit_form_is_not_found_for_an_unknown_message() {
     let (app, container) = app(ContainerBuilder::new().provide(db())).await;
     let resp = app
@@ -466,7 +466,7 @@ async fn edit_form_is_not_found_for_an_unknown_message() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn edit_form_renders_a_textarea_prefilled_with_the_message_content() {
     let db = db();
     db.repository::<Message>()
@@ -490,7 +490,7 @@ async fn edit_form_renders_a_textarea_prefilled_with_the_message_content() {
     assert!(html.contains("original text"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_edit_is_not_found_for_an_unknown_message() {
     let (app, container) = app(ContainerBuilder::new().provide(db())).await;
     let resp = app
@@ -504,7 +504,7 @@ async fn handle_edit_is_not_found_for_an_unknown_message() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_edit_branches_a_new_user_message_from_the_same_parent_and_redirects() {
     let db = db();
     db.repository::<Message>()
@@ -566,7 +566,7 @@ async fn handle_edit_branches_a_new_user_message_from_the_same_parent_and_redire
 // token_stats
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn token_stats_is_unauthorized_without_a_session_when_auth_is_enabled() {
     let (app, container) = app(ContainerBuilder::new()
         .provide(auth_enabled())
@@ -579,7 +579,7 @@ async fn token_stats_is_unauthorized_without_a_session_when_auth_is_enabled() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn token_stats_reports_usage_for_an_empty_conversation() {
     let (app, container) = app(ContainerBuilder::new()
         .provide(auth_disabled())
@@ -598,7 +598,7 @@ async fn token_stats_reports_usage_for_an_empty_conversation() {
 // Pure helpers
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn chat_request_file_id_list_trims_and_drops_empty_entries() {
     let req = ChatRequest {
         instance_id: "i".to_string(),
@@ -618,7 +618,7 @@ fn chat_request_file_id_list_trims_and_drops_empty_entries() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn chat_request_file_id_list_is_empty_for_a_blank_field() {
     let req = ChatRequest {
         instance_id: "i".to_string(),

@@ -16,7 +16,7 @@ fn broadcaster() -> (
     (Inject(Arc::new(VllmBroadcaster(tx.clone()))), tx)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn canonical_sse_route_streams_a_broadcast_message_as_an_sse_event() {
     let (broadcaster, tx) = broadcaster();
     let resp = handle_sse_canonical(broadcaster)
@@ -44,7 +44,7 @@ async fn canonical_sse_route_streams_a_broadcast_message_as_an_sse_event() {
     assert!(text.contains("<div>hello</div>"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn sse_event_strips_newlines_from_the_html_payload() {
     let (broadcaster, tx) = broadcaster();
     let resp = handle_sse_canonical(broadcaster)
@@ -66,7 +66,7 @@ async fn sse_event_strips_newlines_from_the_html_payload() {
     assert!(!text.contains("line one\nline two"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn alias_sse_route_behaves_the_same_as_canonical() {
     let (broadcaster, tx) = broadcaster();
     let resp = handle_sse_alias(broadcaster).await.expect("sse response");

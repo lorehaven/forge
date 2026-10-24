@@ -1,7 +1,7 @@
 use gantry_service::domain::{GantryError, pool, schema};
 use quench_db::{Db, InMemoryDb};
 
-#[test]
+#[quench_test::test]
 fn an_in_memory_database_is_refused_because_it_would_lose_the_history() {
     let db = Db::InMemory(InMemoryDb::new());
     let err = pool(&db).unwrap_err();
@@ -9,7 +9,7 @@ fn an_in_memory_database_is_refused_because_it_would_lose_the_history() {
     assert!(err.to_string().contains("in-memory"), "{err}");
 }
 
-#[test]
+#[quench_test::test]
 fn the_schema_defaults_to_gantry_and_follows_the_environment() {
     // Not set in this test binary unless a developer exported it; the default is what matters.
     if std::env::var_os("DB_SCHEMA").is_none() {
@@ -17,7 +17,7 @@ fn the_schema_defaults_to_gantry_and_follows_the_environment() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn a_missing_database_is_the_services_problem_not_the_callers() {
     use quench_starter::http::domain::api_error::ApiError;
     let error: ApiError = GantryError::NotPostgres.into();

@@ -3,7 +3,7 @@ use riveter::help::{
 };
 use std::collections::HashSet;
 
-#[test]
+#[quench_test::test]
 fn every_command_and_alias_resolves() {
     for cmd in COMMANDS {
         assert!(find(cmd.name).is_some(), "`{}` not findable", cmd.name);
@@ -14,7 +14,7 @@ fn every_command_and_alias_resolves() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn names_and_aliases_are_unique() {
     let mut seen = HashSet::new();
     for cmd in COMMANDS {
@@ -24,7 +24,7 @@ fn names_and_aliases_are_unique() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn overview_lists_every_repl_command() {
     let text = overview();
     for cmd in COMMANDS {
@@ -42,7 +42,7 @@ fn overview_lists_every_repl_command() {
 
 /// The REPL has no `repl` command and the CLI has no `exit`; neither tree may
 /// advertise a command that surface does not have.
-#[test]
+#[quench_test::test]
 fn each_tree_shows_only_its_own_commands() {
     let cli = command_tree(Surface::Cli);
     let repl = command_tree(Surface::Repl);
@@ -63,7 +63,7 @@ fn each_tree_shows_only_its_own_commands() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn find_on_respects_the_surface() {
     assert!(find_on("repl", Surface::Cli).is_some());
     assert!(find_on("repl", Surface::Repl).is_none());
@@ -73,14 +73,14 @@ fn find_on_respects_the_surface() {
     assert!(find_on("a", Surface::Repl).is_some());
 }
 
-#[test]
+#[quench_test::test]
 fn overview_documents_targets_and_scopes() {
     let text = overview();
     assert!(text.contains("Targets:"));
     assert!(text.contains("Scopes:"));
 }
 
-#[test]
+#[quench_test::test]
 fn detail_covers_options_subcommands_and_examples() {
     for cmd in COMMANDS {
         let text = detail(cmd);
@@ -110,7 +110,7 @@ fn detail_covers_options_subcommands_and_examples() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn scope_commands_explain_the_scopes() {
     for cmd in COMMANDS {
         if cmd.options.iter().any(|(f, _)| f.starts_with("--scope")) {
@@ -123,7 +123,7 @@ fn scope_commands_explain_the_scopes() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn targets_topic_is_indented() {
     let text = targets();
     assert!(text.starts_with("Targets:\n"));
@@ -136,7 +136,7 @@ fn targets_topic_is_indented() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn unknown_topic_lists_only_that_surfaces_topics() {
     for on in [Surface::Cli, Surface::Repl] {
         let msg = unknown_topic("bogus", on);

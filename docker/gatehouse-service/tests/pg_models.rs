@@ -2,6 +2,9 @@
 //! `GATEHOUSE_TEST_DATABASE_URL` points at one with the gatehouse module installed
 //! (`foundry-service apply -i gatehouse`).
 
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
 use gatehouse_service::app_tokens::AppTokenRow;
 use gatehouse_service::clients::ClientRow;
 use gatehouse_service::codes::AuthorizationCodeRow;
@@ -9,7 +12,7 @@ use gatehouse_service::notify::prefs::PrefRow;
 use quench_core::time::{Duration, Time};
 use quench_db::prelude::{Crud, Database, Db};
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_gatehouse_rows_round_trip_through_postgres() {
     let Ok(url) = std::env::var("GATEHOUSE_TEST_DATABASE_URL") else {
         return;
@@ -110,3 +113,5 @@ async fn the_gatehouse_rows_round_trip_through_postgres() {
         .await
         .unwrap();
 }
+
+quench_test::main!();

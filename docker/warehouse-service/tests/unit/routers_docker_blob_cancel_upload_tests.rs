@@ -11,7 +11,7 @@ async fn app() -> (
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_an_invalid_repository_name() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -25,7 +25,7 @@ async fn handle_rejects_an_invalid_repository_name() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_for_an_unknown_upload() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -39,7 +39,7 @@ async fn handle_reports_not_found_for_an_unknown_upload() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_deletes_an_existing_upload() {
     let storage = support::WithDockerStorageRoot::new();
     let upload_dir = storage.dir.path().join("my-repo").join("_uploads");

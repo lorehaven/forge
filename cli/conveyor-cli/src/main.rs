@@ -4,7 +4,7 @@
 //! exception: `validate` links conveyor's own parser in and needs no running
 //! service, so a pipeline can be checked before it is ever pushed.
 
-use clap::Parser;
+use quench_args::Parser;
 use quench_cli::prelude::{Tone, print_status};
 use quench_core::Result;
 
@@ -12,7 +12,7 @@ use conveyor_cli::{cli, client, commands};
 
 #[tokio::main]
 async fn main() {
-    let _ = dotenvy::dotenv();
+    let _ = quench_core::dotenv::load();
 
     if let Err(error) = run().await {
         // One line, on stderr, and a non-zero exit - so this is usable as the

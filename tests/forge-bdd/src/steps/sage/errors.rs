@@ -1,7 +1,7 @@
 use crate::world::ForgeWorld;
-use serde_json::json;
+use quench_serde::json;
 
-#[cucumber::when("I send a chat message \"\" with valid token")]
+#[quench_test_bdd::when("I send a chat message \"\" with valid token")]
 async fn send_empty_message(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
 
@@ -28,7 +28,7 @@ async fn send_empty_message(world: &mut ForgeWorld) -> Result<(), String> {
     }
 }
 
-#[cucumber::when("I send chat request without message field")]
+#[quench_test_bdd::when("I send chat request without message field")]
 async fn send_without_message(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
 
@@ -54,7 +54,7 @@ async fn send_without_message(world: &mut ForgeWorld) -> Result<(), String> {
     }
 }
 
-#[cucumber::when("I send a very long chat message (10000+ characters)")]
+#[quench_test_bdd::when(expr = "I send a very long chat message \\(10000+ characters\\)")]
 async fn send_long_message(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
     let long_message = "a".repeat(10001);
@@ -82,7 +82,7 @@ async fn send_long_message(world: &mut ForgeWorld) -> Result<(), String> {
     }
 }
 
-#[cucumber::when("I send malformed JSON to chat endpoint")]
+#[quench_test_bdd::when("I send malformed JSON to chat endpoint")]
 async fn send_malformed_json(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
 
@@ -103,13 +103,13 @@ async fn send_malformed_json(world: &mut ForgeWorld) -> Result<(), String> {
     }
 }
 
-#[cucumber::given("vLLM service is unavailable")]
+#[quench_test_bdd::given("vLLM service is unavailable")]
 async fn vllm_unavailable(_world: &mut ForgeWorld) -> Result<(), String> {
     // Placeholder - in real scenario would mock vLLM unavailability
     Ok(())
 }
 
-#[cucumber::when("I send 5 concurrent chat messages")]
+#[quench_test_bdd::when("I send 5 concurrent chat messages")]
 async fn send_concurrent_messages(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
     let token = world.jwt_token.clone();
@@ -150,12 +150,12 @@ async fn send_concurrent_messages(world: &mut ForgeWorld) -> Result<(), String> 
     Ok(())
 }
 
-#[cucumber::then("the response should indicate service unavailable")]
+#[quench_test_bdd::then("the response should indicate service unavailable")]
 async fn response_service_unavailable(_world: &mut ForgeWorld) -> Result<(), String> {
     Ok(())
 }
 
-#[cucumber::when(expr = "I send a long chat message with {int} characters")]
+#[quench_test_bdd::when(expr = "I send a long chat message with {int} characters")]
 async fn send_long_message_with_count(
     world: &mut ForgeWorld,
     char_count: usize,
@@ -163,7 +163,7 @@ async fn send_long_message_with_count(
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
     let long_message = "a".repeat(char_count);
 
-    let body = serde_json::json!({
+    let body = quench_serde::json!({
         "conversation_id": "test-conversation",
         "message": long_message,
         "model": "test-model",
@@ -186,7 +186,7 @@ async fn send_long_message_with_count(
     }
 }
 
-#[cucumber::when("I send 5 rapid chat messages")]
+#[quench_test_bdd::when("I send 5 rapid chat messages")]
 async fn send_rapid_chat_messages(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
     let token = world.jwt_token.clone();
@@ -204,7 +204,7 @@ async fn send_rapid_chat_messages(world: &mut ForgeWorld) -> Result<(), String> 
         let client = world.client.clone();
 
         let handle = tokio::spawn(async move {
-            let body = serde_json::json!({
+            let body = quench_serde::json!({
                 "conversation_id": conv_id,
                 "message": format!("Rapid message {}", i),
                 "model": "test-model",

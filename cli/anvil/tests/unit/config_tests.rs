@@ -3,7 +3,7 @@ use anvil::config::{Config, load_config};
 use crate::support;
 use support::stable_cwd_lock;
 
-#[test]
+#[quench_test::test]
 fn test_default_config() {
     let config = Config::default();
     assert!(config.docker.modules.is_empty());
@@ -12,7 +12,7 @@ fn test_default_config() {
     assert!(config.release.packages.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn test_parse_config() {
     let toml_str = r#"
 [docker]
@@ -67,7 +67,7 @@ packages = ["service"]
     assert_eq!(config.release.packages, vec!["service"]);
 }
 
-#[test]
+#[quench_test::test]
 fn test_parse_nested_package_overrides_without_global_registry() {
     let toml_str = r#"
 [docker.modules.warehouse]
@@ -98,7 +98,7 @@ registries = ["ossiriand.arda:8080/forge"]
     );
 }
 
-#[test]
+#[quench_test::test]
 fn test_build_args_default_to_empty() {
     // Most packages say nothing here: the Dockerfile's own defaults describe a
     // plain web service, and only a package that is not one has anything to add.
@@ -125,7 +125,7 @@ image_name = "svc"
     assert_eq!(package_override.dockerfile, None);
 }
 
-#[test]
+#[quench_test::test]
 fn test_parse_build_args() {
     let toml_str = r#"
 [docker.modules.docker]
@@ -156,7 +156,7 @@ build_args = { RESOURCE_DIR = "migrations", RUN_AS = "999:999" }
     );
 }
 
-#[test]
+#[quench_test::test]
 fn test_build_args_keep_their_order() {
     // Ordering is why this is a BTreeMap: arguments that reach `docker build` in
     // a different order each run are a build cache that misses at random.
@@ -178,7 +178,7 @@ build_args = { ZED = "3", ALPHA = "1", MID = "2" }
     assert_eq!(names, vec!["ALPHA", "MID", "ZED"]);
 }
 
-#[test]
+#[quench_test::test]
 fn test_the_estates_own_config_needs_only_one_dockerfile() {
     // The point of build args: every package under the `docker` module builds
     // from the same template, and the ones that differ say how rather than
@@ -226,7 +226,7 @@ fn test_the_estates_own_config_needs_only_one_dockerfile() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn load_config_defaults_when_anvil_toml_is_missing() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -244,7 +244,7 @@ fn load_config_defaults_when_anvil_toml_is_missing() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-#[test]
+#[quench_test::test]
 fn load_config_defaults_when_anvil_toml_is_invalid_toml() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -263,7 +263,7 @@ fn load_config_defaults_when_anvil_toml_is_invalid_toml() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-#[test]
+#[quench_test::test]
 fn load_config_parses_a_valid_anvil_toml() {
     let _guard = stable_cwd_lock()
         .lock()

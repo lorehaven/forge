@@ -3,10 +3,10 @@
 //! Everything here is pure - no database, no clock (callers pass `now`) - so the arithmetic, which is
 //! where the awkward cases live (clock changes, short months, late completion), is tested directly.
 
-use chrono::{DateTime, Days, Duration, LocalResult, Months, NaiveDate, NaiveTime, TimeZone, Utc};
-use chrono_tz::Tz;
-use quench_core::time::Time;
+use quench_core::date::Date;
+use quench_core::time::{Civil, Duration, Time};
 use quench_serde::{Deserialize, Serialize};
+use quench_tz::{Resolved, Zone};
 
 /// The most `interval` a rule may have. Far beyond any real use; it keeps the arithmetic in range.
 pub const MAX_INTERVAL: u32 = 999;
@@ -103,7 +103,7 @@ impl Recurrence {
         if self.interval == 0 || self.interval > MAX_INTERVAL {
             return Err("recurrence interval must be between 1 and 999");
         }
-        if self.timezone.parse::<Tz>().is_err() {
+        if Zone::named(&self.timezone).is_err() {
             return Err("recurrence timezone is not a known IANA zone");
         }
         self.weekdays.sort_unstable();
@@ -122,8 +122,8 @@ impl Recurrence {
         Ok(self)
     }
 
-    fn zone(&self) -> Tz {
-        self.timezone.parse().unwrap_or(Tz::UTC)
+    fn zone(&self) -> Zone {
+        Zone::named(&self.timezone).unwrap_or_else(|_| Zone::utc())
     }
 
     /// The due date after `due` is completed at `now`, or `None` if no later occurrence can be found.
@@ -137,30 +137,20 @@ impl Recurrence {
     /// * **After completion** - `interval` units after today (in the rule's zone), at the anchor's time.
     #[must_use]
     pub fn next_due(&self, anchor: Time, due: Time, now: Time) -> Option<Time> {
-        let (anchor, due, now) = (to_chrono(anchor), to_chrono(due), to_chrono(now));
-        self.next_due_chrono(anchor, due, now).map(from_chrono)
-    }
-
-    fn next_due_chrono(
-        &self,
-        anchor: DateTime<Utc>,
-        due: DateTime<Utc>,
-        now: DateTime<Utc>,
-    ) -> Option<DateTime<Utc>> {
         let zone = self.zone();
-        let anchor_local = anchor.with_timezone(&zone);
-        let (anchor_date, time) = (anchor_local.date_naive(), anchor_local.time());
+        let anchor_local = zone.civil_at(anchor);
+        let anchor_date = anchor_local.date();
 
         match self.mode {
             Mode::AfterCompletion => {
-                let today = now.with_timezone(&zone).date_naive();
+                let today = zone.civil_at(now).date();
                 let date = self.add_units(today, 1)?;
-                Some(local_to_utc(zone, date, time))
+                Some(local_to_utc(&zone, &with_time_of(date, &anchor_local)))
             }
             Mode::Fixed => {
                 let after = due.max(now);
                 self.occurrence_dates(anchor_date)
-                    .map(|date| local_to_utc(zone, date, time))
+                    .map(|date| local_to_utc(&zone, &with_time_of(date, &anchor_local)))
                     .find(|at| *at > after)
             }
         }
@@ -173,27 +163,16 @@ impl Recurrence {
     /// Returns midnight UTC of the next date.
     #[must_use]
     pub fn next_due_all_day(&self, anchor: Time, due: Time, now: Time) -> Option<Time> {
-        let (anchor, due, now) = (to_chrono(anchor), to_chrono(due), to_chrono(now));
-        self.next_due_all_day_chrono(anchor, due, now)
-            .map(from_chrono)
-    }
-
-    fn next_due_all_day_chrono(
-        &self,
-        anchor: DateTime<Utc>,
-        due: DateTime<Utc>,
-        now: DateTime<Utc>,
-    ) -> Option<DateTime<Utc>> {
-        let today = now.with_timezone(&self.zone()).date_naive();
+        let today = self.zone().civil_at(now).date();
         let date = match self.mode {
             Mode::AfterCompletion => self.add_units(today, 1)?,
             Mode::Fixed => {
-                let threshold = due.date_naive().max(today);
-                self.occurrence_dates(anchor.date_naive())
+                let threshold = due.civil().date().max(today);
+                self.occurrence_dates(anchor.civil().date())
                     .find(|date| *date > threshold)?
             }
         };
-        Some(date.and_time(NaiveTime::MIN).and_utc())
+        date.at(0, 0, 0).to_time()
     }
 
     /// Where the reminder goes when the due date moves from `due` to `next`: the same wall-clock distance
@@ -202,86 +181,76 @@ impl Recurrence {
     /// midnight of its date.
     #[must_use]
     pub fn shift_reminder(&self, remind: Time, due: Time, next: Time, all_day: bool) -> Time {
-        let (remind, due, next) = (to_chrono(remind), to_chrono(due), to_chrono(next));
-        from_chrono(self.shift_reminder_chrono(remind, due, next, all_day))
-    }
-
-    fn shift_reminder_chrono(
-        &self,
-        remind: DateTime<Utc>,
-        due: DateTime<Utc>,
-        next: DateTime<Utc>,
-        all_day: bool,
-    ) -> DateTime<Utc> {
         let zone = self.zone();
-        let wall = |at: DateTime<Utc>| {
-            if all_day {
-                at.date_naive().and_time(NaiveTime::MIN)
+        // A wall-clock reading as an instant-shaped number, so readings can be subtracted.
+        let wall = |at: Time| -> Time {
+            let civil = if all_day {
+                at.civil().date().at(0, 0, 0)
             } else {
-                at.with_timezone(&zone).naive_local()
-            }
+                zone.civil_at(at)
+            };
+            civil.to_time().unwrap_or(at)
         };
-        let lead = wall(due) - remind.with_timezone(&zone).naive_local();
+        // The reminder is a moment on the clock in every case; only the due moment of an all-day task is a date.
+        let remind_wall = zone.civil_at(remind).to_time().unwrap_or(remind);
+        let lead = wall(due) - remind_wall;
         let shifted = wall(next) - lead;
-        local_to_utc(zone, shifted.date(), shifted.time())
+        local_to_utc(&zone, &shifted.civil())
     }
 
     /// `date` moved forward by `steps` times the rule's interval. Months and years are added to the
     /// date itself (clamping to the month's last day), not by repeating a smaller step.
-    fn add_units(&self, date: NaiveDate, steps: u32) -> Option<NaiveDate> {
+    fn add_units(&self, date: Date, steps: u32) -> Option<Date> {
         let total = u64::from(self.interval) * u64::from(steps);
         match self.unit {
-            Unit::Day => date.checked_add_days(Days::new(total)),
-            Unit::Week => date.checked_add_days(Days::new(total.checked_mul(7)?)),
-            Unit::Month => date.checked_add_months(Months::new(u32::try_from(total).ok()?)),
-            Unit::Year => date.checked_add_months(Months::new(u32::try_from(total * 12).ok()?)),
+            Unit::Day => date.add_days(i64::try_from(total).ok()?),
+            Unit::Week => date.add_days(i64::try_from(total.checked_mul(7)?).ok()?),
+            Unit::Month => date.add_months(i32::try_from(total).ok()?),
+            Unit::Year => date.add_months(i32::try_from(total * 12).ok()?),
         }
     }
 
     /// Every date of a fixed schedule counted from `anchor_date`, in order, ending after [`MAX_STEPS`]
     /// occurrences. With weekdays: every `interval`-th week (Monday-based, counted from the anchor's
     /// week), on each listed weekday that is not before the anchor.
-    fn occurrence_dates(&self, anchor_date: NaiveDate) -> Box<dyn Iterator<Item = NaiveDate> + '_> {
+    fn occurrence_dates(&self, anchor_date: Date) -> Box<dyn Iterator<Item = Date> + '_> {
         if self.weekdays.is_empty() {
             return Box::new((0..MAX_STEPS).map_while(move |k| self.add_units(anchor_date, k)));
         }
-        let monday = anchor_date.checked_sub_days(Days::new(u64::from(
-            chrono::Datelike::weekday(&anchor_date).num_days_from_monday(),
-        )));
+        // 1970-01-01 was a Thursday, so day 0 is 3 days after a Monday.
+        let days_from_monday = (anchor_date.days_since_epoch() + 3).rem_euclid(7);
+        let monday = anchor_date.add_days(-days_from_monday);
         Box::new(
             (0..MAX_STEPS / 4)
                 .map_while(move |week| self.add_units(monday?, week))
                 .flat_map(move |start| {
                     self.weekdays
                         .iter()
-                        .filter_map(move |day| {
-                            start.checked_add_days(Days::new(u64::from(*day - 1)))
-                        })
+                        .filter_map(move |day| start.add_days(i64::from(*day) - 1))
                         .filter(move |date| *date >= anchor_date)
                 }),
         )
     }
 }
 
-// The rest of the service speaks `Time`; chrono (with chrono-tz for the IANA zones, which quench has no
-// replacement for) is confined to this module's calendar arithmetic.
-fn to_chrono(at: Time) -> DateTime<Utc> {
-    DateTime::from_timestamp(at.timestamp(), at.subsec_nanos()).unwrap_or(DateTime::UNIX_EPOCH)
-}
-
-const fn from_chrono(at: DateTime<Utc>) -> Time {
-    Time::from_unix_nanos(at.timestamp(), at.timestamp_subsec_nanos())
+/// `date` at the time of day `time` shows.
+fn with_time_of(date: Date, time: &Civil) -> Civil {
+    Civil {
+        nanosecond: time.nanosecond,
+        ..date.at(time.hour, time.minute, time.second)
+    }
 }
 
 /// A local wall-clock time as a UTC instant. A time that happens twice (clocks going back) is the
 /// first; one that does not exist (clocks going forward) lands an hour later, where it would have been.
-fn local_to_utc(zone: Tz, date: NaiveDate, time: NaiveTime) -> DateTime<Utc> {
-    let naive = date.and_time(time);
-    match zone.from_local_datetime(&naive) {
-        LocalResult::Single(at) | LocalResult::Ambiguous(at, _) => at.with_timezone(&Utc),
-        LocalResult::None => zone
-            .from_local_datetime(&(naive + Duration::hours(1)))
-            .earliest()
-            .map_or_else(|| naive.and_utc(), |at| at.with_timezone(&Utc)),
+fn local_to_utc(zone: &Zone, local: &Civil) -> Time {
+    match zone.resolve(local) {
+        Resolved::Single(at) | Resolved::Ambiguous { earlier: at, .. } => at,
+        Resolved::Gap => {
+            let as_utc = local.to_time().unwrap_or_default();
+            zone.resolve(&(as_utc + Duration::hours(1)).civil())
+                .earliest()
+                .unwrap_or(as_utc)
+        }
     }
 }

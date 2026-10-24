@@ -19,7 +19,7 @@ fn config(auth_enabled: bool) -> JwtConfig {
     config
 }
 
-#[test]
+#[quench_test::test]
 fn everything_is_allowed_when_auth_is_off_and_nothing_without_a_token_when_it_is_on() {
     assert!(can(None, &config(false), "deploy"));
     assert!(can_on_target(None, &config(false), "media", "deploy"));
@@ -28,7 +28,7 @@ fn everything_is_allowed_when_auth_is_off_and_nothing_without_a_token_when_it_is
     assert!(!can_on_target(None, &config(true), "media", "read"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_blanket_grant_covers_every_package_but_only_its_action() {
     let claims = claims_with("gantry:read");
     let cfg = config(true);
@@ -41,7 +41,7 @@ fn a_blanket_grant_covers_every_package_but_only_its_action() {
     assert!(!can_on_target(Some(&claims), &cfg, "media", "deploy"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_package_grant_covers_that_package_and_that_action_only() {
     let claims = claims_with("gantry:target:media:deploy");
     let cfg = config(true);
@@ -52,7 +52,7 @@ fn a_package_grant_covers_that_package_and_that_action_only() {
     assert!(!can(Some(&claims), &cfg, "deploy"));
 }
 
-#[test]
+#[quench_test::test]
 fn the_admin_wildcard_covers_everything() {
     let claims = claims_with("admin");
     let cfg = config(true);
@@ -60,13 +60,13 @@ fn the_admin_wildcard_covers_everything() {
     assert!(can_on_target(Some(&claims), &cfg, "anything", "rollback"));
 }
 
-#[test]
+#[quench_test::test]
 fn another_services_grant_means_nothing_here() {
     let claims = claims_with("workbench:write warehouse:read");
     assert!(!can(Some(&claims), &config(true), "read"));
 }
 
-#[test]
+#[quench_test::test]
 fn granted_targets_lists_only_the_packages_granted_that_action() {
     let claims = claims_with(
         "gantry:target:media:deploy gantry:target:vpn:scale gantry:target:forge:deploy gantry:read",

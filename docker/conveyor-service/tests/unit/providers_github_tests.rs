@@ -34,7 +34,7 @@ fn signed(body: &[u8], event: &str) -> HeaderMap {
 // Signatures
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn the_documented_github_test_vector_verifies() {
     // From GitHub's own webhook documentation. If this ever fails, conveyor and
     // GitHub disagree about what the signature covers - which no amount of
@@ -46,14 +46,14 @@ fn the_documented_github_test_vector_verifies() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_correct_signature_is_accepted() {
     let github = GitHubProvider::from_env();
     let body = br#"{"hello":"world"}"#;
     assert!(github.verify(&signed(body, "push"), body, SECRET));
 }
 
-#[test]
+#[quench_test::test]
 fn a_signature_for_different_bytes_is_rejected() {
     // The reason the handler takes raw bytes: a body that has been through a
     // deserialiser and back no longer matches what was signed.
@@ -68,7 +68,7 @@ fn a_signature_for_different_bytes_is_rejected() {
     assert!(!github.verify(&headers, br#"{"hello": "world"}"#, SECRET));
 }
 
-#[test]
+#[quench_test::test]
 fn a_signature_made_with_another_secret_is_rejected() {
     let github = GitHubProvider::from_env();
     let body = br#"{"hello":"world"}"#;
@@ -81,7 +81,7 @@ fn a_signature_made_with_another_secret_is_rejected() {
     assert!(!github.verify(&headers, body, SECRET));
 }
 
-#[test]
+#[quench_test::test]
 fn a_missing_or_malformed_signature_is_rejected() {
     let github = GitHubProvider::from_env();
     let body = b"{}";
@@ -116,7 +116,7 @@ fn push_body(git_ref: &str, sha: &str, deleted: bool) -> Vec<u8> {
     .into_bytes()
 }
 
-#[test]
+#[quench_test::test]
 fn a_push_becomes_a_trigger() {
     let github = GitHubProvider::from_env();
     let body = push_body("refs/heads/master", "a".repeat(40).as_str(), false);
@@ -137,7 +137,7 @@ fn a_push_becomes_a_trigger() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn only_the_subject_line_of_the_commit_message_is_kept() {
     let github = GitHubProvider::from_env();
     let body = push_body("refs/heads/master", "a".repeat(40).as_str(), false);
@@ -149,7 +149,7 @@ fn only_the_subject_line_of_the_commit_message_is_kept() {
     assert_eq!(event.message.as_deref(), Some("fix the thing"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_deleted_branch_triggers_nothing() {
     // Its `after` is all zeros, which would fail the checkout in a way nobody
     // could interpret.
@@ -164,7 +164,7 @@ fn a_deleted_branch_triggers_nothing() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_zero_sha_triggers_nothing_even_without_the_deleted_flag() {
     let github = GitHubProvider::from_env();
     let body = push_body("refs/heads/gone", &"0".repeat(40), false);
@@ -177,7 +177,7 @@ fn a_zero_sha_triggers_nothing_even_without_the_deleted_flag() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_tag_push_keeps_its_full_ref() {
     let github = GitHubProvider::from_env();
     let body = push_body("refs/tags/v1.2.3", "a".repeat(40).as_str(), false);
@@ -215,7 +215,7 @@ fn pull_request_body(action: &str, head_repo: Option<&str>) -> Vec<u8> {
     .into_bytes()
 }
 
-#[test]
+#[quench_test::test]
 fn a_pull_request_from_the_same_repository_builds_its_branch() {
     // Its branch exists in the base repository, so `branch == '...'` in a
     // `when` still means what it looks like.
@@ -232,7 +232,7 @@ fn a_pull_request_from_the_same_repository_builds_its_branch() {
     assert!(!event.from_fork);
 }
 
-#[test]
+#[quench_test::test]
 fn a_pull_request_from_a_fork_is_marked_and_uses_the_published_ref() {
     // A fork's branch does not exist in the base repository; GitHub publishes
     // every pull request's head there as `refs/pull/N/head`.
@@ -248,7 +248,7 @@ fn a_pull_request_from_a_fork_is_marked_and_uses_the_published_ref() {
     assert_eq!(event.git_ref, "refs/pull/42/head");
 }
 
-#[test]
+#[quench_test::test]
 fn a_pull_request_with_no_head_repository_is_treated_as_a_fork() {
     // GitHub reports this when the head repository was deleted, which it also
     // does for forks. Treating it as "not a fork" would be the unsafe way round.
@@ -262,7 +262,7 @@ fn a_pull_request_with_no_head_repository_is_treated_as_a_fork() {
     assert!(event.from_fork);
 }
 
-#[test]
+#[quench_test::test]
 fn the_actions_that_change_code_trigger_a_build() {
     let github = GitHubProvider::from_env();
     for action in ["opened", "reopened", "synchronize", "ready_for_review"] {
@@ -277,7 +277,7 @@ fn the_actions_that_change_code_trigger_a_build() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn the_actions_that_do_not_change_code_trigger_nothing() {
     let github = GitHubProvider::from_env();
     for action in [
@@ -302,7 +302,7 @@ fn the_actions_that_do_not_change_code_trigger_nothing() {
 // Other events
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_ping_is_accepted_and_triggers_nothing() {
     // GitHub sends one when a hook is created. Treating it as an error would
     // show a red mark on the hook the moment it was set up.
@@ -312,7 +312,7 @@ fn a_ping_is_accepted_and_triggers_nothing() {
     assert!(github.parse(&signed(body, "ping"), body).unwrap().is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn an_event_conveyor_does_not_handle_triggers_nothing() {
     let github = GitHubProvider::from_env();
     let body = b"{}";
@@ -324,14 +324,14 @@ fn an_event_conveyor_does_not_handle_triggers_nothing() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_delivery_without_the_event_header_is_an_error() {
     let github = GitHubProvider::from_env();
     let headers = headers(&[("x-github-delivery", "d")]);
     assert!(github.parse(&headers, b"{}").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_delivery_without_an_id_is_an_error() {
     // The id is what makes a redelivery a no-op rather than a second run.
     let github = GitHubProvider::from_env();
@@ -339,14 +339,14 @@ fn a_delivery_without_an_id_is_an_error() {
     assert!(github.parse(&headers, b"{}").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_push_body_that_is_not_a_push_is_an_error() {
     let github = GitHubProvider::from_env();
     let body = br#"{"not":"a push"}"#;
     assert!(github.parse(&signed(body, "push"), body).is_err());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reporting_a_status_without_a_token_says_so() {
     // Not a failed run: building without reporting is a reasonable way to run
     // conveyor, and the worker treats this case as a no-op.

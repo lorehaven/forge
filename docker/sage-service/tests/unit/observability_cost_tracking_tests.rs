@@ -2,7 +2,7 @@
 
 use sage_service::observability::cost_tracking::*;
 
-#[test]
+#[quench_test::test]
 fn test_request_cost_creation() {
     let cost = RequestCost::new(
         Some("user-1".to_string()),
@@ -13,7 +13,7 @@ fn test_request_cost_creation() {
     assert_eq!(cost.total_tokens_used, 0);
 }
 
-#[test]
+#[quench_test::test]
 fn test_add_tool_cost() {
     let mut cost = RequestCost::new(
         Some("user-1".to_string()),
@@ -33,7 +33,7 @@ fn test_add_tool_cost() {
     assert_eq!(cost.total_duration_ms, 500);
 }
 
-#[test]
+#[quench_test::test]
 fn test_cost_tracker() {
     let tracker = CostTracker::new();
     let mut cost = RequestCost::new(
@@ -55,7 +55,7 @@ fn test_cost_tracker() {
     assert_eq!(user_costs.total_tokens_used, 100);
 }
 
-#[test]
+#[quench_test::test]
 fn test_estimate_cost() {
     let mut cost = RequestCost::new(None, None, "web_assistant".to_string());
     cost.total_tokens_used = 1_000_000; // 1M tokens

@@ -47,14 +47,14 @@ fn dynamic(name: &str, owner: &str) -> DynamicStorage {
 // render_storages_page
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn empty_view_shows_the_empty_state() {
     let resp = render_storages_page(&StoragesView::default(), false);
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(body_html(resp).await.contains("ui_storages_empty"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_list_shows_static_and_dynamic_storages() {
     let view = StoragesView {
         static_names: vec!["artifacts".to_string()],
@@ -68,7 +68,7 @@ async fn the_list_shows_static_and_dynamic_storages() {
     assert!(html.contains("losseheil"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_selected_dynamic_storage_shows_owner_and_a_quota_bar() {
     let view = StoragesView {
         static_names: vec![],
@@ -86,7 +86,7 @@ async fn a_selected_dynamic_storage_shows_owner_and_a_quota_bar() {
     assert!(html.contains("GiB"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn management_controls_appear_only_with_permission() {
     let selected = || SelectedView {
         name: "phone_backup".to_string(),
@@ -125,7 +125,7 @@ fn selected_dynamic() -> StoragesView {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_selected_storage_links_to_the_file_browser_instead_of_listing_files() {
     let html = body_html(render_storages_page(&selected_dynamic(), true)).await;
     assert!(html.contains("ui_browse_open"));
@@ -139,7 +139,7 @@ async fn a_selected_storage_links_to_the_file_browser_instead_of_listing_files()
     assert!(html_ro.contains("/files/browse?storage=phone_backup"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_notice_replaces_the_detail_panel_for_an_unknown_storage() {
     let view = StoragesView {
         static_names: vec!["artifacts".to_string()],
@@ -180,7 +180,7 @@ async fn app(
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn files_storages_redirects_to_login_when_unauthenticated() {
     let (app, container) = app(jwt_config(true), in_memory_db()).await;
     let resp = app
@@ -189,7 +189,7 @@ async fn files_storages_redirects_to_login_when_unauthenticated() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn files_storages_renders_when_authenticated() {
     let (app, container) = app(jwt_config(false), in_memory_db()).await;
     let resp = app
@@ -198,7 +198,7 @@ async fn files_storages_renders_when_authenticated() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_storage_redirects_to_login_without_a_session() {
     let (app, container) = app(jwt_config(true), in_memory_db()).await;
     let resp = app
@@ -216,7 +216,7 @@ async fn create_storage_redirects_to_login_without_a_session() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn mutations_are_not_found_when_file_storage_is_disabled() {
     let (app, container) = app(jwt_config(false), in_memory_db()).await;
 
@@ -255,7 +255,7 @@ async fn mutations_are_not_found_when_file_storage_is_disabled() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_delete_storage_modal_names_its_target() {
     let (app, container) = app(jwt_config(false), in_memory_db()).await;
     let resp = app

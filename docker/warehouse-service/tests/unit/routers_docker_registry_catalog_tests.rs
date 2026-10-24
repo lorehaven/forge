@@ -26,7 +26,7 @@ async fn app() -> (
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_lists_every_repository_when_under_the_default_page_size() {
     let _storage = with_repos(&["alpha", "beta"]);
     let (app, container) = app().await;
@@ -43,7 +43,7 @@ async fn handle_lists_every_repository_when_under_the_default_page_size() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_paginates_with_n_and_sets_a_link_header_when_more_remain() {
     let _storage = with_repos(&["alpha", "beta", "gamma"]);
     let (app, container) = app().await;
@@ -61,7 +61,7 @@ async fn handle_paginates_with_n_and_sets_a_link_header_when_more_remain() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_resumes_after_the_last_seen_repository() {
     let _storage = with_repos(&["alpha", "beta", "gamma"]);
     let (app, container) = app().await;

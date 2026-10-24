@@ -16,7 +16,7 @@ fn other_cipher() -> ChaCha20Poly1305 {
     ChaCha20Poly1305::new(derived)
 }
 
-#[test]
+#[quench_test::test]
 fn realm_cipher_derives_a_usable_key_from_any_length_passphrase() {
     let cipher = test_cipher();
     let plaintext = b"round trips";
@@ -24,7 +24,7 @@ fn realm_cipher_derives_a_usable_key_from_any_length_passphrase() {
     assert_eq!(decrypt(&cipher, &ciphertext).expect("decrypt"), plaintext);
 }
 
-#[test]
+#[quench_test::test]
 fn encrypt_then_decrypt_round_trips_arbitrary_bytes() {
     let cipher = test_cipher();
     let plaintext = b"the quick brown fox jumps over the lazy dog";
@@ -34,7 +34,7 @@ fn encrypt_then_decrypt_round_trips_arbitrary_bytes() {
     assert_eq!(decrypt(&cipher, &ciphertext).expect("decrypt"), plaintext);
 }
 
-#[test]
+#[quench_test::test]
 fn encrypt_uses_a_fresh_nonce_each_time() {
     let cipher = test_cipher();
     let a = encrypt(&cipher, b"same plaintext");
@@ -42,14 +42,14 @@ fn encrypt_uses_a_fresh_nonce_each_time() {
     assert_ne!(a, b, "ciphertexts must differ due to random nonces");
 }
 
-#[test]
+#[quench_test::test]
 fn decrypt_rejects_data_too_short_to_hold_a_nonce() {
     let cipher = test_cipher();
     let error = decrypt(&cipher, &[1, 2, 3]).unwrap_err();
     assert!(error.to_string().contains("too short"));
 }
 
-#[test]
+#[quench_test::test]
 fn decrypt_rejects_tampered_ciphertext() {
     let cipher = test_cipher();
     let mut ciphertext = encrypt(&cipher, b"tamper with me");
@@ -60,7 +60,7 @@ fn decrypt_rejects_tampered_ciphertext() {
     assert!(error.to_string().contains("decryption failed"));
 }
 
-#[test]
+#[quench_test::test]
 fn decrypt_rejects_ciphertext_from_a_different_key() {
     let cipher_a = test_cipher();
     let ciphertext = encrypt(&cipher_a, b"secret");

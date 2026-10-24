@@ -1,7 +1,7 @@
 use welder::backend::Backend;
 use welder::backend::vllm::VllmBackend;
 
-#[test]
+#[quench_test::test]
 fn vllm_backend_initialize_and_is_running_are_always_ok() {
     let backend = VllmBackend::new();
     assert!(backend.initialize().is_ok());
@@ -9,7 +9,7 @@ fn vllm_backend_initialize_and_is_running_are_always_ok() {
     backend.initialized();
 }
 
-#[test]
+#[quench_test::test]
 fn vllm_backend_default_matches_new() {
     let backend = VllmBackend;
     assert!(backend.is_running());

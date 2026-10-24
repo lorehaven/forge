@@ -16,33 +16,33 @@ fn write_blob(storage: &support::WithDockerStorageRoot, content: &[u8]) {
 // parse_range
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn parse_range_reads_a_fully_specified_range() {
     assert_eq!(parse_range("bytes=0-99", 200), Some((0, 99)));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_range_defaults_the_end_to_the_last_byte_when_omitted() {
     assert_eq!(parse_range("bytes=50-", 200), Some((50, 199)));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_range_rejects_a_missing_bytes_prefix() {
     assert_eq!(parse_range("0-99", 200), None);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_range_rejects_malformed_numbers() {
     assert_eq!(parse_range("bytes=a-b", 200), None);
     assert_eq!(parse_range("bytes=0-99-200", 200), None);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_range_rejects_a_start_past_the_end() {
     assert_eq!(parse_range("bytes=100-50", 200), None);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_range_rejects_an_end_at_or_past_the_total_size() {
     assert_eq!(parse_range("bytes=0-200", 200), None);
     assert_eq!(parse_range("bytes=0-199", 200), Some((0, 199)));
@@ -52,7 +52,7 @@ fn parse_range_rejects_an_end_at_or_past_the_total_size() {
 // maybe_redirect
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn maybe_redirect_is_none_when_the_flag_is_unset_or_false() {
     let _guard = support::redirect_env_lock()
         .lock()
@@ -61,7 +61,7 @@ fn maybe_redirect_is_none_when_the_flag_is_unset_or_false() {
     assert!(maybe_redirect(DIGEST).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn maybe_redirect_points_at_the_configured_backend_when_enabled() {
     let _guard = support::redirect_env_lock()
         .lock()
@@ -110,7 +110,7 @@ fn get_with_range(
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_a_malformed_digest() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -124,7 +124,7 @@ async fn handle_rejects_a_malformed_digest() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_for_a_missing_blob() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -138,7 +138,7 @@ async fn handle_reports_not_found_for_a_missing_blob() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_serves_the_full_blob_without_a_range_header() {
     let storage = support::WithDockerStorageRoot::new();
     write_blob(&storage, b"hello world");
@@ -156,7 +156,7 @@ async fn handle_serves_the_full_blob_without_a_range_header() {
     assert_eq!(&body[..], b"hello world");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_serves_a_partial_range_when_requested() {
     let storage = support::WithDockerStorageRoot::new();
     write_blob(&storage, b"hello world");
@@ -174,7 +174,7 @@ async fn handle_serves_a_partial_range_when_requested() {
     assert_eq!(&body[..], b"hello");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_range_not_satisfiable_for_a_bogus_range() {
     let storage = support::WithDockerStorageRoot::new();
     write_blob(&storage, b"hello world");
@@ -190,7 +190,7 @@ async fn handle_reports_range_not_satisfiable_for_a_bogus_range() {
     assert_eq!(resp.status(), StatusCode::RANGE_NOT_SATISFIABLE);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_streams_a_large_full_blob_across_many_frames() {
     let storage = support::WithDockerStorageRoot::new();
     // Well past ReaderStream's frame size, so the body is delivered in pieces.
@@ -219,7 +219,7 @@ async fn handle_streams_a_large_full_blob_across_many_frames() {
     assert_eq!(&body[..], &blob[..]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_streams_a_partial_range_out_of_a_large_blob() {
     let storage = support::WithDockerStorageRoot::new();
     let blob: Vec<u8> = (0..(512 * 1024))

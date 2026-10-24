@@ -23,7 +23,7 @@ const fn alice() -> Recipient<'static> {
 
 // -- LoggingSender --------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn logging_sender_accepts_both_kinds() {
     LoggingSender
         .send_verification(&alice(), "https://example.test/verify/tok")
@@ -35,7 +35,7 @@ async fn logging_sender_accepts_both_kinds() {
         .unwrap();
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn logging_sender_is_usable_through_the_sender_trait_object() {
     let sender: Box<dyn Sender> = Box::new(LoggingSender);
     sender
@@ -46,7 +46,7 @@ async fn logging_sender_is_usable_through_the_sender_trait_object() {
 
 // -- SendError ------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn send_error_reports_whether_a_retry_could_help() {
     assert!(SendError::transient("busy").is_transient());
     assert!(!SendError::permanent("no such user").is_transient());
@@ -55,7 +55,7 @@ fn send_error_reports_whether_a_retry_could_help() {
 
 // -- templates ------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn locale_tags_resolve_to_a_supported_language_or_english() {
     for (tag, expected) in [
         (Some("pl-PL"), "pl"),
@@ -76,7 +76,7 @@ fn locale_tags_resolve_to_a_supported_language_or_english() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn every_kind_in_every_language_carries_the_link_and_the_username() {
     let link = "https://ennor.ddns.net/gatehouse/ui/verify?token=abc123";
     for kind in [Kind::Verification, Kind::PasswordReset] {
@@ -104,7 +104,7 @@ fn every_kind_in_every_language_carries_the_link_and_the_username() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn languages_differ_and_unknown_falls_back_to_english() {
     let en = render(Kind::Verification, Some("en-US"), "a", "https://x.test/v");
     let pl = render(Kind::Verification, Some("pl-PL"), "a", "https://x.test/v");
@@ -119,7 +119,7 @@ fn languages_differ_and_unknown_falls_back_to_english() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn values_are_escaped_in_html_and_not_reinterpreted() {
     let link = "https://x.test/v?a=1&b=\"2\"";
     let mail = render(
@@ -138,14 +138,14 @@ fn values_are_escaped_in_html_and_not_reinterpreted() {
     assert!(mail.text.contains("<script>alert('x')</script>"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_username_that_looks_like_a_placeholder_stays_a_username() {
     let mail = render(Kind::Verification, None, "{link}", "https://x.test/real");
     assert!(mail.text.starts_with("Hello {link},"), "{}", mail.text);
     assert_eq!(mail.text.matches("https://x.test/real").count(), 1);
 }
 
-#[test]
+#[quench_test::test]
 fn the_validity_stated_in_the_email_matches_the_real_token_lifetimes() {
     assert_eq!(VERIFICATION_TTL_SECS, 24 * 60 * 60);
     assert_eq!(RESET_TTL_SECS, 60 * 60);
@@ -175,7 +175,7 @@ fn config(vars: &[(&str, &str)]) -> Result<Option<SmtpConfig>, String> {
     SmtpConfig::from_lookup(&|key| map.get(key).cloned())
 }
 
-#[test]
+#[quench_test::test]
 fn no_smtp_host_means_mail_is_not_configured() {
     assert!(config(&[]).unwrap().is_none());
     assert!(config(&[("SMTP_HOST", "  ")]).unwrap().is_none());
@@ -187,7 +187,7 @@ fn no_smtp_host_means_mail_is_not_configured() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_full_configuration_parses() {
     let cfg = config(&[
         ("SMTP_HOST", "stalwart-smtp.stalwart.svc.cluster.local"),
@@ -214,7 +214,7 @@ fn a_full_configuration_parses() {
     assert_eq!(cfg.timeout, Duration::from_secs(20));
 }
 
-#[test]
+#[quench_test::test]
 fn defaults_are_implicit_tls_forge_and_fifteen_seconds() {
     let cfg = config(&[
         ("SMTP_HOST", "mail.test"),
@@ -229,7 +229,7 @@ fn defaults_are_implicit_tls_forge_and_fifteen_seconds() {
     assert_eq!(cfg.timeout, Duration::from_secs(15));
 }
 
-#[test]
+#[quench_test::test]
 fn a_blank_sender_name_means_no_display_name() {
     let cfg = config(&[
         ("SMTP_HOST", "mail.test"),
@@ -241,7 +241,7 @@ fn a_blank_sender_name_means_no_display_name() {
     assert_eq!(cfg.from.name, None);
 }
 
-#[test]
+#[quench_test::test]
 fn tls_modes_parse_case_insensitively() {
     for (value, expected) in [
         ("IMPLICIT", TlsMode::Implicit),
@@ -259,7 +259,7 @@ fn tls_modes_parse_case_insensitively() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn bad_configuration_is_reported_not_ignored() {
     let base = [("SMTP_HOST", "mail.test"), ("MAIL_FROM", "a@mail.test")];
     let with = |extra: &[(&str, &str)]| {
@@ -309,7 +309,7 @@ fn bad_configuration_is_reported_not_ignored() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn the_password_never_appears_in_debug_output() {
     let cfg = config(&[
         ("SMTP_HOST", "mail.test"),
@@ -324,7 +324,7 @@ fn the_password_never_appears_in_debug_output() {
     assert!(shown.contains("mail.test"));
 }
 
-#[test]
+#[quench_test::test]
 fn credentials_without_tls_fail_when_building_the_sender() {
     let cfg = config(&[
         ("SMTP_HOST", "mail.test"),
@@ -413,7 +413,7 @@ fn sender_for(port: u16) -> SmtpSender {
     .unwrap()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn smtp_sender_delivers_a_verification_email() {
     let (port, received) = fake_server().await;
     let link = "https://ennor.ddns.net/gatehouse/ui/verify?token=abc";
@@ -438,7 +438,7 @@ async fn smtp_sender_delivers_a_verification_email() {
     drop(mails);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn smtp_sender_writes_the_email_in_the_recipients_language() {
     let (port, received) = fake_server().await;
     let polish = Recipient {
@@ -456,7 +456,7 @@ async fn smtp_sender_writes_the_email_in_the_recipients_language() {
     drop(mails);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_refused_address_is_a_permanent_failure() {
     let (port, _) = fake_server().await;
     let bad = Recipient {
@@ -471,7 +471,7 @@ async fn a_refused_address_is_a_permanent_failure() {
     assert!(err.to_string().contains("RCPT TO"), "{err}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unreachable_server_is_a_transient_failure() {
     let err = sender_for(1)
         .send_verification(&alice(), "https://x.test/v")
@@ -480,7 +480,7 @@ async fn an_unreachable_server_is_a_transient_failure() {
     assert!(err.is_transient(), "{err}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_address_the_mailer_cannot_use_is_a_permanent_failure() {
     let (port, received) = fake_server().await;
     let broken = Recipient {
@@ -505,7 +505,7 @@ fn lookup(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
     move |key| map.get(key).cloned()
 }
 
-#[test]
+#[quench_test::test]
 fn the_daily_limit_defaults_below_the_relays_allowance() {
     assert_eq!(daily_mail_limit(&lookup(&[])).unwrap(), 250);
     assert_eq!(
@@ -518,7 +518,7 @@ fn the_daily_limit_defaults_below_the_relays_allowance() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_nonsense_daily_limit_is_an_error_not_a_silent_default() {
     for bad in ["0", "-3", "many", "1.5", "1e3"] {
         let err = daily_mail_limit(&lookup(&[("MAIL_DAILY_LIMIT", bad)])).unwrap_err();
@@ -526,7 +526,7 @@ fn a_nonsense_daily_limit_is_an_error_not_a_silent_default() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_budget_stops_sending_when_the_day_is_spent() {
     let recorder = Arc::new(RecordingSender::default());
     let sender = BudgetedSender::new(recorder.clone(), RateLimiter::in_memory(), 2);
@@ -560,7 +560,7 @@ async fn the_budget_stops_sending_when_the_day_is_spent() {
     assert_eq!(sent[0].link, "https://x.test/1");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_budget_is_shared_between_both_kinds_of_email() {
     let recorder = Arc::new(RecordingSender::default());
     let sender = BudgetedSender::new(recorder.clone(), RateLimiter::in_memory(), 1);
@@ -588,7 +588,7 @@ const fn has_link(kind: Kind) -> bool {
     )
 }
 
-#[test]
+#[quench_test::test]
 fn every_kind_renders_in_every_language() {
     let link = "https://ennor.ddns.net/gatehouse/ui/x?token=abc";
     for kind in ALL_KINDS {
@@ -624,7 +624,7 @@ fn every_kind_renders_in_every_language() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn subjects_are_distinct_between_kinds_and_between_languages() {
     for locale in ["en", "pl", "de", "fr", "es"] {
         let mut subjects: Vec<String> = ALL_KINDS
@@ -647,7 +647,7 @@ fn subjects_are_distinct_between_kinds_and_between_languages() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn the_new_address_appears_in_the_change_notice_and_is_escaped_in_html() {
     let mail = render_with(
         Kind::EmailChanged,
@@ -671,7 +671,7 @@ fn the_new_address_appears_in_the_change_notice_and_is_escaped_in_html() {
     assert!(!mail.html.contains("<x>"));
 }
 
-#[test]
+#[quench_test::test]
 fn validity_windows_stated_in_the_emails() {
     assert!(
         render(Kind::Invite, Some("en"), "a", "l")
@@ -695,7 +695,7 @@ fn validity_windows_stated_in_the_emails() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn mail_variants_map_to_kinds_links_and_addresses() {
     let cases = [
         (
@@ -748,7 +748,7 @@ fn mail_variants_map_to_kinds_links_and_addresses() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_logging_sender_accepts_every_kind() {
     for mail in [
         Mail::Invite {
@@ -766,7 +766,7 @@ async fn the_logging_sender_accepts_every_kind() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn smtp_sender_delivers_a_notice_that_carries_no_link() {
     let (port, received) = fake_server().await;
     sender_for(port)
@@ -785,7 +785,7 @@ async fn smtp_sender_delivers_a_notice_that_carries_no_link() {
     drop(mails);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn smtp_sender_names_the_new_address_in_the_change_notice() {
     let (port, received) = fake_server().await;
     sender_for(port)
@@ -801,7 +801,7 @@ async fn smtp_sender_names_the_new_address_in_the_change_notice() {
     assert!(mails[0].contains("fresh@example.org"), "{}", mails[0]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_recording_sender_notes_kind_link_and_detail() {
     let recorder = RecordingSender::default();
     recorder
@@ -832,7 +832,7 @@ async fn the_recording_sender_notes_kind_link_and_detail() {
     assert_eq!(recorder.sent_of("invite").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_budget_covers_the_new_kinds_too() {
     let recorder = Arc::new(RecordingSender::default());
     let sender = BudgetedSender::new(recorder.clone(), RateLimiter::in_memory(), 2);

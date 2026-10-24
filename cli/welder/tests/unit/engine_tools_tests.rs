@@ -13,25 +13,25 @@ use welder::engine::tools::{is_command_allowed, run_tool, safe_rel_path, tool_he
 // safe_rel_path
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn rejects_absolute_paths() {
     assert!(safe_rel_path("/etc/passwd").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_parent_dir_traversal() {
     assert!(safe_rel_path("../secrets").is_err());
     assert!(safe_rel_path("a/../../b").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn allows_plain_relative_paths() {
     let _guard = support::cwd_lock().lock().unwrap();
     assert!(safe_rel_path("src/main.rs").is_ok());
     assert!(safe_rel_path(".").is_ok());
 }
 
-#[test]
+#[quench_test::test]
 fn allows_paths_that_do_not_exist_yet() {
     let _guard = support::cwd_lock().lock().unwrap();
     // A brand-new file under a directory that doesn't exist yet either
@@ -39,7 +39,7 @@ fn allows_paths_that_do_not_exist_yet() {
     assert!(safe_rel_path("brand/new/file.txt").is_ok());
 }
 
-#[test]
+#[quench_test::test]
 #[cfg(unix)]
 fn rejects_symlink_escape() {
     let _guard = support::cwd_lock().lock().unwrap();
@@ -61,7 +61,7 @@ fn rejects_symlink_escape() {
 // is_command_allowed
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn allowlist_matches_by_whitespace_tokenized_prefix() {
     let allowlist = vec!["cargo check".to_string(), "npm test".to_string()];
 
@@ -75,14 +75,14 @@ fn allowlist_matches_by_whitespace_tokenized_prefix() {
     assert!(!is_command_allowed(&disallowed, &allowlist));
 }
 
-#[test]
+#[quench_test::test]
 fn allowlist_rejects_shorter_command_than_pattern() {
     let allowlist = vec!["cargo check".to_string()];
     let short: Vec<String> = vec!["cargo".to_string()];
     assert!(!is_command_allowed(&short, &allowlist));
 }
 
-#[test]
+#[quench_test::test]
 fn allowlist_empty_matches_nothing() {
     let cmd: Vec<String> = ["cargo", "check"].into_iter().map(String::from).collect();
     assert!(!is_command_allowed(&cmd, &[]));
@@ -92,7 +92,7 @@ fn allowlist_empty_matches_nothing() {
 // tool_help
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn tool_help_documents_every_known_tool() {
     let tools = vec![
         "list_dir".to_string(),
@@ -114,7 +114,7 @@ fn tool_help_documents_every_known_tool() {
     assert!(help.contains("cargo check"));
 }
 
-#[test]
+#[quench_test::test]
 fn tool_help_skips_an_unknown_tool_and_omits_the_allowlist_line_without_run_cmd() {
     let tools = vec!["list_dir".to_string(), "not-a-real-tool".to_string()];
     let help = tool_help(&tools, &[]);
@@ -152,13 +152,13 @@ impl Drop for WithTempCwd {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn run_tool_unknown_tool_errors() {
     let err = run_tool("does_not_exist", &json!({}), &[]).unwrap_err();
     assert!(err.to_string().contains("unknown tool"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_tool_list_dir_lists_files_and_dirs_sorted() {
     let cwd = with_temp_cwd();
     std::fs::write(cwd.dir.path().join("b.txt"), "b").unwrap();
@@ -169,7 +169,7 @@ fn run_tool_list_dir_lists_files_and_dirs_sorted() {
     assert!(result.output.contains("dir\ta-dir"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_tool_read_file_returns_line_numbered_content() {
     let cwd = with_temp_cwd();
     std::fs::write(cwd.dir.path().join("f.txt"), "one\ntwo\nthree\n").unwrap();
@@ -185,7 +185,7 @@ fn run_tool_read_file_returns_line_numbered_content() {
     assert!(!result.output.contains("one"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_tool_read_file_rejects_an_invalid_line_range() {
     let cwd = with_temp_cwd();
     std::fs::write(cwd.dir.path().join("f.txt"), "one\n").unwrap();
@@ -199,7 +199,7 @@ fn run_tool_read_file_rejects_an_invalid_line_range() {
     assert!(err.to_string().contains("invalid line range"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_tool_write_file_creates_parent_directories_and_writes_content() {
     let cwd = with_temp_cwd();
     let result = run_tool(
@@ -215,7 +215,7 @@ fn run_tool_write_file_creates_parent_directories_and_writes_content() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn run_tool_replace_in_file_counts_and_applies_the_replacement() {
     let cwd = with_temp_cwd();
     std::fs::write(cwd.dir.path().join("f.txt"), "foo bar foo").unwrap();
@@ -233,7 +233,7 @@ fn run_tool_replace_in_file_counts_and_applies_the_replacement() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn run_tool_search_finds_matching_lines() {
     let cwd = with_temp_cwd();
     std::fs::write(cwd.dir.path().join("f.txt"), "hello world\nno match here\n").unwrap();
@@ -243,14 +243,14 @@ fn run_tool_search_finds_matching_lines() {
     assert!(!result.output.contains("no match here"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_tool_search_rejects_an_invalid_pattern() {
     let _cwd = with_temp_cwd();
     let err = run_tool("search", &json!({"pattern": "("}), &[]).unwrap_err();
     assert!(err.to_string().contains("invalid pattern"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_tool_index_project_lists_every_file() {
     let cwd = with_temp_cwd();
     std::fs::write(cwd.dir.path().join("a.txt"), "a").unwrap();
@@ -262,14 +262,14 @@ fn run_tool_index_project_lists_every_file() {
     assert!(result.output.contains("b.txt"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_tool_run_cmd_rejects_a_command_missing_from_the_allowlist() {
     let _cwd = with_temp_cwd();
     let err = run_tool("run_cmd", &json!({"cmd": "rm -rf /"}), &[]).unwrap_err();
     assert!(err.to_string().contains("blocked by run_cmd allowlist"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_tool_run_cmd_rejects_a_path_qualified_executable() {
     let _cwd = with_temp_cwd();
     let err = run_tool(
@@ -281,7 +281,7 @@ fn run_tool_run_cmd_rejects_a_path_qualified_executable() {
     assert!(err.to_string().contains("only bare executable names"));
 }
 
-#[test]
+#[quench_test::test]
 fn run_tool_run_cmd_runs_an_allowlisted_command_for_real() {
     // `echo` is about as safe a real subprocess as this gets - no
     // filesystem/network side effects, and it's on every machine that can

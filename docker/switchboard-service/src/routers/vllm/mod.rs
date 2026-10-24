@@ -25,14 +25,15 @@ pub use types::*;
 
 // Initialization
 
-pub async fn init_engine() -> Arc<dyn VllmEngine> {
+#[must_use]
+pub fn init_engine() -> Arc<dyn VllmEngine> {
     let mode = VllmManagementMode::from_env();
     quench_log::info!("Initializing vLLM management in {:?} mode", mode);
 
     match mode {
         VllmManagementMode::Native => Arc::new(NativeVllmEngine),
         VllmManagementMode::Mock => Arc::new(MockVllmEngine),
-        VllmManagementMode::Kubernetes => match KubernetesVllmEngine::new().await {
+        VllmManagementMode::Kubernetes => match KubernetesVllmEngine::new() {
             Ok(e) => Arc::new(e),
             Err(err) => {
                 quench_log::error!(

@@ -10,7 +10,7 @@ use crate::clients::switchboard::{SwitchboardClient, VllmInstance};
 use crate::clients::vllm::{ChatMessage, VllmClient};
 use crate::files::{chunker, embedder};
 use crate::tools::SearchProviderRegistry;
-use futures_util::future::join_all;
+use quench_core::future::join_all;
 use quench_serde::Deserialize;
 use std::collections::HashSet;
 use std::fmt::Write as _;
@@ -778,7 +778,7 @@ pub fn decode_redirect(href: &str) -> String {
 #[must_use]
 pub fn strip_invalid_citations(text: &str, source_count: usize) -> String {
     // `[3]` or a grouped `[1, 2, 3]`, standing alone (after whitespace, `(` or the start).
-    let marker = regex::Regex::new(
+    let marker = quench_regex::Regex::new(
         r"(?P<pre>^|[\s(])\[(?P<list>\d{1,3}(?:\s*,\s*\d{1,3})*)\](?P<post>[.,;:!?)]?)",
     )
     .expect("valid regex");
@@ -789,7 +789,7 @@ pub fn strip_invalid_citations(text: &str, source_count: usize) -> String {
                 return part.to_string();
             }
             marker
-                .replace_all(part, |caps: &regex::Captures| {
+                .replace_all(part, |caps: &quench_regex::Captures| {
                     let numbers: Vec<usize> = caps["list"]
                         .split(',')
                         .filter_map(|n| n.trim().parse().ok())
@@ -1010,8 +1010,8 @@ pub async fn verify(
 /// True when `text` carries at least one `[n]` / `[1, 2]` marker that points at a real source.
 #[must_use]
 pub fn has_valid_citation(text: &str, source_count: usize) -> bool {
-    let re =
-        regex::Regex::new(r"(?:^|[\s(])\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]").expect("valid regex");
+    let re = quench_regex::Regex::new(r"(?:^|[\s(])\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]")
+        .expect("valid regex");
     re.captures_iter(text).any(|c| {
         c[1].split(',')
             .filter_map(|n| n.trim().parse::<usize>().ok())
@@ -1083,9 +1083,9 @@ pub fn needs_citation_repair(answer: &str, source_count: usize) -> bool {
 /// poisoned page can ask the model to repeat a link, but the model should never invent one.
 #[must_use]
 pub fn strip_untrusted_urls(answer: &str, allowed: &str) -> String {
-    let re = regex::Regex::new(r#"https?://[^\s)\]>"']+"#).expect("valid regex");
+    let re = quench_regex::Regex::new(r#"https?://[^\s)\]>"']+"#).expect("valid regex");
     let allowed = allowed.to_lowercase();
-    re.replace_all(answer, |caps: &regex::Captures| {
+    re.replace_all(answer, |caps: &quench_regex::Captures| {
         let url = caps[0].trim_end_matches(['.', ',', ';', ':', '!', '?']);
         if allowed.contains(&url.to_lowercase()) {
             caps[0].to_string()
@@ -1178,7 +1178,7 @@ async fn repair_citations(
 #[must_use]
 pub fn detect_lang(text: &str) -> &'static str {
     let score = |re: &str| {
-        regex::Regex::new(re)
+        quench_regex::Regex::new(re)
             .expect("valid regex")
             .find_iter(text)
             .count()
@@ -1261,7 +1261,7 @@ fn split_sentences(line: &str) -> Vec<&str> {
 
 /// Digit runs of three or more digits in `text`, with separators removed (`3,204` -> `3204`).
 fn big_numbers(text: &str) -> std::collections::HashSet<String> {
-    let re = regex::Regex::new(r"\d[\d.,]*\d|\d").expect("valid regex");
+    let re = quench_regex::Regex::new(r"\d[\d.,]*\d|\d").expect("valid regex");
     re.find_iter(text)
         .map(|m| {
             m.as_str()
@@ -1296,9 +1296,9 @@ pub fn strip_refusal_leaks(answer: &str, question: &str) -> String {
         .first()
         .is_some_and(|first| is_hint(first));
 
-    let email = regex::Regex::new(r"[\w.+-]+@[\w-]+\.[\w.]+").expect("valid regex");
-    let phone = regex::Regex::new(r"\+?\d[\d ()\-]{6,}\d").expect("valid regex");
-    let cite = regex::Regex::new(r"\[\d[\d, ]*\]").expect("valid regex");
+    let email = quench_regex::Regex::new(r"[\w.+-]+@[\w-]+\.[\w.]+").expect("valid regex");
+    let phone = quench_regex::Regex::new(r"\+?\d[\d ()\-]{6,}\d").expect("valid regex");
+    let cite = quench_regex::Regex::new(r"\[\d[\d, ]*\]").expect("valid regex");
     let asked = big_numbers(question);
 
     let leaky = |unit: &str| {
@@ -1412,7 +1412,7 @@ pub fn from_evidence(items: &[EvidenceItem], today: &str) -> Grounding {
 /// Removes `<toolcall>`/`<tool_call>` blocks a model emitted although tools cannot run.
 #[must_use]
 pub fn strip_tool_calls(text: &str) -> String {
-    let re = regex::Regex::new(r"(?s)<(?:tool_call|toolcall)>.*?</(?:tool_call|toolcall)>")
+    let re = quench_regex::Regex::new(r"(?s)<(?:tool_call|toolcall)>.*?</(?:tool_call|toolcall)>")
         .expect("valid regex");
     re.replace_all(text, "").trim().to_string()
 }

@@ -1,12 +1,12 @@
 //! Login and logout are gatehouse's; this service only redirects to it.
 
 use crate::world::ForgeWorld;
-use cucumber::when;
+use quench_test_bdd::when;
 
-fn no_redirect_client() -> reqwest::Client {
-    reqwest::Client::builder()
+fn no_redirect_client() -> quench_client::transport::Client {
+    quench_client::transport::Client::builder()
         .danger_accept_invalid_certs(true)
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(quench_client::transport::Redirect::None)
         .build()
         .expect("http client")
 }

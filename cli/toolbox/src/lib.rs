@@ -1,5 +1,5 @@
-use crossterm::event::KeyCode;
-use crossterm::style::Stylize;
+use quench_cli::keys::KeyCode;
+use quench_cli::style::Stylize;
 use quench_core::{Context, Result};
 use std::collections::HashMap;
 use std::process::Command;

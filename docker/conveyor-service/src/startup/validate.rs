@@ -22,7 +22,7 @@ pub fn report_toolchain(config: &ConveyorConfig) {
         return;
     }
 
-    if which::which("git").is_ok() {
+    if quench_core::process::which("git").is_ok() {
         quench_log::info!("git found; checkouts will work");
     } else {
         quench_log::error!(
@@ -33,7 +33,7 @@ pub fn report_toolchain(config: &ConveyorConfig) {
 
     let missing: Vec<&str> = OPTIONAL_TOOLS
         .iter()
-        .filter(|(tool, _)| which::which(tool).is_err())
+        .filter(|(tool, _)| quench_core::process::which(tool).is_err())
         .map(|(tool, needed_for)| {
             quench_log::debug!("{tool} not found; {needed_for} will fail");
             *tool

@@ -35,7 +35,7 @@ fn put(
     support::raw_req(Method::PUT, path, &[], body, container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_a_malformed_digest() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -49,7 +49,7 @@ async fn handle_rejects_a_malformed_digest() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_for_an_unknown_upload() {
     let storage = support::WithDockerStorageRoot::new();
     let digest = digest_of(b"hello");
@@ -65,7 +65,7 @@ async fn handle_reports_not_found_for_an_unknown_upload() {
     let _ = &storage;
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_a_digest_mismatch() {
     let storage = support::WithDockerStorageRoot::new();
     start_upload(&storage, "upload-1", b"hello");
@@ -82,7 +82,7 @@ async fn handle_rejects_a_digest_mismatch() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_moves_the_upload_to_its_final_content_addressed_path() {
     let storage = support::WithDockerStorageRoot::new();
     start_upload(&storage, "upload-1", b"hello");
@@ -117,7 +117,7 @@ async fn handle_moves_the_upload_to_its_final_content_addressed_path() {
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_appends_a_final_chunk_from_the_request_body_before_verifying() {
     let storage = support::WithDockerStorageRoot::new();
     start_upload(&storage, "upload-1", b"hello ");
@@ -138,7 +138,7 @@ async fn handle_appends_a_final_chunk_from_the_request_body_before_verifying() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_dedupes_when_the_blob_already_exists_at_the_final_path() {
     let storage = support::WithDockerStorageRoot::new();
     start_upload(&storage, "upload-1", b"hello");
@@ -169,7 +169,7 @@ async fn handle_dedupes_when_the_blob_already_exists_at_the_final_path() {
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_streams_a_large_monolithic_put_without_buffering_the_whole_blob() {
     let storage = support::WithDockerStorageRoot::new();
     start_upload(&storage, "upload-1", b"");

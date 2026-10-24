@@ -17,7 +17,7 @@ fn limiter_at(start: u64) -> (RateLimiter, Arc<AtomicU64>) {
 
 const THREE_PER_HOUR: Limit = Limit::per_hour(3);
 
-#[tokio::test]
+#[quench_test::test]
 async fn hits_up_to_the_limit_pass_and_the_next_is_refused() {
     let (limiter, _) = limiter_at(1_000_000);
     for n in 1..=3 {
@@ -35,7 +35,7 @@ async fn hits_up_to_the_limit_pass_and_the_next_is_refused() {
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn retry_after_counts_down_to_the_end_of_the_window() {
     // 3600-second windows: 999_000 is 1800s past the boundary at 997_200.
     let (limiter, now) = limiter_at(999_000);
@@ -55,7 +55,7 @@ async fn retry_after_counts_down_to_the_end_of_the_window() {
     assert_eq!(retry_after_secs, 900);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_new_window_starts_fresh() {
     let (limiter, now) = limiter_at(1_000_000);
     for _ in 0..4 {
@@ -66,7 +66,7 @@ async fn a_new_window_starts_fresh() {
     assert!(limiter.check("t", "a", THREE_PER_HOUR).await.is_allowed());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn subjects_and_scopes_are_independent() {
     let (limiter, _) = limiter_at(1_000_000);
     for _ in 0..4 {
@@ -92,7 +92,7 @@ async fn subjects_and_scopes_are_independent() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn subjects_are_compared_ignoring_case_and_surrounding_space() {
     let (limiter, _) = limiter_at(1_000_000);
     for subject in ["Alice", "alice", " ALICE ", "aLiCe"] {
@@ -106,7 +106,7 @@ async fn subjects_are_compared_ignoring_case_and_surrounding_space() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn hammering_while_blocked_does_not_extend_the_block_past_the_window() {
     let (limiter, now) = limiter_at(1_000_000);
     for _ in 0..500 {
@@ -116,7 +116,7 @@ async fn hammering_while_blocked_does_not_extend_the_block_past_the_window() {
     assert!(limiter.check("t", "a", THREE_PER_HOUR).await.is_allowed());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_parallel_burst_never_lets_more_than_the_limit_through() {
     let limiter = Arc::new(limiter_at(1_000_000).0);
     let mut tasks = Vec::new();
@@ -141,7 +141,7 @@ async fn a_parallel_burst_never_lets_more_than_the_limit_through() {
     assert!(allowed >= 1, "the limiter must not refuse everything");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn extremely_long_or_odd_subjects_are_fine() {
     let (limiter, _) = limiter_at(1_000_000);
     let long = "x".repeat(100_000);
@@ -153,7 +153,7 @@ async fn extremely_long_or_odd_subjects_are_fine() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn check_all_needs_every_limit_to_pass() {
     let (limiter, _) = limiter_at(1_000_000);
     let checks = |ip: &'static str, user: &'static str| {
@@ -197,7 +197,7 @@ async fn check_all_needs_every_limit_to_pass() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn check_all_reports_the_longest_wait() {
     let (limiter, _) = limiter_at(1_000_000);
     let both = [
@@ -214,7 +214,7 @@ async fn check_all_reports_the_longest_wait() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn policy_limits_are_sane() {
     // These protect a 300-a-day mail quota; a typo that made one enormous
     // (or zero) should be noticed.
@@ -234,26 +234,26 @@ async fn policy_limits_are_sane() {
 
 // -- ClientIp -------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn client_ip_prefers_x_real_ip() {
     let ip = ClientIp::from_headers(Some("203.0.113.9"), Some("198.51.100.1, 10.0.0.1"));
     assert_eq!(ip.0, "203.0.113.9");
 }
 
-#[test]
+#[quench_test::test]
 fn client_ip_falls_back_to_the_last_forwarded_entry() {
     // Earlier entries are what the client claimed; the last is the proxy's.
     let ip = ClientIp::from_headers(None, Some("6.6.6.6, 198.51.100.7"));
     assert_eq!(ip.0, "198.51.100.7");
 }
 
-#[test]
+#[quench_test::test]
 fn client_ip_accepts_ipv6_and_normalises_it() {
     let ip = ClientIp::from_headers(Some("2001:0db8:0000:0000:0000:0000:0000:0001"), None);
     assert_eq!(ip.0, "2001:db8::1");
 }
 
-#[test]
+#[quench_test::test]
 fn client_ip_without_a_usable_header_is_the_shared_unknown_bucket() {
     for (real, fwd) in [
         (None, None),

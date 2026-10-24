@@ -12,6 +12,9 @@
 //! The image has no `gantry-runner` in it, so the Job's pod cannot start - which is the point: the API
 //! server has to accept the manifest, and the Job has to be seen going from active to failed.
 
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
 use gantry_service::domain::cluster::{Cluster, JobSpec, JobStatus, KubeCluster, PACKAGE_LABEL};
 use gantry_service::domain::settings::{ClusterMode, Settings};
 use std::time::Duration;
@@ -22,14 +25,12 @@ fn settings() -> Settings {
     settings
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[ignore = "needs a cluster; see the module docs"]
 async fn a_runner_job_is_accepted_seen_failing_read_and_deleted() {
     let namespace = std::env::var("GANTRY_IT_NAMESPACE").expect("GANTRY_IT_NAMESPACE");
     let image = std::env::var("GANTRY_IT_IMAGE").expect("GANTRY_IT_IMAGE");
-    let cluster = KubeCluster::connect(&settings())
-        .await
-        .expect("a kubeconfig");
+    let cluster = KubeCluster::connect(&settings()).expect("a kubeconfig");
 
     let spec = JobSpec {
         namespace: namespace.clone(),
@@ -88,13 +89,11 @@ async fn a_runner_job_is_accepted_seen_failing_read_and_deleted() {
     panic!("the Job was not deleted");
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[ignore = "needs a cluster; see the module docs"]
 async fn workloads_a_package_installed_are_found_by_their_label_and_version() {
     let namespace = std::env::var("GANTRY_IT_NAMESPACE").expect("GANTRY_IT_NAMESPACE");
-    let cluster = KubeCluster::connect(&settings())
-        .await
-        .expect("a kubeconfig");
+    let cluster = KubeCluster::connect(&settings()).expect("a kubeconfig");
     // Whatever is there is labelled by the package that put it there; nothing unlabelled appears.
     for workload in cluster.list_workloads(&[namespace]).await.unwrap() {
         assert!(
@@ -103,3 +102,5 @@ async fn workloads_a_package_installed_are_found_by_their_label_and_version() {
         );
     }
 }
+
+quench_test::main!();

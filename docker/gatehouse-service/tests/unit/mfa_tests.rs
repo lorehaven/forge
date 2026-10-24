@@ -15,7 +15,7 @@ fn with_key<T>(run: impl FnOnce() -> T) -> T {
     run()
 }
 
-#[test]
+#[quench_test::test]
 fn a_generated_secret_verifies_its_own_current_code() {
     let secret = generate_secret().unwrap();
     let code = Totp::from_base32(&secret).unwrap().code_now();
@@ -23,7 +23,7 @@ fn a_generated_secret_verifies_its_own_current_code() {
     assert!(verify_code(&secret, &code));
 }
 
-#[test]
+#[quench_test::test]
 fn a_code_for_a_different_secret_does_not_verify() {
     let secret = generate_secret().unwrap();
     let other_secret = generate_secret().unwrap();
@@ -32,7 +32,7 @@ fn a_code_for_a_different_secret_does_not_verify() {
     assert!(!verify_code(&secret, &code));
 }
 
-#[test]
+#[quench_test::test]
 fn provisioning_uri_carries_the_issuer_and_account_name() {
     let secret = generate_secret().unwrap();
     let uri = provisioning_uri(&secret, "someone").unwrap();
@@ -42,7 +42,7 @@ fn provisioning_uri_carries_the_issuer_and_account_name() {
     assert!(uri.contains("someone"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_secret_round_trips_through_encryption_at_rest() {
     with_key(|| {
         let secret = generate_secret().unwrap();
@@ -52,7 +52,7 @@ fn a_secret_round_trips_through_encryption_at_rest() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_pending_token_verifies_back_to_the_username_it_was_signed_for() {
     with_key(|| {
         let token = sign_pending("someone");
@@ -60,7 +60,7 @@ fn a_pending_token_verifies_back_to_the_username_it_was_signed_for() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_tampered_pending_token_does_not_verify() {
     with_key(|| {
         let token = sign_pending("someone");
@@ -69,7 +69,7 @@ fn a_tampered_pending_token_does_not_verify() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn an_expired_pending_token_does_not_verify() {
     with_key(|| {
         let expired_at = quench_core::time::Time::now().timestamp() - 1;

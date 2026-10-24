@@ -31,13 +31,13 @@ fn sample_record(name: &str, version: &str) -> IndexRecord {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn list_crates_is_empty_when_the_index_directory_does_not_exist() {
     let _storage = WithStorageRoot::new();
     assert!(list_crates().is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn list_crates_finds_every_crate_with_an_index_file_sorted_by_name() {
     let _storage = WithStorageRoot::new();
     write_index_line("zeta", &sample_record("zeta", "1.0.0"));
@@ -46,13 +46,13 @@ fn list_crates_finds_every_crate_with_an_index_file_sorted_by_name() {
     assert_eq!(list_crates(), vec!["alpha".to_string(), "zeta".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn list_versions_is_empty_for_an_unknown_crate() {
     let _storage = WithStorageRoot::new();
     assert!(list_versions("does-not-exist").is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn list_versions_reads_every_line_of_the_index_file_in_order() {
     let _storage = WithStorageRoot::new();
     write_index_line("my-crate", &sample_record("my-crate", "1.0.0"));
@@ -64,7 +64,7 @@ fn list_versions_reads_every_line_of_the_index_file_in_order() {
     assert_eq!(versions[1].vers, "1.1.0");
 }
 
-#[test]
+#[quench_test::test]
 fn list_versions_skips_blank_lines_and_malformed_json() {
     let _storage = WithStorageRoot::new();
     let path = index_file_path("my-crate").unwrap();

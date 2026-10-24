@@ -1,4 +1,6 @@
 use quench_client::blocking::Client;
+use quench_test::mock::matchers::{header, method, path};
+use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use riveter::image_updates::{
     ImageOccurrence, ImageRef, RegistryAuth, RegistryCredentials, ScanMessage, UpdateCandidate,
     apply_updates, discover_images, docker_config_credentials, encode_repository_path,
@@ -9,8 +11,6 @@ use riveter::image_updates::{
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use wiremock::matchers::{header, method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// `docker_config_credentials` reads `DOCKER_CONFIG`, a fixed env var
 /// name every test that sets it must serialize around - cargo runs
@@ -22,7 +22,7 @@ fn env_lock() -> &'static Mutex<()> {
 
 // --- parse_image_ref -----------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn parse_image_ref_rejects_digest_pinned_images() {
     assert_eq!(
         parse_image_ref("redis@sha256:abcd"),
@@ -30,12 +30,12 @@ fn parse_image_ref_rejects_digest_pinned_images() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn parse_image_ref_rejects_a_missing_tag() {
     assert_eq!(parse_image_ref("redis"), Err("image has no explicit tag"));
 }
 
-#[test]
+#[quench_test::test]
 fn parse_image_ref_bare_name_is_docker_hub_library() {
     let image = parse_image_ref("redis:7.2").unwrap();
     assert_eq!(image.registry, "registry-1.docker.io");
@@ -44,21 +44,21 @@ fn parse_image_ref_bare_name_is_docker_hub_library() {
     assert_eq!(image.original, "redis:7.2");
 }
 
-#[test]
+#[quench_test::test]
 fn parse_image_ref_namespaced_docker_hub_repo_keeps_the_namespace() {
     let image = parse_image_ref("bitnami/postgresql:16").unwrap();
     assert_eq!(image.registry, "registry-1.docker.io");
     assert_eq!(image.repository, "bitnami/postgresql");
 }
 
-#[test]
+#[quench_test::test]
 fn parse_image_ref_explicit_docker_io_normalizes_to_hub_host() {
     let image = parse_image_ref("docker.io/library/redis:7").unwrap();
     assert_eq!(image.registry, "registry-1.docker.io");
     assert_eq!(image.repository, "library/redis");
 }
 
-#[test]
+#[quench_test::test]
 fn parse_image_ref_private_registry_with_dot() {
     let image = parse_image_ref("ennor.ddns.net/forge/conveyor:1.2.3").unwrap();
     assert_eq!(image.registry, "ennor.ddns.net");
@@ -66,21 +66,21 @@ fn parse_image_ref_private_registry_with_dot() {
     assert_eq!(image.tag, "1.2.3");
 }
 
-#[test]
+#[quench_test::test]
 fn parse_image_ref_private_registry_with_port() {
     let image = parse_image_ref("registry.local:8443/forge/conveyor:1.2.3").unwrap();
     assert_eq!(image.registry, "registry.local:8443");
     assert_eq!(image.repository, "forge/conveyor");
 }
 
-#[test]
+#[quench_test::test]
 fn parse_image_ref_localhost_registry() {
     let image = parse_image_ref("localhost/myimage:dev").unwrap();
     assert_eq!(image.registry, "localhost");
     assert_eq!(image.repository, "myimage");
 }
 
-#[test]
+#[quench_test::test]
 fn parse_image_ref_rejects_an_empty_repository() {
     assert_eq!(
         parse_image_ref("ennor.ddns.net/:1.0"),
@@ -90,14 +90,14 @@ fn parse_image_ref_rejects_an_empty_repository() {
 
 // --- ImageRef::display_repository / with_tag ------------------------
 
-#[test]
+#[quench_test::test]
 fn display_repository_omits_the_host_for_docker_hub() {
     let image = parse_image_ref("redis:7.2").unwrap();
     assert_eq!(image.display_repository(), "library/redis");
     assert_eq!(image.with_tag("7.4"), "library/redis:7.4");
 }
 
-#[test]
+#[quench_test::test]
 fn display_repository_includes_the_host_for_a_private_registry() {
     let image = parse_image_ref("ennor.ddns.net/forge/conveyor:1.2.3").unwrap();
     assert_eq!(image.display_repository(), "ennor.ddns.net/forge/conveyor");
@@ -109,7 +109,7 @@ fn display_repository_includes_the_host_for_a_private_registry() {
 
 // --- version_key / newest_compatible_tag -----------------------------
 
-#[test]
+#[quench_test::test]
 fn version_key_splits_prefix_numbers_and_suffix() {
     assert_eq!(
         version_key("v1.2.3-alpine"),
@@ -117,13 +117,13 @@ fn version_key_splits_prefix_numbers_and_suffix() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn version_key_is_none_for_a_non_versioned_tag() {
     assert_eq!(version_key("latest"), None);
     assert_eq!(version_key("stable"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn newest_compatible_tag_is_none_for_a_floating_current_tag() {
     assert_eq!(
         newest_compatible_tag("latest", &["1.0.0".to_string()]),
@@ -131,7 +131,7 @@ fn newest_compatible_tag_is_none_for_a_floating_current_tag() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn newest_compatible_tag_picks_the_highest_numeric_version() {
     let tags = ["1.0.0", "1.2.0", "1.10.0", "1.9.0"]
         .map(String::from)
@@ -142,31 +142,31 @@ fn newest_compatible_tag_picks_the_highest_numeric_version() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn newest_compatible_tag_never_suggests_a_downgrade() {
     let tags = ["1.0.0".to_string()];
     assert_eq!(newest_compatible_tag("2.0.0", &tags), None);
 }
 
-#[test]
+#[quench_test::test]
 fn newest_compatible_tag_ignores_a_different_prefix_or_suffix() {
     let tags = ["v2.0.0".to_string(), "2.0.0-alpine".to_string()];
     assert_eq!(newest_compatible_tag("1.0.0", &tags), None);
 }
 
-#[test]
+#[quench_test::test]
 fn newest_compatible_tag_refuses_to_cross_a_three_digit_epoch_boundary() {
     let tags = ["100.0.0".to_string()];
     assert_eq!(newest_compatible_tag("9.0.0", &tags), None);
 }
 
-#[test]
+#[quench_test::test]
 fn newest_compatible_tag_rejects_a_tag_with_fewer_components() {
     let tags = ["2".to_string()];
     assert_eq!(newest_compatible_tag("1.0.0", &tags), None);
 }
 
-#[test]
+#[quench_test::test]
 fn newest_compatible_tag_rejects_a_tag_with_far_more_components() {
     // current has 1 component, so anything above max(1, 3) = 3 is refused.
     let tags = ["1.0.0.0.0".to_string()];
@@ -175,24 +175,24 @@ fn newest_compatible_tag_rejects_a_tag_with_far_more_components() {
 
 // --- registry auth parsing -------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn parse_username_password_splits_on_the_first_colon() {
     let creds = parse_username_password("alice:s3cr3t:with:colons").unwrap();
     assert_eq!(creds.username, "alice");
     assert_eq!(creds.password, "s3cr3t:with:colons");
 }
 
-#[test]
+#[quench_test::test]
 fn parse_username_password_rejects_an_empty_username() {
     assert!(parse_username_password(":secret").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_username_password_rejects_a_value_with_no_colon() {
     assert!(parse_username_password("nocolon").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_registry_auth_item_parses_registry_equals_creds() {
     // Only the whole item is trimmed up front - whitespace adjacent to
     // the `=` itself is left in place, so keep this input free of it.
@@ -202,12 +202,12 @@ fn parse_registry_auth_item_parses_registry_equals_creds() {
     assert_eq!(creds.password, "secret");
 }
 
-#[test]
+#[quench_test::test]
 fn parse_registry_auth_item_rejects_missing_equals() {
     assert!(parse_registry_auth_item("ennor.ddns.net-alice:secret").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn parse_registry_auth_env_parses_multiple_semicolon_separated_entries() {
     let parsed = parse_registry_auth_env("registry-a=alice:pw1;registry-b=bob:pw2;garbage;");
     assert_eq!(parsed.len(), 2);
@@ -215,7 +215,7 @@ fn parse_registry_auth_env_parses_multiple_semicolon_separated_entries() {
     assert_eq!(parsed["registry-b"].username, "bob");
 }
 
-#[test]
+#[quench_test::test]
 fn normalize_registry_key_strips_scheme_and_trailing_slash() {
     assert_eq!(
         normalize_registry_key("https://ennor.ddns.net/"),
@@ -223,7 +223,7 @@ fn normalize_registry_key_strips_scheme_and_trailing_slash() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn normalize_registry_key_maps_docker_hub_aliases_to_the_canonical_host() {
     assert_eq!(normalize_registry_key("docker.io"), "registry-1.docker.io");
     assert_eq!(
@@ -244,12 +244,12 @@ fn normalize_registry_key_maps_docker_hub_aliases_to_the_canonical_host() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn normalize_registry_key_leaves_the_wildcard_alone() {
     assert_eq!(normalize_registry_key("*"), "*");
 }
 
-#[test]
+#[quench_test::test]
 fn registry_auth_from_sources_cli_flag_overrides_env() {
     let _guard = env_lock()
         .lock()
@@ -289,7 +289,7 @@ fn registry_auth_from_sources_cli_flag_overrides_env() {
     quench_core::env::remove("RIVETER_REGISTRY_PASSWORD");
 }
 
-#[test]
+#[quench_test::test]
 fn registry_auth_from_sources_reads_the_registry_auth_env_var() {
     let _guard = env_lock()
         .lock()
@@ -321,7 +321,7 @@ fn registry_auth_from_sources_reads_the_registry_auth_env_var() {
     quench_core::env::remove("RIVETER_REGISTRY_AUTH");
 }
 
-#[test]
+#[quench_test::test]
 fn registry_auth_get_falls_back_to_wildcard() {
     let auth = RegistryAuth {
         credentials: BTreeMap::from([(
@@ -338,7 +338,7 @@ fn registry_auth_get_falls_back_to_wildcard() {
 
 // --- docker_config_credentials ---------------------------------------
 
-#[test]
+#[quench_test::test]
 fn docker_config_credentials_reads_plaintext_username_and_password() {
     let _guard = env_lock()
         .lock()
@@ -365,7 +365,7 @@ fn docker_config_credentials_reads_plaintext_username_and_password() {
     quench_core::env::remove("DOCKER_CONFIG");
 }
 
-#[test]
+#[quench_test::test]
 fn docker_config_credentials_decodes_base64_auth_field() {
     let _guard = env_lock()
         .lock()
@@ -388,7 +388,7 @@ fn docker_config_credentials_decodes_base64_auth_field() {
     quench_core::env::remove("DOCKER_CONFIG");
 }
 
-#[test]
+#[quench_test::test]
 fn docker_config_credentials_is_empty_when_the_file_is_missing() {
     let _guard = env_lock()
         .lock()
@@ -398,7 +398,7 @@ fn docker_config_credentials_is_empty_when_the_file_is_missing() {
     quench_core::env::remove("DOCKER_CONFIG");
 }
 
-#[test]
+#[quench_test::test]
 fn docker_config_credentials_is_empty_for_invalid_json() {
     let _guard = env_lock()
         .lock()
@@ -410,7 +410,7 @@ fn docker_config_credentials_is_empty_for_invalid_json() {
     quench_core::env::remove("DOCKER_CONFIG");
 }
 
-#[test]
+#[quench_test::test]
 fn docker_config_credentials_falls_back_to_home_docker_config_when_unset() {
     let _guard = env_lock()
         .lock()
@@ -424,14 +424,14 @@ fn docker_config_credentials_falls_back_to_home_docker_config_when_unset() {
 
 // --- encode_repository_path -------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn encode_repository_path_leaves_slashes_alone_but_escapes_segments() {
     assert_eq!(encode_repository_path("forge/my image"), "forge/my%20image");
 }
 
 // --- discover_images ---------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn discover_images_finds_image_lines_in_yaml_j2_templates_only() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     // `IMAGE_LINE_RE` requires the line to be only whitespace before
@@ -451,7 +451,7 @@ fn discover_images_finds_image_lines_in_yaml_j2_templates_only() {
     assert_eq!(occurrences[0].line_number, 4);
 }
 
-#[test]
+#[quench_test::test]
 fn discover_images_skips_a_line_that_does_not_parse_as_an_image() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(
@@ -466,7 +466,7 @@ fn discover_images_skips_a_line_that_does_not_parse_as_an_image() {
 
 // --- apply_updates -------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn apply_updates_rewrites_only_the_matching_image_line() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let template_path = dir.path().join("deployment.yaml.j2");
@@ -497,7 +497,7 @@ fn apply_updates_rewrites_only_the_matching_image_line() {
 
 // --- print_rows / print_results: just must not panic -------------------
 
-#[test]
+#[quench_test::test]
 fn print_rows_handles_an_empty_and_a_populated_table_without_panicking() {
     print_rows("Empty", &[]);
     print_rows(
@@ -511,7 +511,7 @@ fn print_rows_handles_an_empty_and_a_populated_table_without_panicking() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn print_results_handles_a_mix_of_updates_skips_and_errors() {
     let occurrence = ImageOccurrence {
         path: PathBuf::from("deployment.yaml.j2"),
@@ -543,7 +543,7 @@ fn print_results_handles_a_mix_of_updates_skips_and_errors() {
 // is dispatched via `spawn_blocking` from a multi-threaded test runtime,
 // which keeps the mock server's listener polled concurrently.
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn registry_v2_tags_follows_pagination_and_returns_every_tag() {
     let server = MockServer::start().await;
 
@@ -568,7 +568,7 @@ async fn registry_v2_tags_follows_pagination_and_returns_every_tag() {
         .await;
     Mock::given(method("GET"))
         .and(path("/v2/forge/conveyor/tags/list"))
-        .and(wiremock::matchers::query_param("last", "1.0.0"))
+        .and(quench_test::mock::matchers::query_param("last", "1.0.0"))
         .respond_with(ResponseTemplate::new(200).set_body_raw(
             quench_serde::json::to_string(&(quench_serde::json!({"tags": ["1.1.0"]}))),
             "application/json",
@@ -593,7 +593,7 @@ async fn registry_v2_tags_follows_pagination_and_returns_every_tag() {
     assert_eq!(tags, vec!["1.0.0".to_string(), "1.1.0".to_string()]);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn registry_v2_tags_retries_with_a_bearer_token_after_a_401() {
     let registry = MockServer::start().await;
     let auth_server = MockServer::start().await;

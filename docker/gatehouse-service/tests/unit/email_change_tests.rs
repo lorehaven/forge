@@ -83,7 +83,7 @@ fn ticket(new_email: &str) -> Ticket {
 
 // -- Ticket and the link --------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn a_ticket_survives_encoding_and_garbage_is_not_a_ticket() {
     let t = ticket("new@example.test");
     assert_eq!(Ticket::decode(&t.encode()), Some(t));
@@ -105,7 +105,7 @@ fn a_ticket_survives_encoding_and_garbage_is_not_a_ticket() {
     assert_eq!(Ticket::decode(&odd.encode()), Some(odd));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_link_points_at_the_public_origin_and_carries_a_day_long_token() {
     let tokens = VerificationTokens::in_memory();
     let base = PublicBase::resolve("https://mail.example.test", "");
@@ -125,7 +125,7 @@ async fn the_link_points_at_the_public_origin_and_carries_a_day_long_token() {
     assert_eq!(EMAIL_CHANGE_TTL_SECS, 24 * 60 * 60);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn peeking_reads_a_token_without_spending_it() {
     let tokens = VerificationTokens::in_memory();
     let token = tokens
@@ -165,7 +165,7 @@ async fn peeking_reads_a_token_without_spending_it() {
 
 // -- realm::check_password / change_email ---------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn check_password_returns_the_user_or_refuses() {
     let db = db().await;
     alice(&db, None, false).await;
@@ -182,7 +182,7 @@ async fn check_password_returns_the_user_or_refuses() {
     assert!(matches!(err, RealmError::NotFound));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn wrong_passwords_at_the_gate_count_toward_the_lockout() {
     let db = db().await;
     alice(&db, None, false).await;
@@ -196,7 +196,7 @@ async fn wrong_passwords_at_the_gate_count_toward_the_lockout() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn changing_the_address_confirms_it_and_names_the_old_confirmed_one() {
     let db = db().await;
     alice(&db, Some("old@example.test"), true).await;
@@ -213,7 +213,7 @@ async fn changing_the_address_confirms_it_and_names_the_old_confirmed_one() {
     assert_eq!(stored.email.as_deref(), Some("new@example.test"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unconfirmed_or_missing_old_address_is_not_warned() {
     for (old, confirmed) in [(Some("old@example.test"), false), (None, false)] {
         let db = db().await;
@@ -226,7 +226,7 @@ async fn an_unconfirmed_or_missing_old_address_is_not_warned() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn re_confirming_the_same_address_warns_nobody() {
     let db = db().await;
     alice(&db, Some("Same@Example.test"), true).await;
@@ -236,7 +236,7 @@ async fn re_confirming_the_same_address_warns_nobody() {
     assert_eq!(change.previous_confirmed, None);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn change_email_refuses_bad_addresses_and_unknown_accounts() {
     let db = db().await;
     alice(&db, Some("old@example.test"), true).await;
@@ -291,7 +291,7 @@ fn recording() -> (Arc<RecordingSender>, Arc<dyn Sender>) {
     (recorder, sender)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn opening_the_link_shows_the_change_and_does_not_make_it() {
     let db = db().await;
     alice(&db, Some("old@example.test"), true).await;
@@ -324,7 +324,7 @@ async fn opening_the_link_shows_the_change_and_does_not_make_it() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn opening_an_unknown_or_foreign_link_goes_to_the_login_error() {
     let tokens = Arc::new(VerificationTokens::in_memory());
     let verify = tokens
@@ -345,7 +345,7 @@ async fn opening_an_unknown_or_foreign_link_goes_to_the_login_error() {
     assert!(location(resp).contains("ui_login_confirm_email_invalid"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn confirming_changes_the_address_and_warns_the_old_one() {
     let db = db().await;
     alice(&db, Some("old@example.test"), true).await;
@@ -369,7 +369,7 @@ async fn confirming_changes_the_address_and_warns_the_old_one() {
     assert_eq!(sent[0].detail, "new@example.test");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_confirmation_works_once() {
     let db = db().await;
     alice(&db, Some("old@example.test"), true).await;
@@ -387,7 +387,7 @@ async fn a_confirmation_works_once() {
     assert_eq!(recorder.sent_of("email-changed").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn nobody_is_warned_when_the_old_address_was_never_confirmed_or_did_not_exist() {
     for (old, confirmed) in [(Some("old@example.test"), false), (None, false)] {
         let db = db().await;
@@ -401,7 +401,7 @@ async fn nobody_is_warned_when_the_old_address_was_never_confirmed_or_did_not_ex
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failed_warning_email_does_not_undo_the_change() {
     struct Failing;
     #[quench_core::async_trait]
@@ -422,7 +422,7 @@ async fn a_failed_warning_email_does_not_undo_the_change() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_ticket_for_a_deleted_account_or_a_garbled_one_is_refused() {
     let db = db().await;
     let tokens = Arc::new(VerificationTokens::in_memory());
@@ -457,7 +457,7 @@ async fn a_ticket_for_a_deleted_account_or_a_garbled_one_is_refused() {
 /// Real addresses cannot contain markup (`quench_mail::Address` refuses `<`), so
 /// nothing reaches this page today - but text on a page should be escaped whatever
 /// it is. That is the page renderer's job (`quench-web`), fixed from 0.1.13.
-#[tokio::test]
+#[quench_test::test]
 async fn the_confirm_page_escapes_the_address() {
     let resp = render_confirm_email_page("tok", "<script>alert(1)</script>@example.test");
     let html = body(resp).await;

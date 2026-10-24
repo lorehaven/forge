@@ -171,7 +171,7 @@ fn authenticated_routes() -> Vec<(&'static str, Method, &'static str, Body)> {
 // Resolution
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn every_declared_route_resolves_to_a_handler() {
     for (name, method, path, body) in authenticated_routes() {
         assert_ne!(
@@ -182,7 +182,7 @@ async fn every_declared_route_resolves_to_a_handler() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn triggering_a_run_resolves() {
     // The one that was broken, on its own so a failure names it.
     assert_ne!(
@@ -197,7 +197,7 @@ async fn triggering_a_run_resolves() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_undeclared_route_is_a_404() {
     // The check that keeps the tests above from being tautologies.
     assert_eq!(
@@ -206,7 +206,7 @@ async fn an_undeclared_route_is_a_404() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unknown_provider_is_a_404() {
     assert_eq!(
         status_with_auth(
@@ -220,7 +220,7 @@ async fn an_unknown_provider_is_a_404() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_queue_refuses_an_in_memory_database_rather_than_using_it() {
     // A queue on top of one would look like it worked and lose every queued run
     // on restart.
@@ -234,7 +234,7 @@ async fn the_queue_refuses_an_in_memory_database_rather_than_using_it() {
 // Auth
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_api_needs_a_token() {
     for (name, method, path, body) in authenticated_routes() {
         assert_eq!(
@@ -245,7 +245,7 @@ async fn the_api_needs_a_token() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn webhooks_are_reachable_without_a_token() {
     // A provider has no realm token; its delivery is authenticated by its
     // signature instead.

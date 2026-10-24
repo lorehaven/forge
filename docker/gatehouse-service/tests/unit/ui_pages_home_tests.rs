@@ -25,7 +25,7 @@ async fn body_text(resp: quench_http::response::Response) -> String {
     String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_home_page_without_admin_omits_the_realm_section() {
     let resp = render_home_page(false, &[]);
     assert_eq!(resp.status(), StatusCode::OK);
@@ -34,7 +34,7 @@ async fn render_home_page_without_admin_omits_the_realm_section() {
     assert!(!html.contains("ui_home_group_realm"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_home_page_with_admin_includes_the_realm_section() {
     let resp = render_home_page(true, &[]);
     let html = body_text(resp).await;
@@ -42,7 +42,7 @@ async fn render_home_page_with_admin_includes_the_realm_section() {
     assert!(html.contains("ui_admin_users_title"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn home_renders_when_auth_is_disabled() {
     gatehouse_service::ui::register_routes();
     let container = Arc::new(
@@ -66,7 +66,7 @@ async fn home_renders_when_auth_is_disabled() {
     assert!(resp.status().is_success() || resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn home_slash_renders_when_auth_is_disabled() {
     gatehouse_service::ui::register_routes();
     let container = Arc::new(
@@ -90,7 +90,7 @@ async fn home_slash_renders_when_auth_is_disabled() {
     assert!(resp.status().is_success() || resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn cards_show_the_catalog_text_until_a_translation_applies() {
     let services = [gatehouse_service::services::ServiceLink {
         url: "https://vault.example.test".to_string(),

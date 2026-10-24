@@ -92,7 +92,7 @@ fn location(resp: quench_http::response::Response) -> String {
 // notice_banner / known_error_key
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn known_error_key_recognises_the_fixed_set() {
     assert_eq!(
         known_error_key(RealmError::MfaCodeInvalid.i18n_key()),
@@ -101,7 +101,7 @@ fn known_error_key_recognises_the_fixed_set() {
     assert!(known_error_key("made-up").is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn notice_banner_shows_every_known_ok_outcome() {
     for ok in ["saved", "mfa_enabled", "mfa_disabled"] {
         let notice = Notice {
@@ -117,7 +117,7 @@ fn notice_banner_shows_every_known_ok_outcome() {
 // render_account_page / render_mfa_enroll_page / error_page
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_account_page_shows_the_enroll_link_when_mfa_is_off() {
     let user = User::new(
         "alice".to_string(),
@@ -133,7 +133,7 @@ async fn render_account_page_shows_the_enroll_link_when_mfa_is_off() {
     assert!(!html.contains("ui_account_mfa_disable\""));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_mfa_enroll_page_shows_the_error_when_asked() {
     let resp = render_mfa_enroll_page("SECRET123", "otpauth://totp/x", true);
     let html = body_text(resp).await;
@@ -141,14 +141,14 @@ async fn render_mfa_enroll_page_shows_the_error_when_asked() {
     assert!(html.contains("SECRET123"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_mfa_enroll_page_without_error_omits_the_banner() {
     let resp = render_mfa_enroll_page("SECRET123", "otpauth://totp/x", false);
     let html = body_text(resp).await;
     assert!(!html.contains("ui_admin_error_mfa_code_invalid"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn error_page_renders_with_the_error_s_own_status() {
     let resp = error_page(&RealmError::NotFound);
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -265,7 +265,7 @@ const PNG_BYTES: &[u8] = &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0,
 // HTTP handlers - not signed in
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn account_page_redirects_to_login_when_not_signed_in() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;
@@ -278,7 +278,7 @@ async fn account_page_redirects_to_login_when_not_signed_in() {
 // HTTP handlers - auth disabled (bypass claims)
 // -----------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn account_page_renders_the_bypass_user_s_profile() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -288,7 +288,7 @@ async fn account_page_renders_the_bypass_user_s_profile() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn save_account_updates_the_profile_and_redirects() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -310,7 +310,7 @@ async fn save_account_updates_the_profile_and_redirects() {
     assert!(location(resp).contains("ok=saved"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn save_account_rejects_a_timezone_or_locale_outside_the_lists() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -324,7 +324,7 @@ async fn save_account_rejects_a_timezone_or_locale_outside_the_lists() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn save_account_rejects_a_non_image_and_an_oversized_avatar() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -349,7 +349,7 @@ async fn save_account_rejects_a_non_image_and_an_oversized_avatar() {
     assert!(location(resp).contains("err=ui_account_error_avatar_size"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_uploaded_avatar_is_served_back_and_absent_ones_404() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -375,7 +375,7 @@ async fn an_uploaded_avatar_is_served_back_and_absent_ones_404() {
     assert_eq!(hyper.headers.get("content-type").unwrap(), "image/png");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn mfa_enroll_page_renders_a_fresh_secret() {
     let _guard = auth_disabled_guard().await;
     let (app, container) = account_app(JwtConfig::for_tests(), db().await).await;
@@ -385,7 +385,7 @@ async fn mfa_enroll_page_renders_a_fresh_secret() {
     assert!(html.contains("ui_account_mfa_enroll_title"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn mfa_enroll_submit_rejects_a_wrong_code() {
     let _guard = auth_disabled_guard().await;
     with_key();
@@ -407,7 +407,7 @@ async fn mfa_enroll_submit_rejects_a_wrong_code() {
     assert!(html.contains("ui_admin_error_mfa_code_invalid"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn mfa_enroll_submit_enables_mfa_with_the_right_code() {
     let _guard = auth_disabled_guard().await;
     with_key();
@@ -427,7 +427,7 @@ async fn mfa_enroll_submit_enables_mfa_with_the_right_code() {
     assert!(location(resp).contains("mfa_enabled"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn mfa_disable_turns_mfa_back_off() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -440,7 +440,7 @@ async fn mfa_disable_turns_mfa_back_off() {
     assert!(location(resp).contains("mfa_disabled"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn change_password_needs_the_current_password() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -527,7 +527,7 @@ const NEW_PASSWORD: [(&str, &str); 3] = [
     ("confirm_password", "a-brand-new-password"),
 ];
 
-#[tokio::test]
+#[quench_test::test]
 async fn changing_your_password_tells_the_confirmed_address() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -547,7 +547,7 @@ async fn changing_your_password_tells_the_confirmed_address() {
     assert_eq!(sent[0].link, "", "a notice carries no link");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn no_password_notice_for_an_unconfirmed_or_missing_address() {
     for (address, confirmed) in [(Some("alice@example.test"), false), (None, false)] {
         let _guard = auth_disabled_guard().await;
@@ -570,7 +570,7 @@ async fn no_password_notice_for_an_unconfirmed_or_missing_address() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failed_password_change_sends_nothing() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -603,7 +603,7 @@ async fn a_failed_password_change_sends_nothing() {
     assert!(recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_notice_uses_the_saved_language() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -629,7 +629,7 @@ async fn the_notice_uses_the_saved_language() {
     assert_eq!(recorder.sent()[0].locale.as_deref(), Some("de-DE"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn turning_mfa_on_and_off_tells_the_confirmed_address() {
     let _guard = auth_disabled_guard().await;
     with_key();
@@ -658,7 +658,7 @@ async fn turning_mfa_on_and_off_tells_the_confirmed_address() {
     assert_eq!(recorder.sent_of("mfa-enabled")[0].to, "alice@example.test");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_wrong_enrolment_code_sends_nothing_and_disabling_when_off_stays_quiet() {
     let _guard = auth_disabled_guard().await;
     with_key();
@@ -701,7 +701,7 @@ async fn ask_for_address(
     location(resp)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn asking_for_a_new_address_mails_the_new_one_and_changes_nothing_yet() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -734,7 +734,7 @@ async fn asking_for_a_new_address_mails_the_new_one_and_changes_nothing_yet() {
     assert!(recorder.sent_of("email-changed").is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_current_password_is_required_and_a_wrong_one_sends_nothing() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -751,7 +751,7 @@ async fn the_current_password_is_required_and_a_wrong_one_sends_nothing() {
     assert!(recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_undeliverable_address_is_refused_before_anything_else() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -768,7 +768,7 @@ async fn an_undeliverable_address_is_refused_before_anything_else() {
     assert!(recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn your_own_confirmed_address_is_not_a_change() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -783,7 +783,7 @@ async fn your_own_confirmed_address_is_not_a_change() {
     assert!(recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unconfirmed_address_may_be_asked_for_again_to_confirm_it() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -795,7 +795,7 @@ async fn an_unconfirmed_address_may_be_asked_for_again_to_confirm_it() {
     assert_eq!(recorder.sent_of("email-change").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_person_can_only_ask_a_few_times_an_hour() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -824,7 +824,7 @@ async fn a_person_can_only_ask_a_few_times_an_hour() {
     assert_eq!(recorder.sent_of("email-change").len(), limit);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failing_mail_server_is_reported_to_the_person_asking() {
     struct Failing;
     #[quench_core::async_trait]
@@ -849,7 +849,7 @@ async fn a_failing_mail_server_is_reported_to_the_person_asking() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_account_page_shows_the_address_its_status_and_the_change_form() {
     let _guard = auth_disabled_guard().await;
     for (address, confirmed, expected) in [
@@ -879,7 +879,7 @@ async fn the_account_page_shows_the_address_its_status_and_the_change_form() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn the_email_change_outcomes_are_known_to_the_page() {
     assert!(
         notice_banner(&Notice {
@@ -920,7 +920,7 @@ fn checkbox_tag(html: &str, name: &str) -> String {
         .to_string()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_account_page_lists_every_kind_with_its_default() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -941,7 +941,7 @@ async fn the_account_page_lists_every_kind_with_its_default() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_account_page_reflects_saved_choices() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -961,7 +961,7 @@ async fn the_account_page_reflects_saved_choices() {
     assert!(checkbox_tag(&html, "sub_conveyor.run.succeeded").contains("checked"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn saving_records_only_departures_from_the_defaults() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -999,7 +999,7 @@ async fn saving_records_only_departures_from_the_defaults() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unknown_fields_in_the_form_are_ignored() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -1034,7 +1034,7 @@ async fn unknown_fields_in_the_form_are_ignored() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn without_a_confirmed_address_the_page_says_why_nothing_will_arrive() {
     let _guard = auth_disabled_guard().await;
     for (address, confirmed) in [(Some("me@example.test"), false), (None, false)] {
@@ -1049,7 +1049,7 @@ async fn without_a_confirmed_address_the_page_says_why_nothing_will_arrive() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn the_saved_notice_is_known_to_the_page() {
     assert!(
         notice_banner(&Notice {

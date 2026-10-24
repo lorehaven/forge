@@ -4,7 +4,7 @@
 //! storage for exactly this - see `FILE_STORAGES` in `services.rs`.
 
 use crate::world::{ForgeWorld, mint_test_token};
-use cucumber::{given, then, when};
+use quench_test_bdd::{given, then, when};
 
 #[given(expr = "I hold a token scoped {string}")]
 async fn hold_token(world: &mut ForgeWorld, scope: String) {
@@ -31,7 +31,7 @@ fn files_url(world: &ForgeWorld, path: &str) -> String {
 
 async fn request(
     world: &mut ForgeWorld,
-    method: reqwest::Method,
+    method: quench_client::transport::Method,
     path: &str,
     body: Option<&'static [u8]>,
 ) {
@@ -51,7 +51,7 @@ async fn request(
 async fn upload(world: &mut ForgeWorld, path: String) {
     request(
         world,
-        reqwest::Method::PUT,
+        quench_client::transport::Method::PUT,
         &format!("/test/file?path={path}"),
         Some(b"bdd file contents"),
     )
@@ -62,7 +62,7 @@ async fn upload(world: &mut ForgeWorld, path: String) {
 async fn download(world: &mut ForgeWorld, path: String) {
     request(
         world,
-        reqwest::Method::GET,
+        quench_client::transport::Method::GET,
         &format!("/test/file?path={path}"),
         None,
     )
@@ -73,7 +73,7 @@ async fn download(world: &mut ForgeWorld, path: String) {
 async fn delete(world: &mut ForgeWorld, path: String) {
     request(
         world,
-        reqwest::Method::DELETE,
+        quench_client::transport::Method::DELETE,
         &format!("/test/file?path={path}"),
         None,
     )
@@ -82,7 +82,7 @@ async fn delete(world: &mut ForgeWorld, path: String) {
 
 #[when("I list the test storage")]
 async fn list(world: &mut ForgeWorld) {
-    request(world, reqwest::Method::GET, "/test", None).await;
+    request(world, quench_client::transport::Method::GET, "/test", None).await;
 }
 
 #[then(expr = "the test storage should contain {string}")]

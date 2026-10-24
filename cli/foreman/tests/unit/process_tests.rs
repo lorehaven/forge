@@ -10,7 +10,7 @@ fn scratch(name: &str) -> std::path::PathBuf {
     ))
 }
 
-#[test]
+#[quench_test::test]
 fn read_pid_round_trips_through_write_pid() {
     let path = scratch("roundtrip.pid");
     write_pid(&path, 4242).unwrap();
@@ -18,13 +18,13 @@ fn read_pid_round_trips_through_write_pid() {
     std::fs::remove_file(&path).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn read_pid_is_none_for_a_missing_file() {
     let path = scratch("does-not-exist.pid");
     assert_eq!(read_pid(&path), None);
 }
 
-#[test]
+#[quench_test::test]
 fn read_pid_is_none_for_malformed_content() {
     let path = scratch("malformed.pid");
     std::fs::write(&path, "not-a-pid\n").unwrap();
@@ -32,7 +32,7 @@ fn read_pid_is_none_for_malformed_content() {
     std::fs::remove_file(&path).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn read_pid_trims_whitespace() {
     let path = scratch("padded.pid");
     std::fs::write(&path, "  99  \n").unwrap();
@@ -40,7 +40,7 @@ fn read_pid_trims_whitespace() {
     std::fs::remove_file(&path).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn tail_returns_only_the_last_n_lines() {
     let path = scratch("tail.log");
     std::fs::write(&path, "one\ntwo\nthree\nfour\nfive\n").unwrap();
@@ -48,7 +48,7 @@ fn tail_returns_only_the_last_n_lines() {
     std::fs::remove_file(&path).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn tail_returns_the_whole_file_when_it_has_fewer_lines_than_asked() {
     let path = scratch("short-tail.log");
     std::fs::write(&path, "one\ntwo\n").unwrap();
@@ -56,25 +56,25 @@ fn tail_returns_the_whole_file_when_it_has_fewer_lines_than_asked() {
     std::fs::remove_file(&path).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn tail_of_a_missing_file_is_empty_rather_than_an_error() {
     let path = scratch("missing-tail.log");
     assert_eq!(tail(&path, 5), "");
 }
 
-#[test]
+#[quench_test::test]
 fn wait_for_returns_ready_as_soon_as_the_check_passes() {
     let waited = wait_for(None, Duration::from_secs(5), || true);
     assert!(matches!(waited, Wait::Ready));
 }
 
-#[test]
+#[quench_test::test]
 fn wait_for_times_out_when_the_check_never_passes() {
     let waited = wait_for(None, Duration::from_millis(50), || false);
     assert!(matches!(waited, Wait::Timeout));
 }
 
-#[test]
+#[quench_test::test]
 fn wait_for_reports_died_when_the_pid_is_no_longer_alive() {
     // pid 1 always exists; an out-of-range pid never does, without needing
     // to spawn and kill a real process just to test this branch.
@@ -82,13 +82,13 @@ fn wait_for_reports_died_when_the_pid_is_no_longer_alive() {
     assert!(matches!(waited, Wait::Died));
 }
 
-#[test]
+#[quench_test::test]
 fn alive_is_true_for_our_own_process_and_false_for_an_impossible_pid() {
     assert!(alive(std::process::id() as i32));
     assert!(!alive(i32::MAX));
 }
 
-#[test]
+#[quench_test::test]
 fn terminate_and_kill_stop_a_real_child_we_own() {
     let mut child = Command::new("sleep")
         .arg("30")
@@ -106,32 +106,32 @@ fn terminate_and_kill_stop_a_real_child_we_own() {
     assert!(!alive(pid));
 }
 
-#[test]
+#[quench_test::test]
 fn capture_reports_success_and_trimmed_stdout() {
     let (ok, output) = capture("sh", &["-c", "echo '  hello  '"]).unwrap();
     assert!(ok);
     assert_eq!(output, "hello");
 }
 
-#[test]
+#[quench_test::test]
 fn capture_reports_failure_for_a_nonzero_exit() {
     let (ok, _) = capture("sh", &["-c", "exit 1"]).unwrap();
     assert!(!ok);
 }
 
-#[test]
+#[quench_test::test]
 fn capture_errors_when_the_program_does_not_exist() {
     assert!(capture("foreman-coverage-test-no-such-binary", &[]).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn run_reports_success_and_failure_by_exit_status() {
     let workdir = std::env::temp_dir();
     assert!(run("true", &[], &workdir, &[]).unwrap());
     assert!(!run("false", &[], &workdir, &[]).unwrap());
 }
 
-#[test]
+#[quench_test::test]
 fn run_passes_environment_variables_through() {
     let workdir = std::env::temp_dir();
     let ok = run(
@@ -150,21 +150,21 @@ fn run_passes_environment_variables_through() {
     assert!(ok);
 }
 
-#[test]
+#[quench_test::test]
 fn shell_reports_success_and_failure_by_exit_status() {
     let workdir = std::env::temp_dir();
     assert!(shell("exit 0", &workdir, Duration::from_secs(5)).unwrap());
     assert!(!shell("exit 1", &workdir, Duration::from_secs(5)).unwrap());
 }
 
-#[test]
+#[quench_test::test]
 fn shell_times_out_and_kills_a_command_that_runs_too_long() {
     let workdir = std::env::temp_dir();
     let ok = shell("sleep 30", &workdir, Duration::from_millis(200)).unwrap();
     assert!(!ok);
 }
 
-#[test]
+#[quench_test::test]
 fn pgrep_finds_a_process_by_its_command_line_and_stops_finding_it_once_it_exits() {
     // A fixed "surely nothing matches this" string isn't safe to assert
     // against on a shared/busy machine running unrelated processes - so
@@ -217,13 +217,13 @@ fn process_disappears(pid: u32, timeout: Duration) -> bool {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn follow_errors_when_there_is_no_log_file() {
     let path = scratch("no-such-log-to-follow");
     assert!(follow(&path).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn spawn_detached_starts_a_process_and_writes_its_log() {
     let log_file = scratch("spawn-detached.log");
     let pid = spawn_detached(
@@ -247,7 +247,7 @@ fn spawn_detached_starts_a_process_and_writes_its_log() {
     std::fs::remove_file(&log_file).ok();
 }
 
-#[test]
+#[quench_test::test]
 fn spawn_detached_errors_for_a_program_that_does_not_exist() {
     let log_file = scratch("spawn-detached-missing.log");
     let result = spawn_detached(

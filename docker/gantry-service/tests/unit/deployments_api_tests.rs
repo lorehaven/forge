@@ -42,7 +42,7 @@ fn token(scope: &str) -> Claims {
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_api_lists_deployments_with_their_state() {
     let rig = ml(false).await;
     let body = support::json_body(
@@ -73,7 +73,7 @@ async fn the_api_lists_deployments_with_their_state() {
     assert_eq!(training["conflicting_running"], json!(["inference"]));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn starting_b_over_the_api_is_a_swap_plan_that_needs_activate_to_confirm() {
     let rig = ml(true).await;
     let mut request = support::req_json(
@@ -110,7 +110,7 @@ async fn starting_b_over_the_api_is_a_swap_plan_that_needs_activate_to_confirm()
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_bad_action_or_an_already_stopped_deployment_is_refused() {
     let rig = ml(false).await;
     let post = |name: &str, body: &str| {
@@ -144,7 +144,7 @@ async fn a_bad_action_or_an_already_stopped_deployment_is_refused() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_application_page_offers_start_on_a_stopped_deployment_and_stop_on_a_running_one() {
     let rig = ml(false).await;
     let html = support::body_text(
@@ -160,7 +160,7 @@ async fn the_application_page_offers_start_on_a_stopped_deployment_and_stop_on_a
     assert!(html.contains("ui_observed_stopped"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn starting_from_the_page_runs_the_swap_at_once() {
     let rig = ml(false).await;
     let response = rig

@@ -134,7 +134,7 @@ impl SwitchboardClient {
 
     /// Bypasses the real `gatehouse` login flow `new` performs, for tests
     /// that only need to point `list_instances`/`launch_instance` at a
-    /// `wiremock` server. The bearer token is never checked by anything
+    /// `quench_test` mock server. The bearer token is never checked by anything
     /// other than a real gatehouse-issued middleware, which a mock server
     /// doesn't run.
     #[must_use]

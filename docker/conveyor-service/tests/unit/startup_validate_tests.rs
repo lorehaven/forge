@@ -12,7 +12,7 @@ fn config_with_executor(executor: ExecutorKind) -> ConveyorConfig {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn does_not_panic_when_the_executor_is_kubernetes() {
     // The early-return branch: the local toolchain is irrelevant under this
     // executor, so this must not even attempt a `which` lookup that could
@@ -20,7 +20,7 @@ fn does_not_panic_when_the_executor_is_kubernetes() {
     report_toolchain(&config_with_executor(ExecutorKind::Kubernetes));
 }
 
-#[test]
+#[quench_test::test]
 fn does_not_panic_when_the_executor_is_native() {
     // Exercises the `which::which` lookups for every optional tool, whether
     // or not they're actually on this machine's `PATH`.

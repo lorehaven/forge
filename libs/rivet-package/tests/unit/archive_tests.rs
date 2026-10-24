@@ -1,3 +1,4 @@
+use quench_archive::tar::{self, EntryKind};
 use rivet_package::{Limits, Manifest, Package, PackageBuilder, PackageError, sha256_hex};
 use std::fmt::Write as _;
 use std::io::Cursor;
@@ -16,33 +17,30 @@ fn read(bytes: &[u8]) -> Result<Package, PackageError> {
 }
 
 fn zst(tar_bytes: &[u8]) -> Vec<u8> {
-    zstd::stream::encode_all(tar_bytes, 3).unwrap()
+    quench_archive::zstd::compress(tar_bytes)
 }
 
-/// A tar whose single entry has a path `Header::set_path` would have refused.
-fn tar_with_raw_path(path: &str, kind: tar::EntryType) -> Vec<u8> {
-    let mut header = tar::Header::new_old();
-    header.as_old_mut().name[..path.len()].copy_from_slice(path.as_bytes());
-    header.set_size(0);
-    header.set_mode(0o644);
-    header.set_entry_type(kind);
-    header.set_cksum();
-    let mut out = header.as_bytes().to_vec();
-    out.extend_from_slice(&[0u8; 1024]);
-    out
+/// A tar whose single entry has a path and kind the builder's callers would never produce.
+fn tar_with_raw_path(path: &str, kind: EntryKind) -> Vec<u8> {
+    let mut b = tar::Builder::new();
+    b.append(
+        &tar::Header {
+            kind,
+            ..tar::Header::file(path)
+        },
+        b"",
+    )
+    .unwrap();
+    b.finish()
 }
 
 /// Packs `files` as given, without the builder's guarantees.
 fn raw_package(files: &[(&str, &[u8])]) -> Vec<u8> {
-    let mut b = tar::Builder::new(Vec::new());
+    let mut b = tar::Builder::new();
     for (name, data) in files {
-        let mut h = tar::Header::new_gnu();
-        h.set_size(data.len() as u64);
-        h.set_mode(0o644);
-        h.set_entry_type(tar::EntryType::Regular);
-        b.append_data(&mut h, name, *data).unwrap();
+        b.append_file(name, data).unwrap();
     }
-    zst(&b.into_inner().unwrap())
+    zst(&b.finish())
 }
 
 fn sums(files: &[(&str, &[u8])]) -> String {
@@ -53,7 +51,7 @@ fn sums(files: &[(&str, &[u8])]) -> String {
     out
 }
 
-#[test]
+#[quench_test::test]
 fn round_trips() {
     let bytes = builder().build().unwrap();
     let package = read(&bytes).unwrap();
@@ -63,12 +61,12 @@ fn round_trips() {
     assert!(package.files.contains_key("rivet.toml"));
 }
 
-#[test]
+#[quench_test::test]
 fn is_byte_identical_for_identical_input() {
     assert_eq!(builder().build().unwrap(), builder().build().unwrap());
 }
 
-#[test]
+#[quench_test::test]
 fn insertion_order_does_not_change_the_bytes() {
     let mut b = PackageBuilder::new(Manifest::new("forge", "0.4.0"));
     b.add_file("templates/a.yaml.j2", b"kind: A\n".to_vec())
@@ -78,7 +76,7 @@ fn insertion_order_does_not_change_the_bytes() {
     assert_eq!(b.build().unwrap(), builder().build().unwrap());
 }
 
-#[test]
+#[quench_test::test]
 fn builder_requires_the_overlay_and_rejects_reserved_names() {
     let b = PackageBuilder::new(Manifest::new("forge", "0.4.0"));
     assert!(matches!(
@@ -93,14 +91,14 @@ fn builder_requires_the_overlay_and_rejects_reserved_names() {
     assert!(b.add_file("overlay.yaml", vec![]).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn builder_rejects_an_invalid_manifest() {
     let mut b = PackageBuilder::new(Manifest::new("Bad Name", "0.4.0"));
     b.add_file("overlay.yaml", vec![]).unwrap();
     assert!(matches!(b.build(), Err(PackageError::Manifest(_))));
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_non_zstd_input() {
     assert!(matches!(
         read(b"plainly not an archive"),
@@ -108,10 +106,10 @@ fn rejects_non_zstd_input() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_traversal_and_absolute_paths() {
     for path in ["../evil", "a/../../evil", "/etc/passwd"] {
-        let bytes = zst(&tar_with_raw_path(path, tar::EntryType::Regular));
+        let bytes = zst(&tar_with_raw_path(path, EntryKind::File));
         assert!(
             matches!(read(&bytes), Err(PackageError::UnsafePath(..))),
             "{path}"
@@ -119,13 +117,13 @@ fn rejects_traversal_and_absolute_paths() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_links_and_devices() {
     for kind in [
-        tar::EntryType::Symlink,
-        tar::EntryType::Link,
-        tar::EntryType::Char,
-        tar::EntryType::Fifo,
+        EntryKind::Symlink,
+        EntryKind::HardLink,
+        EntryKind::CharDevice,
+        EntryKind::Fifo,
     ] {
         let bytes = zst(&tar_with_raw_path("overlay.yaml", kind));
         assert!(
@@ -135,7 +133,7 @@ fn rejects_links_and_devices() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_a_missing_required_file() {
     let manifest = Manifest::new("forge", "0.4.0").to_toml().unwrap();
     let files: Vec<(&str, &[u8])> = vec![("rivet.toml", manifest.as_bytes())];
@@ -162,12 +160,12 @@ fn tampered(overlay_in_sums: &[u8], overlay_in_archive: &[u8]) -> Vec<u8> {
     ])
 }
 
-#[test]
+#[quench_test::test]
 fn accepts_a_hand_assembled_package_that_is_consistent() {
     assert!(read(&tampered(b"a", b"a")).is_ok());
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_a_file_that_does_not_match_its_checksum() {
     assert!(matches!(
         read(&tampered(b"a", b"b")),
@@ -175,7 +173,7 @@ fn rejects_a_file_that_does_not_match_its_checksum() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_an_unlisted_file_and_a_phantom_listing() {
     let manifest = Manifest::new("forge", "0.4.0").to_toml().unwrap();
 
@@ -204,7 +202,7 @@ fn rejects_an_unlisted_file_and_a_phantom_listing() {
     assert!(matches!(read(&phantom), Err(PackageError::Checksum(_))));
 }
 
-#[test]
+#[quench_test::test]
 fn rejects_duplicate_entries() {
     let manifest = Manifest::new("forge", "0.4.0").to_toml().unwrap();
     let files: Vec<(&str, &[u8])> =
@@ -219,7 +217,7 @@ fn rejects_duplicate_entries() {
     assert!(matches!(read(&bytes), Err(PackageError::Archive(_))));
 }
 
-#[test]
+#[quench_test::test]
 fn enforces_the_size_and_count_limits() {
     let bytes = builder().build().unwrap();
 
@@ -251,7 +249,7 @@ fn enforces_the_size_and_count_limits() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn a_highly_compressible_bomb_is_stopped_by_the_decoded_limits() {
     let mut b = PackageBuilder::new(Manifest::new("forge", "0.4.0"));
     b.add_file("overlay.yaml", vec![b'x'; 8 * 1024 * 1024])
@@ -269,7 +267,7 @@ fn a_highly_compressible_bomb_is_stopped_by_the_decoded_limits() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn write_to_materialises_every_file_and_refuses_to_overwrite() {
     let package = read(&builder().build().unwrap()).unwrap();
     let dir = quench_core::tmp::TempDir::new().unwrap();
@@ -282,7 +280,7 @@ fn write_to_materialises_every_file_and_refuses_to_overwrite() {
     assert!(package.write_to(dir.path()).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn file_name_follows_the_convention() {
     assert_eq!(
         rivet_package::file_name("forge", "0.4.0+b1"),

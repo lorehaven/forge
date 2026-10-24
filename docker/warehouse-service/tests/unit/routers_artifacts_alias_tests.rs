@@ -65,21 +65,21 @@ async fn call(path: &str) -> quench_http::response::Response {
     .await
 }
 
-#[test]
+#[quench_test::test]
 fn the_alias_is_on_by_default_and_has_no_sunset() {
     let _env = AliasEnv::new();
     assert!(alias_enabled());
     assert_eq!(alias_sunset(), None);
 }
 
-#[test]
+#[quench_test::test]
 fn a_blank_sunset_counts_as_unscheduled() {
     let _env = AliasEnv::new();
     quench_core::env::set("APK_ALIAS_SUNSET", "   ");
     assert_eq!(alias_sunset(), None);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_call_still_succeeds_but_is_marked_deprecated() {
     let _env = AliasEnv::new();
     let resp = call("/warehouse/api/v1/apk").await;
@@ -92,7 +92,7 @@ async fn a_call_still_succeeds_but_is_marked_deprecated() {
     assert!(resp.headers().get("sunset").is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_scheduled_removal_date_is_advertised_as_sunset() {
     let _env = AliasEnv::new();
     quench_core::env::set("APK_ALIAS_SUNSET", "Thu, 31 Dec 2026 00:00:00 GMT");
@@ -104,7 +104,7 @@ async fn a_scheduled_removal_date_is_advertised_as_sunset() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn switching_the_alias_off_answers_gone_and_never_reaches_the_handler() {
     let _env = AliasEnv::new();
     quench_core::env::set("FEATURE_APK_ALIAS_ENABLED", "false");

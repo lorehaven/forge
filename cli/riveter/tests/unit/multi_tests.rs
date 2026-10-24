@@ -59,7 +59,7 @@ fn in_cwd_with_overlays<T>(envs: &[&str], body: impl FnOnce() -> T) -> T {
     result
 }
 
-#[test]
+#[quench_test::test]
 fn a_list_keeps_the_order_it_was_given_in() {
     in_cwd_with_overlays(&["a", "b", "c"], || {
         assert_eq!(
@@ -70,14 +70,14 @@ fn a_list_keeps_the_order_it_was_given_in() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_single_name_is_a_list_of_one() {
     in_cwd_with_overlays(&["a"], || {
         assert_eq!(resolve_envs(Some("a")).unwrap(), ["a"]);
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_name_listed_twice_is_refused() {
     in_cwd_with_overlays(&["a", "b"], || {
         let err = resolve_envs(Some("a,b,a")).unwrap_err().to_string();
@@ -85,7 +85,7 @@ fn a_name_listed_twice_is_refused() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_entry_is_refused() {
     in_cwd_with_overlays(&["a", "b"], || {
         for bad in ["a,,b", "a,", ",a", " , "] {
@@ -95,7 +95,7 @@ fn an_empty_entry_is_refused() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn one_missing_overlay_refuses_the_whole_list() {
     in_cwd_with_overlays(&["a"], || {
         let err = resolve_envs(Some("a,nope")).unwrap_err().to_string();
@@ -103,7 +103,7 @@ fn one_missing_overlay_refuses_the_whole_list() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn commands_that_take_one_environment_say_so_when_given_a_list() {
     in_cwd_with_overlays(&["a", "b"], || {
         let err = resolve_env(Some("a,b")).unwrap_err().to_string();
@@ -114,7 +114,7 @@ fn commands_that_take_one_environment_say_so_when_given_a_list() {
 
 // --- before anything is applied -------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn preflight_returns_each_environments_context() {
     let (_dir, ws) = workspace(&[("a", Some("ctx-a")), ("b", Some("ctx-b"))]);
     let contexts = with_workspace(ws, || {
@@ -128,7 +128,7 @@ fn preflight_returns_each_environments_context() {
     assert_eq!(contexts, ["ctx-a", "ctx-b"]);
 }
 
-#[test]
+#[quench_test::test]
 fn preflight_refuses_an_environment_that_pins_no_context_and_names_it() {
     let (_dir, ws) = workspace(&[("a", Some("ctx-a")), ("b", None)]);
     let err = with_workspace(ws, || {
@@ -148,7 +148,7 @@ fn preflight_refuses_an_environment_that_pins_no_context_and_names_it() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn preflight_reports_every_problem_not_just_the_first() {
     let (_dir, ws) = workspace(&[("a", None), ("b", None)]);
     let err = with_workspace(ws, || {
@@ -172,7 +172,7 @@ const fn applied(count: usize) -> Outcome {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn environments_run_in_order_and_each_gets_a_row() {
     let mut seen = Vec::new();
     let reports = run_in_order(
@@ -194,7 +194,7 @@ fn environments_run_in_order_and_each_gets_a_row() {
     assert!(reports.iter().all(|r| !r.outcome.is_failure()));
 }
 
-#[test]
+#[quench_test::test]
 fn a_failure_stops_the_run_and_the_rest_are_not_attempted() {
     let mut seen = Vec::new();
     let reports = run_in_order(
@@ -216,7 +216,7 @@ fn a_failure_stops_the_run_and_the_rest_are_not_attempted() {
     assert_eq!(reports[2].outcome, Outcome::NotAttempted);
 }
 
-#[test]
+#[quench_test::test]
 fn finish_succeeds_when_nothing_failed() {
     let reports = vec![EnvReport {
         env: "a".into(),
@@ -226,7 +226,7 @@ fn finish_succeeds_when_nothing_failed() {
     assert!(finish(&reports).is_ok());
 }
 
-#[test]
+#[quench_test::test]
 fn finish_fails_naming_the_environment_and_how_many_were_skipped() {
     let reports = vec![
         EnvReport {
@@ -245,7 +245,7 @@ fn finish_fails_naming_the_environment_and_how_many_were_skipped() {
     assert!(err.contains("a: boom"), "{err}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_diff_that_differs_is_not_a_failure() {
     let reports = vec![EnvReport {
         env: "a".into(),
@@ -295,7 +295,7 @@ fn contexts_called(log: &std::path::Path) -> Vec<String> {
     seen
 }
 
-#[test]
+#[quench_test::test]
 fn apply_goes_to_each_environments_own_cluster_in_order() {
     let (_dir, ws) = workspace(&[("canary", Some("ctx-canary")), ("prod", Some("ctx-prod"))]);
     with_kubectl("none", |log| {
@@ -316,7 +316,7 @@ fn apply_goes_to_each_environments_own_cluster_in_order() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn a_failing_cluster_stops_the_rollout_before_the_next_one_is_touched() {
     let (_dir, ws) = workspace(&[
         ("canary", Some("ctx-canary")),
@@ -349,7 +349,7 @@ fn a_failing_cluster_stops_the_rollout_before_the_next_one_is_touched() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn an_environment_that_pins_no_context_stops_everything_before_any_apply() {
     let (_dir, ws) = workspace(&[("canary", Some("ctx-canary")), ("prod", None)]);
     with_kubectl("none", |log| {
@@ -375,7 +375,7 @@ fn an_environment_that_pins_no_context_stops_everything_before_any_apply() {
     });
 }
 
-#[test]
+#[quench_test::test]
 fn diff_visits_each_cluster_in_order() {
     let (_dir, ws) = workspace(&[("a", Some("ctx-a")), ("b", Some("ctx-b"))]);
     with_kubectl("none", |log| {

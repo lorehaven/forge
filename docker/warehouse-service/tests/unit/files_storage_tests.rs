@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use warehouse_service::routers::files::parse_storages;
 
-#[test]
+#[quench_test::test]
 fn a_single_pair() {
     let storages = parse_storages("artifacts=/storage/artifacts");
 
@@ -15,7 +15,7 @@ fn a_single_pair() {
     assert_eq!(storages[0].root, PathBuf::from("/storage/artifacts"));
 }
 
-#[test]
+#[quench_test::test]
 fn several_pairs_keep_their_order() {
     let storages = parse_storages("a=/one;b=/two;c=/three");
 
@@ -23,7 +23,7 @@ fn several_pairs_keep_their_order() {
     assert_eq!(names, ["a", "b", "c"]);
 }
 
-#[test]
+#[quench_test::test]
 fn whitespace_around_entries_is_ignored() {
     let storages = parse_storages("  a = /one ;  b=/two  ");
 
@@ -33,21 +33,21 @@ fn whitespace_around_entries_is_ignored() {
     assert_eq!(storages[1].name, "b");
 }
 
-#[test]
+#[quench_test::test]
 fn an_empty_setting_configures_nothing() {
     assert!(parse_storages("").is_empty());
     assert!(parse_storages("   ").is_empty());
     assert!(parse_storages(";;").is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn a_trailing_separator_is_not_an_entry() {
     let storages = parse_storages("a=/one;");
 
     assert_eq!(storages.len(), 1);
 }
 
-#[test]
+#[quench_test::test]
 fn an_entry_with_no_equals_is_dropped_and_the_rest_survive() {
     let storages = parse_storages("broken;a=/one");
 
@@ -55,7 +55,7 @@ fn an_entry_with_no_equals_is_dropped_and_the_rest_survive() {
     assert_eq!(storages[0].name, "a");
 }
 
-#[test]
+#[quench_test::test]
 fn empty_halves_are_dropped() {
     let storages = parse_storages("=/one;b=;c=/three");
 
@@ -63,7 +63,7 @@ fn empty_halves_are_dropped() {
     assert_eq!(storages[0].name, "c");
 }
 
-#[test]
+#[quench_test::test]
 fn a_name_that_would_need_escaping_in_a_url_is_dropped() {
     // The name becomes a path segment. One containing a separator would make
     // `/api/v1/files/{storage}` ambiguous.
@@ -73,7 +73,7 @@ fn a_name_that_would_need_escaping_in_a_url_is_dropped() {
     assert_eq!(names, ["ok-name_2"]);
 }
 
-#[test]
+#[quench_test::test]
 fn a_repeated_name_does_not_shadow_the_first() {
     // Silently taking the last would make which directory is served depend on
     // the order of a semicolon-separated string.
@@ -83,7 +83,7 @@ fn a_repeated_name_does_not_shadow_the_first() {
     assert_eq!(storages[0].root, PathBuf::from("/one"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_path_containing_an_equals_sign_survives() {
     // Split on the first `=` only; the rest is the path.
     let storages = parse_storages("a=/one=two");
@@ -92,7 +92,7 @@ fn a_path_containing_an_equals_sign_survives() {
     assert_eq!(storages[0].root, PathBuf::from("/one=two"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_relative_root_is_kept_as_given() {
     // Resolved against the process's working directory, like the crates and
     // docker roots are. Not this function's business to reject.

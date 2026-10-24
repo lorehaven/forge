@@ -88,7 +88,7 @@ fn file(id: &str, owner: &str, status: &str) -> File {
 // Pure rendering helpers
 // ---------------------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn render_attachment_chip_shows_retry_only_for_a_failed_staged_file() {
     let mut f = file("f1", "alice", "failed");
     f.error_message = Some("boom".to_string());
@@ -99,7 +99,7 @@ fn render_attachment_chip_shows_retry_only_for_a_failed_staged_file() {
     assert!(!html.contains("attachment-download"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_attachment_chip_shows_download_not_remove_when_not_staged() {
     let f = file("f1", "alice", "ready");
     let html = render_attachment_chip(&f, false).render();
@@ -108,7 +108,7 @@ fn render_attachment_chip_shows_download_not_remove_when_not_staged() {
     assert!(!html.contains("attachment-retry"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_attachment_chip_polls_only_while_staged_and_in_progress() {
     let queued = file("f1", "alice", "uploaded");
     assert!(
@@ -130,7 +130,7 @@ fn render_attachment_chip_polls_only_while_staged_and_in_progress() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn render_attachment_chip_shows_a_thumbnail_for_images() {
     let mut f = file("f1", "alice", "ready");
     f.mime_type = "image/png".to_string();
@@ -138,7 +138,7 @@ fn render_attachment_chip_shows_a_thumbnail_for_images() {
     assert!(html.contains("attachment-thumb"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_project_file_row_hides_the_status_badge_only_when_ready() {
     let ready = file("f1", "alice", "ready");
     assert!(
@@ -155,14 +155,14 @@ fn render_project_file_row_hides_the_status_badge_only_when_ready() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn render_project_files_section_shows_the_empty_state_with_no_files() {
     let html = render_project_files_section(&[]).render();
     assert!(html.contains("ui_files_empty_project"));
     assert!(html.contains(">0<"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_project_files_section_lists_every_file_and_its_count() {
     let files = vec![file("f1", "alice", "ready"), file("f2", "alice", "ready")];
     let html = render_project_files_section(&files).render();
@@ -171,12 +171,12 @@ fn render_project_files_section_lists_every_file_and_its_count() {
     assert!(html.contains("file-item-f2"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_attachments_row_is_none_for_no_files() {
     assert!(render_attachments_row(&[]).is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn render_attachments_row_is_some_with_every_file_as_a_readonly_chip() {
     let files = vec![file("f1", "alice", "ready")];
     let row = render_attachments_row(&files).expect("some row").render();
@@ -188,7 +188,7 @@ fn render_attachments_row_is_some_with_every_file_as_a_readonly_chip() {
 // load_owned_files
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn load_owned_files_skips_ids_the_caller_does_not_own_or_that_do_not_exist() {
     let db = db();
     db.repository::<File>()
@@ -218,7 +218,7 @@ async fn load_owned_files_skips_ids_the_caller_does_not_own_or_that_do_not_exist
 // detach
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn detach_removes_a_staged_file_owned_by_the_caller() {
     let db = db();
     db.repository::<File>()
@@ -234,7 +234,7 @@ async fn detach_removes_a_staged_file_owned_by_the_caller() {
     assert!(db.repository::<File>().read("f1").await.unwrap().is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn detach_leaves_a_file_already_linked_to_a_message_alone() {
     let db = db();
     let mut f = file("f1", "admin", "uploaded");
@@ -251,7 +251,7 @@ async fn detach_leaves_a_file_already_linked_to_a_message_alone() {
 // chip_status
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn chip_status_returns_the_rendered_chip_for_an_owned_file() {
     let db = db();
     db.repository::<File>()
@@ -268,7 +268,7 @@ async fn chip_status_returns_the_rendered_chip_for_an_owned_file() {
     assert!(body.contains("chip-f1"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn chip_status_is_forbidden_for_a_file_owned_by_someone_else() {
     let db = db();
     db.repository::<File>()
@@ -283,7 +283,7 @@ async fn chip_status_is_forbidden_for_a_file_owned_by_someone_else() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn chip_status_returns_an_empty_body_when_the_file_is_gone() {
     let (app, container) = app(db()).await;
     let resp = app
@@ -302,7 +302,7 @@ async fn chip_status_returns_an_empty_body_when_the_file_is_gone() {
 // delete_modal / delete_file_ui
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_modal_names_the_owned_file() {
     let db = db();
     db.repository::<File>()
@@ -319,7 +319,7 @@ async fn delete_modal_names_the_owned_file() {
     assert!(body.contains("notes.txt"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_modal_is_not_found_for_a_missing_file() {
     let (app, container) = app(db()).await;
     let resp = app
@@ -332,7 +332,7 @@ async fn delete_modal_is_not_found_for_a_missing_file() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_file_ui_deletes_an_owned_file_and_returns_an_oob_removal() {
     let db = db();
     db.repository::<File>()
@@ -352,7 +352,7 @@ async fn delete_file_ui_deletes_an_owned_file_and_returns_an_oob_removal() {
     assert!(html.contains("file-item-f1"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_file_ui_is_forbidden_for_a_file_owned_by_someone_else() {
     let db = db();
     db.repository::<File>()

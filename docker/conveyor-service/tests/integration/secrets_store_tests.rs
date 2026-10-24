@@ -29,7 +29,7 @@ fn configure_key() {
 // The store
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_secret_round_trips_through_the_database() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_secret_round_trips_through_the_database");
@@ -47,7 +47,7 @@ async fn a_secret_round_trips_through_the_database() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_value_is_not_readable_from_the_table() {
     // The whole point of the store: somebody with the database has ciphertext,
     // not tokens.
@@ -81,7 +81,7 @@ async fn the_value_is_not_readable_from_the_table() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn writing_the_same_name_replaces_the_value() {
     let Some((db, _guard)) = database().await else {
         return skipped("writing_the_same_name_replaces_the_value");
@@ -102,7 +102,7 @@ async fn writing_the_same_name_replaces_the_value() {
     assert_eq!(store::list(&db, &scope).await.expect("list").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_repository_secret_and_a_global_one_can_share_a_name() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_repository_secret_and_a_global_one_can_share_a_name");
@@ -143,7 +143,7 @@ async fn a_repository_secret_and_a_global_one_can_share_a_name() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_repositorys_own_value_wins_over_the_estates() {
     // So a shared default can be set once and overridden where it matters.
     let Some((db, _guard)) = database().await else {
@@ -183,7 +183,7 @@ async fn a_repositorys_own_value_wins_over_the_estates() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_global_secret_is_visible_to_a_repository_that_has_none() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_global_secret_is_visible_to_a_repository_that_has_none");
@@ -209,7 +209,7 @@ async fn a_global_secret_is_visible_to_a_repository_that_has_none() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn one_repositorys_secret_is_invisible_to_another() {
     let Some((db, _guard)) = database().await else {
         return skipped("one_repositorys_secret_is_invisible_to_another");
@@ -234,7 +234,7 @@ async fn one_repositorys_secret_is_invisible_to_another() {
     assert!(matches!(error, SecretError::Missing { .. }), "{error:?}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn resolving_a_secret_nobody_set_is_an_error() {
     // Better than a blank token, which fails somewhere further on in a way that
     // takes much longer to understand.
@@ -251,7 +251,7 @@ async fn resolving_a_secret_nobody_set_is_an_error() {
     assert!(message.contains("NOPE"), "{message}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn resolving_nothing_needs_no_key() {
     // A pipeline that declares no secrets builds on a deployment that has never
     // set CONVEYOR_SECRET_KEY.
@@ -268,7 +268,7 @@ async fn resolving_nothing_needs_no_key() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn resolving_a_secret_without_a_key_says_so() {
     let Some((db, _guard)) = database().await else {
         return skipped("resolving_a_secret_without_a_key_says_so");
@@ -281,7 +281,7 @@ async fn resolving_a_secret_without_a_key_says_so() {
     assert!(error.to_string().contains("CONVEYOR_SECRET_KEY"), "{error}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn listing_returns_names_and_never_values() {
     let Some((db, _guard)) = database().await else {
         return skipped("listing_returns_names_and_never_values");
@@ -308,7 +308,7 @@ async fn listing_returns_names_and_never_values() {
     assert!(!rendered.contains("a-secret-value"), "{rendered}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn deleting_removes_it() {
     let Some((db, _guard)) = database().await else {
         return skipped("deleting_removes_it");
@@ -335,7 +335,7 @@ async fn deleting_removes_it() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_value_too_short_to_redact_is_refused() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_value_too_short_to_redact_is_refused");
@@ -346,7 +346,7 @@ async fn a_value_too_short_to_redact_is_refused() {
     assert!(matches!(error, SecretError::TooShort), "{error:?}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_name_that_is_not_an_environment_variable_is_refused() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_name_that_is_not_an_environment_variable_is_refused");
@@ -359,7 +359,7 @@ async fn a_name_that_is_not_an_environment_variable_is_refused() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn deleting_a_repository_takes_its_secrets_with_it() {
     let Some((db, _guard)) = database().await else {
         return skipped("deleting_a_repository_takes_its_secrets_with_it");
@@ -440,7 +440,7 @@ secrets = ["DEPLOY_TOKEN"]
 steps = ["echo using $DEPLOY_TOKEN"]
 "#;
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_declared_secret_reaches_the_step_and_stays_out_of_the_log() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_declared_secret_reaches_the_step_and_stays_out_of_the_log");
@@ -483,7 +483,7 @@ async fn a_declared_secret_reaches_the_step_and_stays_out_of_the_log() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_job_declaring_a_secret_nobody_set_fails_with_a_clear_reason() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_job_declaring_a_secret_nobody_set_fails_with_a_clear_reason");
@@ -510,7 +510,7 @@ async fn a_job_declaring_a_secret_nobody_set_fails_with_a_clear_reason() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_job_sees_only_the_secrets_it_named() {
     // The whole access model: everything else in the store is invisible to it.
     let Some((db, _guard)) = database().await else {

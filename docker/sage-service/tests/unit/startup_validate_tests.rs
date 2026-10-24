@@ -42,7 +42,7 @@ fn config_with_providers(providers: &[&str]) -> SageConfig {
     quench_serde::from_value(&base).expect("valid SageConfig shape")
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 async fn validate_startup_skips_the_switchboard_check_when_asked() {
     let _guard = env_lock()
@@ -60,7 +60,7 @@ async fn validate_startup_skips_the_switchboard_check_when_asked() {
     quench_core::env::remove("SKIP_SWITCHBOARD_CHECK");
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 async fn validate_startup_validates_every_known_search_provider_without_network() {
     let _guard = env_lock()
@@ -86,7 +86,7 @@ async fn validate_startup_validates_every_known_search_provider_without_network(
     quench_core::env::remove("SKIP_SWITCHBOARD_CHECK");
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 async fn validate_startup_still_succeeds_when_provider_api_keys_are_configured() {
     let _guard = env_lock()
@@ -110,7 +110,7 @@ async fn validate_startup_still_succeeds_when_provider_api_keys_are_configured()
     quench_core::env::remove("SEARXNG_INSTANCE_URL");
 }
 
-#[tokio::test]
+#[quench_test::test]
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 async fn validate_startup_fails_when_the_switchboard_check_runs_and_switchboard_is_unreachable() {
     let _guard = env_lock()

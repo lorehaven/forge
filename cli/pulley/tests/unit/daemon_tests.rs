@@ -3,7 +3,7 @@ use pulley::daemon::{is_due, poll_once, run, run_job};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-#[test]
+#[quench_test::test]
 fn run_returns_immediately_when_no_job_has_an_interval() {
     // With no `interval` set on any job, `run` takes its early-return branch
     // before ever entering the (otherwise infinite) polling loop.
@@ -22,38 +22,38 @@ fn run_returns_immediately_when_no_job_has_an_interval() {
     run(&config).expect("run");
 }
 
-#[test]
+#[quench_test::test]
 fn run_returns_immediately_for_an_empty_job_list() {
     let config = Config { jobs: Vec::new() };
     run(&config).expect("run");
 }
 
-#[test]
+#[quench_test::test]
 fn is_due_when_never_run_before() {
     assert!(is_due(None, Instant::now(), Duration::from_secs(10)));
 }
 
-#[test]
+#[quench_test::test]
 fn is_not_due_immediately_after_running() {
     let now = Instant::now();
     assert!(!is_due(Some(now), now, Duration::from_secs(10)));
 }
 
-#[test]
+#[quench_test::test]
 fn is_due_once_the_interval_has_fully_elapsed() {
     let now = Instant::now();
     let last = now.checked_sub(Duration::from_secs(20)).unwrap();
     assert!(is_due(Some(last), now, Duration::from_secs(10)));
 }
 
-#[test]
+#[quench_test::test]
 fn is_not_due_just_before_the_interval_elapses() {
     let now = Instant::now();
     let last = now.checked_sub(Duration::from_secs(5)).unwrap();
     assert!(!is_due(Some(last), now, Duration::from_secs(10)));
 }
 
-#[test]
+#[quench_test::test]
 fn is_due_exactly_at_the_interval_boundary() {
     let now = Instant::now();
     let last = now.checked_sub(Duration::from_secs(10)).unwrap();
@@ -73,7 +73,7 @@ fn job_with_dirs(id: &str, src: &std::path::Path, dest: &std::path::Path) -> Job
     }
 }
 
-#[test]
+#[quench_test::test]
 fn run_job_with_no_changes_succeeds_without_syncing() {
     let src = quench_core::tmp::TempDir::new().unwrap();
     let dest = quench_core::tmp::TempDir::new().unwrap();
@@ -82,7 +82,7 @@ fn run_job_with_no_changes_succeeds_without_syncing() {
     run_job(&job).expect("run_job");
 }
 
-#[test]
+#[quench_test::test]
 fn run_job_with_changes_actually_syncs() {
     let src = quench_core::tmp::TempDir::new().unwrap();
     let dest = quench_core::tmp::TempDir::new().unwrap();
@@ -97,7 +97,7 @@ fn run_job_with_changes_actually_syncs() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn poll_once_runs_a_due_job_and_records_when_it_ran() {
     let src = quench_core::tmp::TempDir::new().unwrap();
     let dest = quench_core::tmp::TempDir::new().unwrap();
@@ -117,7 +117,7 @@ fn poll_once_runs_a_due_job_and_records_when_it_ran() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn poll_once_skips_a_job_that_is_not_due_yet() {
     let src = quench_core::tmp::TempDir::new().unwrap();
     let dest = quench_core::tmp::TempDir::new().unwrap();
@@ -134,7 +134,7 @@ fn poll_once_skips_a_job_that_is_not_due_yet() {
     assert_eq!(last_run.get(&job.id).copied(), Some(now));
 }
 
-#[test]
+#[quench_test::test]
 fn poll_once_records_the_run_even_when_the_job_fails() {
     let missing_src = std::env::temp_dir().join(format!(
         "pulley-daemon-poll-once-missing-src-{}",
@@ -154,7 +154,7 @@ fn poll_once_records_the_run_even_when_the_job_fails() {
     assert_eq!(last_run.get(&job.id).copied(), Some(now));
 }
 
-#[test]
+#[quench_test::test]
 fn run_job_errors_when_the_source_directory_does_not_exist() {
     let missing_src = std::env::temp_dir().join(format!(
         "pulley-daemon-test-missing-src-{}",

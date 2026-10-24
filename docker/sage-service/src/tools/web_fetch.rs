@@ -177,10 +177,10 @@ fn collect_json_ld(value: &quench_serde::Value, out: &mut Vec<String>) {
 /// (cells joined with ` | `) in document order, preferring `<main>`/`<article>` and skipping
 /// navigation, footers and forms. Capped at `max_chars`.
 pub fn extract_rich_text(html: &str, max_chars: usize) -> Result<String, String> {
-    use scraper::{ElementRef, Html, Selector};
+    use quench_html::{Document, Selector};
     use std::collections::HashSet;
 
-    let document = Html::parse_document(html);
+    let document = Document::parse(html);
     let sel = |css: &str| Selector::parse(css).map_err(|e| format!("bad selector {css}: {e:?}"));
     let mut blocks: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -191,22 +191,20 @@ pub fn extract_rich_text(html: &str, max_chars: usize) -> Result<String, String>
     };
 
     if let Some(title) = document.select(&sel("title")?).next() {
-        let text = collapse_ws(&title.text().collect::<String>());
+        let text = collapse_ws(&title.text());
         push(format!("# {text}"), &mut blocks);
     }
     for meta in document.select(&sel(
         r#"meta[name="description"], meta[property="og:description"]"#,
     )?) {
-        if let Some(content) = meta.value().attr("content") {
+        if let Some(content) = meta.attr("content") {
             push(collapse_ws(content), &mut blocks);
         }
     }
 
     let mut ld = Vec::new();
     for script in document.select(&sel(r#"script[type="application/ld+json"]"#)?) {
-        if let Ok(value) =
-            quench_serde::json::from_str::<quench_serde::Value>(&script.text().collect::<String>())
-        {
+        if let Ok(value) = quench_serde::json::from_str::<quench_serde::Value>(&script.text()) {
             collect_json_ld(&value, &mut ld);
         }
     }
@@ -224,21 +222,20 @@ pub fn extract_rich_text(html: &str, max_chars: usize) -> Result<String, String>
     for el in root.select(&block_sel) {
         let skipped = el
             .ancestors()
-            .filter_map(ElementRef::wrap)
-            .any(|a| SKIPPED_ANCESTORS.contains(&a.value().name()));
+            .any(|a| a.name().is_some_and(|n| SKIPPED_ANCESTORS.contains(&n)));
         if skipped {
             continue;
         }
-        let name = el.value().name();
+        let name = el.name().unwrap_or_default();
         let text = if name == "tr" {
             let cells: Vec<String> = el
                 .select(&cell_sel)
-                .map(|c| collapse_ws(&c.text().collect::<String>()))
+                .map(|c| collapse_ws(&c.text()))
                 .filter(|c| !c.is_empty())
                 .collect();
             cells.join(" | ")
         } else {
-            collapse_ws(&el.text().collect::<String>())
+            collapse_ws(&el.text())
         };
         let min = match name {
             "p" => 25,
@@ -320,24 +317,24 @@ fn extract_text_limited(
     max_paragraphs: usize,
     max_chars: usize,
 ) -> Result<String, String> {
-    use scraper::{Html, Selector};
+    use quench_html::{Document, Selector};
 
     // Remove script and style elements
     let mut clean_html = html.to_string();
-    let script_regex = regex::Regex::new(r"(?si)<script[^>]*>.*?</script>").unwrap();
+    let script_regex = quench_regex::Regex::new(r"(?si)<script[^>]*>.*?</script>").unwrap();
     clean_html = script_regex.replace_all(&clean_html, "").to_string();
 
-    let style_regex = regex::Regex::new(r"(?si)<style[^>]*>.*?</style>").unwrap();
+    let style_regex = quench_regex::Regex::new(r"(?si)<style[^>]*>.*?</style>").unwrap();
     clean_html = style_regex.replace_all(&clean_html, "").to_string();
 
     // Parse cleaned HTML
-    let document = Html::parse_document(&clean_html);
+    let document = Document::parse(&clean_html);
 
     // Extract title
     let mut text = String::new();
     if let Ok(selector) = Selector::parse("title")
         && let Some(title) = document.select(&selector).next()
-        && let Some(title_text) = title.text().next()
+        && let Some(title_text) = title.text_nodes().next()
     {
         let _ = writeln!(text, "# {}\n", title_text.trim());
     }
@@ -345,7 +342,7 @@ fn extract_text_limited(
     // Extract headings and paragraphs
     if let Ok(h1_selector) = Selector::parse("h1") {
         for h1 in document.select(&h1_selector).take(3) {
-            let h1_text: String = h1.text().collect::<Vec<_>>().join(" ");
+            let h1_text: String = h1.text_nodes().collect::<Vec<_>>().join(" ");
             if !h1_text.trim().is_empty() {
                 let _ = writeln!(text, "## {}\n", h1_text.trim());
             }
@@ -354,7 +351,7 @@ fn extract_text_limited(
 
     if let Ok(p_selector) = Selector::parse("p") {
         for p in document.select(&p_selector).take(max_paragraphs) {
-            let p_text: String = p.text().collect::<Vec<_>>().join(" ");
+            let p_text: String = p.text_nodes().collect::<Vec<_>>().join(" ");
             let cleaned = p_text.trim();
             if !cleaned.is_empty() && cleaned.len() > 20 {
                 let _ = writeln!(text, "{cleaned}\n");

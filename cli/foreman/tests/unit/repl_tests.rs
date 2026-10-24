@@ -30,7 +30,7 @@ fn estate(root: &Path, text: &str) -> Estate {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn new_starts_with_nothing_picked() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -38,7 +38,7 @@ fn new_starts_with_nothing_picked() {
     assert_eq!(picker.prompt(), "foreman> ");
 }
 
-#[test]
+#[quench_test::test]
 fn seed_resolves_names_into_the_initial_selection() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -47,7 +47,7 @@ fn seed_resolves_names_into_the_initial_selection() {
     assert_eq!(picker.prompt(), "foreman (web)> ");
 }
 
-#[test]
+#[quench_test::test]
 fn seed_with_no_names_leaves_the_selection_empty() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -56,7 +56,7 @@ fn seed_with_no_names_leaves_the_selection_empty() {
     assert_eq!(picker.prompt(), "foreman> ");
 }
 
-#[test]
+#[quench_test::test]
 fn seed_errors_on_an_unknown_name() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -64,7 +64,7 @@ fn seed_errors_on_an_unknown_name() {
     assert!(picker.seed(&["no-such-service".to_string()]).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_line_on_quit_exit_or_q_exits() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -74,7 +74,7 @@ fn dispatch_line_on_quit_exit_or_q_exits() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_line_on_a_blank_line_continues_with_the_current_prompt() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -85,7 +85,7 @@ fn dispatch_line_on_a_blank_line_continues_with_the_current_prompt() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_line_toggles_a_service_by_name_and_continues() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -96,7 +96,7 @@ fn dispatch_line_toggles_a_service_by_name_and_continues() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_line_on_an_out_of_range_index_still_continues() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -105,7 +105,7 @@ fn dispatch_line_on_an_out_of_range_index_still_continues() {
     assert!(matches!(control, ReplControl::Continue(_)));
 }
 
-#[test]
+#[quench_test::test]
 fn toggle_turns_a_service_on_then_off_by_name() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -116,7 +116,7 @@ fn toggle_turns_a_service_on_then_off_by_name() {
     assert_eq!(picker.prompt(), "foreman> ");
 }
 
-#[test]
+#[quench_test::test]
 fn toggle_accepts_a_one_based_index() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -125,7 +125,7 @@ fn toggle_accepts_a_one_based_index() {
     assert_eq!(picker.prompt(), "foreman (worker)> ");
 }
 
-#[test]
+#[quench_test::test]
 fn toggle_warns_but_does_not_error_on_an_out_of_range_index() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -134,7 +134,7 @@ fn toggle_warns_but_does_not_error_on_an_out_of_range_index() {
     assert_eq!(picker.prompt(), "foreman> ");
 }
 
-#[test]
+#[quench_test::test]
 fn toggle_warns_but_does_not_error_on_an_unknown_name() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -143,7 +143,7 @@ fn toggle_warns_but_does_not_error_on_an_unknown_name() {
     assert_eq!(picker.prompt(), "foreman> ");
 }
 
-#[test]
+#[quench_test::test]
 fn toggle_keeps_the_selection_in_table_order_regardless_of_toggle_order() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -153,7 +153,7 @@ fn toggle_keeps_the_selection_in_table_order_regardless_of_toggle_order() {
     assert_eq!(picker.prompt(), "foreman (web,worker)> ");
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_all_selects_every_service() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -162,7 +162,7 @@ fn dispatch_all_selects_every_service() {
     assert_eq!(picker.prompt(), "foreman (web,worker)> ");
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_none_clears_the_selection() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -172,7 +172,7 @@ fn dispatch_none_clears_the_selection() {
     assert_eq!(picker.prompt(), "foreman> ");
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_running_selects_nothing_when_nothing_is_up() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -182,7 +182,7 @@ fn dispatch_running_selects_nothing_when_nothing_is_up() {
     assert_eq!(picker.prompt(), "foreman> ");
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_status_succeeds_with_nothing_running_and_no_containers() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -190,7 +190,7 @@ fn dispatch_status_succeeds_with_nothing_running_and_no_containers() {
     picker.dispatch("status", &[]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_help_list_and_l_succeed() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -200,7 +200,7 @@ fn dispatch_help_list_and_l_succeed() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_up_with_nothing_selected_warns_rather_than_starting_anything() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -210,7 +210,7 @@ fn dispatch_up_with_nothing_selected_warns_rather_than_starting_anything() {
     picker.dispatch("up", &[]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_down_with_nothing_selected_warns_rather_than_stopping_anything() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -218,7 +218,7 @@ fn dispatch_down_with_nothing_selected_warns_rather_than_stopping_anything() {
     picker.dispatch("down", &[]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_logs_with_no_argument_warns_rather_than_following_anything() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -226,7 +226,7 @@ fn dispatch_logs_with_no_argument_warns_rather_than_following_anything() {
     picker.dispatch("logs", &[]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_run_with_no_task_argument_warns_rather_than_running_anything() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let e = estate(dir.path(), TWO_SERVICES);
@@ -234,7 +234,7 @@ fn dispatch_run_with_no_task_argument_warns_rather_than_running_anything() {
     picker.dispatch("run", &[]).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn help_prints_without_panicking() {
     foreman::repl::help();
 }

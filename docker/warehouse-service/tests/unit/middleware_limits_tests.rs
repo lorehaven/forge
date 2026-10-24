@@ -18,7 +18,7 @@ fn plain_req(method: Method, path: &str) -> Request {
     )
 }
 
-#[test]
+#[quench_test::test]
 fn is_upload_mutation_true_for_write_methods_on_the_uploads_path() {
     for method in [Method::POST, Method::PATCH, Method::PUT] {
         let req = plain_req(method, "/v2/my/repo/blobs/uploads/some-uuid");
@@ -26,13 +26,13 @@ fn is_upload_mutation_true_for_write_methods_on_the_uploads_path() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn is_upload_mutation_false_for_reads_even_on_the_uploads_path() {
     let req = plain_req(Method::GET, "/v2/my/repo/blobs/uploads/some-uuid");
     assert!(!is_upload_mutation(&req));
 }
 
-#[test]
+#[quench_test::test]
 fn is_upload_mutation_false_for_writes_elsewhere() {
     let req = plain_req(Method::POST, "/v2/my/repo/manifests/latest");
     assert!(!is_upload_mutation(&req));
@@ -56,7 +56,7 @@ fn test_app(permits: usize) -> Arc<dyn Endpoint> {
     wrap(Arc::new(SlowOk), WarehouseLimits::new(permits))
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn non_upload_requests_bypass_the_limiter_entirely() {
     let app = test_app(0);
     let req = plain_req(Method::GET, "/v2/my/repo/manifests/latest");
@@ -64,7 +64,7 @@ async fn non_upload_requests_bypass_the_limiter_entirely() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_second_concurrent_upload_beyond_the_limit_is_throttled() {
     let app = test_app(1);
     let app_for_first = app.clone();
@@ -85,7 +85,7 @@ async fn a_second_concurrent_upload_beyond_the_limit_is_throttled() {
     assert_eq!(second_status, StatusCode::TOO_MANY_REQUESTS);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_new_max_concurrent_uploads_of_zero_is_treated_as_at_least_one() {
     // `WarehouseLimits::new(0)` must not create a semaphore with zero
     // permits, which would make every upload request fail forever.

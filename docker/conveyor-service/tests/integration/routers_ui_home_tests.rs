@@ -29,7 +29,7 @@ async fn app(db: Db, config: JwtConfig) -> (Arc<dyn Endpoint>, Arc<quench_http::
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn home_renders_ok_with_nothing_registered() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("home_renders_ok_with_nothing_registered");
@@ -42,7 +42,7 @@ async fn home_renders_ok_with_nothing_registered() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn home_slash_renders_ok() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("home_slash_renders_ok");
@@ -55,7 +55,7 @@ async fn home_slash_renders_ok() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn home_lists_a_registered_repository() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("home_lists_a_registered_repository");
@@ -71,7 +71,7 @@ async fn home_lists_a_registered_repository() {
     assert!(html.contains("tests/widget"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn project_page_renders_ok_for_a_known_project() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("project_page_renders_ok_for_a_known_project");
@@ -97,7 +97,7 @@ async fn project_page_renders_ok_for_a_known_project() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn project_page_reports_not_found_for_an_unknown_project() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("project_page_reports_not_found_for_an_unknown_project");
@@ -114,7 +114,7 @@ async fn project_page_reports_not_found_for_an_unknown_project() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn home_state_renders_the_runs_fragment() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("home_state_renders_the_runs_fragment");
@@ -127,7 +127,7 @@ async fn home_state_renders_the_runs_fragment() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn home_state_scoped_to_a_project_renders_ok() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("home_state_scoped_to_a_project_renders_ok");
@@ -153,7 +153,7 @@ async fn home_state_scoped_to_a_project_renders_ok() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn run_now_for_an_unknown_repo_still_renders_the_runs_fragment() {
     let Some((db, _guard)) = database().await else {
         return support::skipped("run_now_for_an_unknown_repo_still_renders_the_runs_fragment");

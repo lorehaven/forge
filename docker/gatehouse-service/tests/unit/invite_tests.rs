@@ -66,7 +66,7 @@ async fn invited(db: &Db, name: &str, email: &str) -> quench_auth::domain::auth:
 
 // -- realm::create_invited ------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_invited_account_has_an_unconfirmed_address_and_a_password_nobody_knows() {
     let db = db().await;
     let user = invited(&db, "alice", "alice@example.test").await;
@@ -83,7 +83,7 @@ async fn an_invited_account_has_an_unconfirmed_address_and_a_password_nobody_kno
     assert!(!matches!(outcome, AuthOutcome::Success(_)));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unusable_passwords_are_long_and_never_repeat() {
     let a = unusable_password();
     let b = unusable_password();
@@ -91,7 +91,7 @@ async fn unusable_passwords_are_long_and_never_repeat() {
     assert_ne!(a, b);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_invitation_needs_a_deliverable_address() {
     let db = db().await;
     for (email, expected) in [
@@ -120,7 +120,7 @@ async fn an_invitation_needs_a_deliverable_address() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_address_is_trimmed_and_the_username_must_be_free() {
     let db = db().await;
     let user = invited(&db, "alice", "  alice@example.test  ").await;
@@ -139,7 +139,7 @@ async fn the_address_is_trimmed_and_the_username_must_be_free() {
     assert!(matches!(err, RealmError::AlreadyExists));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn only_an_admin_may_invite_someone_into_an_admin_role() {
     let db = db().await;
     let err = realm::create_invited(
@@ -156,7 +156,7 @@ async fn only_an_admin_may_invite_someone_into_an_admin_role() {
     assert!(matches!(err, RealmError::RolesRequireAdmin));
 }
 
-#[test]
+#[quench_test::test]
 fn the_new_errors_have_statuses_messages_and_translation_keys() {
     for (err, status, key) in [
         (
@@ -183,7 +183,7 @@ fn the_new_errors_have_statuses_messages_and_translation_keys() {
 
 // -- invites::send_invite -------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_invitation_email_carries_a_working_seven_day_link() {
     let db = db().await;
     let user = invited(&db, "alice", "alice@example.test").await;
@@ -209,7 +209,7 @@ async fn an_invitation_email_carries_a_working_seven_day_link() {
     assert_eq!(INVITE_TTL_SECS, 7 * 24 * 60 * 60);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_invitation_follows_the_saved_language_then_the_fallback() {
     let db = db().await;
     let user = invited(&db, "alice", "alice@example.test").await;
@@ -221,7 +221,7 @@ async fn the_invitation_follows_the_saved_language_then_the_fallback() {
     assert_eq!(recorder.sent()[0].locale.as_deref(), Some("de-DE"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_invitation_needs_an_address_and_reports_a_send_failure() {
     struct Failing;
     #[quench_core::async_trait]
@@ -275,7 +275,7 @@ async fn accept(db: &Db, tokens: &Arc<VerificationTokens>, token: &str, password
     location(resp)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn accepting_sets_the_password_confirms_the_address_and_allows_login() {
     let db = db().await;
     invited(&db, "alice", "alice@example.test").await;
@@ -300,7 +300,7 @@ async fn accepting_sets_the_password_confirms_the_address_and_allows_login() {
     assert!(matches!(outcome, AuthOutcome::Success(_)));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_invitation_works_once() {
     let db = db().await;
     invited(&db, "alice", "alice@example.test").await;
@@ -323,7 +323,7 @@ async fn an_invitation_works_once() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_blank_password_does_not_burn_the_invitation() {
     let db = db().await;
     invited(&db, "alice", "alice@example.test").await;
@@ -348,7 +348,7 @@ async fn a_blank_password_does_not_burn_the_invitation() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn unknown_and_wrong_purpose_tokens_are_refused() {
     let db = db().await;
     invited(&db, "alice", "alice@example.test").await;
@@ -368,7 +368,7 @@ async fn unknown_and_wrong_purpose_tokens_are_refused() {
     assert!(user.email_verified_at.is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_page_renders_a_form_carrying_the_token() {
     let resp = accept_invite_page(
         Query(AcceptQuery {
@@ -391,7 +391,7 @@ async fn the_page_renders_a_form_carrying_the_token() {
     assert!(!html.contains("ui_reset_error_password_empty"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_page_shows_the_blank_password_error_and_only_that_one() {
     for (err, shown) in [
         (Some("ui_reset_error_password_empty"), true),

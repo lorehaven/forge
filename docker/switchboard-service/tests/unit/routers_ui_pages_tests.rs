@@ -43,7 +43,7 @@ fn get(path: &str, container: &Arc<Container>) -> Request {
     )
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn root_redirects_to_home_when_auth_is_disabled() {
     let (app, container) = app(false).await;
     let resp = app.call(get("/ui", &container)).await;
@@ -58,14 +58,14 @@ async fn root_redirects_to_home_when_auth_is_disabled() {
     assert!(location.ends_with("/ui/home"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn root_slash_behaves_the_same_as_root() {
     let (app, container) = app(false).await;
     let resp = app.call(get("/ui/", &container)).await;
     assert_eq!(resp.status(), StatusCode::FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn root_redirects_to_login_when_auth_is_enabled_and_unauthenticated() {
     let (app, container) = app(true).await;
     let resp = app.call(get("/ui", &container)).await;
@@ -80,7 +80,7 @@ async fn root_redirects_to_login_when_auth_is_enabled_and_unauthenticated() {
     assert!(!location.ends_with("/ui/home"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn home_page_renders_ok_when_auth_is_disabled() {
     let (app, container) = app(false).await;
     let resp = app.call(get("/ui/home", &container)).await;
@@ -96,21 +96,21 @@ async fn home_page_renders_ok_when_auth_is_disabled() {
     assert!(html.contains("ui_home_title"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn models_dashboard_page_renders_ok_when_auth_is_disabled() {
     let (app, container) = app(false).await;
     let resp = app.call(get("/ui/models/dashboard", &container)).await;
     assert!(resp.status().is_success());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn vllm_manage_page_renders_ok_when_auth_is_disabled() {
     let (app, container) = app(false).await;
     let resp = app.call(get("/ui/vllm/manage", &container)).await;
     assert!(resp.status().is_success());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn auth_status_reports_the_dev_bypass_identity_when_auth_is_disabled() {
     let (app, container) = app(false).await;
     let resp = app.call(get("/ui/status", &container)).await;
@@ -127,7 +127,7 @@ async fn auth_status_reports_the_dev_bypass_identity_when_auth_is_disabled() {
     assert_eq!(body["username"], "dev");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn auth_status_reports_unauthenticated_without_a_session_cookie_when_auth_is_enabled() {
     let (app, container) = app(true).await;
     let resp = app.call(get("/ui/status", &container)).await;
@@ -143,7 +143,7 @@ async fn auth_status_reports_unauthenticated_without_a_session_cookie_when_auth_
     assert_eq!(body["authenticated"], false);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn logout_route_is_reachable() {
     let (app, container) = app(false).await;
     let resp = app.call(get("/ui/logout", &container)).await;

@@ -21,7 +21,7 @@ fn claims(exp: usize) -> DockerClaims {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn encode_then_decode_round_trips_every_field() {
     let config = config();
     let original = claims(usize::MAX / 2);
@@ -36,7 +36,7 @@ fn encode_then_decode_round_trips_every_field() {
     assert_eq!(decoded.iat, original.iat);
 }
 
-#[test]
+#[quench_test::test]
 fn decode_rejects_an_expired_token() {
     let config = config();
     let token = config.encode(&claims(1)).expect("encode");
@@ -48,7 +48,7 @@ fn decode_rejects_an_expired_token() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn decode_rejects_a_token_signed_with_a_different_secret() {
     let signer = config();
     let token = signer.encode(&claims(usize::MAX / 2)).expect("encode");
@@ -59,12 +59,12 @@ fn decode_rejects_a_token_signed_with_a_different_secret() {
     assert!(verifier.decode(&token).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn decode_rejects_garbage_input() {
     assert!(config().decode("not.a.token").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn init_builds_a_working_config_from_the_docker_token_secret_env_var() {
     // `middleware::auth`'s tests also construct configs via `init`, so this
     // holds `secret_env_lock` for as long as `DOCKER_TOKEN_SECRET` is set.

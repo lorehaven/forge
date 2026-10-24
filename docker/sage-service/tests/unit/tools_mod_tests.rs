@@ -79,7 +79,7 @@ fn call(name: &str) -> ToolCall {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_reports_an_unregistered_tool_as_not_found() {
     let registry = ToolRegistry::new();
     let result = registry.execute(&call("nonexistent")).await;
@@ -88,7 +88,7 @@ async fn execute_reports_an_unregistered_tool_as_not_found() {
     assert!(result.content.contains("not found"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_runs_a_registered_tool() {
     let mut registry = ToolRegistry::new();
     registry.register("echo".to_string(), Box::new(EchoExecutor));
@@ -99,7 +99,7 @@ async fn execute_runs_a_registered_tool() {
     assert_eq!(result.content, "echoed");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_rejects_a_tool_outside_the_profile() {
     let profile = CapabilityProfile::new("web_assistant", "test", &[Tool::Calculator]);
     let mut registry = ToolRegistry::with_profile(profile);
@@ -112,7 +112,7 @@ async fn execute_rejects_a_tool_outside_the_profile() {
     assert!(result.content.contains("web_assistant"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_allows_a_tool_the_profile_enables() {
     // `Calculator`, unlike `Command`/`FileOps`, doesn't need a confirmation
     // first (`CapabilityProfile::requires_confirmation`), so this isolates
@@ -125,7 +125,7 @@ async fn execute_allows_a_tool_the_profile_enables() {
     assert!(!result.is_error);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_requires_confirmation_for_command_before_running_it() {
     let profile = CapabilityProfile::new("cli_agent", "test", &[Tool::Command]);
     let mut registry = ToolRegistry::with_profile(profile);
@@ -143,7 +143,7 @@ async fn execute_requires_confirmation_for_command_before_running_it() {
     assert_eq!(allowed.content, "echoed");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_enforces_the_rate_limiter() {
     let mut registry = ToolRegistry::with_context(
         CapabilityProfile::new("web_assistant", "test", &[Tool::Calculator]),
@@ -164,7 +164,7 @@ async fn execute_enforces_the_rate_limiter() {
     assert!(limited.content.contains("Rate limit exceeded"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_retries_a_transient_failure_then_succeeds() {
     let mut registry = ToolRegistry::new();
     // No special-cased no-retry tool name, so this gets the default policy
@@ -177,7 +177,7 @@ async fn execute_retries_a_transient_failure_then_succeeds() {
     assert_eq!(result.content, "recovered");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_does_not_retry_past_the_policy_limit() {
     let mut registry = ToolRegistry::new();
     // "calculator" has `RetryPolicy::none()`, so even a transient-looking
@@ -190,7 +190,7 @@ async fn execute_does_not_retry_past_the_policy_limit() {
     assert_eq!(result.content, "temporarily unavailable");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_times_out_a_slow_tool() {
     // The timeout applies per-tool by name via `get_timeout_for_tool`, and
     // the profile-gating check filters on the `Tool` enum's own names - so
@@ -207,7 +207,7 @@ async fn execute_times_out_a_slow_tool() {
     assert!(result.content.contains("timed out"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn execute_records_metrics_when_a_collector_is_set() {
     let mut registry = ToolRegistry::new();
     registry.register("echo".to_string(), Box::new(EchoExecutor));
@@ -222,7 +222,7 @@ async fn execute_records_metrics_when_a_collector_is_set() {
     assert_eq!(recorded.tools.get("echo").map(|m| m.calls), Some(1));
 }
 
-#[test]
+#[quench_test::test]
 fn set_cost_tracker_does_not_panic() {
     let mut registry = ToolRegistry::new();
     registry.set_cost_tracker(Arc::new(
@@ -230,7 +230,7 @@ fn set_cost_tracker_does_not_panic() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn get_definitions_uses_the_profile_filter_when_present() {
     let profile = CapabilityProfile::new("web_assistant", "test", &[Tool::Calculator]);
     let registry = ToolRegistry::with_profile(profile);
@@ -240,14 +240,14 @@ fn get_definitions_uses_the_profile_filter_when_present() {
     assert!(!defs.iter().any(|d| d.name == "command"));
 }
 
-#[test]
+#[quench_test::test]
 fn get_definitions_returns_everything_without_a_profile() {
     let registry = ToolRegistry::new();
     let defs = registry.get_definitions();
     assert!(defs.len() >= 8);
 }
 
-#[test]
+#[quench_test::test]
 fn profile_accessor_reflects_construction() {
     assert!(ToolRegistry::new().profile().is_none());
 
@@ -259,7 +259,7 @@ fn profile_accessor_reflects_construction() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn set_context_updates_user_and_conversation_ids() {
     let mut registry = ToolRegistry::new();
     registry.set_context(Some("user-9".to_string()), Some("conv-9".to_string()));
@@ -268,13 +268,13 @@ fn set_context_updates_user_and_conversation_ids() {
     // `execute_enforces_the_rate_limiter`, which relies on `with_context`.
 }
 
-#[test]
+#[quench_test::test]
 fn default_impl_matches_new() {
     let registry = ToolRegistry::default();
     assert!(registry.profile().is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn tool_result_display_prints_its_content() {
     let result = ToolResult {
         tool_use_id: "id".to_string(),
@@ -284,7 +284,7 @@ fn tool_result_display_prints_its_content() {
     assert_eq!(result.to_string(), "hello");
 }
 
-#[test]
+#[quench_test::test]
 fn get_all_tool_definitions_and_get_tool_definitions_for_prompt_round_trip() {
     let defs = sage_service::tools::get_all_tool_definitions();
     assert!(defs.iter().any(|d| d.name == "web_search"));

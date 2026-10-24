@@ -1,5 +1,6 @@
 //! Unit tests for `routers/files.rs`.
 
+use crate::env_support::env_lock;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_core::bytes::Bytes;
 use quench_db::InMemoryDb;
@@ -14,7 +15,7 @@ use sage_service::domain::models::{Conversation, File, Project};
 use sage_service::routers::files::*;
 use std::sync::Arc;
 
-#[test]
+#[quench_test::test]
 fn extension_lookup_is_case_insensitive_and_uses_the_last_dot() {
     assert_eq!(allowed_mime_type("photo.PNG"), Some("image/png"));
     assert_eq!(allowed_mime_type("archive.tar.gz"), None);
@@ -23,7 +24,7 @@ fn extension_lookup_is_case_insensitive_and_uses_the_last_dot() {
     assert_eq!(allowed_mime_type("evil.exe"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn accept_attribute_covers_every_supported_extension() {
     let accept = upload_accept_attribute();
     let listed: Vec<&str> = accept.split(',').collect();
@@ -40,8 +41,11 @@ fn accept_attribute_covers_every_supported_extension() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn images_disabled_excludes_images_from_accept_and_validation() {
+    let _env = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     quench_core::env::set("SAGE_IMAGES_ENABLED", "false");
 
     assert_eq!(allowed_mime_type("photo.png"), None);
@@ -56,7 +60,7 @@ fn images_disabled_excludes_images_from_accept_and_validation() {
     quench_core::env::remove("SAGE_IMAGES_ENABLED");
 }
 
-#[test]
+#[quench_test::test]
 fn no_duplicate_extensions() {
     let mut seen: Vec<&str> = ALLOWED_UPLOAD_TYPES.iter().map(|(ext, _)| *ext).collect();
     let total = seen.len();
@@ -68,7 +72,7 @@ fn no_duplicate_extensions() {
 /// Everything the upload endpoint accepts must have somewhere to go: images
 /// bypass extraction, every other MIME type must be one the extractor
 /// knows, or the file would be stored only to fail processing.
-#[test]
+#[quench_test::test]
 fn every_accepted_mime_is_handled_downstream() {
     for (ext, mime) in ALLOWED_UPLOAD_TYPES {
         if sage_service::files::is_image_mime(mime) {
@@ -184,7 +188,7 @@ async fn seed_file(db: &Db, id: &str, owner: &str, conversation_id: Option<&str>
     file
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_files_requires_exactly_one_scope() {
     let (app, container) = app(db(), JwtConfig::for_tests()).await;
     let resp = app
@@ -193,7 +197,7 @@ async fn list_files_requires_exactly_one_scope() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_files_reports_not_found_for_a_missing_conversation() {
     let (app, container) = app(db(), JwtConfig::for_tests()).await;
     let resp = app
@@ -206,7 +210,7 @@ async fn list_files_reports_not_found_for_a_missing_conversation() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_files_is_forbidden_for_someone_elses_conversation() {
     let db = db();
     seed_conversation(&db, "conv-1", "bob", None).await;
@@ -221,7 +225,7 @@ async fn list_files_is_forbidden_for_someone_elses_conversation() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_files_returns_the_owners_conversation_files() {
     let db = db();
     seed_conversation(&db, "conv-1", "admin", None).await;
@@ -241,7 +245,7 @@ async fn list_files_returns_the_owners_conversation_files() {
     assert_eq!(files[0].id, "file-1");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_files_reports_not_found_for_a_missing_project() {
     let (app, container) = app(db(), JwtConfig::for_tests()).await;
     let resp = app
@@ -254,7 +258,7 @@ async fn list_files_reports_not_found_for_a_missing_project() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_files_is_forbidden_for_someone_elses_project() {
     let db = db();
     seed_project(&db, "proj-1", "bob").await;
@@ -269,7 +273,7 @@ async fn list_files_is_forbidden_for_someone_elses_project() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_file_returns_not_found_for_a_missing_file() {
     let (app, container) = app(db(), JwtConfig::for_tests()).await;
     let resp = app
@@ -278,7 +282,7 @@ async fn get_file_returns_not_found_for_a_missing_file() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_file_is_forbidden_for_a_file_owned_by_someone_else() {
     let db = db();
     seed_file(&db, "file-1", "bob", None).await;
@@ -289,7 +293,7 @@ async fn get_file_is_forbidden_for_a_file_owned_by_someone_else() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_file_returns_the_owners_file() {
     let db = db();
     seed_file(&db, "file-1", "admin", None).await;
@@ -300,7 +304,7 @@ async fn get_file_returns_the_owners_file() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_file_removes_the_owners_file() {
     let db = db();
     seed_file(&db, "file-1", "admin", None).await;
@@ -319,7 +323,7 @@ async fn delete_file_removes_the_owners_file() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_file_is_forbidden_for_a_file_owned_by_someone_else() {
     let db = db();
     seed_file(&db, "file-1", "bob", None).await;
@@ -330,7 +334,7 @@ async fn delete_file_is_forbidden_for_a_file_owned_by_someone_else() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn download_file_reports_not_implemented_without_postgres() {
     let db = db();
     seed_file(&db, "file-1", "admin", None).await;
@@ -345,7 +349,7 @@ async fn download_file_reports_not_implemented_without_postgres() {
     assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_chunks_returns_not_found_for_a_missing_file() {
     let (app, container) = app(db(), JwtConfig::for_tests()).await;
     let resp = app
@@ -354,7 +358,7 @@ async fn list_chunks_returns_not_found_for_a_missing_file() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn list_chunks_returns_an_empty_list_for_a_file_with_none() {
     let db = db();
     seed_file(&db, "file-1", "admin", None).await;
@@ -368,7 +372,7 @@ async fn list_chunks_returns_an_empty_list_for_a_file_with_none() {
     assert!(chunks.is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reprocess_file_conflicts_when_already_processing() {
     let db = db();
     let mut file = seed_file(&db, "file-1", "admin", None).await;
@@ -385,7 +389,7 @@ async fn reprocess_file_conflicts_when_already_processing() {
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reprocess_file_rejects_images() {
     let db = db();
     let mut file = seed_file(&db, "file-1", "admin", None).await;
@@ -402,7 +406,7 @@ async fn reprocess_file_rejects_images() {
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reprocess_file_returns_not_found_for_a_missing_file() {
     let (app, container) = app(db(), JwtConfig::for_tests()).await;
     let resp = app
@@ -415,7 +419,7 @@ async fn reprocess_file_returns_not_found_for_a_missing_file() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn every_handler_is_unauthorized_without_a_claim_when_auth_is_required() {
     // Setting `auth_enabled` on this instance directly (rather than via the
     // `SERVICE_AUTH_ENABLED` env var `JwtConfig::for_tests()` would
@@ -457,7 +461,7 @@ fn upload_form(
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_uploaded_file_requires_exactly_one_scope() {
     ensure_switchboard_env();
     let db = db();
@@ -471,7 +475,7 @@ async fn create_uploaded_file_requires_exactly_one_scope() {
     assert_eq!(err.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_uploaded_file_rejects_an_unsupported_extension() {
     ensure_switchboard_env();
     let db = db();
@@ -485,7 +489,7 @@ async fn create_uploaded_file_rejects_an_unsupported_extension() {
     assert_eq!(err.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_uploaded_file_rejects_an_empty_file() {
     ensure_switchboard_env();
     let db = db();
@@ -499,7 +503,7 @@ async fn create_uploaded_file_rejects_an_empty_file() {
     assert_eq!(err.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_uploaded_file_reports_not_found_for_a_missing_conversation() {
     ensure_switchboard_env();
     let db = db();
@@ -513,7 +517,7 @@ async fn create_uploaded_file_reports_not_found_for_a_missing_conversation() {
     assert_eq!(err.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_uploaded_file_is_forbidden_for_someone_elses_conversation() {
     ensure_switchboard_env();
     let db = db();
@@ -528,7 +532,7 @@ async fn create_uploaded_file_is_forbidden_for_someone_elses_conversation() {
     assert_eq!(err.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_uploaded_file_reports_not_found_for_a_missing_project() {
     ensure_switchboard_env();
     let db = db();
@@ -549,7 +553,7 @@ async fn create_uploaded_file_reports_not_found_for_a_missing_project() {
 /// Postgres and is left uncovered here; see the module docs on
 /// `create_uploaded_file` for why `InMemory` is refused rather than
 /// silently degraded.
-#[tokio::test]
+#[quench_test::test]
 async fn create_uploaded_file_refuses_to_write_without_postgres() {
     ensure_switchboard_env();
     let db = db();
@@ -570,7 +574,7 @@ async fn create_uploaded_file_refuses_to_write_without_postgres() {
 // Their `Db::Postgres` arms need a real Postgres and are left uncovered here.
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn visible_files_for_conversation_includes_files_attached_directly() {
     let db = db();
     seed_conversation(&db, "conv-1", "alice", None).await;
@@ -591,7 +595,7 @@ async fn visible_files_for_conversation_includes_files_attached_directly() {
     assert_eq!(files[0].id, f1.id);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn visible_files_for_conversation_includes_files_via_the_shared_project() {
     let db = db();
     seed_project(&db, "proj-1", "alice").await;
@@ -614,7 +618,7 @@ async fn visible_files_for_conversation_includes_files_via_the_shared_project() 
     assert_eq!(files[0].id, "f1");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn visible_files_for_conversation_is_empty_without_a_project_or_direct_attachment() {
     let db = db();
     seed_conversation(&db, "conv-1", "alice", None).await;
@@ -632,7 +636,7 @@ async fn visible_files_for_conversation_is_empty_without_a_project_or_direct_att
     assert!(files.is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn visible_files_for_project_includes_files_attached_directly_and_via_conversations() {
     let db = db();
     seed_project(&db, "proj-1", "alice").await;
@@ -649,7 +653,7 @@ async fn visible_files_for_project_includes_files_attached_directly_and_via_conv
     assert_eq!(ids, vec!["f1", "f2"]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn link_files_to_message_is_a_no_op_without_postgres() {
     let db = db();
     // `InMemory` short-circuits to `Ok(())` before touching anything - just
@@ -659,21 +663,21 @@ async fn link_files_to_message_is_a_no_op_without_postgres() {
     assert!(result.is_ok());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn link_files_to_message_is_a_no_op_for_an_empty_id_list() {
     let db = db();
     let result = link_files_to_message(&db, &[], "msg-1", "conv-1", "alice").await;
     assert!(result.is_ok());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn files_by_message_is_empty_without_postgres() {
     let db = db();
     let map = files_by_message(&db, &["msg-1".to_string()]).await;
     assert!(map.is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn files_by_message_is_empty_for_an_empty_message_id_list() {
     let db = db();
     let map = files_by_message(&db, &[]).await;

@@ -35,7 +35,7 @@ fn declared(paths: &[&str]) -> Vec<String> {
     paths.iter().map(|p| (*p).to_string()).collect()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn with_no_store_nothing_is_kept_and_nothing_is_wrong() {
     // A deployment with no warehouse still builds; it just keeps nothing.
     let (_dir, ws) = workspace(&[("target/release/thing", b"binary")]);
@@ -53,7 +53,7 @@ async fn with_no_store_nothing_is_kept_and_nothing_is_wrong() {
     assert!(problems.is_empty(), "{problems:?}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_path_that_climbs_out_of_the_checkout_is_refused() {
     // A pipeline can say `artifacts = ["../../etc/passwd"]`, and collecting it
     // would hand a repository author whatever the service account can read.
@@ -77,7 +77,7 @@ async fn a_path_that_climbs_out_of_the_checkout_is_refused() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_symlink_pointing_out_of_the_checkout_is_refused() {
     // Planted in the repository, this is how `..` gets past a textual check.
     let dir = quench_core::tmp::TempDir::new().expect("temp dir");
@@ -96,7 +96,7 @@ async fn a_symlink_pointing_out_of_the_checkout_is_refused() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_declared_artifact_the_job_did_not_produce_is_reported() {
     let (_dir, ws) = workspace(&[]);
     let (_, problems) = collect(
@@ -119,7 +119,7 @@ async fn a_declared_artifact_the_job_did_not_produce_is_reported() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_directory_is_not_an_artifact() {
     // Collecting one would mean deciding how to pack it, which the pipeline
     // can do for itself with a `run` step and a tarball.
@@ -133,7 +133,7 @@ async fn a_directory_is_not_an_artifact() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn one_bad_path_does_not_stop_the_others_being_considered() {
     let (_dir, ws) = workspace(&[("good", b"contents")]);
 
@@ -151,14 +151,14 @@ async fn one_bad_path_does_not_stop_the_others_being_considered() {
     assert_eq!(problems.len(), 2, "{problems:?}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn declaring_nothing_does_nothing() {
     let (_dir, ws) = workspace(&[]);
     let (kept, problems) = collect(None, &ws, "run-1", "job-1", &[]).await;
     assert!(kept.is_empty() && problems.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn no_store_is_built_without_a_warehouse_url() {
     let _guard = env_lock().lock().expect("env lock");
     quench_core::env::remove("WAREHOUSE_URL");
@@ -168,7 +168,7 @@ fn no_store_is_built_without_a_warehouse_url() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_store_is_built_when_a_warehouse_is_configured() {
     let _guard = env_lock().lock().expect("env lock");
     quench_core::env::set(
@@ -179,7 +179,7 @@ fn a_store_is_built_when_a_warehouse_is_configured() {
     quench_core::env::remove("WAREHOUSE_URL");
 }
 
-#[test]
+#[quench_test::test]
 fn the_workspace_resolves_a_nested_artifact_path() {
     // Sanity: the paths a real pipeline declares are ordinary relative ones.
     let (dir, ws) = workspace(&[("target/release/thing", b"x")]);

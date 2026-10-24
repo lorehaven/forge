@@ -10,6 +10,7 @@ homepage = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
 readme = { workspace = true }
+autotests = false
 
 [lib]
 name = "sage_service"
@@ -27,11 +28,10 @@ quench-pg = { workspace = true }
 quench-log = { workspace = true }
 quench-core = { workspace = true }
 quench-serde = { workspace = true }
-csv = { workspace = true }
-futures-util = { workspace = true }
+quench-convert = { workspace = true }
+quench-html = { workspace = true }
 forge-ui = { workspace = true }
-pdf-extract = { workspace = true }
-pulldown-cmark = { workspace = true }
+quench-pdf = { workspace = true }
 quench-auth = { workspace = true }
 quench-cache = { workspace = true }
 quench-client = { workspace = true }
@@ -40,9 +40,18 @@ quench-db = { workspace = true }
 quench-http = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
-regex = { workspace = true }
-scraper = { workspace = true }
+quench-regex = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
-wiremock = { workspace = true }
+quench-test = { workspace = true }
+
+[[test]]
+name = "pg_rows"
+path = "tests/pg_rows.rs"
+harness = false
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false

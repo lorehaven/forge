@@ -20,7 +20,7 @@ model = "m"
 instruction = "do things"
 "#;
 
-#[test]
+#[quench_test::test]
 fn load_workflow_reads_and_parses_a_toml_file() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let path = dir.path().join("workflow.toml");
@@ -31,13 +31,13 @@ fn load_workflow_reads_and_parses_a_toml_file() {
     assert_eq!(workflow.agent.len(), 1);
 }
 
-#[test]
+#[quench_test::test]
 fn load_workflow_errors_for_a_missing_file() {
     let err = load_workflow("/does/not/exist/workflow.toml").unwrap_err();
     assert!(!err.to_string().is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn load_workflow_errors_for_invalid_toml() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let path = dir.path().join("workflow.toml");
@@ -46,7 +46,7 @@ fn load_workflow_errors_for_invalid_toml() {
     assert!(load_workflow(path.to_str().unwrap()).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn build_ollama_agents_builds_one_agent_node_per_workflow_agent() {
     // `OllamaModel::new` is a pure constructor (no network call - see
     // `llm/ollama.rs`), so this is safe to run for real without a live
@@ -57,7 +57,7 @@ fn build_ollama_agents_builds_one_agent_node_per_workflow_agent() {
     assert!(agents.contains_key("a"));
 }
 
-#[test]
+#[quench_test::test]
 fn extract_vllm_instances_requires_url() {
     let workflow = parse(
         r#"
@@ -79,7 +79,7 @@ fn extract_vllm_instances_requires_url() {
     assert!(err.to_string().contains("missing 'url'"));
 }
 
-#[test]
+#[quench_test::test]
 fn extract_vllm_instances_resolves_referenced_model() {
     let workflow = parse(
         r#"
@@ -103,7 +103,7 @@ fn extract_vllm_instances_resolves_referenced_model() {
     assert_eq!(instances[0].model, "m");
 }
 
-#[test]
+#[quench_test::test]
 fn extract_vllm_instances_errors_on_unknown_model_ref() {
     let workflow = parse(
         r#"
@@ -125,7 +125,7 @@ fn extract_vllm_instances_errors_on_unknown_model_ref() {
     assert!(err.to_string().contains("not defined in [models]"));
 }
 
-#[test]
+#[quench_test::test]
 fn extract_switchboard_instances_does_not_require_url() {
     let workflow = parse(
         r#"
@@ -151,7 +151,7 @@ fn extract_switchboard_instances_does_not_require_url() {
     assert_eq!(instances[0].task.as_deref(), Some("generate"));
 }
 
-#[test]
+#[quench_test::test]
 fn extract_switchboard_instances_dedupes_by_model_name() {
     let workflow = parse(
         r#"
@@ -180,7 +180,7 @@ fn extract_switchboard_instances_dedupes_by_model_name() {
     assert_eq!(instances.len(), 1);
 }
 
-#[test]
+#[quench_test::test]
 fn agents_without_model_config_are_skipped_by_resolve() {
     let workflow = parse(
         r#"
@@ -197,7 +197,7 @@ fn agents_without_model_config_are_skipped_by_resolve() {
     assert!(resolve_model_configs(&workflow).unwrap().is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_model_configs_errors_when_models_table_is_missing_entirely() {
     let workflow = parse(
         r#"
@@ -216,7 +216,7 @@ fn resolve_model_configs_errors_when_models_table_is_missing_entirely() {
     assert!(err.to_string().contains("no [models] table is defined"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_model_configs_uses_the_inline_agent_vllm_block() {
     let workflow = parse(
         r#"
@@ -238,7 +238,7 @@ fn resolve_model_configs_uses_the_inline_agent_vllm_block() {
     assert_eq!(resolved[0].1.url.as_deref(), Some("127.0.0.1:9000"));
 }
 
-#[test]
+#[quench_test::test]
 fn extract_vllm_instances_dedupes_by_model_and_url() {
     let workflow = parse(
         r#"
@@ -267,7 +267,7 @@ fn extract_vllm_instances_dedupes_by_model_and_url() {
     assert_eq!(instances.len(), 1);
 }
 
-#[test]
+#[quench_test::test]
 fn extract_vllm_instances_keeps_separate_urls_for_the_same_model_name() {
     let workflow = parse(
         r#"
@@ -313,7 +313,7 @@ impl llm::Llm for NoopLlm {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn build_agents_applies_defaults_when_the_workflow_omits_them() {
     let workflow = parse(
         r#"
@@ -337,7 +337,7 @@ fn build_agents_applies_defaults_when_the_workflow_omits_them() {
     assert_eq!(agent.max_tokens, llm::DEFAULT_MAX_TOKENS);
 }
 
-#[test]
+#[quench_test::test]
 fn build_agents_keeps_explicit_overrides() {
     let workflow = parse(
         r#"
@@ -365,7 +365,7 @@ fn build_agents_keeps_explicit_overrides() {
     assert_eq!(agent.max_tokens, 512);
 }
 
-#[test]
+#[quench_test::test]
 fn build_agents_propagates_a_model_construction_error() {
     let workflow = parse(
         r#"
@@ -383,20 +383,20 @@ fn build_agents_propagates_a_model_construction_error() {
     assert!(err.to_string().contains("boom"));
 }
 
-#[test]
+#[quench_test::test]
 fn get_workflow_path_errors_with_no_args() {
     let err = welder::run::get_workflow_path_from(std::iter::empty()).unwrap_err();
     assert!(err.to_string().contains("Usage: welder"));
 }
 
-#[test]
+#[quench_test::test]
 fn get_workflow_path_returns_the_first_argument() {
     let path =
         welder::run::get_workflow_path_from(vec!["workflow.toml".to_string()].into_iter()).unwrap();
     assert_eq!(path, "workflow.toml");
 }
 
-#[test]
+#[quench_test::test]
 fn handle_version_flag_is_false_without_a_version_flag() {
     assert!(!welder::run::handle_version_flag_from(std::iter::empty()));
     assert!(!welder::run::handle_version_flag_from(
@@ -404,7 +404,7 @@ fn handle_version_flag_is_false_without_a_version_flag() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn handle_version_flag_is_true_for_dash_dash_version_or_dash_v() {
     assert!(welder::run::handle_version_flag_from(
         vec!["--version".to_string()].into_iter()

@@ -35,7 +35,7 @@ fn plan_item(
     }
 }
 
-#[test]
+#[quench_test::test]
 fn render_commit_message_default_template_matches_the_old_hardcoded_format() {
     let plan = vec![
         plan_item("anvil", ReleaseKind::Cargo, true, false),
@@ -51,7 +51,7 @@ fn render_commit_message_default_template_matches_the_old_hardcoded_format() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn render_commit_message_ignores_items_that_were_not_version_bumped() {
     // A first release is `needs_release` but never touches a manifest -
     // nothing for a version-bump commit message to say about it.
@@ -67,7 +67,7 @@ fn render_commit_message_ignores_items_that_were_not_version_bumped() {
     assert!(!message.contains("brand-new-crate"));
 }
 
-#[test]
+#[quench_test::test]
 fn render_commit_message_supports_a_changelog_placeholder() {
     let plan = vec![
         plan_item("anvil", ReleaseKind::Cargo, true, false),
@@ -81,7 +81,7 @@ fn render_commit_message_supports_a_changelog_placeholder() {
     assert_eq!(rendered, "release (2)\n\n- anvil v1.0.1\n- riveter v2.0.0");
 }
 
-#[test]
+#[quench_test::test]
 fn render_commit_message_with_no_bumped_packages_is_empty_summary() {
     let plan: Vec<ReleasePlanItem> = Vec::new();
     assert_eq!(
@@ -90,34 +90,34 @@ fn render_commit_message_with_no_bumped_packages_is_empty_summary() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn is_release_relevant_file_accepts_known_source_extensions() {
     assert!(is_release_relevant_file("src/main.rs"));
     assert!(is_release_relevant_file("Cargo.toml"));
     assert!(is_release_relevant_file("migrations/0001.sql"));
 }
 
-#[test]
+#[quench_test::test]
 fn is_release_relevant_file_rejects_docs_and_extensionless_files() {
     assert!(!is_release_relevant_file("README.md"));
     assert!(!is_release_relevant_file("LICENSE"));
     assert!(!is_release_relevant_file("docs/architecture.md"));
 }
 
-#[test]
+#[quench_test::test]
 fn bump_patch_increments_only_the_patch_component() {
     assert_eq!(bump_patch("1.2.3").unwrap(), "1.2.4");
     assert_eq!(bump_patch("0.0.0").unwrap(), "0.0.1");
 }
 
-#[test]
+#[quench_test::test]
 fn bump_patch_rejects_malformed_versions() {
     assert!(bump_patch("1.2").is_err());
     assert!(bump_patch("1.2.3.4").is_err());
     assert!(bump_patch("not-a-version").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn package_tag_name_formats_as_package_dash_v_version() {
     assert_eq!(
         package_tag_name("conveyor-service", "0.5.23"),
@@ -125,7 +125,7 @@ fn package_tag_name_formats_as_package_dash_v_version() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn is_docker_package_true_only_when_listed_under_some_module() {
     let config = Config {
         docker: DockerConfig {
@@ -146,7 +146,7 @@ fn is_docker_package_true_only_when_listed_under_some_module() {
     assert!(!is_docker_package(&config, "service-b"));
 }
 
-#[test]
+#[quench_test::test]
 fn should_install_package_true_only_when_listed_in_install_packages() {
     let config = Config {
         install: InstallConfig {
@@ -158,7 +158,7 @@ fn should_install_package_true_only_when_listed_in_install_packages() {
     assert!(!should_install_package(&config, "other-tool"));
 }
 
-#[test]
+#[quench_test::test]
 fn get_transitive_dependencies_walks_the_whole_chain_and_stops_at_cycles() {
     let mut graph = HashMap::new();
     graph.insert("a".to_string(), vec!["b".to_string()]);
@@ -176,7 +176,7 @@ fn get_transitive_dependencies_walks_the_whole_chain_and_stops_at_cycles() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn get_transitive_dependencies_is_just_the_package_itself_with_no_deps() {
     let graph = HashMap::new();
     let mut visited = HashSet::new();
@@ -184,7 +184,7 @@ fn get_transitive_dependencies_is_just_the_package_itself_with_no_deps() {
     assert_eq!(visited, HashSet::from(["lonely".to_string()]));
 }
 
-#[test]
+#[quench_test::test]
 fn compute_package_layers_places_a_dependency_before_its_dependent() {
     let mut graph = HashMap::new();
     graph.insert("app".to_string(), vec!["lib".to_string()]);
@@ -197,7 +197,7 @@ fn compute_package_layers_places_a_dependency_before_its_dependent() {
     assert_eq!(layers["app"], 1);
 }
 
-#[test]
+#[quench_test::test]
 fn compute_package_layers_ignores_dependencies_outside_the_given_set() {
     let mut graph = HashMap::new();
     // `external` isn't in `packages`, so it must not push `app` to layer 1.
@@ -208,7 +208,7 @@ fn compute_package_layers_ignores_dependencies_outside_the_given_set() {
     assert_eq!(layers["app"], 0);
 }
 
-#[test]
+#[quench_test::test]
 fn compute_package_layers_handles_a_three_level_chain() {
     let mut graph = HashMap::new();
     graph.insert("top".to_string(), vec!["mid".to_string()]);
@@ -223,7 +223,7 @@ fn compute_package_layers_handles_a_three_level_chain() {
     assert_eq!(layers["top"], 2);
 }
 
-#[test]
+#[quench_test::test]
 fn workspace_dependencies_table_reads_the_workspace_dependencies_section() {
     let content = r#"
         [workspace.dependencies]
@@ -236,28 +236,28 @@ fn workspace_dependencies_table_reads_the_workspace_dependencies_section() {
     assert!(table.contains_key("serde"));
 }
 
-#[test]
+#[quench_test::test]
 fn workspace_dependencies_table_is_empty_without_a_workspace_dependencies_section() {
     let table = workspace_dependencies_table("[package]\nname = \"x\"").unwrap();
     assert!(table.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn workspace_dependencies_table_errors_on_invalid_toml() {
     assert!(workspace_dependencies_table("not [ valid toml").is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn nothing_to_release_message_for_all_says_everything_is_up_to_date() {
     assert!(nothing_to_release_message(true).contains("up to date"));
 }
 
-#[test]
+#[quench_test::test]
 fn nothing_to_release_message_for_a_single_target_names_the_missing_changes() {
     assert!(nothing_to_release_message(false).contains("no changes since its last tag"));
 }
 
-#[test]
+#[quench_test::test]
 fn release_action_label_covers_every_kind_and_install_combination() {
     assert_eq!(
         release_action_label(&plan_item("a", ReleaseKind::Docker, false, false)),
@@ -273,7 +273,7 @@ fn release_action_label_covers_every_kind_and_install_combination() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_single_package_uses_the_sole_workspace_member_when_cwd_matches_nothing() {
     let metadata = json!({
         "workspace_root": "/workspace",
@@ -289,7 +289,7 @@ fn resolve_single_package_uses_the_sole_workspace_member_when_cwd_matches_nothin
     assert_eq!(resolve_single_package(&metadata).unwrap(), "only-member");
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_single_package_errors_with_multiple_members_and_no_cwd_match() {
     let metadata = json!({
         "workspace_root": "/workspace",
@@ -307,7 +307,7 @@ fn resolve_single_package_errors_with_multiple_members_and_no_cwd_match() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_release_targets_all_collects_release_and_docker_packages_without_duplicates() {
     let metadata = json!({
         "workspace_root": "/workspace",
@@ -344,7 +344,7 @@ fn resolve_release_targets_all_collects_release_and_docker_packages_without_dupl
     assert_eq!(targets, vec!["pkg-a".to_string(), "pkg-b".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_release_targets_all_errors_when_nothing_is_configured() {
     let metadata =
         json!({ "workspace_root": "/workspace", "workspace_members": [], "packages": [] });
@@ -352,7 +352,7 @@ fn resolve_release_targets_all_errors_when_nothing_is_configured() {
     assert!(error.to_string().contains("No release packages configured"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_release_targets_all_errors_when_a_configured_package_is_not_a_member() {
     let metadata =
         json!({ "workspace_root": "/workspace", "workspace_members": [], "packages": [] });
@@ -369,7 +369,7 @@ fn resolve_release_targets_all_errors_when_a_configured_package_is_not_a_member(
     assert!(error.to_string().contains("is not a workspace member"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_release_targets_explicit_package_must_be_a_workspace_member() {
     let metadata =
         json!({ "workspace_root": "/workspace", "workspace_members": [], "packages": [] });
@@ -383,7 +383,7 @@ fn resolve_release_targets_explicit_package_must_be_a_workspace_member() {
     assert!(error.to_string().contains("is not a workspace member"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_release_targets_explicit_package_that_is_a_member_is_accepted() {
     let metadata = json!({
         "workspace_root": "/workspace",
@@ -400,7 +400,7 @@ fn resolve_release_targets_explicit_package_that_is_a_member_is_accepted() {
     assert_eq!(targets, vec!["pkg-a".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn tag_exists_is_false_for_a_tag_that_definitely_does_not_exist() {
     // `git tag` (no `-C`/`current_dir` override) needs cwd inside a git
     // repo to run at all - see `stable_cwd_lock`'s docs.
@@ -410,7 +410,7 @@ fn tag_exists_is_false_for_a_tag_that_definitely_does_not_exist() {
     assert!(!tag_exists("anvil-test-definitely-not-a-real-tag-xyz").unwrap());
 }
 
-#[test]
+#[quench_test::test]
 fn latest_package_tag_is_none_for_a_package_with_no_matching_tags() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -421,7 +421,7 @@ fn latest_package_tag_is_none_for_a_package_with_no_matching_tags() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn ensure_release_tags_absent_passes_when_no_tag_in_the_plan_exists() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -433,7 +433,7 @@ fn ensure_release_tags_absent_passes_when_no_tag_in_the_plan_exists() {
     assert!(ensure_release_tags_absent(&plan).is_ok());
 }
 
-#[test]
+#[quench_test::test]
 fn set_manifest_version_rewrites_only_the_version_field() {
     let dir = std::env::temp_dir().join(format!(
         "anvil-release-test-manifest-{}",
@@ -456,6 +456,43 @@ fn set_manifest_version_rewrites_only_the_version_field() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[quench_test::test]
+fn with_package_version_changes_only_the_package_version_line() {
+    use anvil::commands::release::with_package_version;
+
+    let manifest = "# header\n[package]\nname = \"x\"\nversion = \"0.1.0\" # keep me\nedition = \"2024\"\n\n[dependencies]\nserde = { version = \"1\" }\n[dev-dependencies]\nversion = \"9\"\n";
+    let updated = with_package_version(manifest, "0.2.0").unwrap();
+    assert_eq!(
+        updated,
+        manifest.replace(
+            "version = \"0.1.0\" # keep me",
+            "version = \"0.2.0\" # keep me"
+        )
+    );
+
+    // An indented key, single quotes, CRLF line endings, a workspace-inherited version.
+    assert_eq!(
+        with_package_version("[package]\r\n  version = '1.0.0'\r\n", "1.0.1").unwrap(),
+        "[package]\r\n  version = \"1.0.1\"\r\n"
+    );
+    assert_eq!(
+        with_package_version(
+            "[package]\nversion = { workspace = true } # inherited\n",
+            "3.0.0"
+        )
+        .unwrap(),
+        "[package]\nversion = \"3.0.0\" # inherited\n"
+    );
+    // A `version` key of another table, `versions`, and a missing table are not the package version.
+    assert!(with_package_version("[dependencies]\nversion = \"1\"\n", "2").is_none());
+    assert!(with_package_version("[package]\nname = \"x\"\nversions = 1\n", "2").is_none());
+    assert!(with_package_version("", "2").is_none());
+    assert_eq!(
+        with_package_version("[package] # c\nversion=\"1\"", "2").unwrap(),
+        "[package] # c\nversion = \"2\""
+    );
+}
+
 // -----------------------------------------------------------------
 // The functions below shell out to real `git`/`cargo metadata` against this
 // very repo. They're all read-only (`git show`/`git diff`/`git tag -l` never
@@ -464,7 +501,7 @@ fn set_manifest_version_rewrites_only_the_version_field() {
 // `/workspace` metadata blob because they never touch the filesystem, but
 // these functions do, so they need paths that actually exist.
 
-#[test]
+#[quench_test::test]
 fn git_show_file_at_tag_reads_a_real_file_at_head() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -477,7 +514,7 @@ fn git_show_file_at_tag_reads_a_real_file_at_head() {
     assert!(content.contains("[workspace]"));
 }
 
-#[test]
+#[quench_test::test]
 fn git_show_file_at_tag_is_none_for_a_path_that_does_not_exist_at_head() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -489,7 +526,7 @@ fn git_show_file_at_tag_is_none_for_a_path_that_does_not_exist_at_head() {
     assert_eq!(missing, None);
 }
 
-#[test]
+#[quench_test::test]
 fn package_changed_since_tag_is_false_for_head_diffed_against_itself() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -501,7 +538,7 @@ fn package_changed_since_tag_is_false_for_head_diffed_against_itself() {
     assert!(!changed);
 }
 
-#[test]
+#[quench_test::test]
 fn package_changed_since_tag_errors_when_the_package_dir_is_outside_the_workspace_root() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -513,7 +550,7 @@ fn package_changed_since_tag_errors_when_the_package_dir_is_outside_the_workspac
     assert!(err.to_string().contains("is not under workspace root"));
 }
 
-#[test]
+#[quench_test::test]
 fn changed_workspace_dependencies_runs_against_the_real_workspace_without_error() {
     // Diffs `HEAD`'s `Cargo.toml` against the working tree's - this repo can
     // legitimately have uncommitted `[workspace.dependencies]` edits at test
@@ -527,7 +564,7 @@ fn changed_workspace_dependencies_runs_against_the_real_workspace_without_error(
     changed_workspace_dependencies(&root, "HEAD").unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn collect_package_dependencies_finds_this_crate_and_its_workspace_members() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -541,7 +578,7 @@ fn collect_package_dependencies_finds_this_crate_and_its_workspace_members() {
     assert_eq!(anvil_deps.member_deps, vec!["gatehouse-auth".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn build_release_plan_against_the_real_workspace_never_panics_and_is_read_only() {
     let _guard = stable_cwd_lock()
         .lock()
@@ -568,7 +605,7 @@ fn build_release_plan_against_the_real_workspace_never_panics_and_is_read_only()
     }
 }
 
-#[test]
+#[quench_test::test]
 fn print_dry_run_plan_with_layers_does_not_panic_for_an_empty_or_populated_plan() {
     print_dry_run_plan_with_layers(&[]);
     print_dry_run_plan_with_layers(&[
@@ -580,7 +617,7 @@ fn print_dry_run_plan_with_layers_does_not_panic_for_an_empty_or_populated_plan(
     ]);
 }
 
-#[test]
+#[quench_test::test]
 fn bump_patch_versions_rewrites_only_the_manifests_flagged_for_a_version_bump() {
     let dir = std::env::temp_dir().join(format!(
         "anvil-release-test-bump-{}-{}",
@@ -621,7 +658,7 @@ fn bump_patch_versions_rewrites_only_the_manifests_flagged_for_a_version_bump() 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-#[test]
+#[quench_test::test]
 fn bump_patch_versions_skips_items_not_flagged_for_a_bump() {
     let metadata = json!({
         "workspace_root": "/workspace",

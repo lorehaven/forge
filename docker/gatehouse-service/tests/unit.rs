@@ -1,3 +1,6 @@
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
 #[path = "unit/api_app_tokens_tests.rs"]
 mod api_app_tokens_tests;
 #[path = "unit/api_auth_tests.rs"]
@@ -70,3 +73,5 @@ mod ui_pages_reset_tests;
 mod unsubscribe_tests;
 #[path = "unit/username_tests.rs"]
 mod username_tests;
+
+quench_test::main!();

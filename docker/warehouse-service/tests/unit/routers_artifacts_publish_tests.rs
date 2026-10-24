@@ -3,7 +3,7 @@ use quench_db::{Db, InMemoryDb};
 use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::artifacts;
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_when_artifact_storage_is_disabled() {
     // `FEATURE_ARTIFACTS_ENABLED` / `FEATURE_APK_ENABLED` are unset in this
     // sandbox, and the flag is a `LazyLock` fixed for the whole test binary

@@ -1,9 +1,12 @@
 //! The repeat rule's arithmetic: pure functions, no database, an explicit clock.
 
-use chrono::{DateTime, TimeZone, Utc};
-use chrono_tz::{Europe::Warsaw, Tz};
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
 use daybook_service::domain::recurrence::{Mode, Recurrence, Unit};
+use quench_core::date::Date;
 use quench_core::time::Time;
+use quench_tz::Zone;
 
 fn rule(unit: Unit, interval: u32) -> Recurrence {
     Recurrence {
@@ -15,22 +18,14 @@ fn rule(unit: Unit, interval: u32) -> Recurrence {
     }
 }
 
+fn zone() -> Zone {
+    Zone::named("Europe/Warsaw").unwrap()
+}
+
 /// A Warsaw wall-clock time as a UTC instant.
 fn warsaw(y: i32, m: u32, d: u32, h: u32, min: u32) -> Time {
-    from_chrono(
-        Warsaw
-            .with_ymd_and_hms(y, m, d, h, min, 0)
-            .unwrap()
-            .with_timezone(&Utc),
-    )
-}
-
-const fn from_chrono(at: DateTime<Utc>) -> Time {
-    Time::from_unix_nanos(at.timestamp(), at.timestamp_subsec_nanos())
-}
-
-fn to_chrono(at: Time) -> DateTime<Utc> {
-    DateTime::from_timestamp(at.timestamp(), at.subsec_nanos()).unwrap()
+    let local = Date::from_ymd(y, m, d).unwrap().at(h, min, 0);
+    zone().resolve(&local).single().unwrap()
 }
 
 fn utc(y: i32, m: u32, d: u32, h: u32, min: u32) -> Time {
@@ -39,9 +34,8 @@ fn utc(y: i32, m: u32, d: u32, h: u32, min: u32) -> Time {
 
 /// What a UTC instant reads as in Warsaw, as `(y, m, d, h, min)`.
 fn local(at: Time) -> (i32, u32, u32, u32, u32) {
-    use chrono::{Datelike, Timelike};
-    let at = to_chrono(at).with_timezone(&Warsaw);
-    (at.year(), at.month(), at.day(), at.hour(), at.minute())
+    let c = zone().civil_at(at);
+    (c.year, c.month, c.day, c.hour, c.minute)
 }
 
 /// Completing on the due date, with the schedule anchored there.
@@ -49,14 +43,14 @@ fn next(rule: &Recurrence, due: Time, now: Time) -> (i32, u32, u32, u32, u32) {
     local(rule.next_due(due, due, now).expect("a next occurrence"))
 }
 
-#[test]
+#[quench_test::test]
 fn a_daily_task_moves_to_the_next_day_at_the_same_time() {
     let due = warsaw(2026, 10, 22, 9, 0);
     assert_eq!(next(&rule(Unit::Day, 1), due, due), (2026, 10, 23, 9, 0));
     assert_eq!(next(&rule(Unit::Day, 3), due, due), (2026, 10, 25, 9, 0));
 }
 
-#[test]
+#[quench_test::test]
 fn finishing_early_moves_past_the_occurrence_just_done() {
     // Due the 30th, done on the 22nd: the next one is the 31st, not tomorrow.
     let due = warsaw(2026, 10, 30, 9, 0);
@@ -64,7 +58,7 @@ fn finishing_early_moves_past_the_occurrence_just_done() {
     assert_eq!(next(&rule(Unit::Day, 1), due, now), (2026, 10, 31, 9, 0));
 }
 
-#[test]
+#[quench_test::test]
 fn finishing_late_skips_occurrences_already_past() {
     // A daily 09:00 task due on the 10th, done on the 22nd at 14:00: tomorrow, not the 11th.
     let due = warsaw(2026, 10, 10, 9, 0);
@@ -79,7 +73,7 @@ fn finishing_late_skips_occurrences_already_past() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_fixed_weekly_task_stays_on_its_weekday_however_late_it_is_done() {
     // Due Monday the 19th, done on Wednesday the 21st: next Monday, the 26th.
     let due = warsaw(2026, 10, 19, 9, 0);
@@ -88,7 +82,7 @@ fn a_fixed_weekly_task_stays_on_its_weekday_however_late_it_is_done() {
     assert_eq!(next(&rule(Unit::Week, 2), due, now), (2026, 11, 2, 9, 0));
 }
 
-#[test]
+#[quench_test::test]
 fn weekdays_pick_the_listed_days_of_every_nth_week() {
     let monday = warsaw(2026, 10, 19, 9, 0);
     let mut rule = rule(Unit::Week, 1);
@@ -107,7 +101,7 @@ fn weekdays_pick_the_listed_days_of_every_nth_week() {
     assert_eq!(local(following), (2026, 11, 2, 9, 0));
 }
 
-#[test]
+#[quench_test::test]
 fn weekdays_before_the_anchor_in_its_own_week_are_not_used() {
     // Anchored on Wednesday with Mon/Fri listed: this week only Friday is left.
     let wednesday = warsaw(2026, 10, 21, 9, 0);
@@ -117,7 +111,7 @@ fn weekdays_before_the_anchor_in_its_own_week_are_not_used() {
     assert_eq!(local(first), (2026, 10, 23, 9, 0));
 }
 
-#[test]
+#[quench_test::test]
 fn a_monthly_task_on_the_31st_returns_to_the_31st_after_a_short_month() {
     let rule = rule(Unit::Month, 1);
     let anchor = warsaw(2026, 1, 31, 9, 0);
@@ -134,7 +128,7 @@ fn a_monthly_task_on_the_31st_returns_to_the_31st_after_a_short_month() {
     assert_eq!(local(march), (2026, 3, 31, 9, 0));
 }
 
-#[test]
+#[quench_test::test]
 fn a_yearly_task_on_a_leap_day_clamps_in_other_years() {
     let rule = rule(Unit::Year, 1);
     let anchor = warsaw(2028, 2, 29, 9, 0);
@@ -146,7 +140,7 @@ fn a_yearly_task_on_a_leap_day_clamps_in_other_years() {
     assert_eq!(local(later), (2032, 2, 29, 9, 0));
 }
 
-#[test]
+#[quench_test::test]
 fn the_time_of_day_survives_the_clocks_going_back() {
     // Poland leaves summer time on 2026-10-25. 09:00 stays 09:00 on the wall clock, an hour
     // later in UTC - adding 24 hours would have made it 08:00.
@@ -156,7 +150,7 @@ fn the_time_of_day_survives_the_clocks_going_back() {
     assert_eq!(next, utc(2026, 10, 25, 8, 0));
 }
 
-#[test]
+#[quench_test::test]
 fn a_time_that_does_not_exist_lands_an_hour_later() {
     // Poland skips 02:00-03:00 on 2027-03-28; a 02:30 task goes to 03:30 that day, then back.
     let due = warsaw(2027, 3, 27, 2, 30);
@@ -167,7 +161,7 @@ fn a_time_that_does_not_exist_lands_an_hour_later() {
     assert_eq!(local(after), (2027, 3, 29, 2, 30));
 }
 
-#[test]
+#[quench_test::test]
 fn after_completion_counts_from_the_day_it_is_done_at_the_original_time() {
     let mut rule = rule(Unit::Day, 3);
     rule.mode = Mode::AfterCompletion;
@@ -181,7 +175,7 @@ fn after_completion_counts_from_the_day_it_is_done_at_the_original_time() {
     assert_eq!(next(&rule, due, early), (2026, 10, 15, 9, 0));
 }
 
-#[test]
+#[quench_test::test]
 fn a_rule_is_evaluated_in_its_own_zone() {
     let mut rule = rule(Unit::Day, 1);
     rule.timezone = "America/New_York".to_string();
@@ -190,7 +184,7 @@ fn a_rule_is_evaluated_in_its_own_zone() {
     assert_eq!(next, utc(2026, 10, 23, 13, 0));
 }
 
-#[test]
+#[quench_test::test]
 fn validation_normalises_and_refuses() {
     let ok = Recurrence {
         weekdays: vec![4, 1, 4],
@@ -234,7 +228,7 @@ fn validation_normalises_and_refuses() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn the_json_form_defaults_to_a_fixed_rule_in_utc() {
     let rule: Recurrence = quench_serde::json::from_str(r#"{"unit":"week","interval":2}"#).unwrap();
     assert_eq!(rule.mode, Mode::Fixed);
@@ -247,7 +241,7 @@ fn the_json_form_defaults_to_a_fixed_rule_in_utc() {
     assert!(
         quench_serde::json::from_str::<Recurrence>(r#"{"unit":"fortnight","interval":1}"#).is_err()
     );
-    let _: Tz = "UTC".parse().unwrap();
+    let _ = Zone::named("UTC").unwrap();
 }
 
 // --- All-day tasks: the due date is a calendar date, stored as midnight UTC ------------------------
@@ -257,7 +251,7 @@ fn day(y: i32, m: u32, d: u32) -> Time {
     utc(y, m, d, 0, 0)
 }
 
-#[test]
+#[quench_test::test]
 fn an_all_day_task_moves_by_whole_dates() {
     let due = day(2026, 10, 22);
     // Done on the day itself, in the rule's own zone (Warsaw, 2026-10-22 10:00).
@@ -268,7 +262,7 @@ fn an_all_day_task_moves_by_whole_dates() {
     assert_eq!(weekly, day(2026, 11, 5));
 }
 
-#[test]
+#[quench_test::test]
 fn an_all_day_task_done_late_skips_dates_already_past() {
     let due = day(2026, 10, 10);
     let now = warsaw(2026, 10, 22, 23, 30);
@@ -276,7 +270,7 @@ fn an_all_day_task_done_late_skips_dates_already_past() {
     assert_eq!(next, day(2026, 10, 23), "tomorrow, not the 11th");
 }
 
-#[test]
+#[quench_test::test]
 fn an_all_day_task_done_early_moves_past_the_date_just_done() {
     let due = day(2026, 10, 30);
     let now = warsaw(2026, 10, 22, 9, 0);
@@ -284,7 +278,7 @@ fn an_all_day_task_done_early_moves_past_the_date_just_done() {
     assert_eq!(next, day(2026, 10, 31));
 }
 
-#[test]
+#[quench_test::test]
 fn today_for_an_all_day_task_is_today_in_the_rules_zone() {
     // 2026-10-22 23:30 UTC is already the 23rd in Warsaw: a daily task due the 23rd, done now, is
     // done on the 23rd, so the next date is the 24th - not the 23rd again.
@@ -294,7 +288,7 @@ fn today_for_an_all_day_task_is_today_in_the_rules_zone() {
     assert_eq!(next, day(2026, 10, 24));
 }
 
-#[test]
+#[quench_test::test]
 fn an_all_day_monthly_task_on_the_31st_survives_a_short_month() {
     let anchor = day(2026, 1, 31);
     let rule = rule(Unit::Month, 1);
@@ -307,7 +301,7 @@ fn an_all_day_monthly_task_on_the_31st_survives_a_short_month() {
     assert_eq!(march, day(2026, 3, 31));
 }
 
-#[test]
+#[quench_test::test]
 fn an_all_day_weekday_rule_and_after_completion() {
     let monday = day(2026, 10, 19);
     let mut weekdays = rule(Unit::Week, 1);
@@ -329,7 +323,7 @@ fn an_all_day_weekday_rule_and_after_completion() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_reminder_keeps_its_distance_from_the_due_moment() {
     let rule = rule(Unit::Day, 1);
     // Timed: 30 minutes before.
@@ -359,3 +353,5 @@ fn a_reminder_keeps_its_distance_from_the_due_moment() {
         (2026, 10, 23, 18, 0)
     );
 }
+
+quench_test::main!();

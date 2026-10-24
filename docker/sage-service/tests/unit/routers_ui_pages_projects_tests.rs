@@ -69,7 +69,7 @@ async fn body_text(resp: quench_http::response::Response) -> String {
     String::from_utf8_lossy(&collected).into_owned()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn new_modal_renders_the_create_form() {
     let (app, container) = app(JwtConfig::for_tests(), Db::InMemory(InMemoryDb::new())).await;
     let resp = app
@@ -82,7 +82,7 @@ async fn new_modal_renders_the_create_form() {
     assert!(html.contains("project-name"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_project_is_unauthorized_without_a_claim_when_auth_is_required() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;
@@ -98,7 +98,7 @@ async fn create_project_is_unauthorized_without_a_claim_when_auth_is_required() 
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_project_stores_the_project_owned_by_the_admin_bypass_user() {
     let db = Db::InMemory(InMemoryDb::new());
     let (app, container) = app(JwtConfig::for_tests(), db.clone()).await;

@@ -31,7 +31,7 @@ fn workspace() -> (quench_core::tmp::TempDir, Workspace) {
     (dir, workspace)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn jobs_succeed_by_default() {
     let executor = MockExecutor::new();
     let (_dir, ws) = workspace();
@@ -46,7 +46,7 @@ async fn jobs_succeed_by_default() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_outcome_can_be_scripted_by_job_name() {
     // By name rather than by id, so a test scripts "the deploy job fails"
     // without knowing the id the scheduler will generate.
@@ -67,7 +67,7 @@ async fn an_outcome_can_be_scripted_by_job_name() {
     assert_eq!(state.exit_code, Some(2));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_default_outcome_applies_to_unscripted_jobs() {
     let executor = MockExecutor::new();
     let (_dir, ws) = workspace();
@@ -80,7 +80,7 @@ async fn the_default_outcome_applies_to_unscripted_jobs() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn scripted_lines_come_back_as_logs() {
     let executor = MockExecutor::new();
     let (_dir, ws) = workspace();
@@ -102,7 +102,7 @@ async fn scripted_lines_come_back_as_logs() {
     assert_eq!(lines, ["compiling", "done"]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn every_step_reports_the_jobs_outcome() {
     let executor = MockExecutor::new();
     let (_dir, ws) = workspace();
@@ -123,7 +123,7 @@ async fn every_step_reports_the_jobs_outcome() {
     assert!(state.steps.iter().all(|s| s.status == Status::Failed));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn started_jobs_are_recorded_in_order() {
     // This is how a test asserts that a stage was skipped: no job from it ever
     // started, rather than re-inspecting the plan.
@@ -136,7 +136,7 @@ async fn started_jobs_are_recorded_in_order() {
     assert_eq!(executor.started_names(), ["build", "test"]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn cancellations_are_recorded() {
     let executor = MockExecutor::new();
     let (_dir, ws) = workspace();
@@ -147,7 +147,7 @@ async fn cancellations_are_recorded() {
     assert_eq!(executor.cancelled(), [handle]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_late_cancel_does_not_rewrite_a_finished_status() {
     // Which is what a real executor does with a cancel that arrives after the
     // job is over.
@@ -163,7 +163,7 @@ async fn a_late_cancel_does_not_rewrite_a_finished_status() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_job_with_no_steps_is_refused() {
     let executor = MockExecutor::new();
     let (_dir, ws) = workspace();
@@ -173,7 +173,7 @@ async fn a_job_with_no_steps_is_refused() {
     assert!(executor.start(&job, &ws).await.is_err());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unknown_handle_is_an_error() {
     let executor = MockExecutor::new();
     let handle = Handle::new("never-started");
@@ -183,7 +183,7 @@ async fn an_unknown_handle_is_an_error() {
     assert!(executor.cancel(&handle).await.is_err());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn forgetting_a_job_releases_it() {
     let executor = MockExecutor::new();
     let (_dir, ws) = workspace();

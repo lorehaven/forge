@@ -1,18 +1,18 @@
 use pulley::service::unix::{detect, hide_console_window, is_pid1, status};
 
-#[test]
+#[quench_test::test]
 fn hide_console_window_does_nothing_and_does_not_panic() {
     hide_console_window();
 }
 
-#[test]
+#[quench_test::test]
 fn is_pid1_is_false_for_a_name_that_is_almost_certainly_not_pid_1() {
     assert!(!is_pid1(
         "definitely-not-a-real-process-name-pulley-test-marker"
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn is_pid1_reflects_the_real_proc_1_comm_on_this_machine() {
     // Whatever init system this sandbox actually runs, `is_pid1` must
     // agree with a direct read of `/proc/1/comm` - the two must never
@@ -23,7 +23,7 @@ fn is_pid1_reflects_the_real_proc_1_comm_on_this_machine() {
     assert!(is_pid1(comm.trim()));
 }
 
-#[test]
+#[quench_test::test]
 fn status_delegates_to_whatever_backend_this_machine_detects_or_the_documented_error() {
     // `status()` on whichever real backend `detect()` finds here is a
     // read-only query (both `Systemd::status` and `Runit::status` only run
@@ -40,7 +40,7 @@ fn status_delegates_to_whatever_backend_this_machine_detects_or_the_documented_e
     }
 }
 
-#[test]
+#[quench_test::test]
 fn detect_returns_a_backend_or_the_documented_error() {
     // Whichever branch this sandbox takes, it must be one of the two
     // outcomes `detect` documents - not a panic, not a third kind of

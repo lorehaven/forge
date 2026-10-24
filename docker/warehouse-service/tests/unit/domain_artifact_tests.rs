@@ -1,7 +1,7 @@
 use quench_db::prelude::Model;
 use warehouse_service::domain::artifact::{ArtifactVersion, Platform};
 
-#[test]
+#[quench_test::test]
 fn id_for_joins_program_platform_and_version_code() {
     assert_eq!(
         ArtifactVersion::id_for("com.example.app", Platform::Android, 42),
@@ -13,7 +13,7 @@ fn id_for_joins_program_platform_and_version_code() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn platform_round_trips_through_str() {
     for platform in Platform::ALL {
         assert_eq!(Platform::parse(platform.as_str()), Some(platform));
@@ -21,14 +21,14 @@ fn platform_round_trips_through_str() {
     assert_eq!(Platform::parse("solaris"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn only_android_identity_is_verifiable() {
     assert!(Platform::Android.identity_is_verifiable());
     assert!(!Platform::Linux.identity_is_verifiable());
     assert!(!Platform::Windows.identity_is_verifiable());
 }
 
-#[test]
+#[quench_test::test]
 fn columns_list_includes_every_field_including_the_primary_key() {
     let columns = ArtifactVersion::columns();
     for expected in [
@@ -46,7 +46,7 @@ fn columns_list_includes_every_field_including_the_primary_key() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn primary_key_name_defaults_to_id() {
     assert_eq!(ArtifactVersion::primary_key_name(), "id");
 }

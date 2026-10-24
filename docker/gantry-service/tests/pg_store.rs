@@ -1,10 +1,13 @@
 //! `PgStore` against a real database. Skipped unless `GANTRY_TEST_DATABASE_URL` points at one with the
 //! gantry module installed (`foundry-service apply -i gantry`).
+// The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
+#![allow(clippy::wildcard_imports)]
+
 use gantry_service::domain::operation::*;
 use gantry_service::domain::steps::Plan;
 use quench_db::prelude::Db;
 
-#[tokio::test]
+#[quench_test::test]
 async fn pg_store_round_trip() {
     let Ok(url) = std::env::var("GANTRY_TEST_DATABASE_URL") else {
         return;
@@ -88,3 +91,5 @@ async fn pg_store_round_trip() {
         Some(op.id.as_str())
     );
 }
+
+quench_test::main!();

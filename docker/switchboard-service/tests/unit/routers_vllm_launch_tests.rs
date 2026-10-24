@@ -17,7 +17,7 @@ use switchboard_service::routers::vllm::launch::{
 };
 use switchboard_service::routers::vllm::types::{LaunchRequest, VllmInstance};
 
-#[test]
+#[quench_test::test]
 fn parse_optional_u16_parses_trims_and_ignores_blank_or_invalid() {
     assert_eq!(parse_optional_u16(Some(" 8080 ")), Some(8080));
     assert_eq!(parse_optional_u16(Some("")), None);
@@ -27,7 +27,7 @@ fn parse_optional_u16_parses_trims_and_ignores_blank_or_invalid() {
     assert_eq!(parse_optional_u16(None), None);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_optional_u32_parses_trims_and_ignores_blank_or_invalid() {
     assert_eq!(parse_optional_u32(Some(" 4096 ")), Some(4096));
     assert_eq!(parse_optional_u32(Some("")), None);
@@ -35,7 +35,7 @@ fn parse_optional_u32_parses_trims_and_ignores_blank_or_invalid() {
     assert_eq!(parse_optional_u32(None), None);
 }
 
-#[test]
+#[quench_test::test]
 fn parse_optional_f32_parses_trims_and_ignores_blank_or_invalid() {
     assert_eq!(parse_optional_f32(Some(" 0.9 ")), Some(0.9));
     assert_eq!(parse_optional_f32(Some("")), None);
@@ -141,7 +141,7 @@ async fn body_json<T: quench_serde::DeserializeOwned>(resp: quench_http::respons
     quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn launch_instance_is_forbidden_without_the_launch_permission() {
     let (engine, _) = engine(false);
     let req = launch_request_json(&quench_serde::json!({
@@ -153,7 +153,7 @@ async fn launch_instance_is_forbidden_without_the_launch_permission() {
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn launch_instance_rejects_an_empty_model_name() {
     let (engine, _) = engine(false);
     let req = launch_request_json(&quench_serde::json!({
@@ -165,7 +165,7 @@ async fn launch_instance_rejects_an_empty_model_name() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn launch_instance_succeeds_and_returns_the_instance_as_json() {
     let (engine, last_request) = engine(false);
     let req = launch_request_json(&quench_serde::json!({
@@ -181,7 +181,7 @@ async fn launch_instance_succeeds_and_returns_the_instance_as_json() {
     assert!(last_request.lock().unwrap().is_some());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn launch_instance_maps_an_engine_error_to_500() {
     let (engine, _) = engine(true);
     let req = launch_request_json(&quench_serde::json!({
@@ -193,7 +193,7 @@ async fn launch_instance_maps_an_engine_error_to_500() {
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn launch_instance_form_maps_every_field_and_defaults_the_rest() {
     let (engine, last_request) = engine(false);
     let form = launch_request_form(&[
@@ -222,7 +222,7 @@ async fn launch_instance_form_maps_every_field_and_defaults_the_rest() {
     assert_eq!(sent.gpu_memory_utilization, Some(0.90)); // default
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn launch_instance_form_is_forbidden_without_the_launch_permission() {
     let (engine, _) = engine(false);
     let form = launch_request_form(&[("model", "llama-3-8b")]).await;

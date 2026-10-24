@@ -176,7 +176,7 @@ pub async fn save_account(
     let preferred_locale = non_empty(&form, "preferred_locale");
     let timezone_ok = timezone
         .as_deref()
-        .is_none_or(|tz| tz.parse::<chrono_tz::Tz>().is_ok());
+        .is_none_or(|tz| quench_tz::Zone::named(tz).is_ok());
     let locale_ok = preferred_locale
         .as_deref()
         .is_none_or(|locale| SUPPORTED_LOCALES.contains(&locale));
@@ -529,7 +529,7 @@ fn profile_panel(user: &User) -> Element {
         .child(labeled_select(
             "timezone",
             "ui_account_timezone",
-            chrono_tz::TZ_VARIANTS.iter().map(|tz| tz.name()),
+            quench_tz::Zone::names(),
             user.timezone.as_deref(),
         ))
         .child(labeled_select(

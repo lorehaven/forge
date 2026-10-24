@@ -25,34 +25,34 @@ fn config(auth_enabled: bool) -> JwtConfig {
     config
 }
 
-#[test]
+#[quench_test::test]
 fn is_admin_is_always_true_when_auth_is_disabled() {
     assert!(is_admin(None, &config(false)));
 }
 
-#[test]
+#[quench_test::test]
 fn is_admin_is_false_without_claims() {
     assert!(!is_admin(None, &config(true)));
 }
 
-#[test]
+#[quench_test::test]
 fn is_admin_is_true_for_a_wildcard_role() {
     let claims = claims_with_scope("admin");
     assert!(is_admin(Some(&claims), &config(true)));
 }
 
-#[test]
+#[quench_test::test]
 fn is_admin_is_false_for_a_non_wildcard_role() {
     let claims = claims_with_scope("switchboard:read");
     assert!(!is_admin(Some(&claims), &config(true)));
 }
 
-#[test]
+#[quench_test::test]
 fn can_is_always_true_when_auth_is_disabled() {
     assert!(can(None, &config(false), "launch"));
 }
 
-#[test]
+#[quench_test::test]
 fn can_checks_the_specific_action_against_the_service_name() {
     let cfg = config(true);
     let claims = claims_with_scope(&format!("{}:launch", cfg.service_name));
@@ -61,12 +61,12 @@ fn can_checks_the_specific_action_against_the_service_name() {
     assert!(!can(Some(&claims), &cfg, "stop"));
 }
 
-#[test]
+#[quench_test::test]
 fn can_is_false_without_claims() {
     assert!(!can(None, &config(true), "launch"));
 }
 
-#[test]
+#[quench_test::test]
 fn load_paths_splits_the_env_value_on_colons_and_trims_entries() {
     let key = "SWITCHBOARD_TEST_LOAD_PATHS_A";
     quench_core::env::set(key, " /a/one : /a/two ::");
@@ -77,7 +77,7 @@ fn load_paths_splits_the_env_value_on_colons_and_trims_entries() {
     quench_core::env::remove(key);
 }
 
-#[test]
+#[quench_test::test]
 fn load_paths_falls_back_to_defaults_when_env_is_unset_or_blank() {
     let key = "SWITCHBOARD_TEST_LOAD_PATHS_B";
     quench_core::env::remove(key);

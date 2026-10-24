@@ -2,13 +2,13 @@
 
 use sage_service::domain::conversation::*;
 
-#[test]
+#[quench_test::test]
 fn test_token_estimation() {
     assert_eq!(ConversationContext::estimate_tokens("hello"), 2);
     assert_eq!(ConversationContext::estimate_tokens(""), 0);
 }
 
-#[test]
+#[quench_test::test]
 fn test_context_window_management() {
     let mut ctx = ConversationContext::new(100);
 
@@ -36,7 +36,7 @@ fn test_context_window_management() {
     assert!(stats.total_tokens > 0);
 }
 
-#[test]
+#[quench_test::test]
 fn test_conversation_branching() {
     let mut ctx = ConversationContext::new(1000);
 

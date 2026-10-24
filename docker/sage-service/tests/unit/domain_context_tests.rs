@@ -2,21 +2,21 @@
 
 use sage_service::domain::context::*;
 
-#[test]
+#[quench_test::test]
 fn test_context_limits() {
     let limits = get_context_limits("web_assistant");
     assert_eq!(limits.max_tokens, 4096);
     assert_eq!(limits.warning_threshold_percent, 80);
 }
 
-#[test]
+#[quench_test::test]
 fn test_token_counting() {
     // ~1 token per 4 characters
     let tokens = TokenCounter::count_tokens("hello world"); // 11 chars -> ~3 tokens
     assert!((2..=4).contains(&tokens));
 }
 
-#[test]
+#[quench_test::test]
 fn test_context_status() {
     let status = ContextStatus::new("web_assistant", 3280);
     assert_eq!(status.max_tokens, 4096);
@@ -26,7 +26,7 @@ fn test_context_status() {
     assert!((status.usage_percent - 80.0).abs() < 1.0);
 }
 
-#[test]
+#[quench_test::test]
 fn test_context_warning() {
     // Near limit
     let warning = ContextManager::check_context("web_assistant", 3500);
@@ -43,7 +43,7 @@ fn test_context_warning() {
     assert!(warning.is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn test_prune_messages() {
     let mut messages = vec![
         ("system".to_string(), "You are helpful".to_string()),

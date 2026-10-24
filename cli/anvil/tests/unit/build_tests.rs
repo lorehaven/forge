@@ -7,7 +7,7 @@ fn args_of(cmd: &Command) -> Vec<String> {
         .collect()
 }
 
-#[test]
+#[quench_test::test]
 fn build_args_defaults_to_workspace_when_no_package_given() {
     assert_eq!(
         build_args(false, false, false, None),
@@ -15,7 +15,7 @@ fn build_args_defaults_to_workspace_when_no_package_given() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn build_args_all_flag_forces_workspace_even_with_a_package() {
     assert_eq!(
         build_args(true, false, false, Some("anvil")),
@@ -23,7 +23,7 @@ fn build_args_all_flag_forces_workspace_even_with_a_package() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn build_args_a_single_package_skips_workspace() {
     assert_eq!(
         build_args(false, false, false, Some("anvil")),
@@ -31,7 +31,7 @@ fn build_args_a_single_package_skips_workspace() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn build_args_includes_all_features_and_release_flags() {
     assert_eq!(
         build_args(false, true, true, Some("anvil")),
@@ -39,7 +39,7 @@ fn build_args_includes_all_features_and_release_flags() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn test_args_plain_workspace_run() {
     assert_eq!(
         test_args(false, None, None, false, false, false),
@@ -47,7 +47,7 @@ fn test_args_plain_workspace_run() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn test_args_package_and_name_filter() {
     assert_eq!(
         test_args(false, Some("anvil"), Some("my_test"), false, false, false),
@@ -55,7 +55,7 @@ fn test_args_package_and_name_filter() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn test_args_ignored_and_list_go_after_a_separator() {
     assert_eq!(
         test_args(true, None, None, true, true, false),
@@ -63,13 +63,13 @@ fn test_args_ignored_and_list_go_after_a_separator() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn test_args_no_separator_when_neither_ignored_nor_list() {
     let args = test_args(true, None, None, false, false, false);
     assert!(!args.contains(&"--".to_string()));
 }
 
-#[test]
+#[quench_test::test]
 fn test_args_json_runs_under_nightly_with_unstable_format_flags() {
     assert_eq!(
         test_args(false, None, None, false, false, true),
@@ -86,7 +86,7 @@ fn test_args_json_runs_under_nightly_with_unstable_format_flags() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn test_args_json_combines_with_ignored() {
     let args = test_args(false, None, None, true, false, true);
     assert_eq!(
@@ -105,7 +105,7 @@ fn test_args_json_combines_with_ignored() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn nextest_args_plain_workspace_run() {
     assert_eq!(
         nextest_args(false, None, None, false, false),
@@ -113,7 +113,7 @@ fn nextest_args_plain_workspace_run() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn nextest_args_ignored_only_and_package_and_name() {
     assert_eq!(
         nextest_args(false, Some("anvil"), Some("my_test"), true, false),
@@ -129,7 +129,7 @@ fn nextest_args_ignored_only_and_package_and_name() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn nextest_args_json_adds_message_format_before_other_flags() {
     assert_eq!(
         nextest_args(false, None, None, false, true),
@@ -143,7 +143,7 @@ fn nextest_args_json_adds_message_format_before_other_flags() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn build_produces_a_cargo_command_with_the_expected_args() {
     let mut cmd = Command::new("cargo");
     cmd.args(build_args(false, false, true, None));
@@ -151,7 +151,7 @@ fn build_produces_a_cargo_command_with_the_expected_args() {
     assert_eq!(args_of(&cmd), vec!["build", "--workspace", "--release"]);
 }
 
-#[test]
+#[quench_test::test]
 fn clean_runs_cargo_clean_for_real() {
     // Actually running `cargo clean` in a workspace this large would be
     // slow and disruptive to every other test's build cache, and its
@@ -162,13 +162,13 @@ fn clean_runs_cargo_clean_for_real() {
     assert_eq!(args_of(&cmd), vec!["clean"]);
 }
 
-#[test]
+#[quench_test::test]
 fn nextest_errors_with_an_install_hint_when_cargo_nextest_is_missing() {
     // This only exercises the missing-binary branch meaningfully if
     // cargo-nextest genuinely isn't on PATH here; if it is, the branch
     // this test targets isn't reachable in this environment and the
     // assertion is skipped rather than asserting something false.
-    if which::which("cargo-nextest").is_ok() {
+    if quench_core::process::which("cargo-nextest").is_ok() {
         return;
     }
     let error = nextest(false, None, None, false, false).unwrap_err();

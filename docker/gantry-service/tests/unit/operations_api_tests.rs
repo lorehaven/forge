@@ -52,7 +52,7 @@ fn post(
 
 const PLAN: &str = r#"{"title":"Scale sage down","plan":{"steps":[{"step":"scale","namespace":"forge","kind":"deployment","name":"sage","replicas":0}]}}"#;
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_operation_is_recorded_listed_and_read_back() {
     let (app, container) = app(false, &[]).await;
 
@@ -84,7 +84,7 @@ async fn an_operation_is_recorded_listed_and_read_back() {
     assert_eq!(read["plan"]["steps"][0]["step"], "scale");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_plan_that_fails_validation_is_422_and_nothing_is_recorded() {
     let (app, container) = app(false, &["scratch"]).await;
     let response = app.call(post("/api/v1/operations", &container, PLAN)).await;
@@ -99,7 +99,7 @@ async fn a_plan_that_fails_validation_is_422_and_nothing_is_recorded() {
     assert!(listed.as_array().unwrap().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unknown_operation_is_404() {
     let (app, container) = app(false, &[]).await;
     let response = app
@@ -112,7 +112,7 @@ async fn an_unknown_operation_is_404() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_queued_operation_can_be_cancelled() {
     let (app, container) = app(false, &[]).await;
     let id = support::json_body(app.call(post("/api/v1/operations", &container, PLAN)).await).await
@@ -132,7 +132,7 @@ async fn a_queued_operation_can_be_cancelled() {
     assert_eq!(cancelled["state"], "cancelled");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn reading_needs_read_and_submitting_needs_deploy() {
     let (app, container) = app(true, &[]).await;
     let token = |scope: &str| {

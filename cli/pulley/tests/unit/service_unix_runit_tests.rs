@@ -14,19 +14,19 @@ use std::process::Command;
 // no-op: it would break if `install`/`uninstall`/`status` ever stopped
 // checking for the binary before doing anything else.
 
-#[test]
+#[quench_test::test]
 fn install_fails_fast_without_sv_installed() {
     let err = Runit.install().unwrap_err();
     assert!(err.to_string().contains("sv") || err.to_string().contains("runit"));
 }
 
-#[test]
+#[quench_test::test]
 fn uninstall_fails_fast_without_sv_installed() {
     let err = Runit.uninstall().unwrap_err();
     assert!(err.to_string().contains("sv") || err.to_string().contains("runit"));
 }
 
-#[test]
+#[quench_test::test]
 fn status_fails_fast_without_sv_installed() {
     let err = Runit.status().unwrap_err();
     assert!(err.to_string().contains("sv") || err.to_string().contains("runit"));
@@ -34,14 +34,14 @@ fn status_fails_fast_without_sv_installed() {
 
 const SCAN_DIRS: &[&str] = &["/var/service", "/etc/service", "/run/runit/service"];
 
-#[test]
+#[quench_test::test]
 fn run_script_contents_drops_privileges_to_the_target_user_and_runs_daemon() {
     let script = run_script_contents(Path::new("/usr/local/bin/pulley"), "alice");
     assert!(script.starts_with("#!/bin/sh\n"));
     assert!(script.contains("exec chpst -u alice /usr/local/bin/pulley daemon"));
 }
 
-#[test]
+#[quench_test::test]
 fn target_user_prefers_sudo_user_over_user() {
     let _lock = ENV_LOCK
         .lock()
@@ -51,7 +51,7 @@ fn target_user_prefers_sudo_user_over_user() {
     assert_eq!(target_user(), "alice");
 }
 
-#[test]
+#[quench_test::test]
 fn target_user_falls_back_to_user_without_sudo_user() {
     let _lock = ENV_LOCK
         .lock()
@@ -61,7 +61,7 @@ fn target_user_falls_back_to_user_without_sudo_user() {
     assert_eq!(target_user(), "bob");
 }
 
-#[test]
+#[quench_test::test]
 fn target_user_falls_back_to_root_when_neither_is_set() {
     let _lock = ENV_LOCK
         .lock()
@@ -71,7 +71,7 @@ fn target_user_falls_back_to_root_when_neither_is_set() {
     assert_eq!(target_user(), "root");
 }
 
-#[test]
+#[quench_test::test]
 fn scan_dir_returns_one_of_the_documented_candidates_or_none() {
     // Real filesystem check on whatever this sandbox actually has -
     // must land on one of the three fixed candidates, or None, never
@@ -87,7 +87,7 @@ fn scan_dir_returns_one_of_the_documented_candidates_or_none() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn set_executable_sets_the_owner_execute_bit() {
     use std::os::unix::fs::PermissionsExt;
 
@@ -102,7 +102,7 @@ fn set_executable_sets_the_owner_execute_bit() {
     assert_eq!(mode & 0o777, 0o755);
 }
 
-#[test]
+#[quench_test::test]
 fn require_root_agrees_with_a_direct_id_check() {
     // Harmless real `id -u` call (read-only) - not a real "install",
     // just proving the messaging/branching around it is right for

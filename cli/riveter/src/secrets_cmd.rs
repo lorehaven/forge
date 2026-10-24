@@ -73,7 +73,7 @@ pub fn secrets_command(cmd: &SecretsCmd) -> Result<()> {
     }
 }
 
-fn identities() -> Result<Vec<age::x25519::Identity>> {
+fn identities() -> Result<Vec<quench_crypto::age::Identity>> {
     vault::identities_from_env()?.with_context(|| {
         format!(
             "no key to open it: set {} to the key, or {} to a file holding it",

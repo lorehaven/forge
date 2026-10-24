@@ -1,5 +1,7 @@
 use crate::config::Config;
-use chrono::{Duration, Local, NaiveDate};
+use quench_core::date::Date;
+use quench_core::time::Time;
+use quench_tz::Zone;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -21,27 +23,33 @@ pub fn append(job_id: &str, message: &str) {
         return;
     };
 
-    let now = Local::now();
-    let path = dir.join(format!("{}.log", now.format("%Y-%m-%d")));
+    // The machine's local time: the fields are read back through `Time::format`, which only reads them.
+    let local = Zone::local().civil_at(Time::now());
+    let Some(wall) = local.to_time() else {
+        return;
+    };
+    let path = dir.join(format!("{}.log", wall.format("%Y-%m-%d")));
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(file, "[{}] {message}", now.format("%H:%M:%S"));
+        let _ = writeln!(file, "[{}] {message}", wall.format("%H:%M:%S"));
     }
 
-    prune_old_logs(&dir, now.date_naive());
+    prune_old_logs(&dir, local.date());
 }
 
-pub fn prune_old_logs(dir: &Path, today: NaiveDate) {
+pub fn prune_old_logs(dir: &Path, today: Date) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
-    let cutoff = today - Duration::days(RETENTION_DAYS);
+    let Some(cutoff) = today.add_days(-RETENTION_DAYS) else {
+        return;
+    };
 
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
         let is_old = path
             .file_stem()
             .and_then(|s| s.to_str())
-            .and_then(|stem| NaiveDate::parse_from_str(stem, "%Y-%m-%d").ok())
+            .and_then(|stem| Date::parse_from_str(stem, "%Y-%m-%d").ok())
             .is_some_and(|date| date < cutoff);
         if is_old {
             let _ = fs::remove_file(&path);

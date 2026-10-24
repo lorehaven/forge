@@ -1,9 +1,9 @@
-use crossterm::event::KeyCode;
 use forge_toolbox::{
     ActionDispatch, ActionRequest, App, CrateStatus, InFlightAction, KeyEffect, KeyOutcome,
     PollOutcome, TickEffect, char_width, dispatch_action, handle_key, on_key, on_tick,
     poll_in_flight, transient_status,
 };
+use quench_cli::keys::KeyCode;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -19,7 +19,7 @@ fn status(package: &'static str) -> CrateStatus {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn up_always_moves() {
     let statuses = [status("a"), status("b")];
     assert_eq!(
@@ -28,7 +28,7 @@ fn up_always_moves() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn down_is_ignored_at_the_end_of_the_list() {
     let statuses = [status("a"), status("b")];
     assert_eq!(
@@ -37,7 +37,7 @@ fn down_is_ignored_at_the_end_of_the_list() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn down_moves_when_not_at_the_end() {
     let statuses = [status("a"), status("b")];
     assert_eq!(
@@ -46,7 +46,7 @@ fn down_moves_when_not_at_the_end() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn q_quits() {
     let statuses = [status("a")];
     assert_eq!(
@@ -55,7 +55,7 @@ fn q_quits() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn r_refreshes_when_idle() {
     let statuses = [status("a")];
     assert_eq!(
@@ -64,7 +64,7 @@ fn r_refreshes_when_idle() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn r_is_busy_while_an_action_is_running() {
     let statuses = [status("a")];
     assert_eq!(
@@ -73,7 +73,7 @@ fn r_is_busy_while_an_action_is_running() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn enter_is_busy_while_an_action_is_running() {
     let statuses = [status("a")];
     assert_eq!(
@@ -82,7 +82,7 @@ fn enter_is_busy_while_an_action_is_running() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn enter_runs_the_action_for_the_selected_row() {
     let statuses = [status("a"), status("b")];
     match handle_key(KeyCode::Enter, 1, statuses.len(), false, &statuses) {
@@ -91,7 +91,7 @@ fn enter_runs_the_action_for_the_selected_row() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn enter_with_an_out_of_range_selection_is_ignored() {
     let statuses = [status("a")];
     assert_eq!(
@@ -100,7 +100,7 @@ fn enter_with_an_out_of_range_selection_is_ignored() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn other_keys_are_ignored() {
     let statuses = [status("a")];
     assert_eq!(
@@ -119,7 +119,7 @@ fn job(rx: mpsc::Receiver<Result<String, String>>) -> InFlightAction {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn poll_resolves_ok_results() {
     let (tx, rx) = mpsc::channel();
     tx.send(Ok("a installed".to_string())).unwrap();
@@ -134,7 +134,7 @@ fn poll_resolves_ok_results() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn poll_folds_err_results_into_a_failure_message() {
     let (tx, rx) = mpsc::channel();
     tx.send(Err("boom".to_string())).unwrap();
@@ -146,7 +146,7 @@ fn poll_folds_err_results_into_a_failure_message() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn poll_reports_pending_before_the_tick_interval_elapses() {
     let (_tx, rx) = mpsc::channel();
     let mut job = job(rx);
@@ -157,7 +157,7 @@ fn poll_reports_pending_before_the_tick_interval_elapses() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn poll_advances_the_spinner_once_the_tick_interval_elapses() {
     let (_tx, rx) = mpsc::channel();
     let mut job = job(rx);
@@ -170,7 +170,7 @@ fn poll_advances_the_spinner_once_the_tick_interval_elapses() {
     assert_eq!(job.spinner_idx, 1);
 }
 
-#[test]
+#[quench_test::test]
 fn poll_resolves_with_a_failure_message_once_the_sender_is_dropped() {
     let (tx, rx) = mpsc::channel::<Result<String, String>>();
     drop(tx);
@@ -184,7 +184,7 @@ fn poll_resolves_with_a_failure_message_once_the_sender_is_dropped() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_action_resolves_not_installable_synchronously() {
     let req = ActionRequest {
         package: "mystery".to_string(),
@@ -198,7 +198,7 @@ fn dispatch_action_resolves_not_installable_synchronously() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_action_resolves_already_up_to_date_synchronously() {
     let req = ActionRequest {
         package: "anvil".to_string(),
@@ -212,7 +212,7 @@ fn dispatch_action_resolves_already_up_to_date_synchronously() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_action_spawns_for_a_fresh_install() {
     let req = ActionRequest {
         package: "anvil".to_string(),
@@ -226,7 +226,7 @@ fn dispatch_action_spawns_for_a_fresh_install() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn dispatch_action_spawns_for_an_update() {
     let req = ActionRequest {
         package: "anvil".to_string(),
@@ -240,7 +240,7 @@ fn dispatch_action_spawns_for_an_update() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn action_request_round_trips_through_run_action() {
     let statuses = [status("a")];
     let req = ActionRequest {
@@ -255,19 +255,19 @@ fn action_request_round_trips_through_run_action() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn char_width_counts_unicode_scalars_not_bytes() {
     assert_eq!(char_width("abc"), 3);
     assert_eq!(char_width(""), 0);
     assert_eq!(char_width("héllo"), 5);
 }
 
-#[test]
+#[quench_test::test]
 fn transient_status_is_none_when_nothing_is_running() {
     assert_eq!(transient_status(&None), None);
 }
 
-#[test]
+#[quench_test::test]
 fn transient_status_shows_the_spinner_frame_and_label_when_running() {
     let (_tx, rx) = mpsc::channel();
     let running = Some(job(rx));
@@ -275,7 +275,7 @@ fn transient_status_shows_the_spinner_frame_and_label_when_running() {
     assert!(status.ends_with("running a"));
 }
 
-#[test]
+#[quench_test::test]
 fn on_tick_is_none_when_nothing_is_running() {
     let mut in_flight = None;
     assert_eq!(
@@ -284,7 +284,7 @@ fn on_tick_is_none_when_nothing_is_running() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn on_tick_redraws_when_the_spinner_advances() {
     let (_tx, rx) = mpsc::channel();
     let mut running_job = job(rx);
@@ -298,7 +298,7 @@ fn on_tick_redraws_when_the_spinner_advances() {
     assert!(in_flight.is_some());
 }
 
-#[test]
+#[quench_test::test]
 fn on_tick_clears_in_flight_and_reports_refresh_once_resolved() {
     let (tx, rx) = mpsc::channel();
     tx.send(Ok("a installed".to_string())).unwrap();
@@ -323,14 +323,14 @@ fn app(statuses: Vec<CrateStatus>) -> App {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn on_key_moves_the_selection_and_reports_redraw() {
     let mut state = app(vec![status("a"), status("b")]);
     assert_eq!(on_key(&mut state, false, KeyCode::Down), KeyEffect::Redraw);
     assert_eq!(state.selected, 1);
 }
 
-#[test]
+#[quench_test::test]
 fn on_key_moves_up_and_reports_redraw() {
     let mut state = app(vec![status("a"), status("b")]);
     state.selected = 1;
@@ -338,7 +338,7 @@ fn on_key_moves_up_and_reports_redraw() {
     assert_eq!(state.selected, 0);
 }
 
-#[test]
+#[quench_test::test]
 fn on_tick_is_none_while_pending_before_the_tick_interval_elapses() {
     let (_tx, rx) = mpsc::channel();
     let mut in_flight = Some(job(rx));
@@ -349,7 +349,7 @@ fn on_tick_is_none_while_pending_before_the_tick_interval_elapses() {
     assert!(in_flight.is_some());
 }
 
-#[test]
+#[quench_test::test]
 fn on_key_quits_on_q() {
     let mut state = app(vec![status("a")]);
     assert_eq!(
@@ -358,7 +358,7 @@ fn on_key_quits_on_q() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn on_key_refreshes_on_r_when_idle() {
     let mut state = app(vec![status("a")]);
     match on_key(&mut state, false, KeyCode::Char('r')) {
@@ -370,7 +370,7 @@ fn on_key_refreshes_on_r_when_idle() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn on_key_is_none_while_busy() {
     let mut state = app(vec![status("a")]);
     assert_eq!(
@@ -379,7 +379,7 @@ fn on_key_is_none_while_busy() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn on_key_spawns_for_an_installable_action() {
     let mut state = app(vec![status("a")]);
     match on_key(&mut state, false, KeyCode::Enter) {
@@ -396,7 +396,7 @@ fn on_key_spawns_for_an_installable_action() {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn on_key_resolves_synchronously_for_a_not_installable_action() {
     let mut state = app(vec![CrateStatus {
         package: "b",

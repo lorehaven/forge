@@ -1,6 +1,6 @@
 use warehouse_service::routers::feature_enabled;
 
-#[test]
+#[quench_test::test]
 fn feature_enabled_recognizes_common_truthy_and_falsy_spellings() {
     let key = "WAREHOUSE_TEST_FEATURE_FLAG_TRUTHY";
     for value in ["1", "true", "TRUE", "yes", "on"] {
@@ -14,7 +14,7 @@ fn feature_enabled_recognizes_common_truthy_and_falsy_spellings() {
     quench_core::env::remove(key);
 }
 
-#[test]
+#[quench_test::test]
 fn feature_enabled_falls_back_to_the_default_for_unset_or_garbage_values() {
     let key = "WAREHOUSE_TEST_FEATURE_FLAG_GARBAGE";
     quench_core::env::remove(key);
@@ -27,7 +27,7 @@ fn feature_enabled_falls_back_to_the_default_for_unset_or_garbage_values() {
     quench_core::env::remove(key);
 }
 
-#[test]
+#[quench_test::test]
 fn feature_enabled_trims_and_lowercases_the_value() {
     let key = "WAREHOUSE_TEST_FEATURE_FLAG_TRIM";
     quench_core::env::set(key, "  TrUe  ");

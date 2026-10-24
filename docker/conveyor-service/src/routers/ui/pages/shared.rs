@@ -4,7 +4,7 @@
 use crate::domain::{Project, Repo, Run};
 use crate::routers::ui::common::{format, status_pill, ui_path};
 use crate::scan::ScanSummary;
-use futures_util::future::join_all;
+use quench_core::future::join_all;
 use quench_db::prelude::Db;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;

@@ -69,7 +69,7 @@ fn vars() -> BTreeMap<String, String> {
 // Subscriptions
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn following_is_idempotent_and_listed_and_can_be_undone() {
     let Some((db, _guard)) = database().await else {
         return skipped("following_is_idempotent_and_listed_and_can_be_undone");
@@ -124,7 +124,7 @@ async fn following_is_idempotent_and_listed_and_can_be_undone() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn deleting_a_repository_takes_its_subscriptions_with_it() {
     let Some((db, _guard)) = database().await else {
         return skipped("deleting_a_repository_takes_its_subscriptions_with_it");
@@ -146,7 +146,7 @@ async fn deleting_a_repository_takes_its_subscriptions_with_it() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_repo_is_followed_directly_or_through_any_project_above_it_once_each() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_repo_is_followed_directly_or_through_any_project_above_it_once_each");
@@ -188,7 +188,7 @@ async fn a_repo_is_followed_directly_or_through_any_project_above_it_once_each()
 // What a run's end calls for
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
+#[quench_test::test]
 async fn failures_are_reported_and_so_is_the_first_success_after_one() {
     let Some((db, _guard)) = database().await else {
         return skipped("failures_are_reported_and_so_is_the_first_success_after_one");
@@ -226,7 +226,7 @@ async fn failures_are_reported_and_so_is_the_first_success_after_one() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failure_on_another_ref_does_not_make_this_success_a_recovery() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_failure_on_another_ref_does_not_make_this_success_a_recovery");
@@ -249,7 +249,7 @@ async fn due(db: &Db) -> Vec<Pending> {
     outbox::claim_due(db, 100).await.unwrap()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_finished_run_is_queued_for_each_follower_who_can_still_read_it() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_finished_run_is_queued_for_each_follower_who_can_still_read_it");
@@ -311,7 +311,7 @@ async fn a_finished_run_is_queued_for_each_follower_who_can_still_read_it() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn finishing_twice_queues_once() {
     let Some((db, _guard)) = database().await else {
         return skipped("finishing_twice_queues_once");
@@ -341,7 +341,7 @@ async fn finishing_twice_queues_once() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn nothing_is_queued_for_a_run_nobody_needs_to_hear_about() {
     let Some((db, _guard)) = database().await else {
         return skipped("nothing_is_queued_for_a_run_nobody_needs_to_hear_about");
@@ -429,7 +429,7 @@ async fn row(db: &Db, run_id: &str) -> Option<(i32, Option<String>, bool)> {
     })
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_claimed_message_is_leased_so_a_second_sender_skips_it() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_claimed_message_is_leased_so_a_second_sender_skips_it");
@@ -442,7 +442,7 @@ async fn a_claimed_message_is_leased_so_a_second_sender_skips_it() {
     assert!(outbox::claim_due(&db, 10).await.unwrap().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_message_gatehouse_took_is_removed() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_message_gatehouse_took_is_removed");
@@ -458,7 +458,7 @@ async fn a_message_gatehouse_took_is_removed() {
     assert_eq!(seen[0].template, RUN_FAILED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_message_that_cannot_be_delivered_yet_is_kept_and_tried_later() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_message_that_cannot_be_delivered_yet_is_kept_and_tried_later");
@@ -476,7 +476,7 @@ async fn a_message_that_cannot_be_delivered_yet_is_kept_and_tried_later() {
     assert_eq!(deliver_due(&db, &notifier).await.unwrap(), 0);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_message_gatehouse_refuses_is_set_aside_not_retried() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_message_gatehouse_refuses_is_set_aside_not_retried");
@@ -492,7 +492,7 @@ async fn a_message_gatehouse_refuses_is_set_aside_not_retried() {
     assert!(outbox::claim_due(&db, 10).await.unwrap().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_message_that_keeps_failing_is_eventually_given_up_on() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_message_that_keeps_failing_is_eventually_given_up_on");
@@ -517,7 +517,7 @@ async fn a_message_that_keeps_failing_is_eventually_given_up_on() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_message_left_leased_by_a_crashed_sender_is_picked_up_again() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_message_left_leased_by_a_crashed_sender_is_picked_up_again");

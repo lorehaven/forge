@@ -66,7 +66,7 @@ async fn token(config: &JwtConfig, role: &str) -> String {
         .unwrap()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn anonymous_crates_writes_are_unauthorized() {
     let app = crates_app(config(), "");
     let c = container().await;
@@ -81,7 +81,7 @@ async fn anonymous_crates_writes_are_unauthorized() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn anonymous_crates_reads_stay_open_by_default() {
     let app = crates_app(config(), "");
     let c = container().await;
@@ -98,7 +98,7 @@ async fn anonymous_crates_reads_stay_open_by_default() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_sparse_index_cannot_be_written_anonymously() {
     let app = crates_app(config(), "");
     let c = container().await;
@@ -108,7 +108,7 @@ async fn the_sparse_index_cannot_be_written_anonymously() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn opting_in_makes_index_and_download_need_an_identity() {
     let cfg = config();
     let t = token(&cfg, "warehouse:read").await;
@@ -127,7 +127,7 @@ async fn opting_in_makes_index_and_download_need_an_identity() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_garbage_token_is_unauthorized() {
     let app = crates_app(config(), "");
     let c = container().await;
@@ -137,7 +137,7 @@ async fn a_garbage_token_is_unauthorized() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn read_grant_cannot_publish_yank_or_edit_owners() {
     let cfg = config();
     let t = token(&cfg, "warehouse:read").await;
@@ -156,7 +156,7 @@ async fn read_grant_cannot_publish_yank_or_edit_owners() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn write_grant_may_publish_and_yank() {
     let cfg = config();
     let t = token(&cfg, "warehouse:write").await;
@@ -172,7 +172,7 @@ async fn write_grant_may_publish_and_yank() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn crates_auth_follows_the_base_path_and_leaves_other_paths_alone() {
     let app = crates_app(config(), "/warehouse");
     let c = container().await;
@@ -198,7 +198,7 @@ async fn crates_auth_follows_the_base_path_and_leaves_other_paths_alone() {
     assert_eq!(elsewhere.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn disabled_auth_bypasses_both_wrappers() {
     let mut cfg = config();
     cfg.auth_enabled = false;
@@ -215,7 +215,7 @@ async fn disabled_auth_bypasses_both_wrappers() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn anonymous_admin_gc_is_unauthorized() {
     let app = admin_app(config(), "");
     let c = container().await;
@@ -226,7 +226,7 @@ async fn anonymous_admin_gc_is_unauthorized() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn read_grant_cannot_run_admin_gc() {
     let cfg = config();
     let t = token(&cfg, "warehouse:read").await;
@@ -239,7 +239,7 @@ async fn read_grant_cannot_run_admin_gc() {
     }
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn write_grant_and_wildcard_role_can_run_admin_gc() {
     let cfg = config();
     let write = token(&cfg, "warehouse:write").await;

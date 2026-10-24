@@ -91,7 +91,7 @@ fn location(response: quench_http::response::Response) -> String {
         .to_string()
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_api_lists_every_resource_grouped_by_package() {
     let rig = rig(false).await;
     let body = support::json_body(
@@ -125,7 +125,7 @@ async fn the_api_lists_every_resource_grouped_by_package() {
     assert_eq!(state("sage-secret"), "hidden");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_yaml_endpoint_returns_a_resource_and_refuses_a_secret() {
     let rig = rig(false).await;
     let ok = rig
@@ -155,7 +155,7 @@ async fn the_yaml_endpoint_returns_a_resource_and_refuses_a_secret() {
     assert_eq!(secret.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_and_apply_need_scale_and_edit_needs_deploy_each_on_that_package() {
     let rig = rig(true).await;
     let post = |path: &str, body: quench_serde::Value, scope: &str| {
@@ -227,7 +227,7 @@ async fn delete_and_apply_need_scale_and_edit_needs_deploy_each_on_that_package(
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_application_page_lists_resources_with_the_button_each_one_needs() {
     let rig = rig(false).await;
     let html = support::body_text(
@@ -250,7 +250,7 @@ async fn the_application_page_lists_resources_with_the_button_each_one_needs() {
     assert!(html.contains("ui_rstate_hidden"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_edit_page_shows_the_live_yaml_and_saving_it_runs_at_once() {
     let rig = rig(false).await;
     let page = support::body_text(
@@ -308,7 +308,7 @@ async fn the_edit_page_shows_the_live_yaml_and_saving_it_runs_at_once() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn delete_and_apply_from_the_page_go_straight_to_an_operation() {
     let rig = rig(false).await;
     let fields = [

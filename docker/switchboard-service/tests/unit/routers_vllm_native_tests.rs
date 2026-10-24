@@ -13,27 +13,27 @@ fn parts(args: &[&str]) -> Vec<String> {
     args.iter().map(std::string::ToString::to_string).collect()
 }
 
-#[test]
+#[quench_test::test]
 fn extract_arg_finds_the_value_following_a_flag() {
     let args = parts(&["--dtype", "float16", "--port", "8000"]);
     assert_eq!(extract_arg(&args, "--dtype"), Some("float16".to_string()));
     assert_eq!(extract_arg(&args, "--port"), Some("8000".to_string()));
 }
 
-#[test]
+#[quench_test::test]
 fn extract_arg_is_none_for_an_absent_or_trailing_flag() {
     let args = parts(&["--dtype", "float16"]);
     assert_eq!(extract_arg(&args, "--missing"), None);
     assert_eq!(extract_arg(&parts(&["--dtype"]), "--dtype"), None);
 }
 
-#[test]
+#[quench_test::test]
 fn instance_key_replaces_slashes_and_appends_the_port() {
     assert_eq!(instance_key("meta/llama-3", 8000), "meta--llama-3-8000");
     assert_eq!(instance_key("no-slash", 1234), "no-slash-1234");
 }
 
-#[test]
+#[quench_test::test]
 fn create_pid_log_path_replaces_the_log_suffix_with_a_pid_suffix() {
     assert_eq!(
         create_pid_log_path("/var/log/vllm/run.log", 42),
@@ -41,7 +41,7 @@ fn create_pid_log_path_replaces_the_log_suffix_with_a_pid_suffix() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn create_pid_log_path_appends_when_there_is_no_log_suffix_to_replace() {
     assert_eq!(
         create_pid_log_path("/var/log/vllm/run", 42),
@@ -49,7 +49,7 @@ fn create_pid_log_path_appends_when_there_is_no_log_suffix_to_replace() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn create_launch_log_path_uses_vllm_log_dir_and_embeds_model_and_port() {
     let _guard = env_lock().lock().await;
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
@@ -65,7 +65,7 @@ async fn create_launch_log_path_uses_vllm_log_dir_and_embeds_model_and_port() {
     quench_core::env::remove("VLLM_LOG_DIR");
 }
 
-#[test]
+#[quench_test::test]
 fn log_indicates_started_true_when_the_marker_line_is_present() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let path = dir.path().join("run.log");
@@ -75,12 +75,12 @@ fn log_indicates_started_true_when_the_marker_line_is_present() {
     assert!(!log_indicates_started(path.to_str().unwrap(), 999));
 }
 
-#[test]
+#[quench_test::test]
 fn log_indicates_started_is_false_for_a_missing_file() {
     assert!(!log_indicates_started("/does/not/exist.log", 1));
 }
 
-#[test]
+#[quench_test::test]
 fn read_log_tail_returns_at_most_the_requested_number_of_trailing_lines() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let path = dir.path().join("run.log");
@@ -90,7 +90,7 @@ fn read_log_tail_returns_at_most_the_requested_number_of_trailing_lines() {
     assert_eq!(tail, "line3\nline4");
 }
 
-#[test]
+#[quench_test::test]
 fn read_log_tail_returns_the_whole_file_when_it_has_fewer_lines_than_requested() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let path = dir.path().join("run.log");
@@ -100,7 +100,7 @@ fn read_log_tail_returns_the_whole_file_when_it_has_fewer_lines_than_requested()
     assert_eq!(tail, "only-line");
 }
 
-#[test]
+#[quench_test::test]
 fn read_log_tail_is_none_for_a_missing_file() {
     assert!(read_log_tail("/does/not/exist.log", 5).is_none());
 }

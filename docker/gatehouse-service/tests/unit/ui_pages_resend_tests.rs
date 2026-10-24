@@ -106,7 +106,7 @@ const fn ok_location() -> &'static str {
     "resend_requested=1"
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn an_unverified_account_gets_a_fresh_working_link() {
     let h = harness().await;
     h.register("alice", "alice@example.com").await;
@@ -132,7 +132,7 @@ async fn an_unverified_account_gets_a_fresh_working_link() {
     assert_eq!(redeemed.as_deref(), Some("alice"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_answer_never_depends_on_the_account() {
     // Existing-unverified, verified, unknown, no-address: the same redirect.
     let h = harness().await;
@@ -163,7 +163,7 @@ async fn the_answer_never_depends_on_the_account() {
     assert_eq!(to, ["u@example.com"]);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn admin_and_disabled_accounts_are_not_mailed() {
     let h = harness().await;
     realm::create(
@@ -189,7 +189,7 @@ async fn admin_and_disabled_accounts_are_not_mailed() {
     assert!(h.recorder.sent().is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_second_request_within_a_minute_is_refused() {
     let h = harness().await;
     h.register("alice", "alice@example.com").await;
@@ -204,7 +204,7 @@ async fn a_second_request_within_a_minute_is_refused() {
     assert_eq!(h.recorder.sent().len(), 1, "no second email");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn refusal_is_the_same_for_accounts_that_do_not_exist() {
     let h = harness().await;
     let first = h.resend("ghost", &[]).await;
@@ -217,7 +217,7 @@ async fn refusal_is_the_same_for_accounts_that_do_not_exist() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn one_address_is_limited_no_matter_how_many_usernames() {
     let h = harness().await;
     let ip = [("x-real-ip", "198.51.100.20")];
@@ -240,7 +240,7 @@ async fn one_address_is_limited_no_matter_how_many_usernames() {
     assert!(location.contains(ok_location()), "{location}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_email_follows_the_saved_language_then_the_browsers() {
     let h = harness().await;
     h.register("alice", "alice@example.com").await;
@@ -267,7 +267,7 @@ async fn the_email_follows_the_saved_language_then_the_browsers() {
     assert_eq!(h.recorder.sent()[0].locale.as_deref(), Some("fr-FR"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failing_mail_server_gets_the_same_redirect() {
     struct Failing;
     #[quench_core::async_trait]
@@ -308,7 +308,7 @@ async fn a_failing_mail_server_gets_the_same_redirect() {
     assert_eq!(resp.status(), StatusCode::FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn the_page_renders_a_form_that_posts_a_username() {
     let resp = render_resend_page();
     assert_eq!(resp.status(), StatusCode::OK);

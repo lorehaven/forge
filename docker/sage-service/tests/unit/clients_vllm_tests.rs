@@ -2,7 +2,7 @@
 
 use sage_service::clients::vllm::*;
 
-#[test]
+#[quench_test::test]
 fn text_only_message_serializes_content_as_string() {
     let msg = ChatMessage {
         role: "user".to_string(),
@@ -17,7 +17,7 @@ fn text_only_message_serializes_content_as_string() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn message_with_images_serializes_content_parts() {
     let msg = ChatMessage {
         role: "user".to_string(),
@@ -38,7 +38,7 @@ fn message_with_images_serializes_content_parts() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn message_with_empty_images_serializes_as_text() {
     let msg = ChatMessage {
         role: "user".to_string(),
@@ -53,7 +53,7 @@ fn message_with_empty_images_serializes_as_text() {
 /// The exact streamed chunks from a Qwen tool call (name in one chunk,
 /// arguments in the next) must now deserialize; previously the strict
 /// `ToolCall` shape rejected these partial deltas and the calls were lost.
-#[test]
+#[quench_test::test]
 fn streamed_tool_call_chunks_deserialize() {
     let name_chunk = r#"{"choices":[{"index":0,"delta":{"content":null,"tool_calls":[{"id":"chatcmpl-tool-1","type":"function","index":0,"function":{"name":"file_list"}}]},"finish_reason":null}]}"#;
     let args_chunk = r#"{"choices":[{"index":0,"delta":{"content":null,"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]},"finish_reason":null}]}"#;
@@ -70,7 +70,7 @@ fn streamed_tool_call_chunks_deserialize() {
             let entry = accum.entry(tc.index).or_default();
             if let Some(func) = &tc.function {
                 if let Some(n) = &func.name {
-                    entry.0 = n.clone();
+                    entry.0.clone_from(n);
                 }
                 if let Some(a) = &func.arguments {
                     entry.1.push_str(a);
@@ -86,7 +86,7 @@ fn streamed_tool_call_chunks_deserialize() {
 }
 
 /// Accumulated tool calls flush to a `<tool_call>` line the text parser turns back into a concrete tool call.
-#[test]
+#[quench_test::test]
 fn flush_produces_parseable_tool_call() {
     let mut accum = std::collections::BTreeMap::new();
     accum.insert(0usize, ("file_list".to_string(), String::new()));
@@ -111,7 +111,7 @@ fn flush_produces_parseable_tool_call() {
     assert_eq!(calls[1].arguments["query"], "empatia");
 }
 
-#[test]
+#[quench_test::test]
 fn flush_skips_nameless_entries() {
     let mut accum = std::collections::BTreeMap::new();
     accum.insert(0usize, (String::new(), "{}".to_string()));

@@ -15,13 +15,13 @@ fn job(src: &std::path::Path, dest: &std::path::Path) -> Job {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn classify_line_recognizes_a_deletion() {
     let change = classify_line("*deleting old-file.txt");
     assert_eq!(change, Some(Change::Delete("old-file.txt".to_string())));
 }
 
-#[test]
+#[quench_test::test]
 fn classify_line_recognizes_a_new_file() {
     let change = classify_line(">f+++++++++ new-file.txt");
     assert_eq!(
@@ -30,7 +30,7 @@ fn classify_line_recognizes_a_new_file() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn classify_line_recognizes_a_new_file_received_from_the_other_side() {
     let change = classify_line("<f+++++++++ new-file.txt");
     assert_eq!(
@@ -39,13 +39,13 @@ fn classify_line_recognizes_a_new_file_received_from_the_other_side() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn classify_line_recognizes_a_new_directory() {
     let change = classify_line("cd+++++++++ new-dir/");
     assert_eq!(change, Some(Change::Create(Some("new-dir/".to_string()))));
 }
 
-#[test]
+#[quench_test::test]
 fn classify_line_recognizes_a_modified_file() {
     let change = classify_line(">f.st...... existing-file.txt");
     assert_eq!(
@@ -54,7 +54,7 @@ fn classify_line_recognizes_a_modified_file() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn classify_line_counts_a_change_even_without_a_parseable_path() {
     // No space in the line, so there's nothing after the itemize flags to
     // print - but rsync still reported a change, so it must still count.
@@ -62,7 +62,7 @@ fn classify_line_counts_a_change_even_without_a_parseable_path() {
     assert_eq!(change, Some(Change::Create(None)));
 }
 
-#[test]
+#[quench_test::test]
 fn classify_line_ignores_unrelated_output() {
     assert_eq!(classify_line("sending incremental file list"), None);
     assert_eq!(classify_line(""), None);
@@ -73,7 +73,7 @@ fn classify_line_ignores_unrelated_output() {
 // they can be exercised with harmless short-lived real processes
 // instead of `rsync` itself.
 
-#[test]
+#[quench_test::test]
 fn run_command_returns_trimmed_stdout_lines() {
     let mut cmd = Command::new("printf");
     cmd.arg("first\n  second  \nthird/\n");
@@ -83,7 +83,7 @@ fn run_command_returns_trimmed_stdout_lines() {
     assert_eq!(lines, vec!["first".to_string(), "second".to_string()]);
 }
 
-#[test]
+#[quench_test::test]
 fn run_command_errors_with_stderr_on_a_nonzero_exit() {
     let mut cmd = Command::new("sh");
     cmd.args(["-c", "echo boom 1>&2; exit 3"]);
@@ -91,20 +91,20 @@ fn run_command_errors_with_stderr_on_a_nonzero_exit() {
     assert!(err.to_string().contains("boom"), "{err}");
 }
 
-#[test]
+#[quench_test::test]
 fn run_command_async_succeeds_on_a_zero_exit() {
     let mut cmd = Command::new("true");
     run_command_async(&mut cmd).unwrap();
 }
 
-#[test]
+#[quench_test::test]
 fn run_command_async_errors_on_a_nonzero_exit() {
     let mut cmd = Command::new("false");
     let err = run_command_async(&mut cmd).unwrap_err();
     assert!(err.to_string().contains("exited with"), "{err}");
 }
 
-#[test]
+#[quench_test::test]
 fn dry_run_reports_true_when_new_files_would_be_created() {
     let src = quench_core::tmp::TempDir::new().unwrap();
     let dest = quench_core::tmp::TempDir::new().unwrap();
@@ -116,7 +116,7 @@ fn dry_run_reports_true_when_new_files_would_be_created() {
     assert!(!dest.path().join("a.txt").exists());
 }
 
-#[test]
+#[quench_test::test]
 fn dry_run_reports_false_when_source_and_dest_already_match() {
     let src = quench_core::tmp::TempDir::new().unwrap();
     let dest = quench_core::tmp::TempDir::new().unwrap();
@@ -125,7 +125,7 @@ fn dry_run_reports_false_when_source_and_dest_already_match() {
     assert!(!changed);
 }
 
-#[test]
+#[quench_test::test]
 fn dry_run_reports_deletions_when_dest_has_extra_files_and_delete_is_set() {
     let src = quench_core::tmp::TempDir::new().unwrap();
     let dest = quench_core::tmp::TempDir::new().unwrap();
@@ -137,7 +137,7 @@ fn dry_run_reports_deletions_when_dest_has_extra_files_and_delete_is_set() {
     assert!(dest.path().join("stale.txt").exists());
 }
 
-#[test]
+#[quench_test::test]
 fn update_actually_copies_files_from_source_to_dest() {
     let src = quench_core::tmp::TempDir::new().unwrap();
     let dest = quench_core::tmp::TempDir::new().unwrap();
@@ -151,7 +151,7 @@ fn update_actually_copies_files_from_source_to_dest() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn update_with_delete_removes_files_gone_from_source() {
     let src = quench_core::tmp::TempDir::new().unwrap();
     let dest = quench_core::tmp::TempDir::new().unwrap();
@@ -164,7 +164,7 @@ fn update_with_delete_removes_files_gone_from_source() {
     assert!(!dest.path().join("stale.txt").exists());
 }
 
-#[test]
+#[quench_test::test]
 fn update_with_skip_excludes_the_named_entry() {
     let src = quench_core::tmp::TempDir::new().unwrap();
     let dest = quench_core::tmp::TempDir::new().unwrap();

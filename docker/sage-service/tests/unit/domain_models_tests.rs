@@ -4,7 +4,7 @@ use crate::env_support::env_lock;
 use quench_db::prelude::Model;
 use sage_service::domain::models::{Conversation, File, FileChunk, Message, Project};
 
-#[test]
+#[quench_test::test]
 fn table_names_default_to_the_sage_schema() {
     let _guard = env_lock()
         .lock()
@@ -18,7 +18,7 @@ fn table_names_default_to_the_sage_schema() {
     assert_eq!(Message::table_name(), "sage.messages");
 }
 
-#[test]
+#[quench_test::test]
 fn table_names_honor_a_db_schema_override() {
     let _guard = env_lock()
         .lock()
@@ -31,7 +31,7 @@ fn table_names_honor_a_db_schema_override() {
     quench_core::env::remove("DB_SCHEMA");
 }
 
-#[test]
+#[quench_test::test]
 fn primary_key_is_id_for_every_model() {
     assert_eq!(Project::primary_key_name(), "id");
     assert_eq!(Conversation::primary_key_name(), "id");
@@ -40,7 +40,7 @@ fn primary_key_is_id_for_every_model() {
     assert_eq!(Message::primary_key_name(), "id");
 }
 
-#[test]
+#[quench_test::test]
 fn columns_list_every_field_in_declaration_order() {
     assert_eq!(
         Project::columns(),

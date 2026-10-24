@@ -80,7 +80,7 @@ const fn empty_inputs(installs: &[String]) -> ConfigInputs<'_> {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn file_config_load_parses_installs() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let path = dir.path().join("install.toml");
@@ -112,13 +112,13 @@ fn file_config_load_parses_installs() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn file_config_load_missing_file_errors() {
     let error = FileConfig::load(Path::new("/does/not/exist/install.toml")).unwrap_err();
     assert!(error.to_string().contains("failed to read config"));
 }
 
-#[test]
+#[quench_test::test]
 fn file_config_load_rejects_unknown_fields() {
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let path = dir.path().join("install.toml");
@@ -128,7 +128,7 @@ fn file_config_load_rejects_unknown_fields() {
     assert!(error.to_string().contains("invalid config"));
 }
 
-#[test]
+#[quench_test::test]
 fn file_install_into_install_request_maps_every_field() {
     let mut variables = BTreeMap::new();
     variables.insert("key".to_string(), "value".to_string());
@@ -149,7 +149,7 @@ fn file_install_into_install_request_maps_every_field() {
     assert_eq!(request.variables, variables);
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_requires_database_url_unless_optional() {
     let _guard = clean_env();
     let installs = vec!["gatehouse".to_string()];
@@ -160,7 +160,7 @@ fn resolve_requires_database_url_unless_optional() {
     assert!(error.to_string().contains("no database configured"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_allows_missing_database_url_when_optional() {
     let _guard = clean_env();
     let installs = vec!["gatehouse".to_string()];
@@ -170,7 +170,7 @@ fn resolve_allows_missing_database_url_when_optional() {
     assert_eq!(config.database_url, "");
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_rejects_empty_install_list() {
     let _guard = clean_env();
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
@@ -185,7 +185,7 @@ fn resolve_rejects_empty_install_list() {
     assert!(error.to_string().contains("nothing to install"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_cli_flag_beats_env_for_database_url() {
     let _guard = clean_env();
     EnvGuard::set("DATABASE_URL", "postgres://env/db");
@@ -197,7 +197,7 @@ fn resolve_cli_flag_beats_env_for_database_url() {
     assert_eq!(config.database_url, "postgres://cli/db");
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_falls_back_to_postgres_url_env() {
     let _guard = clean_env();
     EnvGuard::set("POSTGRES_URL", "postgres://postgres-env/db");
@@ -208,7 +208,7 @@ fn resolve_falls_back_to_postgres_url_env() {
     assert_eq!(config.database_url, "postgres://postgres-env/db");
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_parses_explicit_install_specs() {
     let _guard = clean_env();
     let installs = vec!["gatehouse@1.0.0:auth".to_string()];
@@ -220,7 +220,7 @@ fn resolve_parses_explicit_install_specs() {
     assert_eq!(config.installs[0].module, "gatehouse");
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_reads_installs_from_env_when_none_passed() {
     let _guard = clean_env();
     EnvGuard::set("FOUNDRY_INSTALL", " gatehouse , , sage ");
@@ -232,7 +232,7 @@ fn resolve_reads_installs_from_env_when_none_passed() {
     assert_eq!(modules, vec!["gatehouse", "sage"]);
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_uses_config_file_installs_when_nothing_else_given() {
     let _guard = clean_env();
     let dir = quench_core::tmp::TempDir::new().expect("tempdir");
@@ -255,7 +255,7 @@ fn resolve_uses_config_file_installs_when_nothing_else_given() {
     assert_eq!(config.installs[0].module, "warehouse");
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_errors_when_config_path_does_not_exist() {
     let _guard = clean_env();
     let installs = vec!["gatehouse".to_string()];
@@ -267,7 +267,7 @@ fn resolve_errors_when_config_path_does_not_exist() {
     assert!(error.to_string().contains("does not exist"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_defaults_ledger_names_when_nothing_overrides_them() {
     let _guard = clean_env();
     let installs = vec!["gatehouse".to_string()];
@@ -282,7 +282,7 @@ fn resolve_defaults_ledger_names_when_nothing_overrides_them() {
     assert_eq!(config.module_table, quench_db::runner::DEFAULT_MODULE_TABLE);
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_cli_flag_beats_env_for_ledger_schema() {
     let _guard = clean_env();
     EnvGuard::set("FOUNDRY_LEDGER_SCHEMA", "env_schema");
@@ -294,7 +294,7 @@ fn resolve_cli_flag_beats_env_for_ledger_schema() {
     assert_eq!(config.ledger_schema, "cli_schema");
 }
 
-#[test]
+#[quench_test::test]
 fn pick_prefers_flag_then_env_then_file_then_default() {
     let _guard = clean_env();
     assert_eq!(
@@ -334,7 +334,7 @@ fn pick_prefers_flag_then_env_then_file_then_default() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn env_value_treats_empty_string_as_absent() {
     let _guard = clean_env();
     EnvGuard::set("FOUNDRY_CATALOG", "");

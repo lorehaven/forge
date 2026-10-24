@@ -14,7 +14,7 @@ const DIGEST_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 // is_sha256_hex / is_digest_file_path
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn is_sha256_hex_accepts_exactly_64_hex_chars() {
     assert!(is_sha256_hex(DIGEST_A));
     assert!(!is_sha256_hex("tooshort"));
@@ -24,7 +24,7 @@ fn is_sha256_hex_accepts_exactly_64_hex_chars() {
     ));
 }
 
-#[test]
+#[quench_test::test]
 fn is_digest_file_path_requires_a_sha256_subdirectory_under_the_given_kind() {
     assert!(is_digest_file_path(
         Path::new("/root/blobs/sha256/abc"),
@@ -45,7 +45,7 @@ fn is_digest_file_path_requires_a_sha256_subdirectory_under_the_given_kind() {
 // mark_manifest_references
 // -----------------------------------------------------------------
 
-#[test]
+#[quench_test::test]
 fn mark_manifest_references_collects_config_and_layer_digests() {
     let manifest = format!(
         r#"{{"config": {{"digest": "sha256:{DIGEST_A}"}}, "layers": [{{"digest": "sha256:{DIGEST_B}"}}]}}"#
@@ -59,7 +59,7 @@ fn mark_manifest_references_collects_config_and_layer_digests() {
     assert!(to_visit.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn mark_manifest_references_queues_a_subject_manifest_for_visiting() {
     let manifest = format!(r#"{{"subject": {{"digest": "sha256:{DIGEST_A}"}}}}"#);
     let mut referenced = HashSet::new();
@@ -71,7 +71,7 @@ fn mark_manifest_references_queues_a_subject_manifest_for_visiting() {
     assert!(referenced.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn mark_manifest_references_treats_index_entries_as_manifests_to_visit() {
     let manifest = format!(
         r#"{{"manifests": [{{"digest": "sha256:{DIGEST_A}", "mediaType": "application/vnd.oci.image.manifest.v1+json"}}]}}"#
@@ -84,7 +84,7 @@ fn mark_manifest_references_treats_index_entries_as_manifests_to_visit() {
     assert!(referenced.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn mark_manifest_references_treats_a_manifests_entry_with_an_unrelated_media_type_as_a_blob() {
     let manifest = format!(
         r#"{{"manifests": [{{"digest": "sha256:{DIGEST_A}", "mediaType": "application/octet-stream"}}]}}"#
@@ -97,7 +97,7 @@ fn mark_manifest_references_treats_a_manifests_entry_with_an_unrelated_media_typ
     assert!(referenced.contains(&format!("sha256:{DIGEST_A}")));
 }
 
-#[test]
+#[quench_test::test]
 fn mark_manifest_references_ignores_invalid_json() {
     let mut referenced = HashSet::new();
     let mut to_visit = VecDeque::new();
@@ -122,7 +122,7 @@ fn write_blob(storage: &WithStorageRoot, digest_hex: &str) {
     std::fs::write(dir.join(digest_hex), b"blob content").unwrap();
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn garbage_collect_keeps_referenced_blobs_and_deletes_unreferenced_ones() {
     const MANIFEST_DIGEST: &str =
         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
@@ -156,7 +156,7 @@ async fn garbage_collect_keeps_referenced_blobs_and_deletes_unreferenced_ones() 
     drop(storage);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn garbage_collect_on_an_empty_storage_root_deletes_and_keeps_nothing() {
     let storage = WithStorageRoot::new();
     std::fs::create_dir_all(storage.dir.path()).unwrap();

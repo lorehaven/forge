@@ -23,7 +23,7 @@ async fn app(
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn redirects_to_login_when_auth_is_enabled_and_there_is_no_session() {
     let (app, container) = app(true).await;
     let resp = app
@@ -36,7 +36,7 @@ async fn redirects_to_login_when_auth_is_enabled_and_there_is_no_session() {
     assert!(resp.status().is_redirection());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn redirects_to_the_catalog_filtered_by_repository_when_authenticated() {
     let (app, container) = app(false).await;
     let resp = app

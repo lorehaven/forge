@@ -45,7 +45,7 @@ async fn until_done(executor: &LocalExecutor, name: &str) -> JobStatus {
     panic!("the runner never finished");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_local_runner_is_a_child_process_whose_output_and_exit_code_are_kept() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let executor = executor(
@@ -69,7 +69,7 @@ async fn a_local_runner_is_a_child_process_whose_output_and_exit_code_are_kept()
     assert!(log.contains("dry=1"), "{log}");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_failing_runner_is_a_failed_status() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let executor = executor(dir.path(), "echo nope; exit 3", false);
@@ -80,7 +80,7 @@ async fn a_failing_runner_is_a_failed_status() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn starting_twice_does_not_run_it_twice() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let executor = executor(
@@ -97,7 +97,7 @@ async fn starting_twice_does_not_run_it_twice() {
     assert_eq!(runs.lines().count(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn stopping_kills_the_runner_and_what_it_started() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let executor = executor(dir.path(), "sleep 30", false);

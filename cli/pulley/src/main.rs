@@ -1,8 +1,8 @@
-use clap::Parser;
 use pulley::cli::{Cli, Command, ServiceAction};
 use pulley::config::Config;
 use pulley::repl::Repl;
 use pulley::{daemon, service};
+use quench_args::Parser;
 use quench_cli::prelude::{Tone, print_status, require_binary};
 
 #[cfg(unix)]

@@ -13,7 +13,7 @@ async fn app() -> (
     support::app(container)
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_a_malformed_digest() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -27,7 +27,7 @@ async fn handle_rejects_a_malformed_digest() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_for_a_missing_blob() {
     let _storage = support::WithDockerStorageRoot::new();
     let (app, container) = app().await;
@@ -41,7 +41,7 @@ async fn handle_reports_not_found_for_a_missing_blob() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_the_blob_s_length_and_digest_when_present() {
     let storage = support::WithDockerStorageRoot::new();
     let hex = DIGEST.strip_prefix("sha256:").unwrap();

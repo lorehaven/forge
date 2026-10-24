@@ -1,13 +1,13 @@
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use quench_cli::keys::{KeyCode, Keys};
 use quench_cli::prelude::{Tone, print_status};
+use quench_cli::tty::RawMode;
+use quench_core::fs::Walk;
 use quench_core::{Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use walkdir::WalkDir;
 
 use crate::util::run_command;
 
@@ -231,30 +231,29 @@ enum HotkeyEvent {
 
 fn read_hotkeys() -> Result<Vec<HotkeyEvent>> {
     let mut events = Vec::new();
-    enable_raw_mode().context("Failed to enable terminal raw mode")?;
+    // Not a terminal (a pipe, CI): there are no hotkeys to read. Keystrokes typed between polls are kept.
+    let Some(_raw) =
+        RawMode::enable_keeping_input(0).context("Failed to enable terminal raw mode")?
+    else {
+        return Ok(events);
+    };
 
-    while let Ok(ready) = event::poll(Duration::from_millis(0)) {
-        if !ready {
+    let mut keys = Keys::stdin();
+    while keys.poll(Duration::ZERO).unwrap_or(false) {
+        let Ok(key) = keys.read() else {
             break;
-        }
-        if let Ok(Event::Key(key)) = event::read() {
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
-
-            let hotkey = match key.code {
-                KeyCode::Char('r') => Some(HotkeyEvent::Rebuild),
-                KeyCode::Char('R') => Some(HotkeyEvent::ToggleAutoRebuild),
-                KeyCode::Char('q' | 'Q' | 'e' | 'E') => Some(HotkeyEvent::Quit),
-                _ => None,
-            };
-            if let Some(hotkey) = hotkey {
-                clear_echoed_hotkey();
-                events.push(hotkey);
-            }
+        };
+        let hotkey = match key.code {
+            KeyCode::Char('r') => Some(HotkeyEvent::Rebuild),
+            KeyCode::Char('R') => Some(HotkeyEvent::ToggleAutoRebuild),
+            KeyCode::Char('q' | 'Q' | 'e' | 'E') => Some(HotkeyEvent::Quit),
+            _ => None,
+        };
+        if let Some(hotkey) = hotkey {
+            clear_echoed_hotkey();
+            events.push(hotkey);
         }
     }
-    disable_raw_mode().ok();
     Ok(events)
 }
 
@@ -272,9 +271,12 @@ pub fn file_snapshot(root: impl AsRef<Path>) -> Result<BTreeMap<String, u128>> {
     // a CI checkout under `/tmp/conveyor/...`) would match and exclude
     // everything, rather than only the ignored directories within the tree
     // actually being watched.
-    let walker = WalkDir::new(root)
-        .into_iter()
-        .filter_entry(|e| e.path().strip_prefix(root).map_or(true, should_watch_path));
+    let root_owned = root.to_path_buf();
+    let walker = Walk::new(root).filter_entry(move |e| {
+        e.path()
+            .strip_prefix(&root_owned)
+            .map_or(true, should_watch_path)
+    });
 
     for entry in walker {
         let entry = entry?;

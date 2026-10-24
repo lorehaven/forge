@@ -37,7 +37,7 @@ fn plan(steps: Vec<Step>) -> Plan {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn the_plan_round_trips_through_the_json_a_job_carries() {
     let original = plan(vec![
         Step::Pull {
@@ -54,7 +54,7 @@ fn the_plan_round_trips_through_the_json_a_job_carries() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn an_install_is_a_riveter_command_on_the_downloaded_file_with_its_values_mounted() {
     let commands = install("forge").commands(&ctx(false));
     assert_eq!(commands.len(), 1);
@@ -86,7 +86,7 @@ fn an_install_is_a_riveter_command_on_the_downloaded_file_with_its_values_mounte
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_check_is_a_dry_run_that_changes_nothing() {
     let step = Step::Check {
         package: "forge".into(),
@@ -99,14 +99,14 @@ fn a_check_is_a_dry_run_that_changes_nothing() {
     assert!(!command.args.contains(&"--env-file".to_string()));
 }
 
-#[test]
+#[quench_test::test]
 fn in_a_dry_run_an_install_is_riveters_own_dry_run_and_is_not_mutating() {
     let command = &install("forge").commands(&ctx(true))[0];
     assert!(!command.mutating);
     assert_eq!(command.args.last().unwrap(), "--dry-run");
 }
 
-#[test]
+#[quench_test::test]
 fn pod_steps_follow_the_allow_list_when_they_name_no_namespace() {
     let step = Step::DeletePods {
         selector: "app=vllm".into(),
@@ -122,7 +122,7 @@ fn pod_steps_follow_the_allow_list_when_they_name_no_namespace() {
     assert!(commands.iter().all(|c| c.mutating));
 }
 
-#[test]
+#[quench_test::test]
 fn waiting_for_pods_to_go_is_a_listing_so_a_dry_run_really_waits() {
     let step = Step::WaitGone {
         selector: "app=vllm".into(),
@@ -143,7 +143,7 @@ fn wait_plan(timeout_secs: u64) -> Plan {
     }])
 }
 
-#[test]
+#[quench_test::test]
 fn a_wait_ends_as_soon_as_nothing_is_left_even_when_nothing_ever_matched() {
     let mut exec = Recorder::default();
     let outcome = run(&wait_plan(60), &ctx(false), &mut exec, &mut Vec::new());
@@ -151,7 +151,7 @@ fn a_wait_ends_as_soon_as_nothing_is_left_even_when_nothing_ever_matched() {
     assert_eq!(exec.slept, 0);
 }
 
-#[test]
+#[quench_test::test]
 fn a_wait_polls_until_the_pods_are_gone() {
     let mut exec = Recorder {
         listings: ["pod/a\npod/b\n".to_string(), "pod/b\n".to_string()].into(),
@@ -168,7 +168,7 @@ fn a_wait_polls_until_the_pods_are_gone() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn a_wait_that_runs_out_of_time_names_what_is_still_there() {
     let mut exec = Recorder {
         listings: std::iter::repeat_n("pod/stuck\n".to_string(), 50).collect(),
@@ -182,7 +182,7 @@ fn a_wait_that_runs_out_of_time_names_what_is_still_there() {
     assert!(reason.contains("4s"), "{reason}");
 }
 
-#[test]
+#[quench_test::test]
 fn only_a_rollout_that_asks_for_it_has_an_undo() {
     let guarded = Step::Rollout {
         namespace: "forge".into(),
@@ -204,7 +204,7 @@ fn only_a_rollout_that_asks_for_it_has_an_undo() {
     assert!(plain.rollback().is_none());
 }
 
-#[test]
+#[quench_test::test]
 fn validation_refuses_anything_that_could_read_as_a_flag_or_a_second_argument() {
     let bad = |step: Step| plan(vec![step]).validate(&[]).unwrap_err();
 
@@ -256,7 +256,7 @@ fn validation_refuses_anything_that_could_read_as_a_flag_or_a_second_argument() 
     assert!(plan(vec![]).validate(&[]).is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn a_selector_cannot_smuggle_an_argument_in_through_a_space() {
     // A space is legal in `in (a, b)`, and harmless: each value is one argument, never split.
     let step = Step::DeletePods {
@@ -267,7 +267,7 @@ fn a_selector_cannot_smuggle_an_argument_in_through_a_space() {
     assert_eq!(step.commands(&ctx(false))[0].args[3], "tier in (a, b)");
 }
 
-#[test]
+#[quench_test::test]
 fn namespaces_outside_the_allow_list_are_refused() {
     let allowed = vec!["scratch".to_string()];
     let error = plan(vec![install("forge")]).validate(&allowed).unwrap_err();
@@ -276,7 +276,7 @@ fn namespaces_outside_the_allow_list_are_refused() {
     assert!(plan(vec![install("forge")]).validate(&[]).is_ok());
 }
 
-#[test]
+#[quench_test::test]
 fn the_secrets_a_plan_reads_are_listed_once() {
     let both = plan(vec![install("forge"), install("forge"), install("media")]);
     assert_eq!(
@@ -338,7 +338,7 @@ fn pull_install_wait() -> Plan {
     ])
 }
 
-#[test]
+#[quench_test::test]
 fn a_run_goes_step_by_step_and_ends_with_the_outcome_marker() {
     let mut exec = Recorder::default();
     let mut out = Vec::new();
@@ -355,7 +355,7 @@ fn a_run_goes_step_by_step_and_ends_with_the_outcome_marker() {
     assert_eq!(parse_outcome(&text), Some(Outcome::Succeeded));
 }
 
-#[test]
+#[quench_test::test]
 fn the_first_failure_stops_the_run_and_nothing_after_it_is_attempted() {
     let mut exec = Recorder {
         fail_on: vec![("riveter install".into(), 1)],
@@ -371,7 +371,7 @@ fn the_first_failure_stops_the_run_and_nothing_after_it_is_attempted() {
     assert_eq!(exec.ran.len(), 2, "the rollout step must not have run");
 }
 
-#[test]
+#[quench_test::test]
 fn a_rollout_that_fails_is_undone_and_reported_as_rolled_back() {
     let mut exec = Recorder {
         fail_on: vec![("rollout status".into(), 1)],
@@ -391,7 +391,7 @@ fn a_rollout_that_fails_is_undone_and_reported_as_rolled_back() {
     assert!(matches!(parse_outcome(&text), Some(Outcome::RolledBack(_))));
 }
 
-#[test]
+#[quench_test::test]
 fn a_failed_undo_is_a_failure_not_a_rollback() {
     let mut exec = Recorder {
         fail_on: vec![("rollout status".into(), 1), ("rollout undo".into(), 1)],
@@ -409,7 +409,7 @@ fn a_failed_undo_is_a_failure_not_a_rollback() {
     assert!(reason.contains("rollback also failed"), "{reason}");
 }
 
-#[test]
+#[quench_test::test]
 fn a_dry_run_prints_what_would_change_and_runs_only_what_cannot() {
     let scale = Step::Scale {
         namespace: "forge".into(),
@@ -438,7 +438,7 @@ fn a_dry_run_prints_what_would_change_and_runs_only_what_cannot() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn the_runner_refuses_a_plan_outside_its_allow_list_before_touching_anything() {
     let mut context = ctx(false);
     context.allowed_namespaces = vec!["scratch".into()];
@@ -453,7 +453,7 @@ fn the_runner_refuses_a_plan_outside_its_allow_list_before_touching_anything() {
     assert!(exec.ran.is_empty());
 }
 
-#[test]
+#[quench_test::test]
 fn the_outcome_is_read_from_the_last_marker_in_a_log() {
     assert_eq!(parse_outcome("hello\n"), None);
     assert_eq!(
@@ -466,7 +466,7 @@ fn the_outcome_is_read_from_the_last_marker_in_a_log() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn with_a_source_directory_a_pull_is_a_copy() {
     let mut context = ctx(false);
     context.source_dir = Some(PathBuf::from("/local/packages"));
@@ -483,7 +483,7 @@ fn with_a_source_directory_a_pull_is_a_copy() {
     assert!(!command.mutating);
 }
 
-#[test]
+#[quench_test::test]
 fn an_install_can_leave_resources_out_and_return_without_waiting() {
     let step = Step::Install {
         package: "forge".into(),

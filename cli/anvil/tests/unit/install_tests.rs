@@ -39,7 +39,7 @@ fn fixture_metadata() -> Value {
     })
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_workspace_install_targets_returns_every_member_when_config_has_no_filter() {
     let metadata = fixture_metadata();
     let targets =
@@ -48,7 +48,7 @@ fn resolve_workspace_install_targets_returns_every_member_when_config_has_no_fil
     assert_eq!(names, vec!["pkg-a", "pkg-b"]);
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_workspace_install_targets_filters_by_config_packages() {
     let metadata = fixture_metadata();
     let targets = resolve_workspace_install_targets(&config_with_packages(&["pkg-b"]), &metadata)
@@ -58,7 +58,7 @@ fn resolve_workspace_install_targets_filters_by_config_packages() {
     assert_eq!(targets[0].1, PathBuf::from("/workspace/crates/pkg-b"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_workspace_install_targets_errors_when_the_filter_matches_nothing() {
     let metadata = fixture_metadata();
     let result = resolve_workspace_install_targets(
@@ -68,21 +68,21 @@ fn resolve_workspace_install_targets_errors_when_the_filter_matches_nothing() {
     assert!(result.is_err());
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_package_path_finds_a_package_by_name() {
     let metadata = fixture_metadata();
     let path = resolve_package_path(&metadata, "pkg-a").unwrap();
     assert_eq!(path, PathBuf::from("/workspace/crates/pkg-a"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_package_path_errors_for_an_unknown_package() {
     let metadata = fixture_metadata();
     let error = resolve_package_path(&metadata, "no-such-package").unwrap_err();
     assert!(error.to_string().contains("not found in cargo metadata"));
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_install_targets_all_flag_uses_the_workspace_resolver() {
     let metadata = fixture_metadata();
     let targets =
@@ -90,7 +90,7 @@ fn resolve_install_targets_all_flag_uses_the_workspace_resolver() {
     assert_eq!(targets.len(), 2);
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_install_targets_explicit_package_flag_wins_over_config() {
     let metadata = fixture_metadata();
     let targets = resolve_install_targets(
@@ -109,7 +109,7 @@ fn resolve_install_targets_explicit_package_flag_wins_over_config() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_install_targets_falls_back_to_the_first_configured_package() {
     let metadata = fixture_metadata();
     let targets =
@@ -123,7 +123,7 @@ fn resolve_install_targets_falls_back_to_the_first_configured_package() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn resolve_install_targets_with_nothing_configured_falls_back_to_default_module_name() {
     let metadata = fixture_metadata();
     // No package flag and no config packages, so this falls through to
@@ -142,7 +142,7 @@ fn resolve_install_targets_with_nothing_configured_falls_back_to_default_module_
     );
 }
 
-#[test]
+#[quench_test::test]
 fn default_module_name_falls_back_to_the_sole_workspace_member() {
     let metadata = json!({
         "workspace_root": "/workspace",
@@ -156,7 +156,7 @@ fn default_module_name_falls_back_to_the_sole_workspace_member() {
     assert_eq!(default_module_name(&metadata).unwrap(), "only-member");
 }
 
-#[test]
+#[quench_test::test]
 fn default_module_name_errors_when_nothing_matches_cwd_or_the_workspace_root() {
     let metadata = json!({
         "workspace_root": "/somewhere-else-entirely",

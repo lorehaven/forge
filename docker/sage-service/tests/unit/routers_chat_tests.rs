@@ -102,7 +102,7 @@ async fn json_body(resp: quench_http::response::Response) -> quench_serde::Value
     quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn chat_returns_not_found_for_an_unknown_instance() {
     let (app, container) = app().await;
 
@@ -126,7 +126,7 @@ async fn chat_returns_not_found_for_an_unknown_instance() {
     ));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn capabilities_reports_the_configured_profiles_tools_sorted() {
     let (app, container) = app().await;
 
@@ -143,7 +143,7 @@ async fn capabilities_reports_the_configured_profiles_tools_sorted() {
     assert_eq!(tools, &sorted, "tools must already be sorted");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_metrics_returns_an_empty_profile_list_with_no_activity() {
     let (app, container) = app().await;
 
@@ -156,7 +156,7 @@ async fn get_metrics_returns_an_empty_profile_list_with_no_activity() {
     assert_eq!(body["profiles"].as_array().expect("array").len(), 0);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_metrics_by_profile_is_not_found_for_an_unknown_profile() {
     let (app, container) = app().await;
 
@@ -170,7 +170,7 @@ async fn get_metrics_by_profile_is_not_found_for_an_unknown_profile() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_costs_returns_empty_lists_with_no_activity() {
     let (app, container) = app().await;
 
@@ -184,7 +184,7 @@ async fn get_costs_returns_empty_lists_with_no_activity() {
     assert_eq!(body["profiles"].as_array().expect("array").len(), 0);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_user_costs_is_not_found_for_an_unknown_user() {
     let (app, container) = app().await;
 
@@ -198,7 +198,7 @@ async fn get_user_costs_is_not_found_for_an_unknown_user() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn get_context_status_reports_zero_usage_for_a_fresh_profile() {
     let (app, container) = app().await;
 
@@ -212,7 +212,7 @@ async fn get_context_status_reports_zero_usage_for_a_fresh_profile() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[test]
+#[quench_test::test]
 fn chat_request_distinguishes_no_evidence_field_from_an_empty_evidence_list() {
     use sage_service::routers::chat::ChatRequest;
     let absent: ChatRequest =

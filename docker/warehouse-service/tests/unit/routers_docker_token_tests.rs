@@ -64,7 +64,7 @@ struct TokenResponseForTest {
     expires_in: usize,
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_issues_a_token_for_a_valid_basic_auth_credential() {
     let user_db = user_db_with("alice", "correct-horse").await;
     let (app, container) = app(config(true), user_db).await;
@@ -85,7 +85,7 @@ async fn handle_issues_a_token_for_a_valid_basic_auth_credential() {
     assert!(!body.token.is_empty());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_a_wrong_password_with_unauthorized() {
     let user_db = user_db_with("alice", "correct-horse").await;
     let (app, container) = app(config(true), user_db).await;
@@ -103,7 +103,7 @@ async fn handle_rejects_a_wrong_password_with_unauthorized() {
     assert!(headers.contains_key("www-authenticate"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_a_missing_authorization_header_when_auth_is_enabled() {
     let user_db = user_db_with("alice", "correct-horse").await;
     let (app, container) = app(config(true), user_db).await;
@@ -113,7 +113,7 @@ async fn handle_rejects_a_missing_authorization_header_when_auth_is_enabled() {
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_allows_anonymous_when_auth_is_disabled() {
     let user_db = user_db_with("alice", "correct-horse").await;
     let (app, container) = app(config(false), user_db).await;
@@ -123,7 +123,7 @@ async fn handle_allows_anonymous_when_auth_is_disabled() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_rejects_a_service_name_mismatch() {
     let user_db = user_db_with("alice", "correct-horse").await;
     let (app, container) = app(config(false), user_db).await;
@@ -133,7 +133,7 @@ async fn handle_rejects_a_service_name_mismatch() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn validate_basic_encoded_rejects_malformed_base64_and_missing_colon() {
     let user_db = user_db_with("alice", "correct-horse").await;
     assert!(

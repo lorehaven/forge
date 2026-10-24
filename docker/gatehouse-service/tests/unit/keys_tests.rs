@@ -17,7 +17,7 @@ async fn signing_keys(retire_after_secs: i64) -> std::sync::Arc<SigningKeys> {
         .expect("init")
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn init_generates_one_active_key_when_none_exist() {
     let keys = signing_keys(3600).await;
     let active = keys.active().await;
@@ -27,7 +27,7 @@ async fn init_generates_one_active_key_when_none_exist() {
     assert_eq!(jwks["keys"].as_array().expect("array").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn resolve_finds_the_active_keys_public_half_by_kid() {
     let keys = signing_keys(3600).await;
     let (kid, _) = keys.active().await.expect("active key");
@@ -36,7 +36,7 @@ async fn resolve_finds_the_active_keys_public_half_by_kid() {
     assert!(keys.resolve("not-a-real-kid").await.is_none());
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn rotate_retires_the_previous_key_and_activates_a_new_one() {
     let keys = signing_keys(3600).await;
     let (first_kid, _) = keys.active().await.expect("active key");
@@ -54,7 +54,7 @@ async fn rotate_retires_the_previous_key_and_activates_a_new_one() {
     assert_eq!(jwks["keys"].as_array().expect("array").len(), 2);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_key_retired_with_a_zero_grace_period_drops_out_on_reload() {
     let keys = signing_keys(0).await;
     let (first_kid, _) = keys.active().await.expect("active key");
@@ -69,7 +69,7 @@ async fn a_key_retired_with_a_zero_grace_period_drops_out_on_reload() {
     assert_eq!(jwks["keys"].as_array().expect("array").len(), 1);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn jwks_entries_are_ed25519_okp_keys() {
     let keys = signing_keys(3600).await;
     let jwks = keys.jwks();

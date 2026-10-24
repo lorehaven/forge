@@ -6,7 +6,7 @@ use std::path::Path;
 use warehouse_service::routers::files;
 use warehouse_service::routers::files::ops::upload::staging_path;
 
-#[test]
+#[quench_test::test]
 fn staging_path_sits_beside_the_target_with_a_dotted_part_suffix() {
     let target = Path::new("/storage/artifacts/report.pdf");
     let staging = staging_path(target);
@@ -21,7 +21,7 @@ fn staging_path_sits_beside_the_target_with_a_dotted_part_suffix() {
     );
 }
 
-#[test]
+#[quench_test::test]
 fn staging_path_calls_never_collide_even_for_the_same_target() {
     let target = Path::new("/storage/artifacts/report.pdf");
     let a = staging_path(target);
@@ -29,7 +29,7 @@ fn staging_path_calls_never_collide_even_for_the_same_target() {
     assert_ne!(a, b);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn handle_reports_not_found_when_file_storage_is_disabled() {
     files::register_routes();
     let container = support::container_builder()

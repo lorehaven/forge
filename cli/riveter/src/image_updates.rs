@@ -7,7 +7,7 @@
 
 use quench_client::blocking::Client;
 use quench_core::{Context as _, Result, bail};
-use regex::Regex;
+use quench_regex::Regex;
 use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -156,11 +156,11 @@ fn location(occurrence: &ImageOccurrence) -> String {
 /// and skipped rather than failing the scan - one malformed line should not
 /// block checking every other image.
 pub fn discover_images(overlays_dir: &Path) -> Result<Vec<ImageOccurrence>> {
-    let mut paths: Vec<PathBuf> = walkdir::WalkDir::new(overlays_dir)
+    let mut paths: Vec<PathBuf> = quench_core::fs::Walk::new(overlays_dir)
         .into_iter()
         .filter_map(std::result::Result::ok)
         .filter(|entry| entry.file_type().is_file())
-        .map(walkdir::DirEntry::into_path)
+        .map(quench_core::fs::Entry::into_path)
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
@@ -886,7 +886,7 @@ pub fn print_results(updates: &[UpdateCandidate], messages: &[ScanMessage]) {
 /// registry, and either reports what is available or - with `apply` -
 /// rewrites the templates to the newest compatible tag found.
 pub fn check_image_updates(overlays_dir: &Path, apply: bool, cli_auth: &[String]) -> Result<()> {
-    dotenvy::dotenv().ok();
+    quench_core::dotenv::load().ok();
 
     let auth = RegistryAuth::from_sources(cli_auth);
     let occurrences = discover_images(overlays_dir)?;

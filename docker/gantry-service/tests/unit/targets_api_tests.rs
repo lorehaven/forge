@@ -82,7 +82,7 @@ fn running(version: &str) -> Vec<Workload> {
     }]
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn targets_are_listed_with_what_runs_beside_what_is_published() {
     let rig = rig(false).await;
     rig.cluster.set_workloads(running("1.0.0"));
@@ -111,7 +111,7 @@ async fn targets_are_listed_with_what_runs_beside_what_is_published() {
     assert_eq!(forge["status"], "not_installed");
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_grant_scoped_to_one_package_shows_only_that_package() {
     let rig = rig(true).await;
     let request = with(
@@ -134,7 +134,7 @@ async fn a_grant_scoped_to_one_package_shows_only_that_package() {
     assert_eq!(rig.app.call(request).await.status(), StatusCode::FORBIDDEN);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn a_target_shows_its_versions_and_overrides() {
     let rig = rig(false).await;
     let body = support::json_body(
@@ -161,7 +161,7 @@ async fn a_target_shows_its_versions_and_overrides() {
     assert_eq!(missing.status(), StatusCode::NOT_FOUND);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn plan_then_confirm_queues_the_operation() {
     let rig = rig(false).await;
     rig.cluster.set_workloads(running("1.0.0"));
@@ -217,7 +217,7 @@ async fn plan_then_confirm_queues_the_operation() {
     assert_eq!(again.status(), StatusCode::CONFLICT);
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn confirming_needs_the_permission_for_what_the_plan_does() {
     let rig = rig(true).await;
     rig.cluster.set_workloads(running("1.1.0"));
@@ -270,7 +270,7 @@ async fn confirming_needs_the_permission_for_what_the_plan_does() {
     );
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn planning_a_missing_package_is_404_and_a_missing_version_is_422() {
     let rig = rig(false).await;
     let missing = rig

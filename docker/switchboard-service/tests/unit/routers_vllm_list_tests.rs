@@ -28,14 +28,14 @@ fn instance(status: &str) -> VllmInstance {
     }
 }
 
-#[test]
+#[quench_test::test]
 fn empty_instance_list_renders_the_empty_state() {
     let html = render_instances_grid(&[], true);
     assert!(html.contains("vllm-instances-grid"));
     assert!(html.contains("ui_vllm_no_instances"));
 }
 
-#[test]
+#[quench_test::test]
 fn running_instance_gets_the_ok_fit_class_and_a_stop_button_when_allowed() {
     let html = render_instances_grid(&[instance("running")], true);
     assert!(html.contains("status-running"));
@@ -44,7 +44,7 @@ fn running_instance_gets_the_ok_fit_class_and_a_stop_button_when_allowed() {
     assert!(html.contains("llama-3-8b"));
 }
 
-#[test]
+#[quench_test::test]
 fn failed_instance_never_gets_a_stop_button_even_when_allowed() {
     let html = render_instances_grid(&[instance("failed")], true);
     assert!(html.contains("status-failed"));
@@ -52,7 +52,7 @@ fn failed_instance_never_gets_a_stop_button_even_when_allowed() {
     assert!(!html.contains("card-delete"));
 }
 
-#[test]
+#[quench_test::test]
 fn terminating_instance_never_gets_a_stop_button_either() {
     let html = render_instances_grid(&[instance("terminating")], true);
     assert!(html.contains("status-terminating"));
@@ -60,20 +60,20 @@ fn terminating_instance_never_gets_a_stop_button_either() {
     assert!(!html.contains("card-delete"));
 }
 
-#[test]
+#[quench_test::test]
 fn starting_instance_gets_the_warn_fit_class() {
     let html = render_instances_grid(&[instance("starting")], true);
     assert!(html.contains("status-starting"));
     assert!(html.contains("fit-warn"));
 }
 
-#[test]
+#[quench_test::test]
 fn stop_button_is_omitted_when_the_caller_cannot_stop() {
     let html = render_instances_grid(&[instance("running")], false);
     assert!(!html.contains("card-delete"));
 }
 
-#[test]
+#[quench_test::test]
 fn dtype_and_limit_mm_per_prompt_appear_in_the_fit_line_when_present() {
     let mut model = instance("running");
     model.dtype = Some("float16".to_string());
@@ -84,14 +84,14 @@ fn dtype_and_limit_mm_per_prompt_appear_in_the_fit_line_when_present() {
     assert!(html.contains("ui_vllm_form_limit_mm"));
 }
 
-#[test]
+#[quench_test::test]
 fn diagnostics_block_is_hidden_when_there_is_no_error_or_log() {
     let html = render_instances_grid(&[instance("running")], true);
     assert!(html.contains("instance-diagnostics"));
     assert!(html.contains("display: none;"));
 }
 
-#[test]
+#[quench_test::test]
 fn last_error_and_log_path_render_into_the_diagnostics_block() {
     let mut model = instance("failed");
     model.last_error = Some("CUDA out of memory".to_string());
@@ -101,13 +101,13 @@ fn last_error_and_log_path_render_into_the_diagnostics_block() {
     assert!(html.contains("/var/log/vllm/inst-1.log"));
 }
 
-#[test]
+#[quench_test::test]
 fn quantization_falls_back_to_auto_when_unset() {
     let html = render_instances_grid(&[instance("running")], true);
     assert!(html.contains(">auto<") || html.contains("auto"));
 }
 
-#[test]
+#[quench_test::test]
 fn quantization_falls_back_to_auto_when_the_engine_reports_an_empty_string() {
     // The Kubernetes engine round-trips a missing quant as "" via a pod
     // annotation; the UI must still show "auto", not a blank.
@@ -117,7 +117,7 @@ fn quantization_falls_back_to_auto_when_the_engine_reports_an_empty_string() {
     assert!(html.contains(">auto<"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_gpu_instance_gets_a_gpu_badge_and_shows_gpu_util() {
     let html = render_instances_grid(&[instance("running")], true);
     assert!(html.contains("badge-gpu"));
@@ -126,7 +126,7 @@ fn a_gpu_instance_gets_a_gpu_badge_and_shows_gpu_util() {
     assert!(!html.contains("badge-cpu"));
 }
 
-#[test]
+#[quench_test::test]
 fn a_cpu_instance_gets_a_cpu_badge_and_hides_gpu_util() {
     let mut model = instance("running");
     model.device = Some("cpu".to_string());
@@ -137,7 +137,7 @@ fn a_cpu_instance_gets_a_cpu_badge_and_hides_gpu_util() {
     assert!(!html.contains("ui_vllm_meta_gpu_util"));
 }
 
-#[test]
+#[quench_test::test]
 fn device_matching_is_case_insensitive_and_ignores_a_gpu_value() {
     let mut cpu = instance("running");
     cpu.device = Some("CPU".to_string());
@@ -148,7 +148,7 @@ fn device_matching_is_case_insensitive_and_ignores_a_gpu_value() {
     assert!(render_instances_grid(&[gpu], true).contains("badge-gpu"));
 }
 
-#[test]
+#[quench_test::test]
 fn multiple_instances_all_render_as_separate_cards() {
     let mut a = instance("running");
     a.id = "a".to_string();

@@ -75,21 +75,21 @@ async fn render(
     String::from_utf8_lossy(&collected).into_owned()
 }
 
-#[test]
+#[quench_test::test]
 fn conv_title_link_falls_back_to_new_chat_for_a_blank_title() {
     let link = quench_web::prelude::a();
     let rendered = conv_title_link(link, "   ").render();
     assert!(rendered.contains("New chat"));
 }
 
-#[test]
+#[quench_test::test]
 fn conv_title_link_uses_the_title_when_present() {
     let link = quench_web::prelude::a();
     let rendered = conv_title_link(link, "My conversation").render();
     assert!(rendered.contains("My conversation"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_home_page_shows_the_welcome_message_with_no_active_conversation() {
     let html = render(
         Ok(vec![instance("i1", None)]),
@@ -103,7 +103,7 @@ async fn render_home_page_shows_the_welcome_message_with_no_active_conversation(
     assert!(!html.contains("disabled=\"disabled\""));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_home_page_disables_the_composer_without_a_chat_capable_model() {
     // Only an embedding-task instance is available, which the chat selector must exclude.
     let html = render(
@@ -118,7 +118,7 @@ async fn render_home_page_disables_the_composer_without_a_chat_capable_model() {
     assert!(html.contains("no-model-warning"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_home_page_shows_a_switchboard_unavailable_message_on_error() {
     let html = render(
         Err(quench_core::err!("connection refused")),
@@ -131,7 +131,7 @@ async fn render_home_page_shows_a_switchboard_unavailable_message_on_error() {
     assert!(html.contains("ui_chat_switchboard_unavailable"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_home_page_lists_conversations_and_marks_the_active_one() {
     let conversations = vec![
         Conversation {
@@ -164,7 +164,7 @@ async fn render_home_page_lists_conversations_and_marks_the_active_one() {
     assert!(html.contains("history-item-active-conv"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_home_page_renders_message_history_with_branch_controls_for_siblings() {
     let root = message("root", "user", "hello", "active-conv");
     let sib_a = message("a", "assistant", "answer a", "active-conv");
@@ -184,7 +184,7 @@ async fn render_home_page_renders_message_history_with_branch_controls_for_sibli
     assert!(html.contains("1/2") || html.contains("2/2"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_home_page_shows_a_project_and_its_files_when_active() {
     let project = Project {
         id: "p1".to_string(),
@@ -205,7 +205,7 @@ async fn render_home_page_shows_a_project_and_its_files_when_active() {
     assert!(html.contains("project_id=p1"));
 }
 
-#[tokio::test]
+#[quench_test::test]
 async fn render_home_page_includes_every_configured_search_provider() {
     let html = render(
         Ok(vec![instance("i1", None)]),

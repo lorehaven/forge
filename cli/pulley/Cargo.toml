@@ -10,6 +10,7 @@ homepage = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
 readme = { workspace = true }
+autotests = false
 
 [[bin]]
 name = "pulley"
@@ -20,10 +21,10 @@ name = "pulley"
 path = "src/lib.rs"
 
 [dependencies]
-chrono = { workspace = true }
 quench-serde = { workspace = true }
 quench-core = { workspace = true }
-clap = { workspace = true }
+quench-tz = { workspace = true }
+quench-args = { workspace = true }
 quench-cli = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
@@ -33,6 +34,9 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
-assert_cmd = { workspace = true }
-predicates = { workspace = true }
-which = { workspace = true }
+quench-test = { workspace = true }
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
