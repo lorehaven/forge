@@ -2,7 +2,8 @@
 
 use crate::domain::project::{self, NewProject};
 use crate::routers::ui::common::{
-    ActorOrRedirect, Notice, PageAuth, notice_banner, project_sidebar, render_page, ui_login_redirect, ui_path,
+    ActorOrRedirect, Notice, PageAuth, notice_banner, project_sidebar, render_page,
+    ui_login_redirect, ui_path,
 };
 use forge_ui::{
     PageHeader, Variant, button_el, close_modal, empty_state, field_for, form_el, icon, link_card,

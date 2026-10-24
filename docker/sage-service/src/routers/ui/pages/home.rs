@@ -983,15 +983,13 @@ pub fn render_home_page(page: &HomePage) -> Response {
         content()
             .class("home-content")
             .child(
-                div()
-                    .class("sage-layout")
-                    .child(
-                        div()
-                            .class("chat-container")
-                            .child(history_div)
-                            .child(nav_div)
-                            .child(chat_form(page, composer)),
-                    ),
+                div().class("sage-layout").child(
+                    div()
+                        .class("chat-container")
+                        .child(history_div)
+                        .child(nav_div)
+                        .child(chat_form(page, composer)),
+                ),
             )
             .child(
                 div()

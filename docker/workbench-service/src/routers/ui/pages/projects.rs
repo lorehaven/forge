@@ -4,7 +4,8 @@ use crate::domain::issue::{self, NewIssue, STATUSES};
 use crate::domain::{project, realm_users};
 use crate::routers::api::authz::can_on_project_claims;
 use crate::routers::ui::common::{
-    ActorOrRedirect, Notice, assignee_field, notice_banner, project_sidebar, render_page_wide, ui_path,
+    ActorOrRedirect, Notice, assignee_field, notice_banner, project_sidebar, render_page_wide,
+    ui_path,
 };
 use forge_ui::{
     PageHeader, Tone, Variant, badge, button_el, close_modal, field_for, form_el, icon, modal,

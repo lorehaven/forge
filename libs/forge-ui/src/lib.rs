@@ -10,7 +10,7 @@ pub use assets::{stylesheet, stylesheet_with, write_css, write_css_with, write_s
 pub use components::*;
 pub use scripts::LOCALE_CHOSEN_COOKIE;
 pub use shell::{
-    NavChild, NavItem, NavSection, PALETTES, PageWidth, Sidebar, SUPPORTED_LOCALES, ShellConfig, UiShell,
-    gatehouse_dashboard_url, gatehouse_profile_url, menu_item, supported_locales, theme_menu,
-    user_menu,
+    NavChild, NavItem, NavSection, PALETTES, PageWidth, SUPPORTED_LOCALES, ShellConfig, Sidebar,
+    UiShell, gatehouse_dashboard_url, gatehouse_profile_url, menu_item, supported_locales,
+    theme_menu, user_menu,
 };

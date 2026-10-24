@@ -16,8 +16,8 @@ use crate::domain::project;
 use forge_ui::{
     NavChild, NavItem, NavSection, PageWidth, ShellConfig, Sidebar, Tone, UiShell, alert, txt,
 };
-use quench_db::prelude::Db;
 pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
+use quench_db::prelude::Db;
 
 static UI_SHELL: LazyLock<UiShell> = LazyLock::new(|| {
     css::ensure_workbench_css();
@@ -60,7 +60,10 @@ pub fn render_page(
     content: Element,
     sidebar: &Sidebar,
 ) -> Response {
-    Response::html(status, UI_SHELL.page_in(content, PageWidth::Normal, sidebar))
+    Response::html(
+        status,
+        UI_SHELL.page_in(content, PageWidth::Normal, sidebar),
+    )
 }
 
 /// Full-width variant for pages that scroll their own panes (the board).
