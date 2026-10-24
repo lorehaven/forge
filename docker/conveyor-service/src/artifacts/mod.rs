@@ -44,12 +44,42 @@ pub enum ArtifactError {
     TooBig { uri: String },
 }
 
+/// Who conveyor says it is to warehouse.
+#[derive(Clone)]
+enum Identity {
+    None,
+    /// HTTP basic authentication, for a warehouse that takes it.
+    Basic(String, String),
+    /// A machine identity: gatehouse's `client_credentials` grant gives a bearer token, which is what warehouse's
+    /// files API accepts.
+    Client(std::sync::Arc<ClientGrant>),
+}
+
+struct ClientGrant {
+    token_url: String,
+    client_id: String,
+    client_secret: String,
+    /// The token, and when to ask for another.
+    cached: tokio::sync::Mutex<Option<(String, std::time::Instant)>>,
+}
+
+impl std::fmt::Debug for Identity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Credentials never appear in logs.
+        f.write_str(match self {
+            Self::None => "Identity::None",
+            Self::Basic(..) => "Identity::Basic(..)",
+            Self::Client(_) => "Identity::Client(..)",
+        })
+    }
+}
+
 /// Where artifacts go.
 #[derive(Debug, Clone)]
 pub struct WarehouseStore {
     base_url: String,
     storage: String,
-    credentials: Option<(String, String)>,
+    identity: Identity,
     http: quench_client::transport::Client,
 }
 
@@ -63,15 +93,28 @@ impl WarehouseStore {
             return None;
         }
 
+        // Preferred: a client of gatehouse's (`WAREHOUSE_CLIENT_ID`, by default the one pipelines publish with).
+        let client_secret = quench_core::env::get_or("WAREHOUSE_CLIENT_SECRET", "");
+        let gatehouse = quench_core::env::get_or("GATEHOUSE_URL", "");
         let username = quench_core::env::get_or("WAREHOUSE_TECH_USERNAME", "");
         let password = quench_core::env::get_or("WAREHOUSE_TECH_PASSWORD", "");
-        let credentials =
-            (!username.trim().is_empty()).then(|| (username.trim().to_string(), password));
+        let identity = if !client_secret.trim().is_empty() && !gatehouse.trim().is_empty() {
+            Identity::Client(std::sync::Arc::new(ClientGrant {
+                token_url: format!("{}/api/v1/token", gatehouse.trim().trim_end_matches('/')),
+                client_id: quench_core::env::get_or("WAREHOUSE_CLIENT_ID", "conveyor-publish"),
+                client_secret: client_secret.trim().to_string(),
+                cached: tokio::sync::Mutex::new(None),
+            }))
+        } else if username.trim().is_empty() {
+            Identity::None
+        } else {
+            Identity::Basic(username.trim().to_string(), password)
+        };
 
         Some(Self {
             base_url: base_url.to_string(),
             storage: quench_core::env::get_or("CONVEYOR_ARTIFACT_STORAGE", "artifacts"),
-            credentials,
+            identity,
             http: quench_client::transport::Client::builder()
                 .timeout(std::time::Duration::from_secs(120))
                 // Same allowance sage makes for switchboard's internal certs.
@@ -87,12 +130,96 @@ impl WarehouseStore {
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             storage: storage.to_string(),
-            credentials,
+            identity: credentials.map_or(Identity::None, |(user, password)| {
+                Identity::Basic(user, password)
+            }),
             http: quench_client::transport::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
                 .build()
                 .unwrap_or_default(),
         }
+    }
+
+    /// A store that identifies itself to warehouse with a `client_credentials` token from `token_url`.
+    #[must_use]
+    pub fn with_client(
+        base_url: &str,
+        storage: &str,
+        token_url: &str,
+        client_id: &str,
+        client_secret: &str,
+    ) -> Self {
+        let mut store = Self::new(base_url, storage, None);
+        store.identity = Identity::Client(std::sync::Arc::new(ClientGrant {
+            token_url: token_url.to_string(),
+            client_id: client_id.to_string(),
+            client_secret: client_secret.to_string(),
+            cached: tokio::sync::Mutex::new(None),
+        }));
+        store
+    }
+
+    /// `request` with this store's credentials on it.
+    async fn authorize(
+        &self,
+        request: quench_client::transport::RequestBuilder,
+    ) -> Result<quench_client::transport::RequestBuilder, ArtifactError> {
+        match &self.identity {
+            Identity::None => Ok(request),
+            Identity::Basic(user, password) => Ok(request.basic_auth(user, Some(password))),
+            Identity::Client(grant) => Ok(request.bearer_auth(self.token(grant).await?)),
+        }
+    }
+
+    /// The identity's token while it is good (with a margin), otherwise a fresh grant.
+    async fn token(&self, grant: &ClientGrant) -> Result<String, ArtifactError> {
+        let fresh = grant
+            .cached
+            .lock()
+            .await
+            .as_ref()
+            .filter(|(_, expires)| *expires > std::time::Instant::now())
+            .map(|(token, _)| token.clone());
+        if let Some(token) = fresh {
+            return Ok(token);
+        }
+
+        let response = self
+            .http
+            .post(&grant.token_url)
+            .form(&[
+                ("grant_type", "client_credentials"),
+                ("client_id", grant.client_id.as_str()),
+                ("client_secret", grant.client_secret.as_str()),
+            ])
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(ArtifactError::Rejected {
+                path: grant.token_url.clone(),
+                status: response.status().as_u16(),
+            });
+        }
+        let body: quench_serde::Value = response.json().await?;
+        let token = body
+            .get("access_token")
+            .and_then(quench_serde::Value::as_str)
+            .ok_or_else(|| ArtifactError::Rejected {
+                path: grant.token_url.clone(),
+                status: 200,
+            })?
+            .to_string();
+        let lifetime = body
+            .get("expires_in")
+            .and_then(quench_serde::Value::as_u64)
+            .unwrap_or(60)
+            .saturating_sub(30)
+            .max(1);
+        *grant.cached.lock().await = Some((
+            token.clone(),
+            std::time::Instant::now() + std::time::Duration::from_secs(lifetime),
+        ));
+        Ok(token)
     }
 
     /// The bytes of something [`upload`](Self::upload) returned the address of.
@@ -107,11 +234,7 @@ impl WarehouseStore {
                 uri: uri.to_string(),
             });
         }
-        let mut request = self.http.get(uri);
-        if let Some((username, password)) = &self.credentials {
-            request = request.basic_auth(username, Some(password));
-        }
-        let response = request.send().await?;
+        let response = self.authorize(self.http.get(uri)).await?.send().await?;
         if !response.status().is_success() {
             return Err(ArtifactError::Rejected {
                 path: uri.to_string(),
@@ -140,17 +263,13 @@ impl WarehouseStore {
             quench_serde::urlencoded::percent_encode(remote_path)
         );
 
-        let mut request = self
+        let request = self
             .http
             .put(&url)
             .header("Content-Type", "application/octet-stream")
             .body(bytes);
 
-        if let Some((username, password)) = &self.credentials {
-            request = request.basic_auth(username, Some(password));
-        }
-
-        let response = request.send().await?;
+        let response = self.authorize(request).await?.send().await?;
         if !response.status().is_success() {
             return Err(ArtifactError::Rejected {
                 path: remote_path.to_string(),

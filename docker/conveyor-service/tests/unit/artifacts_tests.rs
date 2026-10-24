@@ -289,3 +289,82 @@ async fn no_test_results_or_no_warehouse_keeps_nothing() {
         ArtifactError::Rejected { status: 404, .. }
     ));
 }
+
+#[quench_test::test]
+async fn a_machine_identity_uploads_and_downloads_with_a_bearer_token_fetched_once() {
+    use quench_test::mock::matchers::{body_string_contains, header, method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    // One grant serves every request while the token is good.
+    Mock::given(method("POST"))
+        .and(path("/gatehouse/api/v1/token"))
+        .and(body_string_contains("grant_type=client_credentials"))
+        .and(body_string_contains("client_id=conveyor-publish"))
+        .and(body_string_contains("client_secret=s3cret"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(quench_serde::json!({"access_token": "tok-1", "expires_in": 900})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/warehouse/api/v1/files/artifacts/file"))
+        .and(header("authorization", "Bearer tok-1"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/warehouse/api/v1/files/artifacts/file"))
+        .and(header("authorization", "Bearer tok-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("stored"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = WarehouseStore::with_client(
+        &format!("{}/warehouse", server.uri()),
+        "artifacts",
+        &format!("{}/gatehouse/api/v1/token", server.uri()),
+        "conveyor-publish",
+        "s3cret",
+    );
+
+    let (_dir, ws) = workspace(&[("target/debug/quench-test/summary.json", b"{}")]);
+    let (kept, problems) = collect_test_reports(Some(&store), &ws, "run", "job").await;
+    assert!(problems.is_empty(), "{problems:?}");
+    assert_eq!(kept.len(), 1);
+    assert_eq!(
+        store.download(&kept[0].artifact.uri).await.expect("bytes"),
+        b"stored"
+    );
+}
+
+#[quench_test::test]
+async fn a_refused_grant_is_reported_as_a_rejection() {
+    use quench_test::mock::matchers::path;
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(path("/token"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+    let store = WarehouseStore::with_client(
+        &server.uri(),
+        "artifacts",
+        &format!("{}/token", server.uri()),
+        "c",
+        "wrong",
+    );
+
+    let (_dir, ws) = workspace(&[("target/debug/quench-test/index.html", b"<html/>")]);
+    let (kept, problems) = collect_test_reports(Some(&store), &ws, "run", "job").await;
+    assert!(kept.is_empty());
+    assert!(matches!(
+        problems[0],
+        ArtifactError::Rejected { status: 401, .. }
+    ));
+}
