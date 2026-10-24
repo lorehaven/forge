@@ -10,6 +10,9 @@ use std::path::Path;
 /// Above this, a build wants a registry, not a file store held open by a worker.
 const MAX_BYTES: u64 = 512 * 1024 * 1024;
 
+/// What [`WarehouseStore::download`] will read: it serves summaries for a web page, not builds.
+const MAX_DOWNLOAD_BYTES: usize = 16 * 1024 * 1024;
+
 #[derive(Debug, quench_core::Error)]
 pub enum ArtifactError {
     #[error("`{path}` is outside the checkout")]
@@ -33,6 +36,12 @@ pub enum ArtifactError {
 
     #[error("could not reach warehouse: {0}")]
     Unreachable(#[from] quench_client::transport::Error),
+
+    #[error("`{uri}` is not in this warehouse")]
+    Foreign { uri: String },
+
+    #[error("`{uri}` is over the {MAX_DOWNLOAD_BYTES}-byte download limit")]
+    TooBig { uri: String },
 }
 
 /// Where artifacts go.
@@ -72,6 +81,52 @@ impl WarehouseStore {
         })
     }
 
+    /// A store at `base_url` keeping files in `storage`, with basic-auth `credentials` if it wants them.
+    #[must_use]
+    pub fn new(base_url: &str, storage: &str, credentials: Option<(String, String)>) -> Self {
+        Self {
+            base_url: base_url.trim_end_matches('/').to_string(),
+            storage: storage.to_string(),
+            credentials,
+            http: quench_client::transport::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_default(),
+        }
+    }
+
+    /// The bytes of something [`upload`](Self::upload) returned the address of.
+    ///
+    /// # Errors
+    ///
+    /// [`ArtifactError::Foreign`] for an address outside this warehouse, [`ArtifactError::Rejected`] for a
+    /// non-success answer, [`ArtifactError::TooBig`] over 16 MiB, [`ArtifactError::Unreachable`] otherwise.
+    pub async fn download(&self, uri: &str) -> Result<Vec<u8>, ArtifactError> {
+        if !uri.starts_with(&self.base_url) {
+            return Err(ArtifactError::Foreign {
+                uri: uri.to_string(),
+            });
+        }
+        let mut request = self.http.get(uri);
+        if let Some((username, password)) = &self.credentials {
+            request = request.basic_auth(username, Some(password));
+        }
+        let response = request.send().await?;
+        if !response.status().is_success() {
+            return Err(ArtifactError::Rejected {
+                path: uri.to_string(),
+                status: response.status().as_u16(),
+            });
+        }
+        let bytes = response.bytes().await?;
+        if bytes.len() > MAX_DOWNLOAD_BYTES {
+            return Err(ArtifactError::TooBig {
+                uri: uri.to_string(),
+            });
+        }
+        Ok(bytes.to_vec())
+    }
+
     /// Scoped by run id so two runs of the same commit don't overwrite each other.
     fn remote_path(run_id: &str, name: &str) -> String {
         format!("conveyor/{run_id}/{name}")
@@ -106,6 +161,65 @@ impl WarehouseStore {
         // Query included: warehouse addresses the file by `path`, so trimming it would collide every artifact.
         Ok(url)
     }
+}
+
+/// Where a `quench-test` run leaves its results, under the checkout's `target` directory, per build profile.
+const TEST_REPORT_DIRS: [&str; 2] = ["target/debug/quench-test", "target/release/quench-test"];
+
+/// The files of those directories worth keeping: the merged results, and the page that shows them.
+const TEST_REPORT_FILES: [&str; 2] = ["summary.json", "index.html"];
+
+/// Keeps the results a `quench-test` run left in the checkout, whatever the job's outcome.
+///
+/// They matter most when the job failed. Nothing is declared for this: a job that ran quench-test tests has the
+/// files, one that did not has nothing to keep. Scoped by job as well as run, since a run can have several test
+/// jobs.
+pub async fn collect_test_reports(
+    store: Option<&WarehouseStore>,
+    workspace: &Workspace,
+    run_id: &str,
+    job_id: &str,
+) -> (Vec<Collected>, Vec<ArtifactError>) {
+    let mut kept = Vec::new();
+    let mut problems = Vec::new();
+    let Some(store) = store else {
+        return (kept, problems);
+    };
+
+    for directory in TEST_REPORT_DIRS {
+        for file in TEST_REPORT_FILES {
+            let declared = format!("{directory}/{file}");
+            let Some(resolved) = workspace.resolve(&declared) else {
+                continue;
+            };
+            let Ok(bytes) = tokio::fs::read(&resolved).await else {
+                continue;
+            };
+            let digest = format!(
+                "sha256:{}",
+                quench_core::hex::encode(quench_crypto::hash::sha256(&bytes))
+            );
+            let remote = format!("conveyor/{run_id}/{job_id}/{file}");
+            match store.upload(&remote, bytes).await {
+                Ok(uri) => kept.push(Collected {
+                    artifact: Artifact {
+                        id: Uuid::new_v4().to_string(),
+                        run_id: run_id.to_string(),
+                        job_id: job_id.to_string(),
+                        kind: "file".to_string(),
+                        name: file.to_string(),
+                        version: None,
+                        uri,
+                        digest: Some(digest),
+                        created_at: Time::now(),
+                    },
+                }),
+                Err(error) => problems.push(error),
+            }
+        }
+    }
+
+    (kept, problems)
 }
 
 /// One artifact, ready to record.

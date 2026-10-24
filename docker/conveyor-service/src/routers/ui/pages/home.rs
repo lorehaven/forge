@@ -504,6 +504,10 @@ pub fn check_chips(summary: Option<&ScanSummary>) -> Element {
             CheckKind::Coverage,
             summary.and_then(|s| s.coverage.as_ref()),
         ))
+        .child(chip(
+            CheckKind::Tests,
+            summary.and_then(|s| s.tests.as_ref()),
+        ))
 }
 
 #[must_use]
@@ -513,6 +517,7 @@ pub fn chip(kind: CheckKind, check: Option<&CheckResult>) -> Element {
         CheckKind::Machete => "M",
         CheckKind::Audit => "A",
         CheckKind::Coverage => "C",
+        CheckKind::Tests => "T",
     };
 
     let count = |check: &CheckResult| {

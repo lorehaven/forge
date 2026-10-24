@@ -66,6 +66,9 @@ pub(super) async fn log(LogAccess(redirect): LogAccess, Path(job_id): Path<Strin
         .attr("hx-ext", "sse")
         .attr("sse-connect", stream)
         .attr("sse-swap", "stdout,stderr")
+        // The server ends the log with a `done` event; without this the browser reads the close as a drop,
+        // reconnects, and the whole log is appended a second time.
+        .attr("sse-close", "done")
         .attr("hx-swap", "beforeend");
 
     let body = div().child(toolbar).child(viewer);

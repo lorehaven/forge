@@ -232,3 +232,110 @@ fn chunk(seq: u64, at: quench_core::time::Time, stream: Stream, line: &str) -> L
         at,
     }
 }
+
+#[quench_test::test]
+async fn the_tests_summary_a_job_left_in_warehouse_is_read_back() {
+    use conveyor_service::artifacts::WarehouseStore;
+    use conveyor_service::domain::Artifact;
+    use quench_test::mock::matchers::{method, path};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
+
+    let Some((db, _guard)) = database().await else {
+        return skipped("the_tests_summary_a_job_left_in_warehouse_is_read_back");
+    };
+    let repo = register_repo(&db, "tested", "file:///nowhere").await;
+    let enqueued = queue::enqueue(&db, &new_run(&repo.id, SHA))
+        .await
+        .expect("enqueue");
+    let run_id = enqueued.run().id.clone();
+    let jobs = queue::create_jobs(
+        &db,
+        &run_id,
+        &[conveyor_service::scheduler::queue::PlannedJob {
+            stage: "test".to_string(),
+            name: "unit".to_string(),
+            needs: vec![],
+            status: Status::Success,
+            error: None,
+            reused_from_run: None,
+        }],
+    )
+    .await
+    .expect("create job");
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/files/artifacts/file"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"duration_ms": 1000, "summary": {"total": 2, "passed": 1, "failed": 1, "skipped": 0},
+                "suites": [{"name": "s", "cases": [{"name": "s::bad", "status": "failed", "message": "boom"}]}]}"#,
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let uri = format!(
+        "{}/api/v1/files/artifacts/file?path=conveyor%2F{run_id}%2Fsummary.json",
+        server.uri()
+    );
+    queue::record_artifact(
+        &db,
+        &Artifact {
+            id: quench_core::uuid::Uuid::new_v4().to_string(),
+            run_id,
+            job_id: jobs[0].id.clone(),
+            kind: "file".to_string(),
+            name: scan::TESTS_SUMMARY.to_string(),
+            version: None,
+            uri,
+            digest: None,
+            created_at: Time::now(),
+        },
+    )
+    .await
+    .expect("record artifact");
+
+    queue::record_artifact(
+        &db,
+        &Artifact {
+            id: quench_core::uuid::Uuid::new_v4().to_string(),
+            run_id: enqueued.run().id.clone(),
+            job_id: jobs[0].id.clone(),
+            kind: "file".to_string(),
+            name: scan::TESTS_REPORT_PAGE.to_string(),
+            version: None,
+            uri: format!(
+                "{}/api/v1/files/artifacts/file?path=index.html",
+                server.uri()
+            ),
+            digest: None,
+            created_at: Time::now(),
+        },
+    )
+    .await
+    .expect("record report page");
+    quench_core::env::set("WAREHOUSE_PUBLIC_URL", "https://public.example/warehouse");
+
+    let store = WarehouseStore::new(&server.uri(), "artifacts", None);
+    let summary = scan::latest_with(&db, &repo.id, Some(&store))
+        .await
+        .expect("scan summary");
+    quench_core::env::remove("WAREHOUSE_PUBLIC_URL");
+    let tests = summary.tests.expect("a tests result");
+    assert_eq!(
+        tests.report_url.as_deref(),
+        Some("https://public.example/warehouse/api/v1/files/artifacts/file?path=index.html")
+    );
+    assert!(!tests.passed);
+    assert_eq!(tests.job_name, "test/unit");
+    assert_eq!(tests.findings[0].title, "s::bad");
+
+    // Asked again, the artifact is not fetched a second time (the mock expects exactly one request).
+    let again = scan::latest_with(&db, &repo.id, Some(&store))
+        .await
+        .expect("scan summary");
+    assert!(again.tests.is_some());
+
+    // No store, no test summary.
+    let without = scan::latest_with(&db, &repo.id, None).await.expect("scan");
+    assert!(without.tests.is_none());
+}

@@ -72,10 +72,12 @@ fn renders_cards_with_counts_and_links() {
                 ..Finding::default()
             }],
             metric: None,
+            report_url: None,
         }),
         machete: None,
         audit: None,
         coverage: None,
+        tests: None,
     };
 
     let html = overview(&repo(), &summary).render();
@@ -107,6 +109,7 @@ fn a_coverage_card_shows_its_metric_not_the_capped_finding_count() {
             })
             .collect(),
         metric: Some("22%".to_string()),
+        report_url: None,
     };
 
     let html = card(&repo(), &check).render();
@@ -131,6 +134,7 @@ fn renders_finding_detail_fields() {
             extra: Some("Solution: No fixed upgrade is available!".to_string()),
         }],
         metric: None,
+        report_url: None,
     };
 
     let html = detail(&repo(), CheckKind::Audit, &check).render();
@@ -152,8 +156,60 @@ fn renders_clean_detail_page() {
         headline: "clean".to_string(),
         findings: vec![],
         metric: None,
+        report_url: None,
     };
 
     let html = detail(&repo(), CheckKind::Machete, &check).render();
     assert!(html.contains("ui_scan_clean"));
+}
+
+#[quench_test::test]
+fn a_tests_card_shows_passed_over_total_and_links_to_its_page() {
+    let summary = ScanSummary {
+        run: Some(run()),
+        tests: Some(CheckResult {
+            kind: CheckKind::Tests,
+            job_name: "test/unit".to_string(),
+            passed: true,
+            headline: "9 passed, 0 failed, 1 skipped".to_string(),
+            findings: vec![],
+            metric: Some("9/10".to_string()),
+            report_url: None,
+        }),
+        ..ScanSummary::default()
+    };
+
+    let html = overview(&repo(), &summary).render();
+
+    assert!(html.contains("ui_scan_tests_title"));
+    assert!(html.contains(">9/10<"));
+    assert!(html.contains("/ui/repos/lorehaven/palantir/scan/tests"));
+    assert!(html.contains("status-success"));
+}
+
+#[quench_test::test]
+fn the_tests_page_links_to_the_full_report_when_there_is_one() {
+    let mut check = CheckResult {
+        kind: CheckKind::Tests,
+        job_name: "test/unit".to_string(),
+        passed: true,
+        headline: "1 passed, 0 failed, 0 skipped".to_string(),
+        findings: vec![],
+        metric: Some("1/1".to_string()),
+        report_url: Some(
+            "https://ennor.ddns.net/warehouse/api/v1/files/artifacts/file?path=x".to_string(),
+        ),
+    };
+
+    let html = detail(&repo(), CheckKind::Tests, &check).render();
+    assert!(html.contains("ui_scan_tests_report"));
+    assert!(html.contains(r#"target="_blank""#));
+    assert!(html.contains("/warehouse/api/v1/files/artifacts/file"));
+
+    check.report_url = None;
+    assert!(
+        !detail(&repo(), CheckKind::Tests, &check)
+            .render()
+            .contains("ui_scan_tests_report")
+    );
 }

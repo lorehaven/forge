@@ -788,7 +788,31 @@ impl Worker {
             self.keep_artifacts(run, row, job, workspace).await;
         }
 
+        // Whatever the outcome: a failed run's test results are the ones worth reading.
+        self.keep_test_reports(run, row, workspace).await;
+
         Ok(outcome.status)
+    }
+
+    /// Uploads the `quench-test` results the job left, if any; like [`keep_artifacts`](Self::keep_artifacts)
+    /// it never fails the job.
+    async fn keep_test_reports(&self, run: &Run, row: &crate::domain::Job, workspace: &Workspace) {
+        let (kept, problems) = artifacts::collect_test_reports(
+            self.artifacts.as_ref().as_ref(),
+            workspace,
+            &run.id,
+            &row.id,
+        )
+        .await;
+
+        for problem in problems {
+            quench_log::warn!("{}: {problem}", row.qualified_name());
+        }
+        for collected in kept {
+            if let Err(error) = queue::record_artifact(&self.db, &collected.artifact).await {
+                quench_log::error!("could not record a test report for run {}: {error}", run.id);
+            }
+        }
     }
 
     /// Uploads declared artifacts; never fails the job - a lost copy is a warning, not a red run.

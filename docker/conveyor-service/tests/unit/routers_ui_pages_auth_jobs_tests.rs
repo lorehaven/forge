@@ -105,6 +105,9 @@ async fn job_log_viewer_connects_to_the_streams_own_sse_endpoint() {
     assert!(html.contains(r#"id="log-job-42""#));
     assert!(html.contains("jobs/job-42/stream"));
     assert!(html.contains("sse-connect"));
+    // The server ends a log with a `done` event; the page must stop on it, or the browser reconnects
+    // and appends the whole log again.
+    assert!(html.contains(r#"sse-close="done""#));
 }
 
 #[quench_test::test]

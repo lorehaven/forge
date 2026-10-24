@@ -1,5 +1,6 @@
 use conveyor_service::scan::{
-    CheckKind, CheckResult, parse_audit, parse_coverage, parse_lint, parse_machete, strip_ansi,
+    CheckKind, CheckResult, parse_audit, parse_coverage, parse_lint, parse_machete, public_url,
+    strip_ansi, tests_check,
 };
 
 #[quench_test::test]
@@ -28,6 +29,7 @@ fn passed_check_with_unparseable_output_has_no_findings() {
         headline: String::new(),
         findings: Vec::new(),
         metric: None,
+        report_url: None,
         passed: true,
     }
     .parsed(&["10 modules scanned, 0 lint errors"], Some(0));
@@ -44,6 +46,7 @@ fn failed_check_with_unparseable_output_falls_back_to_log_tail() {
         headline: String::new(),
         findings: Vec::new(),
         metric: None,
+        report_url: None,
         passed: false,
     }
     .parsed(&["thread panicked", "some other diagnostic"], Some(101));
@@ -205,4 +208,88 @@ fn parses_coverage_table_and_skips_fully_covered_files() {
 #[quench_test::test]
 fn a_coverage_report_with_no_recognisable_rows_does_not_parse() {
     assert!(parse_coverage(&["error: no coverage data found"]).is_none());
+}
+
+const TESTS_REPORT: &str = r#"{
+  "title": "All test results", "started": 1, "duration_ms": 95000,
+  "summary": {"total": 5, "passed": 3, "failed": 1, "skipped": 1},
+  "suites": [
+    {"name": "api", "kind": "unit", "cases": [
+      {"name": "api::ok", "status": "passed", "duration_ms": 1},
+      {"name": "api::broken", "status": "failed", "duration_ms": 2,
+       "message": "assertion failed: left == right", "location": "tests/api.rs:12"},
+      {"name": "api::later", "status": "skipped", "duration_ms": 0}
+    ]},
+    {"name": "Checkout", "kind": "bdd", "cases": [
+      {"name": "pay", "status": "failed", "duration_ms": 3},
+      {"name": "refund", "status": "passed", "duration_ms": 4},
+      {"name": "ship", "status": "passed", "duration_ms": 4}
+    ]}
+  ]
+}"#;
+
+#[quench_test::test]
+fn a_test_report_becomes_a_check_with_each_failed_test_a_finding() {
+    let check = tests_check("test/unit", TESTS_REPORT).expect("a report");
+
+    assert_eq!(check.kind, CheckKind::Tests);
+    assert_eq!(check.job_name, "test/unit");
+    assert!(!check.passed);
+    assert_eq!(check.headline, "3 passed, 1 failed, 1 skipped, 1m 35s");
+    assert_eq!(check.metric.as_deref(), Some("3/5"));
+    assert_eq!(check.findings.len(), 2);
+    assert_eq!(check.findings[0].title, "api::broken");
+    assert_eq!(check.findings[0].severity.as_deref(), Some("failed"));
+    assert_eq!(
+        check.findings[0].location.as_deref(),
+        Some("tests/api.rs:12")
+    );
+    assert_eq!(
+        check.findings[0].extra.as_deref(),
+        Some("assertion failed: left == right")
+    );
+    // No location of its own: the suite it ran in.
+    assert_eq!(check.findings[1].location.as_deref(), Some("Checkout"));
+    assert_eq!(check.findings[1].extra, None);
+}
+
+#[quench_test::test]
+fn a_clean_test_report_passes_and_shows_short_durations() {
+    let report = r#"{"duration_ms": 420, "summary": {"total": 2, "passed": 2, "failed": 0, "skipped": 0}, "suites": []}"#;
+    let check = tests_check("t", report).expect("a report");
+    assert!(check.passed && check.findings.is_empty());
+    assert_eq!(check.headline, "2 passed, 0 failed, 0 skipped, 420 ms");
+
+    let report = r#"{"duration_ms": 2500, "summary": {"total": 0}, "suites": []}"#;
+    assert!(
+        tests_check("t", report)
+            .expect("a report")
+            .headline
+            .ends_with("2.5 s")
+    );
+}
+
+#[quench_test::test]
+fn something_that_is_not_a_test_report_is_not_one() {
+    assert!(tests_check("t", "not json").is_none());
+    assert!(tests_check("t", "{}").is_none());
+    assert!(tests_check("t", r#"{"summary": {}}"#).is_none());
+    assert_eq!(CheckKind::from_slug("tests"), Some(CheckKind::Tests));
+    assert_eq!(CheckKind::Tests.slug(), "tests");
+    assert_eq!(CheckKind::Tests.label(), "ui_scan_tests_title");
+}
+
+#[quench_test::test]
+fn a_stored_file_is_addressed_through_warehouses_public_url() {
+    let internal = "http://warehouse.forge.svc.cluster.local/warehouse/api/v1/files/artifacts/file?path=conveyor%2Fr%2Fj%2Findex.html";
+    assert_eq!(
+        public_url("https://ennor.ddns.net/warehouse/", internal).as_deref(),
+        Some(
+            "https://ennor.ddns.net/warehouse/api/v1/files/artifacts/file?path=conveyor%2Fr%2Fj%2Findex.html"
+        )
+    );
+    // Nothing configured, or not a warehouse file address: no link rather than a wrong one.
+    assert_eq!(public_url("", internal), None);
+    assert_eq!(public_url("  ", internal), None);
+    assert_eq!(public_url("https://x", "http://elsewhere/page"), None);
 }

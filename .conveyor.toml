@@ -64,9 +64,11 @@ needs = ["build"]
 name  = "unit"
 image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
 env   = { RUST_BACKTRACE = "1" }
-# nextest for speed on the bulk of the suite; it doesn't run doctests, so
-# those still go through plain `cargo test --doc`.
-steps = [{ anvil = "nextest --all" }, { run = "cargo test --doc --workspace" }]
+# The tests run on quench-test's own harness, which leaves a JSON/HTML report of the whole run in
+# target/debug/quench-test; conveyor keeps `summary.json` and `index.html` from there as artifacts and shows the
+# totals on the repo's scan page. (nextest would run every test in a process of its own, so no process would
+# see the whole run to report on.) Doctests run as part of the same invocation.
+steps = [{ anvil = "test --all" }]
 
 [[stage.job]]
 name      = "coverage"

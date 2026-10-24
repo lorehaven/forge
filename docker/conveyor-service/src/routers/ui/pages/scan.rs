@@ -144,6 +144,7 @@ pub fn overview_body(repo: &Repo, summary: &ScanSummary) -> Element {
     grid = grid.child_opt(summary.machete.as_ref().map(|c| card(repo, c)));
     grid = grid.child_opt(summary.audit.as_ref().map(|c| card(repo, c)));
     grid = grid.child_opt(summary.coverage.as_ref().map(|c| card(repo, c)));
+    grid = grid.child_opt(summary.tests.as_ref().map(|c| card(repo, c)));
     container = container.child(grid);
 
     container
@@ -215,6 +216,13 @@ pub fn detail(repo: &Repo, kind: CheckKind, check: &CheckResult) -> Element {
                         .text(format!("{} - from {}", check.headline, check.job_name)),
                 ),
         )
+        .child_opt(check.report_url.as_ref().map(|url| {
+            a().class("log-action")
+                .attr("href", url)
+                .attr("target", "_blank")
+                .attr("rel", "noopener")
+                .attr("data-i18n", "ui_scan_tests_report")
+        }))
         .child(findings_list(&check.findings))
 }
 

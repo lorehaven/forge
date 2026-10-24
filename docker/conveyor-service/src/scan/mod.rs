@@ -1,10 +1,14 @@
-//! Best-effort summaries of a repo's most recent lint/machete/audit/coverage
-//! steps - reads the last run's own step output; never triggers or shells out.
+//! Best-effort summaries of a repo's most recent lint/machete/audit/coverage steps.
+//!
+//! Reads the last run's own step output; never triggers or shells out. The test results come from the
+//! `summary.json` a `quench-test` run leaves among the job's artifacts in warehouse.
 
+use crate::artifacts::WarehouseStore;
 use crate::domain::{Job, Run, Status};
 use crate::executors::Stream;
 use crate::scheduler::queue::{self, QueueError};
 use quench_db::prelude::Db;
+use std::time::Duration;
 
 /// A category this page knows how to summarise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +21,8 @@ pub enum CheckKind {
     Audit,
     /// `cargo llvm-cov report` (test coverage).
     Coverage,
+    /// What the tests did, from the `summary.json` artifact (`quench-test`'s report).
+    Tests,
 }
 
 impl CheckKind {
@@ -41,6 +47,7 @@ impl CheckKind {
             Self::Machete => "ui_scan_machete_title",
             Self::Audit => "ui_scan_audit_title",
             Self::Coverage => "ui_scan_coverage_title",
+            Self::Tests => "ui_scan_tests_title",
         }
     }
 
@@ -52,6 +59,7 @@ impl CheckKind {
             Self::Machete => "machete",
             Self::Audit => "audit",
             Self::Coverage => "coverage",
+            Self::Tests => "tests",
         }
     }
 
@@ -62,6 +70,7 @@ impl CheckKind {
             "machete" => Some(Self::Machete),
             "audit" => Some(Self::Audit),
             "coverage" => Some(Self::Coverage),
+            "tests" => Some(Self::Tests),
             _ => None,
         }
     }
@@ -84,7 +93,7 @@ pub struct Finding {
     pub extra: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CheckResult {
     pub kind: CheckKind,
     pub job_name: String,
@@ -96,6 +105,8 @@ pub struct CheckResult {
     /// The overview card's big number when the finding count isn't it - only
     /// `Some` for coverage, since 50 capped files says nothing about % covered.
     pub metric: Option<String>,
+    /// Where the full report can be opened in a browser, for the checks that keep one (tests).
+    pub report_url: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -105,6 +116,7 @@ pub struct ScanSummary {
     pub machete: Option<CheckResult>,
     pub audit: Option<CheckResult>,
     pub coverage: Option<CheckResult>,
+    pub tests: Option<CheckResult>,
 }
 
 impl ScanSummary {
@@ -114,6 +126,7 @@ impl ScanSummary {
             && self.machete.is_none()
             && self.audit.is_none()
             && self.coverage.is_none()
+            && self.tests.is_none()
     }
 
     #[must_use]
@@ -123,6 +136,7 @@ impl ScanSummary {
             CheckKind::Machete => self.machete.as_ref(),
             CheckKind::Audit => self.audit.as_ref(),
             CheckKind::Coverage => self.coverage.as_ref(),
+            CheckKind::Tests => self.tests.as_ref(),
         }
     }
 }
@@ -130,6 +144,21 @@ impl ScanSummary {
 /// The most recent run and whichever checks its jobs happened to run.
 /// `Ok(default())`, not an error, when there's nothing to show yet.
 pub async fn latest(db: &Db, repo_id: &str) -> Result<ScanSummary, QueueError> {
+    static STORE: std::sync::OnceLock<Option<WarehouseStore>> = std::sync::OnceLock::new();
+    latest_with(
+        db,
+        repo_id,
+        STORE.get_or_init(WarehouseStore::from_env).as_ref(),
+    )
+    .await
+}
+
+/// [`latest`] reading test summaries from `store` (none: no test summary).
+pub async fn latest_with(
+    db: &Db,
+    repo_id: &str,
+    store: Option<&WarehouseStore>,
+) -> Result<ScanSummary, QueueError> {
     let Some(run) = queue::list_runs(db, Some(repo_id), 1)
         .await?
         .into_iter()
@@ -146,9 +175,159 @@ pub async fn latest(db: &Db, repo_id: &str) -> Result<ScanSummary, QueueError> {
 
     for job in &jobs {
         collect_job_checks(db, job, &mut summary).await?;
+        if let Some(store) = store
+            && let Some(result) = job_tests(db, store, job).await
+        {
+            summary.tests = Some(result);
+        }
     }
 
     Ok(summary)
+}
+
+/// Reports already fetched, by artifact id: the artifact never changes, and a page asks for it on every view.
+type ReportCache = std::sync::Mutex<std::collections::HashMap<String, CheckResult>>;
+
+fn report_cache() -> &'static ReportCache {
+    static CACHE: std::sync::OnceLock<ReportCache> = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// The test summary a job left in warehouse, if it left one.
+async fn job_tests(db: &Db, store: &WarehouseStore, job: &Job) -> Option<CheckResult> {
+    let artifacts = queue::list_artifacts_for_job(db, &job.id).await.ok()?;
+    let artifact = artifacts.iter().find(|a| a.name == TESTS_SUMMARY)?;
+
+    let cached = report_cache()
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(&artifact.id).cloned());
+    let mut result = if let Some(result) = cached {
+        result
+    } else {
+        let bytes = match store.download(&artifact.uri).await {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                quench_log::warn!("could not read the test summary of job {}: {error}", job.id);
+                return None;
+            }
+        };
+        let result = tests_check("", &String::from_utf8_lossy(&bytes))?;
+        if let Ok(mut cache) = report_cache().lock() {
+            if cache.len() >= 64 {
+                cache.clear();
+            }
+            cache.insert(artifact.id.clone(), result.clone());
+        }
+        result
+    };
+    result.job_name = job.qualified_name();
+    result.report_url = artifacts
+        .iter()
+        .find(|a| a.name == TESTS_REPORT_PAGE)
+        .and_then(|a| {
+            public_url(
+                &quench_core::env::get_or("WAREHOUSE_PUBLIC_URL", ""),
+                &a.uri,
+            )
+        });
+    Some(result)
+}
+
+/// The file a `quench-test` run leaves with every test binary's results merged.
+pub const TESTS_SUMMARY: &str = "summary.json";
+
+/// The page that shows them, kept next to it.
+pub const TESTS_REPORT_PAGE: &str = "index.html";
+
+/// A stored file's address as a browser reaches warehouse.
+///
+/// `public_base` (warehouse's address outside the cluster, `WAREHOUSE_PUBLIC_URL`) replaces the internal one
+/// the artifact was uploaded through. `None` when no public address is configured or `uri` is not a warehouse
+/// file address.
+#[must_use]
+pub fn public_url(public_base: &str, uri: &str) -> Option<String> {
+    let base = public_base.trim().trim_end_matches('/');
+    if base.is_empty() {
+        return None;
+    }
+    let tail = &uri[uri.find("/api/v1/files/")?..];
+    Some(format!("{base}{tail}"))
+}
+
+/// A `quench-test` report (`summary.json`) as a check: the totals as the headline, each failed test a finding.
+#[must_use]
+pub fn tests_check(job_name: &str, json: &str) -> Option<CheckResult> {
+    use quench_serde::Value;
+    let report: Value = quench_serde::json::from_str(json).ok()?;
+    let totals = report.get("summary")?;
+    let count = |key: &str| totals.get(key).and_then(Value::as_u64).unwrap_or(0);
+    let (total, passed, failed, skipped) = (
+        count("total"),
+        count("passed"),
+        count("failed"),
+        count("skipped"),
+    );
+
+    let mut headline = format!("{passed} passed, {failed} failed, {skipped} skipped");
+    if let Some(ms) = report.get("duration_ms").and_then(Value::as_u64)
+        && ms > 0
+    {
+        headline = format!("{headline}, {}", duration_text(ms));
+    }
+
+    let mut findings = Vec::new();
+    for suite in report.get("suites")?.as_array()? {
+        let suite_name = suite
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let Some(cases) = suite.get("cases").and_then(Value::as_array) else {
+            continue;
+        };
+        for case in cases {
+            if case.get("status").and_then(Value::as_str) != Some("failed") {
+                continue;
+            }
+            let name = case.get("name").and_then(Value::as_str).unwrap_or_default();
+            findings.push(Finding {
+                title: name.to_string(),
+                severity: Some("failed".to_string()),
+                location: case
+                    .get("location")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .or_else(|| (!suite_name.is_empty()).then(|| suite_name.to_string())),
+                extra: case
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(|message| message.trim().to_string())
+                    .filter(|message| !message.is_empty()),
+                ..Finding::default()
+            });
+        }
+    }
+    findings.truncate(MAX_FINDINGS);
+
+    Some(CheckResult {
+        kind: CheckKind::Tests,
+        job_name: job_name.to_string(),
+        passed: failed == 0,
+        headline,
+        findings,
+        metric: Some(format!("{passed}/{total}")),
+        report_url: None,
+    })
+}
+
+fn duration_text(ms: u64) -> String {
+    if ms < 1000 {
+        format!("{ms} ms")
+    } else if ms < 60_000 {
+        format!("{:.1} s", Duration::from_millis(ms).as_secs_f64())
+    } else {
+        format!("{}m {}s", ms / 60_000, (ms % 60_000) / 1000)
+    }
 }
 
 async fn collect_job_checks(
@@ -199,6 +378,7 @@ async fn collect_job_checks(
             headline: String::new(),
             findings: Vec::new(),
             metric: None,
+            report_url: None,
             passed,
         }
         .parsed(&lines, step.exit_code);
@@ -209,6 +389,8 @@ async fn collect_job_checks(
             CheckKind::Audit => summary.audit = Some(result),
             // A job may run several llvm-cov invocations; last one wins, not merged.
             CheckKind::Coverage => summary.coverage = Some(result),
+            // Never matched from a step: the tests come from the job's artifacts (`job_tests`).
+            CheckKind::Tests => {}
         }
     }
 
@@ -237,6 +419,7 @@ impl CheckResult {
             }
             CheckKind::Coverage => parse_coverage(&borrowed)
                 .map(|(headline, findings, metric)| (headline, findings, Some(metric))),
+            CheckKind::Tests => None,
         };
 
         if let Some((headline, mut findings, metric)) = parsed {
