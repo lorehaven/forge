@@ -62,4 +62,8 @@ async fn handle_reports_ok_with_the_digest_for_an_existing_tag() {
     assert_eq!(resp.status(), StatusCode::OK);
     let (headers, _) = support::parts(resp).await;
     assert!(headers.contains_key("docker-content-digest"));
+    assert_eq!(
+        headers.get("content-length").unwrap(),
+        MANIFEST_JSON.len().to_string().as_str()
+    );
 }

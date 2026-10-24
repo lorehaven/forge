@@ -16,6 +16,7 @@ pub async fn handle(
     Response::new(quench_http::prelude::http::StatusCode::OK)
         .header("content-type", resolved.media_type)
         .header("docker-content-digest", &resolved.digest)
+        .header("content-length", resolved.data.len().to_string())
 }
 
 // No `#[head]` macro exists - hand-expanded from `route_impl` in quench-http-macros.
