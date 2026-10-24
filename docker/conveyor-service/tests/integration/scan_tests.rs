@@ -313,17 +313,17 @@ async fn the_tests_summary_a_job_left_in_warehouse_is_read_back() {
     )
     .await
     .expect("record report page");
-    quench_core::env::set("WAREHOUSE_PUBLIC_URL", "https://public.example/warehouse");
 
     let store = WarehouseStore::new(&server.uri(), "artifacts", None);
     let summary = scan::latest_with(&db, &repo.id, Some(&store))
         .await
         .expect("scan summary");
-    quench_core::env::remove("WAREHOUSE_PUBLIC_URL");
     let tests = summary.tests.expect("a tests result");
-    assert_eq!(
-        tests.report_url.as_deref(),
-        Some("https://public.example/warehouse/api/v1/files/artifacts/file?path=index.html")
+    assert!(
+        tests
+            .report_uri
+            .as_deref()
+            .is_some_and(|uri| uri.ends_with("/api/v1/files/artifacts/file?path=index.html"))
     );
     assert!(!tests.passed);
     assert_eq!(tests.job_name, "test/unit");
@@ -338,4 +338,30 @@ async fn the_tests_summary_a_job_left_in_warehouse_is_read_back() {
     // No store, no test summary.
     let without = scan::latest_with(&db, &repo.id, None).await.expect("scan");
     assert!(without.tests.is_none());
+}
+
+/// The page that serves a stored report only has one to serve for a repository whose latest run kept one.
+#[quench_test::test]
+async fn the_report_page_is_not_found_without_a_stored_report() {
+    use quench_auth::domain::jwt::JwtConfig;
+    use quench_http::http::{Method, StatusCode};
+
+    let Some((db, _guard)) = database().await else {
+        return skipped("the_report_page_is_not_found_without_a_stored_report");
+    };
+    register_repo(&db, "reportless", "file:///nowhere").await;
+    conveyor_service::routers::ui::register_routes();
+    let mut config = JwtConfig::for_tests();
+    config.auth_enabled = false;
+    let (app, container) = crate::support::app(db, config).await;
+
+    for path in [
+        "/ui/repos/tests/reportless/scan/tests/report",
+        "/ui/repos/nobody/nothing/scan/tests/report",
+    ] {
+        let resp = app
+            .call(crate::support::req(Method::GET, path, &container))
+            .await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{path}");
+    }
 }

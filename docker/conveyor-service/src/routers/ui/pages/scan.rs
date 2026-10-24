@@ -5,8 +5,10 @@ use crate::domain::Repo;
 use crate::routers::ui::common::{PageAuth, format, render_page, ui_login_redirect, ui_path};
 use crate::scan::{CheckKind, CheckResult, Finding, ScanSummary};
 use crate::scheduler::repos;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
-use quench_http::prelude::{Inject, Path, Response, get, http::StatusCode};
+use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 
@@ -74,6 +76,64 @@ pub(super) async fn scan_detail_page(
             .class("home-content")
             .child(detail(&repo, kind, check)),
     )
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(super) struct ReportQuery {
+    /// Any value: hand the page over as a file to save, instead of showing it.
+    download: Option<String>,
+}
+
+/// The stored test report page, served by conveyor: warehouse hands files out as downloads, and it needs the
+/// reader to hold a warehouse grant. Sandboxed (`allow-scripts` only, no origin of its own) so a report can
+/// filter itself but never reach conveyor's session.
+#[get("/ui/repos/{owner}/{name}/scan/tests/report")]
+pub(super) async fn test_report(
+    PageAuth(authenticated): PageAuth,
+    Path((owner, name)): Path<(String, String)>,
+    Query(query): Query<ReportQuery>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if !authenticated {
+        return ui_login_redirect();
+    }
+    let repo = match load_repo(&db, &owner, &name).await {
+        Ok(Some(repo)) => repo,
+        Ok(None) => return not_found(),
+        Err(response) => return response,
+    };
+    let summary = match load_summary(&db, &repo, &owner, &name).await {
+        Ok(summary) => summary,
+        Err(response) => return response,
+    };
+    let (Some(uri), Some(store)) = (
+        summary.tests.and_then(|check| check.report_uri),
+        crate::scan::warehouse_store(),
+    ) else {
+        return not_found();
+    };
+
+    let page = match store.download(&uri).await {
+        Ok(page) => page,
+        Err(error) => {
+            quench_log::warn!("could not read the test report of {owner}/{name}: {error}");
+            return Response::text(StatusCode::BAD_GATEWAY, "the report could not be read");
+        }
+    };
+
+    let response = Response::from_bytes(StatusCode::OK, Bytes::from(page))
+        .header("content-type", "text/html; charset=utf-8")
+        .header("content-security-policy", "sandbox allow-scripts")
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "private, max-age=60");
+    if query.download.is_some() {
+        response.header(
+            "content-disposition",
+            format!("attachment; filename=\"{owner}-{name}-test-report.html\""),
+        )
+    } else {
+        response
+    }
 }
 
 async fn load_repo(db: &Db, owner: &str, name: &str) -> Result<Option<Repo>, Response> {
@@ -216,13 +276,7 @@ pub fn detail(repo: &Repo, kind: CheckKind, check: &CheckResult) -> Element {
                         .text(format!("{} - from {}", check.headline, check.job_name)),
                 ),
         )
-        .child_opt(check.report_url.as_ref().map(|url| {
-            a().class("log-action")
-                .attr("href", url)
-                .attr("target", "_blank")
-                .attr("rel", "noopener")
-                .attr("data-i18n", "ui_scan_tests_report")
-        }))
+        .child_opt(check.report_uri.as_ref().map(|_| report_viewer(repo)))
         .child(findings_list(&check.findings))
 }
 
@@ -291,4 +345,45 @@ fn severity_class(severity: &str) -> String {
 pub(super) fn register_routes() {
     let _ = scan_page as fn(_, _, _) -> _;
     let _ = scan_detail_page as fn(_, _, _) -> _;
+    let _ = test_report as fn(_, _, _, _) -> _;
+}
+
+/// The report, right on the page, with buttons to open it on its own and to save it.
+fn report_viewer(repo: &Repo) -> Element {
+    let report = ui_path(&format!(
+        "/repos/{}/{}/scan/tests/report",
+        repo.owner, repo.name
+    ));
+
+    div()
+        .class("report-viewer")
+        .child(
+            div()
+                .class("log-toolbar")
+                .child(
+                    a().class("log-action")
+                        .attr("href", &report)
+                        .attr("target", "_blank")
+                        .attr("rel", "noopener")
+                        .attr("title", "Open the full report")
+                        .attr("data-i18n-title", "ui_scan_tests_report_open")
+                        .child(i().class("fas").class("fa-up-right-from-square")),
+                )
+                .child(
+                    a().class("log-action")
+                        .attr("href", format!("{report}?download=1"))
+                        .attr("download", "")
+                        .attr("title", "Download the report")
+                        .attr("data-i18n-title", "ui_scan_tests_report_download")
+                        .child(i().class("fas").class("fa-download")),
+                ),
+        )
+        .child(
+            element("iframe")
+                .class("report-frame")
+                .attr("src", report)
+                .attr("sandbox", "allow-scripts")
+                .attr("loading", "lazy")
+                .attr("title", "Test report"),
+        )
 }

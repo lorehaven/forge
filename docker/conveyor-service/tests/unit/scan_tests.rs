@@ -1,6 +1,6 @@
 use conveyor_service::scan::{
-    CheckKind, CheckResult, parse_audit, parse_coverage, parse_lint, parse_machete, public_url,
-    strip_ansi, tests_check,
+    CheckKind, CheckResult, parse_audit, parse_coverage, parse_lint, parse_machete, strip_ansi,
+    tests_check,
 };
 
 #[quench_test::test]
@@ -29,7 +29,7 @@ fn passed_check_with_unparseable_output_has_no_findings() {
         headline: String::new(),
         findings: Vec::new(),
         metric: None,
-        report_url: None,
+        report_uri: None,
         passed: true,
     }
     .parsed(&["10 modules scanned, 0 lint errors"], Some(0));
@@ -46,7 +46,7 @@ fn failed_check_with_unparseable_output_falls_back_to_log_tail() {
         headline: String::new(),
         findings: Vec::new(),
         metric: None,
-        report_url: None,
+        report_uri: None,
         passed: false,
     }
     .parsed(&["thread panicked", "some other diagnostic"], Some(101));
@@ -277,19 +277,4 @@ fn something_that_is_not_a_test_report_is_not_one() {
     assert_eq!(CheckKind::from_slug("tests"), Some(CheckKind::Tests));
     assert_eq!(CheckKind::Tests.slug(), "tests");
     assert_eq!(CheckKind::Tests.label(), "ui_scan_tests_title");
-}
-
-#[quench_test::test]
-fn a_stored_file_is_addressed_through_warehouses_public_url() {
-    let internal = "http://warehouse.forge.svc.cluster.local/warehouse/api/v1/files/artifacts/file?path=conveyor%2Fr%2Fj%2Findex.html";
-    assert_eq!(
-        public_url("https://ennor.ddns.net/warehouse/", internal).as_deref(),
-        Some(
-            "https://ennor.ddns.net/warehouse/api/v1/files/artifacts/file?path=conveyor%2Fr%2Fj%2Findex.html"
-        )
-    );
-    // Nothing configured, or not a warehouse file address: no link rather than a wrong one.
-    assert_eq!(public_url("", internal), None);
-    assert_eq!(public_url("  ", internal), None);
-    assert_eq!(public_url("https://x", "http://elsewhere/page"), None);
 }

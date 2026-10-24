@@ -60,6 +60,8 @@ details.job > summary::-webkit-details-marker { display: none; }
 /* logs */
 .log-toolbar { display: flex; justify-content: flex-end; gap: .5rem; margin-bottom: .5rem; }
 .log-action { display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid var(--fui-border-strong); border-radius: var(--fui-radius-md); background: var(--fui-surface); color: var(--fui-text-secondary) !important; cursor: pointer; text-decoration: none !important; font-size: .8rem; }
+.report-viewer { margin-bottom: 1.5rem; }
+.report-frame { display: block; width: 100%; height: 75vh; border: 1px solid var(--fui-border); border-radius: var(--fui-radius-md); background: var(--fui-surface); }
 .log-action:hover { background: var(--fui-surface-hover); color: var(--fui-text) !important; }
 .log { font-family: var(--fui-mono); font-size: .8rem; line-height: 1.5; background: var(--fui-bg-sunken); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-md); padding: .75rem 1rem; max-height: 32rem; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
 .log-line { display: block; }

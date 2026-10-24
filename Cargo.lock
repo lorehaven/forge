@@ -350,15 +350,15 @@ dependencies = [
 
 [[package]]
 name = "quench-archive"
-version = "0.1.0"
+version = "0.1.1"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "82166814062aa90814d0114786d12aa04d69776d5439cf019ca3d19bfaf519a1"
+checksum = "1a2aaa3e2b576a739b868464d2ebca42ba0cf605baa5818fc2be0b1aa375e847"
 
 [[package]]
 name = "quench-args"
-version = "0.1.0"
+version = "0.1.1"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "7674353836cda56528543bbd422122ca2d3644e503aac11afb7ceba80aad473c"
+checksum = "f001af9889773115dc16de150e97c5b5821dc7eec7c48fa9440583d8778fc492"
 dependencies = [
  "quench-args-macros",
 ]
@@ -376,9 +376,9 @@ dependencies = [
 
 [[package]]
 name = "quench-auth"
-version = "0.4.12"
+version = "0.4.13"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "a5f3d4083dc31c0743efa383b45f844329c4deb62a6ba18f172d59463d94ec2b"
+checksum = "eb1cf15f04d9b6befd6b1178013df19367df7f1f06b556139c3d8910a87439f9"
 dependencies = [
  "quench-cache",
  "quench-client",
@@ -394,9 +394,9 @@ dependencies = [
 
 [[package]]
 name = "quench-cache"
-version = "0.1.18"
+version = "0.1.19"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "2ea3eecff08eca924339d7f2eddd3beb21b1b848bc9e63b63cc26edbc9a4d430"
+checksum = "c0fd3ab10b42e291fbb4fcd9f3186b7a08280abb3ed0c05814c2b714cccfff57"
 dependencies = [
  "quench-core",
  "quench-redis",
@@ -405,18 +405,18 @@ dependencies = [
 
 [[package]]
 name = "quench-cli"
-version = "0.1.12"
+version = "0.1.13"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "78ef6c8572d49d5d0584e950857fdede495afdced5968277ae09766e6418cd78"
+checksum = "3ebb1a6dc8ece0e023a69437e93245ea2b3aecfa71b460d0285bca427e4628f1"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "quench-client"
-version = "0.2.13"
+version = "0.2.14"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "392385a0a8cf81646420751a8739d3ca2c0772ab33cbf47c833af3c4ea26acb4"
+checksum = "de71efd0b6d93d34ba176d84c3be9c17a193506998d90900a66eb603d8c1db84"
 dependencies = [
  "quench-core",
  "quench-log",
@@ -427,9 +427,9 @@ dependencies = [
 
 [[package]]
 name = "quench-config"
-version = "0.1.11"
+version = "0.1.12"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "729240f4ef1fef12f75b4f593363b6e5262e9463cc9d9b391ed70c85ba308309"
+checksum = "542005700ef430b49131db7e94575fc79b5172efb896d6ace81a0a27ae4acd9a"
 dependencies = [
  "quench-core",
  "quench-serde",
@@ -437,18 +437,18 @@ dependencies = [
 
 [[package]]
 name = "quench-convert"
-version = "0.1.1"
+version = "0.1.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "8b034790a79d5879059719b4ca6d8fbe3994fc76bbaef25c69ae0266f62864ad"
+checksum = "bcf84686466f8d756cde2ca6f8b0d85c3b1283f7dd1cb2e99ed31673236a239d"
 dependencies = [
  "quench-serde",
 ]
 
 [[package]]
 name = "quench-core"
-version = "0.1.5"
+version = "0.1.6"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "a3b55f18b98de65ce0530ee489c00a757f0ac0e23fd6367266a16396595cd239"
+checksum = "3d10e65fbba7a585f47f27d32852d688bc436aa53445bd2606b399fb63d72a75"
 dependencies = [
  "getrandom 0.4.3",
  "quench-core-macros",
@@ -467,9 +467,9 @@ dependencies = [
 
 [[package]]
 name = "quench-crypto"
-version = "0.1.5"
+version = "0.1.6"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "989c25de800a3967f544aa77289b72c52c0b2ca5495ce9ebef4355609f6d277a"
+checksum = "8ed96b8c62614147d00b2ba167bf949cbcb28c30f839ebd0ee6c3503c8b86c95"
 dependencies = [
  "quench-core",
  "quench-serde",
@@ -478,9 +478,9 @@ dependencies = [
 
 [[package]]
 name = "quench-db"
-version = "0.2.11"
+version = "0.2.12"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "5e77b91562e219e5db5f0d27ea76d3ae3aa83698cb180a5848b70d82dc146a4b"
+checksum = "1ee63d19b379ab554f163f44c5fb0df886d2ef891e49f97b8e60667b5d7eeed7"
 dependencies = [
  "quench-core",
  "quench-crypto",
@@ -491,15 +491,15 @@ dependencies = [
 
 [[package]]
 name = "quench-html"
-version = "0.1.0"
+version = "0.1.1"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "305142312c31f53336f3cecf6792d3d3067965e9fd2bd2756c3ec8bb8c337b02"
+checksum = "6ad871d31089d2eb1b0930f14cf444bfd6b8b549e75e4514dad621dc06e1cb79"
 
 [[package]]
 name = "quench-http"
-version = "0.1.11"
+version = "0.1.12"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "3d33b6d9f79b0178cece3ca006151853d004c12525cb6066255e028e13dac415"
+checksum = "e5081ade768af225d5b3e8d1f2e064239eea23619a2ab7170b8332ac58cbb604"
 dependencies = [
  "quench-core",
  "quench-http-macros",
@@ -523,9 +523,9 @@ dependencies = [
 
 [[package]]
 name = "quench-k8s"
-version = "0.1.1"
+version = "0.1.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "b28e03e38da287c46a980f1cf5e14f2e0ac63b1d7689b3963c75543ed56f3abc"
+checksum = "16849441f9a1ed989a20a535b1ee7dc829f6e22fb1b39bebf5e56a931d9d4954"
 dependencies = [
  "quench-client",
  "quench-core",
@@ -534,9 +534,9 @@ dependencies = [
 
 [[package]]
 name = "quench-log"
-version = "0.1.7"
+version = "0.1.8"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "d2acf1cd94e6c86733fb507558936d2ece352d0c799933756e5b8c27d4dcaa8a"
+checksum = "dee1017873714eef462f532253c2aea3b423b95324f0024fcca31f93f1f526fc"
 dependencies = [
  "quench-core",
  "quench-log-macros",
@@ -556,9 +556,9 @@ dependencies = [
 
 [[package]]
 name = "quench-mail"
-version = "0.1.9"
+version = "0.1.10"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "22a7a78a25028530a6b32177d7b2e262beef5960f2709af9898478bcf29181a8"
+checksum = "9e6b025c12a79c4da26c0daf08a5cedb03ec332374afed5e10606282733293aa"
 dependencies = [
  "quench-core",
  "quench-tls",
@@ -567,18 +567,18 @@ dependencies = [
 
 [[package]]
 name = "quench-pdf"
-version = "0.1.0"
+version = "0.1.1"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "755112e98ca969c02de93cbfedfd5eaa7e83945e899e1736cdcf8187b6d11805"
+checksum = "ce1340aea18974f34ba75897e48c9eeb812c5c5f81d809290fff1a3d7049ec7e"
 dependencies = [
  "quench-archive",
 ]
 
 [[package]]
 name = "quench-pg"
-version = "0.1.6"
+version = "0.1.7"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "fb28750d4832b4b33a84c277ccf73ec124131e9f3ae4237c3986cd1f52526081"
+checksum = "6c6b6584a95260f3d413fa24870036e707df1df58169d8729d418158babefd89"
 dependencies = [
  "quench-core",
  "quench-crypto",
@@ -590,9 +590,9 @@ dependencies = [
 
 [[package]]
 name = "quench-proto"
-version = "0.1.6"
+version = "0.1.7"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "09a461391962b607260275065500f526de38178c18ba271272367c7759bfff34"
+checksum = "f0bc304f200a00a9b154a9ebdc4d84fef3f5e57c57abb0082623886795ebc54e"
 dependencies = [
  "quench-core",
  "quench-crypto",
@@ -602,15 +602,15 @@ dependencies = [
 
 [[package]]
 name = "quench-qr"
-version = "0.1.0"
+version = "0.1.1"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "1ce8dc8dad6142afa5c36d84f27ed1705f5c0700bf46456dcd715a530c90a851"
+checksum = "c7de9bcc6b01aa01763f66e893f3272a70d397d69b3fd5ad9227d8b9aa64af77"
 
 [[package]]
 name = "quench-redis"
-version = "0.1.6"
+version = "0.1.7"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "a534f52c1f4a63fbf72d0cdb44150bfaf48b8cabccb330680ebb227350121e8c"
+checksum = "af6348ce7551dbd51155da0484f314e002b6c8cf72b99d081466c7870002115c"
 dependencies = [
  "quench-core",
  "quench-tls",
@@ -619,15 +619,15 @@ dependencies = [
 
 [[package]]
 name = "quench-regex"
-version = "0.1.0"
+version = "0.1.1"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "e1a65ab861d9e00a4fb3b33aba7d5ead07b4c042ddd1dc56ba0e5e19bfa575cb"
+checksum = "5148362c9f4de928f1c3056ebd4c5d5c7041287ac8e672d68fd33c334618abf9"
 
 [[package]]
 name = "quench-schema"
-version = "0.1.1"
+version = "0.1.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "5765af7e5e16f129f522484fdcdf6dc12fb1221473a3fce6add5aeecf89b5235"
+checksum = "c6ac79c94ef711489214a357ffef933306ed5afa638bc2e50ab1b99993cbb45b"
 dependencies = [
  "quench-regex",
  "quench-serde",
@@ -635,9 +635,9 @@ dependencies = [
 
 [[package]]
 name = "quench-serde"
-version = "0.1.5"
+version = "0.1.6"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "920f3466223eb7de9ad4b4bb6045f9c8055249ad6cc13edbdcb9804d45367692"
+checksum = "a7615c4a4d745bd279e87a1298f1078d2d4d0dd8fd1d309928b388c5c6738d16"
 dependencies = [
  "quench-core",
  "quench-serde-macros",
@@ -656,9 +656,9 @@ dependencies = [
 
 [[package]]
 name = "quench-starter"
-version = "0.4.13"
+version = "0.4.14"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "b171e73ab59de23c8eb6f04201e3f19b6543ae8e27ec7bdc70a91d6c753f2a5e"
+checksum = "552822e77e5395fe2f85ba7515b1b22c8053b7f644169e206a54c03b42948f89"
 dependencies = [
  "quench-auth",
  "quench-cli",
@@ -674,18 +674,18 @@ dependencies = [
 
 [[package]]
 name = "quench-template"
-version = "0.1.1"
+version = "0.1.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "e64a744865414ac5f6cb4911bf548210898c8955c46ceb0e8f5c3c5658fd3a99"
+checksum = "1761e1c782459bbc665936f4916050c98377a25639b5b17d4a68cf18f01c0724"
 dependencies = [
  "quench-serde",
 ]
 
 [[package]]
 name = "quench-test"
-version = "0.1.1"
+version = "0.1.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "25d9d6cb8f896c69ef96e9a28b86a64fa88c7655f3e4c7fc4c58854aa304bbd0"
+checksum = "2b8b7e01b258a2663b8fecc90ce83c041c80e43108f8249af2e9e7be6544651b"
 dependencies = [
  "quench-core",
  "quench-regex",
@@ -696,9 +696,9 @@ dependencies = [
 
 [[package]]
 name = "quench-test-bdd"
-version = "0.1.1"
+version = "0.1.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "9473c2129ce629c276b2b99dbb835ca2e0af279d709c5cc57b48a7030bbebbd0"
+checksum = "96d5ec512c38be3bbbb1fd8eb38b2f3994acf3b4bf74de44fedf584dc2e923bd"
 dependencies = [
  "quench-args",
  "quench-core",
@@ -732,9 +732,9 @@ dependencies = [
 
 [[package]]
 name = "quench-tls"
-version = "0.1.6"
+version = "0.1.7"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "296e02aae98d0ecbacd953efd69b74bec32b1a418c9a28424d1a2278265a75fa"
+checksum = "f3d424328f0642cb17289a23aefb8aeb7ae677633de9b41b11ee6526be0148c4"
 dependencies = [
  "quench-core",
  "rustls",
@@ -744,18 +744,18 @@ dependencies = [
 
 [[package]]
 name = "quench-tz"
-version = "0.1.1"
+version = "0.1.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "ce7f3434d3e222e54e58facdfe134bf96df6340bd2920539d6c73babd1fcdc34"
+checksum = "0a43d404bab5438382195cd924822f878a6fefc20bcb2a7b07f0bf7d0796af0d"
 dependencies = [
  "quench-core",
 ]
 
 [[package]]
 name = "quench-web"
-version = "0.1.21"
+version = "0.1.22"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "80e813cfb8e9ec5471e177330c06ac492eb0b06f5cb1051a324bee325e982800"
+checksum = "28224ab226f59da091a2a7657a3f48169c947cbe1809b28912f92ed0189371f7"
 dependencies = [
  "quench-core",
  "quench-serde",
@@ -763,9 +763,9 @@ dependencies = [
 
 [[package]]
 name = "quench-web-components"
-version = "0.1.16"
+version = "0.1.17"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "75bc9fcbaffe30895aa0cefba190938ceaf5e63fb2b2b42a2f200f4acc79c7ff"
+checksum = "767f247ebb2789c9b41380f1926ceaf4f1dc6a5a5fc355b4b9abe4ddb877115a"
 dependencies = [
  "quench-web",
 ]

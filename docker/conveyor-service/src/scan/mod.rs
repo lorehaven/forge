@@ -105,8 +105,8 @@ pub struct CheckResult {
     /// The overview card's big number when the finding count isn't it - only
     /// `Some` for coverage, since 50 capped files says nothing about % covered.
     pub metric: Option<String>,
-    /// Where the full report can be opened in a browser, for the checks that keep one (tests).
-    pub report_url: Option<String>,
+    /// Where conveyor can fetch the full report from warehouse, for the checks that keep one (tests).
+    pub report_uri: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -144,13 +144,14 @@ impl ScanSummary {
 /// The most recent run and whichever checks its jobs happened to run.
 /// `Ok(default())`, not an error, when there's nothing to show yet.
 pub async fn latest(db: &Db, repo_id: &str) -> Result<ScanSummary, QueueError> {
+    latest_with(db, repo_id, warehouse_store()).await
+}
+
+/// Warehouse as configured for this process (built once), or none when it keeps nothing.
+#[must_use]
+pub fn warehouse_store() -> Option<&'static WarehouseStore> {
     static STORE: std::sync::OnceLock<Option<WarehouseStore>> = std::sync::OnceLock::new();
-    latest_with(
-        db,
-        repo_id,
-        STORE.get_or_init(WarehouseStore::from_env).as_ref(),
-    )
-    .await
+    STORE.get_or_init(WarehouseStore::from_env).as_ref()
 }
 
 /// [`latest`] reading test summaries from `store` (none: no test summary).
@@ -177,12 +178,25 @@ pub async fn latest_with(
         collect_job_checks(db, job, &mut summary).await?;
         if let Some(store) = store
             && let Some(result) = job_tests(db, store, job).await
+            // Several jobs may run tests (the coverage job runs them again): the one that saw most is the
+            // summary.
+            && summary.tests.as_ref().is_none_or(|kept| tests_seen(&result) > tests_seen(kept))
         {
             summary.tests = Some(result);
         }
     }
 
     Ok(summary)
+}
+
+/// How many tests a tests check saw: the total of its `passed/total` metric.
+fn tests_seen(check: &CheckResult) -> u64 {
+    check
+        .metric
+        .as_deref()
+        .and_then(|metric| metric.split_once('/'))
+        .and_then(|(_, total)| total.parse().ok())
+        .unwrap_or(0)
 }
 
 /// Reports already fetched, by artifact id: the artifact never changes, and a page asks for it on every view.
@@ -222,15 +236,10 @@ async fn job_tests(db: &Db, store: &WarehouseStore, job: &Job) -> Option<CheckRe
         result
     };
     result.job_name = job.qualified_name();
-    result.report_url = artifacts
+    result.report_uri = artifacts
         .iter()
         .find(|a| a.name == TESTS_REPORT_PAGE)
-        .and_then(|a| {
-            public_url(
-                &quench_core::env::get_or("WAREHOUSE_PUBLIC_URL", ""),
-                &a.uri,
-            )
-        });
+        .map(|a| a.uri.clone());
     Some(result)
 }
 
@@ -239,21 +248,6 @@ pub const TESTS_SUMMARY: &str = "summary.json";
 
 /// The page that shows them, kept next to it.
 pub const TESTS_REPORT_PAGE: &str = "index.html";
-
-/// A stored file's address as a browser reaches warehouse.
-///
-/// `public_base` (warehouse's address outside the cluster, `WAREHOUSE_PUBLIC_URL`) replaces the internal one
-/// the artifact was uploaded through. `None` when no public address is configured or `uri` is not a warehouse
-/// file address.
-#[must_use]
-pub fn public_url(public_base: &str, uri: &str) -> Option<String> {
-    let base = public_base.trim().trim_end_matches('/');
-    if base.is_empty() {
-        return None;
-    }
-    let tail = &uri[uri.find("/api/v1/files/")?..];
-    Some(format!("{base}{tail}"))
-}
 
 /// A `quench-test` report (`summary.json`) as a check: the totals as the headline, each failed test a finding.
 #[must_use]
@@ -316,7 +310,7 @@ pub fn tests_check(job_name: &str, json: &str) -> Option<CheckResult> {
         headline,
         findings,
         metric: Some(format!("{passed}/{total}")),
-        report_url: None,
+        report_uri: None,
     })
 }
 
@@ -378,7 +372,7 @@ async fn collect_job_checks(
             headline: String::new(),
             findings: Vec::new(),
             metric: None,
-            report_url: None,
+            report_uri: None,
             passed,
         }
         .parsed(&lines, step.exit_code);

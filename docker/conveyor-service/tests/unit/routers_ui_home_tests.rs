@@ -52,7 +52,7 @@ fn check(passed: bool, findings: usize) -> CheckResult {
             })
             .collect(),
         metric: None,
-        report_url: None,
+        report_uri: None,
     }
 }
 

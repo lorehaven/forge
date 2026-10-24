@@ -72,7 +72,7 @@ fn renders_cards_with_counts_and_links() {
                 ..Finding::default()
             }],
             metric: None,
-            report_url: None,
+            report_uri: None,
         }),
         machete: None,
         audit: None,
@@ -109,7 +109,7 @@ fn a_coverage_card_shows_its_metric_not_the_capped_finding_count() {
             })
             .collect(),
         metric: Some("22%".to_string()),
-        report_url: None,
+        report_uri: None,
     };
 
     let html = card(&repo(), &check).render();
@@ -134,7 +134,7 @@ fn renders_finding_detail_fields() {
             extra: Some("Solution: No fixed upgrade is available!".to_string()),
         }],
         metric: None,
-        report_url: None,
+        report_uri: None,
     };
 
     let html = detail(&repo(), CheckKind::Audit, &check).render();
@@ -156,7 +156,7 @@ fn renders_clean_detail_page() {
         headline: "clean".to_string(),
         findings: vec![],
         metric: None,
-        report_url: None,
+        report_uri: None,
     };
 
     let html = detail(&repo(), CheckKind::Machete, &check).render();
@@ -174,7 +174,7 @@ fn a_tests_card_shows_passed_over_total_and_links_to_its_page() {
             headline: "9 passed, 0 failed, 1 skipped".to_string(),
             findings: vec![],
             metric: Some("9/10".to_string()),
-            report_url: None,
+            report_uri: None,
         }),
         ..ScanSummary::default()
     };
@@ -188,7 +188,7 @@ fn a_tests_card_shows_passed_over_total_and_links_to_its_page() {
 }
 
 #[quench_test::test]
-fn the_tests_page_links_to_the_full_report_when_there_is_one() {
+fn the_tests_page_shows_the_report_in_place_with_buttons_to_open_and_save_it() {
     let mut check = CheckResult {
         kind: CheckKind::Tests,
         job_name: "test/unit".to_string(),
@@ -196,20 +196,28 @@ fn the_tests_page_links_to_the_full_report_when_there_is_one() {
         headline: "1 passed, 0 failed, 0 skipped".to_string(),
         findings: vec![],
         metric: Some("1/1".to_string()),
-        report_url: Some(
-            "https://ennor.ddns.net/warehouse/api/v1/files/artifacts/file?path=x".to_string(),
-        ),
+        report_uri: Some("http://warehouse/api/v1/files/artifacts/file?path=x".to_string()),
     };
 
     let html = detail(&repo(), CheckKind::Tests, &check).render();
-    assert!(html.contains("ui_scan_tests_report"));
-    assert!(html.contains(r#"target="_blank""#));
-    assert!(html.contains("/warehouse/api/v1/files/artifacts/file"));
+    // In a sandboxed frame served by conveyor itself, not a link out to warehouse.
+    assert!(html.contains("<iframe"));
+    assert!(html.contains(r#"sandbox="allow-scripts""#));
+    assert!(
+        html.contains(r#"src="/ui/repos/lorehaven/palantir/scan/tests/report""#),
+        "{html}"
+    );
+    assert!(html.contains("scan/tests/report?download=1"));
+    assert!(
+        html.contains("ui_scan_tests_report_open")
+            && html.contains("ui_scan_tests_report_download")
+    );
+    assert!(!html.contains("warehouse/api"));
 
-    check.report_url = None;
+    check.report_uri = None;
     assert!(
         !detail(&repo(), CheckKind::Tests, &check)
             .render()
-            .contains("ui_scan_tests_report")
+            .contains("<iframe")
     );
 }
