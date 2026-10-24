@@ -6,7 +6,7 @@ use crate::domain::issue_link::{self, NewIssueLink};
 use crate::domain::{project, realm_users};
 use crate::routers::api::authz::can_on_project_claims;
 use crate::routers::ui::common::{
-    ActorOrRedirect, Notice, assignee_field, notice_banner, render_page, ui_path,
+    ActorOrRedirect, Notice, assignee_field, notice_banner, project_sidebar, render_page, ui_path,
 };
 use forge_ui::{
     Card, PageHeader, Tone, Variant, badge, field_for, form_el, icon, select_el, submit_button, t,
@@ -43,6 +43,7 @@ pub(super) async fn detail(
         .await
         .unwrap_or_default();
 
+    let sidebar = project_sidebar(&db, Some(&project.id)).await;
     render_page(
         StatusCode::OK,
         div()
@@ -61,6 +62,7 @@ pub(super) async fn detail(
             .child(edit_panel(&project, &issue, &claims.sub, &users))
             .child(dependencies_panel(&issue.id, &related))
             .child(comments_panel(&issue.id, &comments)),
+        &sidebar,
     )
 }
 

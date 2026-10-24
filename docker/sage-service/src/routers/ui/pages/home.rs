@@ -985,15 +985,9 @@ pub fn render_home_page(page: &HomePage) -> Response {
             .child(
                 div()
                     .class("sage-layout")
-                    .child(div().class("sage-history-scrim").attr(
-                        "onclick",
-                        "document.documentElement.classList.remove('sage-history-open')",
-                    ))
-                    .child(sidebar(page))
                     .child(
                         div()
                             .class("chat-container")
-                            .child(history_toggle())
                             .child(history_div)
                             .child(nav_div)
                             .child(chat_form(page, composer)),
@@ -1005,18 +999,8 @@ pub fn render_home_page(page: &HomePage) -> Response {
                     .class("estimates-modal"),
             )
             .child(script(HOME_SCRIPT.to_string()).raw()),
+        sidebar(page),
     )
-}
-
-/// Phones show the conversation list as a drawer; this is the button that opens it.
-fn history_toggle() -> Element {
-    button()
-        .attr("type", "button")
-        .class("history-toggle")
-        .attr("data-i18n-title", "ui_chat_history")
-        .on_click("document.documentElement.classList.toggle('sage-history-open')")
-        .child(i().class("fa-solid fa-clock-rotate-left"))
-        .child(span().attr("data-i18n", "ui_chat_history"))
 }
 
 pub fn register_routes() {

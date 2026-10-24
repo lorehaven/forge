@@ -19,6 +19,10 @@
 .fui-nav-item:hover { background: var(--fui-surface-hover); color: var(--fui-text) !important; }
 .fui-nav-item[aria-current="page"] { background: var(--fui-surface-2); color: var(--fui-text) !important; }
 .fui-nav-item[aria-current="page"] i { color: var(--fui-brand-soft-text) !important; }
+.fui-nav-sub { display: flex; flex-direction: column; gap: 0.125rem; margin: 0 0 0.25rem 1.75rem; padding-left: 0.5rem; border-left: 1px solid var(--fui-border); }
+.fui-nav-subitem { display: block; padding: 0.375rem 0.75rem; border-radius: var(--fui-radius-md); color: var(--fui-text-tertiary) !important; font-size: 0.875rem; font-weight: 500; text-decoration: none !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background-color .15s, color .15s; }
+.fui-nav-subitem:hover { background: var(--fui-surface-hover); color: var(--fui-text) !important; }
+.fui-nav-subitem[aria-current="page"] { background: var(--fui-surface-2); color: var(--fui-text) !important; }
 .fui-nav-badge { margin-left: auto; }
 
 .fui-sidebar-foot { flex: 0 0 auto; padding: 0.75rem 1rem 1rem; border-top: 1px solid var(--fui-border); display: flex; flex-direction: column; gap: 0.75rem; }

@@ -51,7 +51,7 @@ document.addEventListener('keydown',function(e){
 document.addEventListener('click',function(e){
   var keep=e.target.closest&&e.target.closest('details.fui-dropdown');
   document.querySelectorAll('details.fui-dropdown[open]').forEach(function(d){if(d!==keep)d.removeAttribute('open');});
-  if(e.target.closest&&e.target.closest('.fui-nav-item'))window.fuiCloseDrawer();
+  if(e.target.closest&&e.target.closest('.fui-nav-item,.fui-nav-subitem'))window.fuiCloseDrawer();
 });
 window.addEventListener('resize',function(){if(window.innerWidth>=1024)window.fuiCloseDrawer();});
 function markActive(){

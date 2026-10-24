@@ -2,7 +2,7 @@
 
 use crate::domain::project::{self, NewProject};
 use crate::routers::ui::common::{
-    ActorOrRedirect, Notice, PageAuth, notice_banner, render_page, ui_login_redirect, ui_path,
+    ActorOrRedirect, Notice, PageAuth, notice_banner, project_sidebar, render_page, ui_login_redirect, ui_path,
 };
 use forge_ui::{
     PageHeader, Variant, button_el, close_modal, empty_state, field_for, form_el, icon, link_card,
@@ -50,6 +50,7 @@ async fn render_home(db: &Db, notice: &Notice) -> Response {
         ));
     }
 
+    let sidebar = project_sidebar(db, None).await;
     render_page(
         StatusCode::OK,
         div()
@@ -70,6 +71,7 @@ async fn render_home(db: &Db, notice: &Notice) -> Response {
                 grid
             })
             .child(new_project_modal()),
+        &sidebar,
     )
 }
 

@@ -4,7 +4,7 @@ use crate::domain::issue::{self, NewIssue, STATUSES};
 use crate::domain::{project, realm_users};
 use crate::routers::api::authz::can_on_project_claims;
 use crate::routers::ui::common::{
-    ActorOrRedirect, Notice, assignee_field, notice_banner, render_page_wide, ui_path,
+    ActorOrRedirect, Notice, assignee_field, notice_banner, project_sidebar, render_page_wide, ui_path,
 };
 use forge_ui::{
     PageHeader, Tone, Variant, badge, button_el, close_modal, field_for, form_el, icon, modal,
@@ -34,6 +34,7 @@ pub(super) async fn board(
     let board_el = render_board(&db, &project.id).await;
     let users = realm_users::list_users(&db).await.unwrap_or_default();
 
+    let sidebar = project_sidebar(&db, Some(&project.id)).await;
     render_page_wide(
         StatusCode::OK,
         div()
@@ -51,6 +52,7 @@ pub(super) async fn board(
             .child(board_el)
             .child(new_issue_modal(&project.id, &claims.sub, &users))
             .child(board_script()),
+        &sidebar,
     )
 }
 

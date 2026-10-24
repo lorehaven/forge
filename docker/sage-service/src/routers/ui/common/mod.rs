@@ -1,4 +1,4 @@
-use forge_ui::{NavItem, NavSection, ShellConfig, UiShell};
+use forge_ui::{NavItem, NavSection, PageWidth, ShellConfig, Sidebar, UiShell};
 pub use quench_auth::domain::jwt::Claims;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::routers::ui::get_user_from_req;
@@ -42,8 +42,14 @@ pub fn render_page(status: quench_http::http::StatusCode, content: Element) -> R
 }
 
 /// Edge to edge, scrolling its own panes: the chat screen.
-pub fn render_page_fill(status: quench_http::http::StatusCode, content: Element) -> Response {
-    Response::html(status, UI_SHELL.page_fill(content))
+/// `nav` takes the sidebar's place: the chat's own project and history list.
+pub fn render_page_fill(
+    status: quench_http::http::StatusCode,
+    content: Element,
+    nav: Element,
+) -> Response {
+    let sidebar = Sidebar::default().replacing_nav(nav);
+    Response::html(status, UI_SHELL.page_in(content, PageWidth::Fill, &sidebar))
 }
 
 /// The signed-in identity from the realm session cookie. `None` means "not

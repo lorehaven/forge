@@ -12,7 +12,11 @@ use std::sync::LazyLock;
 
 mod css;
 
-use forge_ui::{NavItem, NavSection, ShellConfig, Tone, UiShell, alert, txt};
+use crate::domain::project;
+use forge_ui::{
+    NavChild, NavItem, NavSection, PageWidth, ShellConfig, Sidebar, Tone, UiShell, alert, txt,
+};
+use quench_db::prelude::Db;
 pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
 static UI_SHELL: LazyLock<UiShell> = LazyLock::new(|| {
@@ -35,13 +39,37 @@ pub async fn assets(Path(path): Path<String>) -> Response {
     quench_starter::http::routers::ui::serve_assets(&path, "dist/assets").await
 }
 
-pub fn render_page(status: quench_http::http::StatusCode, content: Element) -> Response {
-    Response::html(status, UI_SHELL.page(content))
+/// The projects tab's sub-list; `active` is the project the page belongs to.
+pub async fn project_sidebar(db: &Db, active: Option<&str>) -> Sidebar {
+    let projects = project::list(db).await.unwrap_or_default();
+    let children = projects
+        .iter()
+        .map(|p| {
+            NavChild::new(
+                format!("{} — {}", p.key, p.name),
+                ui_path(&format!("/projects/{}/board", p.id)),
+                active == Some(p.id.as_str()),
+            )
+        })
+        .collect();
+    Sidebar::default().under(ui_path("/home"), children)
+}
+
+pub fn render_page(
+    status: quench_http::http::StatusCode,
+    content: Element,
+    sidebar: &Sidebar,
+) -> Response {
+    Response::html(status, UI_SHELL.page_in(content, PageWidth::Normal, sidebar))
 }
 
 /// Full-width variant for pages that scroll their own panes (the board).
-pub fn render_page_wide(status: quench_http::http::StatusCode, content: Element) -> Response {
-    Response::html(status, UI_SHELL.page_wide(content))
+pub fn render_page_wide(
+    status: quench_http::http::StatusCode,
+    content: Element,
+    sidebar: &Sidebar,
+) -> Response {
+    Response::html(status, UI_SHELL.page_in(content, PageWidth::Wide, sidebar))
 }
 
 #[must_use]

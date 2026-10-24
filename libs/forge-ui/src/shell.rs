@@ -40,6 +40,47 @@ impl NavItem {
     }
 }
 
+/// A link nested under a [`NavItem`], known only at request time (e.g. one per project).
+#[derive(Clone, Debug)]
+pub struct NavChild {
+    /// Literal text, already localized.
+    pub label: String,
+    pub href: String,
+    /// The page being shown belongs to this entry.
+    pub active: bool,
+}
+
+impl NavChild {
+    pub fn new(label: impl Into<String>, href: impl Into<String>, active: bool) -> Self {
+        Self {
+            label: label.into(),
+            href: href.into(),
+            active,
+        }
+    }
+}
+
+/// Per-request additions to the sidebar; the shell itself is built once.
+#[derive(Clone, Debug, Default)]
+pub struct Sidebar {
+    /// Sub-lists keyed by the `href` of the [`NavItem`] they hang under.
+    pub children: Vec<(String, Vec<NavChild>)>,
+    /// Replaces the configured navigation entirely (a service whose sidebar is its own list).
+    pub nav: Option<Element>,
+}
+
+impl Sidebar {
+    pub fn under(mut self, parent_href: impl Into<String>, children: Vec<NavChild>) -> Self {
+        self.children.push((parent_href.into(), children));
+        self
+    }
+
+    pub fn replacing_nav(mut self, nav: Element) -> Self {
+        self.nav = Some(nav);
+        self
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct NavSection {
     pub heading_key: Option<String>,
@@ -110,7 +151,7 @@ impl ShellConfig {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum PageWidth {
+pub enum PageWidth {
     Normal,
     Wide,
     Fill,
@@ -187,15 +228,24 @@ impl UiShell {
         self.page_with(content, PageWidth::Fill)
     }
 
+    /// Like the other `page*` methods, with `sidebar` applied to this request's sidebar.
+    pub fn page_in(&self, content: Element, width: PageWidth, sidebar: &Sidebar) -> String {
+        self.page_with_sidebar(content, width, sidebar)
+    }
+
     fn page_with(&self, content: Element, width: PageWidth) -> String {
+        self.page_with_sidebar(content, width, &Sidebar::default())
+    }
+
+    fn page_with_sidebar(&self, content: Element, width: PageWidth, sidebar: &Sidebar) -> String {
         let framed = match self.frame {
-            Frame::Sidebar => self.sidebar_frame(content, width),
+            Frame::Sidebar => self.sidebar_frame(content, width, sidebar),
             Frame::Auth => self.auth_frame(content),
         };
         self.app.page(framed)
     }
 
-    fn sidebar_frame(&self, content: Element, width: PageWidth) -> Element {
+    fn sidebar_frame(&self, content: Element, width: PageWidth, sidebar: &Sidebar) -> Element {
         let page = div().class("fui-page").class(match width {
             PageWidth::Normal => "",
             PageWidth::Wide => "fui-page-wide",
@@ -203,7 +253,7 @@ impl UiShell {
         });
         div()
             .class("fui-app")
-            .child(self.sidebar())
+            .child(self.sidebar(sidebar))
             .child(div().class("fui-scrim").on_click("fuiCloseDrawer()"))
             .child(
                 div().class("fui-main").child(self.topbar()).child(
@@ -240,23 +290,8 @@ impl UiShell {
             .child(span().class("fui-brand-name").text(&self.cfg.brand_name))
     }
 
-    fn sidebar(&self) -> Element {
-        let mut nav = element("nav").class("fui-nav").attr("aria-label", "Main");
-        for section in &self.cfg.nav {
-            let mut group = div().class("fui-nav-section");
-            if let Some(key) = &section.heading_key {
-                group = group.child(div().class("fui-nav-heading").attr("data-i18n", key));
-            }
-            for item in &section.items {
-                group = group.child(
-                    a().attr("href", &item.href)
-                        .class("fui-nav-item")
-                        .child(icon(&item.icon))
-                        .child(t(&item.label_key)),
-                );
-            }
-            nav = nav.child(group);
-        }
+    fn sidebar(&self, extra: &Sidebar) -> Element {
+        let nav = extra.nav.clone().unwrap_or_else(|| self.nav(extra));
 
         element("aside")
             .class("fui-sidebar")
@@ -272,6 +307,47 @@ impl UiShell {
                     ),
             )
             .child(nav)
+    }
+
+    fn nav(&self, extra: &Sidebar) -> Element {
+        let mut nav = element("nav").class("fui-nav").attr("aria-label", "Main");
+        for section in &self.cfg.nav {
+            let mut group = div().class("fui-nav-section");
+            if let Some(key) = &section.heading_key {
+                group = group.child(div().class("fui-nav-heading").attr("data-i18n", key));
+            }
+            for item in &section.items {
+                group = group.child(
+                    a().attr("href", &item.href)
+                        .class("fui-nav-item")
+                        .child(icon(&item.icon))
+                        .child(t(&item.label_key)),
+                );
+                let children = extra
+                    .children
+                    .iter()
+                    .filter(|(parent, _)| *parent == item.href)
+                    .flat_map(|(_, children)| children);
+                let mut sub = div().class("fui-nav-sub");
+                let mut any = false;
+                for child in children {
+                    any = true;
+                    let mut link = a()
+                        .attr("href", &child.href)
+                        .class("fui-nav-subitem")
+                        .text(&child.label);
+                    if child.active {
+                        link = link.attr("aria-current", "page");
+                    }
+                    sub = sub.child(link);
+                }
+                if any {
+                    group = group.child(sub);
+                }
+            }
+            nav = nav.child(group);
+        }
+        nav
     }
 
     fn topbar(&self) -> Element {
