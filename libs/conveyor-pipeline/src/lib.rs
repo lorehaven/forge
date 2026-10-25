@@ -12,6 +12,7 @@
 //! weight with it.
 
 pub mod condition;
+pub mod cron;
 pub mod graph;
 pub mod parser;
 pub mod spec;
@@ -24,4 +25,5 @@ pub mod steps;
 pub use condition::{Condition, EvalContext};
 pub use graph::{Decision, JobPlan, StagePlan, plan};
 pub use parser::{SpecError, parse};
-pub use spec::{Job, PIPELINE_FILE, PipelineSpec, Stage, Step, Triggers};
+pub use cron::{Cron, CronError};
+pub use spec::{Job, PIPELINE_FILE, PipelineSpec, Schedule, Stage, Step, Triggers};

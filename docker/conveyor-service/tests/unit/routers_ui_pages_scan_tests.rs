@@ -78,6 +78,7 @@ fn renders_cards_with_counts_and_links() {
         audit: None,
         coverage: None,
         tests: None,
+        security: None,
     };
 
     let html = overview(&repo(), &summary).render();
@@ -220,4 +221,34 @@ fn the_tests_page_shows_the_report_in_place_with_buttons_to_open_and_save_it() {
             .render()
             .contains("<iframe")
     );
+}
+
+#[quench_test::test]
+fn a_security_card_sits_beside_the_others_and_its_page_embeds_its_own_report() {
+    let security = CheckResult {
+        kind: CheckKind::Security,
+        job_name: "security/nightly, 2026-10-26 00:00 UTC".to_string(),
+        passed: false,
+        headline: "40 passed, 2 failed, 0 skipped, 41m 3s".to_string(),
+        findings: vec![],
+        metric: Some("40/42".to_string()),
+        report_uri: Some("http://warehouse/api/v1/files/artifacts/file?path=s".to_string()),
+    };
+    let summary = ScanSummary {
+        run: Some(run()),
+        security: Some(security.clone()),
+        ..ScanSummary::default()
+    };
+
+    let html = overview(&repo(), &summary).render();
+    assert!(html.contains("ui_scan_security_title"));
+    assert!(html.contains(">40/42<"));
+    assert!(html.contains("/ui/repos/lorehaven/palantir/scan/security"));
+    assert!(html.contains("status-failed"));
+
+    // The page embeds the *security* report - not the unit tests' - and offers it for download.
+    let page = detail(&repo(), CheckKind::Security, &security).render();
+    assert!(page.contains(r#"src="/ui/repos/lorehaven/palantir/scan/security/report""#), "{page}");
+    assert!(page.contains("scan/security/report?download=1"));
+    assert!(!page.contains("scan/tests/report"));
 }

@@ -74,6 +74,7 @@ ui_scan_machete_title = Unused dependencies
 ui_scan_audit_title = Vulnerabilities
 ui_scan_coverage_title = Test coverage
 ui_scan_tests_title = Tests
+ui_scan_security_title = Security
 ui_scan_tests_report_open = Open the full report
 ui_scan_tests_report_download = Download the report
 ui_scan_no_runs = This repository has not run yet.

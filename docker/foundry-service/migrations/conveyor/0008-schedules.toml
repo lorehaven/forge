@@ -1,0 +1,40 @@
+[[migrations]]
+id = "0008-schedules"
+author = "conveyor-service"
+since = "0.1.0"
+
+# The clock side of a pipeline's `on.schedule`. The pipeline file stays the source of truth: conveyor
+# copies the schedules a default-branch run declares into this table (and drops the ones it no longer
+# declares), and a background loop starts a `schedule` run whenever `next_run_at` has passed. The row
+# exists only so "when is it next due" survives a restart and is shared by every replica.
+#
+# `next_run_at` is the instant the *next* firing is due; the run it produces is keyed on that instant
+# (runs.delivery_id), so two replicas - or one replica that crashed between enqueueing and advancing -
+# can never start the same firing twice.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.schedules (
+    id TEXT PRIMARY KEY,
+    repo_id TEXT NOT NULL REFERENCES ${schema}.repos(id) ON DELETE CASCADE,
+    expression TEXT NOT NULL,
+    timezone TEXT NOT NULL DEFAULT 'UTC',
+    next_run_at TIMESTAMPTZ NOT NULL,
+    last_run_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+# One row per distinct (expression, zone) of a repository: declaring the same schedule twice is one schedule.
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS schedules_repo_expression_idx
+    ON ${schema}.schedules (repo_id, expression, timezone);
+"""
+
+# What the loop asks every few seconds: what is due.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS schedules_due_idx
+    ON ${schema}.schedules (next_run_at);
+"""

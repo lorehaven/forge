@@ -84,19 +84,23 @@ pub(super) struct ReportQuery {
     download: Option<String>,
 }
 
-/// The stored test report page, served by conveyor: warehouse hands files out as downloads, and it needs the
+/// The stored report page of a check that keeps one (tests, security), served by conveyor: warehouse hands files out as downloads, and it needs the
 /// reader to hold a warehouse grant. Sandboxed (`allow-scripts` only, no origin of its own) so a report can
 /// filter itself but never reach conveyor's session.
-#[get("/ui/repos/{owner}/{name}/scan/tests/report")]
-pub(super) async fn test_report(
+#[get("/ui/repos/{owner}/{name}/scan/{category}/report")]
+pub(super) async fn check_report(
     PageAuth(authenticated): PageAuth,
-    Path((owner, name)): Path<(String, String)>,
+    Path((owner, name, category)): Path<(String, String, String)>,
     Query(query): Query<ReportQuery>,
     Inject(db): Inject<Db>,
 ) -> Response {
     if !authenticated {
         return ui_login_redirect();
     }
+    let Some(kind @ (CheckKind::Tests | CheckKind::Security)) = CheckKind::from_slug(&category)
+    else {
+        return not_found();
+    };
     let repo = match load_repo(&db, &owner, &name).await {
         Ok(Some(repo)) => repo,
         Ok(None) => return not_found(),
@@ -107,7 +111,7 @@ pub(super) async fn test_report(
         Err(response) => return response,
     };
     let (Some(uri), Some(store)) = (
-        summary.tests.and_then(|check| check.report_uri),
+        summary.get(kind).and_then(|check| check.report_uri.clone()),
         crate::scan::warehouse_store(),
     ) else {
         return not_found();
@@ -116,7 +120,7 @@ pub(super) async fn test_report(
     let page = match store.download(&uri).await {
         Ok(page) => page,
         Err(error) => {
-            quench_log::warn!("could not read the test report of {owner}/{name}: {error}");
+            quench_log::warn!("could not read the {category} report of {owner}/{name}: {error}");
             return Response::text(StatusCode::BAD_GATEWAY, "the report could not be read");
         }
     };
@@ -129,7 +133,7 @@ pub(super) async fn test_report(
     if query.download.is_some() {
         response.header(
             "content-disposition",
-            format!("attachment; filename=\"{owner}-{name}-test-report.html\""),
+            format!("attachment; filename=\"{owner}-{name}-{category}-report.html\""),
         )
     } else {
         response
@@ -205,6 +209,7 @@ pub fn overview_body(repo: &Repo, summary: &ScanSummary) -> Element {
     grid = grid.child_opt(summary.audit.as_ref().map(|c| card(repo, c)));
     grid = grid.child_opt(summary.coverage.as_ref().map(|c| card(repo, c)));
     grid = grid.child_opt(summary.tests.as_ref().map(|c| card(repo, c)));
+    grid = grid.child_opt(summary.security.as_ref().map(|c| card(repo, c)));
     container = container.child(grid);
 
     container
@@ -276,7 +281,7 @@ pub fn detail(repo: &Repo, kind: CheckKind, check: &CheckResult) -> Element {
                         .text(format!("{} - from {}", check.headline, check.job_name)),
                 ),
         )
-        .child_opt(check.report_uri.as_ref().map(|_| report_viewer(repo)))
+        .child_opt(check.report_uri.as_ref().map(|_| report_viewer(repo, kind)))
         .child(findings_list(&check.findings))
 }
 
@@ -345,14 +350,16 @@ fn severity_class(severity: &str) -> String {
 pub(super) fn register_routes() {
     let _ = scan_page as fn(_, _, _) -> _;
     let _ = scan_detail_page as fn(_, _, _) -> _;
-    let _ = test_report as fn(_, _, _, _) -> _;
+    let _ = check_report as fn(_, _, _, _) -> _;
 }
 
 /// The report, right on the page, with buttons to open it on its own and to save it.
-fn report_viewer(repo: &Repo) -> Element {
+fn report_viewer(repo: &Repo, kind: CheckKind) -> Element {
     let report = ui_path(&format!(
-        "/repos/{}/{}/scan/tests/report",
-        repo.owner, repo.name
+        "/repos/{}/{}/scan/{}/report",
+        repo.owner,
+        repo.name,
+        kind.slug()
     ));
 
     div()
@@ -384,6 +391,6 @@ fn report_viewer(repo: &Repo) -> Element {
                 .attr("src", report)
                 .attr("sandbox", "allow-scripts")
                 .attr("loading", "lazy")
-                .attr("title", "Test report"),
+                .attr("title", "Report"),
         )
 }

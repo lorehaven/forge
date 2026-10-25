@@ -30,6 +30,8 @@ mod scan_tests;
 mod scheduler_projects_tests;
 #[path = "integration/scheduler_queue_tests.rs"]
 mod scheduler_queue_tests;
+#[path = "integration/scheduler_schedules_tests.rs"]
+mod scheduler_schedules_tests;
 #[path = "integration/scheduler_worker_tests.rs"]
 mod scheduler_worker_tests;
 #[path = "integration/secrets_store_tests.rs"]

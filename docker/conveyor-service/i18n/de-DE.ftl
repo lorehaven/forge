@@ -74,6 +74,7 @@ ui_scan_machete_title = Ungenutzte Abhängigkeiten
 ui_scan_audit_title = Schwachstellen
 ui_scan_coverage_title = Testabdeckung
 ui_scan_tests_title = Tests
+ui_scan_security_title = Sicherheit
 ui_scan_tests_report_open = Vollständigen Bericht öffnen
 ui_scan_tests_report_download = Bericht herunterladen
 ui_scan_no_runs = Dieses Repository wurde noch nicht ausgeführt.

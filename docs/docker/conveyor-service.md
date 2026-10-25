@@ -15,7 +15,7 @@ Conveyor is the Forge estate's CI/CD service. A webhook arrives, conveyor checks
 - **Artifact collection**: paths a job declares are uploaded to warehouse once the job passes, since a run's checkout is deleted the moment it finishes.
 - **Following results by email.** A signed-in user can follow a repository, or a whole project (and everything nested under it), from `/repos` or the API, and is emailed when a run on it fails and when the first run passes after a failure - see [Following results](#following-results).
 - **Commit status reporting** back to GitHub (`pending`/`success`/`failure`/`error`), when a token is configured.
-- **A code-quality summary page** per repository that reads the most recent run's own `anvil lint`/`anvil machete`/`anvil audit`/`cargo llvm-cov` steps — nothing here triggers a scan; it is a best-effort read of whatever the pipeline already ran. Test results are a fifth card: a job that ran tests on `quench-test`'s harness leaves `summary.json` and `index.html` in `target/<profile>/quench-test/`, conveyor uploads both to warehouse's artifact storage (whatever the job's outcome, under `conveyor/<run>/<job>/`) and the page reads the totals and each failed test from `summary.json`. A job on the kubernetes executor runs in a pod with a checkout of its own, so the pod prints the declared artifacts and the test reports back through its log (`##conveyor-file:` lines, base64, up to 24 MiB a file, only the paths asked for) when it ends — a failed step included — and conveyor writes them into its own workspace before collecting them.
+- **A code-quality summary page** per repository that reads the most recent run's own `anvil lint`/`anvil machete`/`anvil audit`/`cargo llvm-cov` steps — nothing here triggers a scan; it is a best-effort read of whatever the pipeline already ran. Test results are a fifth card: a job that ran tests on `quench-test`'s harness leaves `summary.json` and `index.html` in `target/<profile>/quench-test/`, conveyor uploads both to warehouse's artifact storage (whatever the job's outcome, under `conveyor/<run>/<job>/`) and the page reads the totals and each failed test from `summary.json`. The **Security** card works the same way for the nightly security run: a job that leaves a `quench-test` report in `target/security/` (point `QUENCH_TEST_REPORT_DIR` there) has `summary.json` and `index.html` kept as `security-summary.json` and `security.html`. Because the latest run of a repository is usually a push, which has no security report, this card is read from the **most recent run that produced one**, with its date; the card shows `passed/total` stages and each failed stage with its reason, and the full report is embedded on its page. Every gate stage and fuzz target is a test case, so a red nightly says which. A job on the kubernetes executor runs in a pod with a checkout of its own, so the pod prints the declared artifacts and the test reports back through its log (`##conveyor-file:` lines, base64, up to 24 MiB a file, only the paths asked for) when it ends — a failed step included — and conveyor writes them into its own workspace before collecting them.
 
 ## Architecture
 
@@ -99,6 +99,26 @@ steps   = [{ anvil = "docker release-all" }, { riveter = "apply k8s/" }]
 
 
 The parsing lives in a separate crate, `conveyor-pipeline`, so `conveyor validate` can link the same parser a real run uses without linking the whole service around it. A pipeline that would fail is rejected as a parse error naming the stage and job at fault, before the run starts — a misspelled key, an unknown step kind, an empty command, a stage with no jobs, a `needs` naming no stage, or a cycle.
+
+### Scheduled runs (`on.schedule`)
+
+```toml
+on = { push = ["master"], schedule = ["0 0 * * *"], timezone = "Europe/Warsaw" }
+
+[[stage]]
+name = "build"
+when = "event != 'schedule'"        # the scheduled run is not a build ...
+
+[[stage]]
+name = "security"
+when = "event == 'schedule'"        # ... it is this
+```
+
+The pipeline file stays the source of truth. Whenever a run of the repository's **default branch** (a push, a manual run, or a scheduled one) reads the pipeline, conveyor copies its `on.schedule` into the `schedules` table: new entries are added, withdrawn ones removed, unchanged ones left where they are so a push does not reset the clock. A schedule declared on any other branch is ignored, so a feature branch cannot register a nightly job. After adding or changing `on.schedule`, push to the default branch (or run it by hand once) for the new schedule to be picked up. `GET /api/v1/repos/{id}/schedules` lists what is registered and when each fires next.
+
+A background loop checks every 15 seconds and starts a run with trigger `schedule` (`event == 'schedule'` in `when`) on the default branch's current commit. Firings are idempotent: the run's `delivery_id` is `schedule:<schedule id>:<due instant>`, and the run is enqueued *before* the schedule advances, so two replicas racing the same firing, or a crash between the two steps, start one run. A service that was down over several firings starts **one** catch-up run, not one per missed night. A repository that cannot be reached leaves the firing due and is retried on the next tick; a disabled or deleted one is skipped. The `schedule` event is allowed only if the pipeline still declares a schedule, so removing it also cancels runs already queued for it.
+
+The expression is the usual five fields, read in `timezone` (an IANA name, UTC by default), so "midnight" stays midnight through the clock changes. See [conveyor-pipeline](../libs/conveyor-pipeline.md) for the syntax and the daylight-saving rules.
 
 ### Keys
 

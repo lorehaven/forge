@@ -14,6 +14,8 @@ pub enum Trigger {
     PullRequest,
     /// Started by a person, through the UI or the CLI.
     Manual,
+    /// Started by the clock: an `on.schedule` entry of the pipeline came due.
+    Schedule,
 }
 
 impl Trigger {
@@ -23,6 +25,7 @@ impl Trigger {
             Self::Push => "push",
             Self::PullRequest => "pull_request",
             Self::Manual => "manual",
+            Self::Schedule => "schedule",
         }
     }
 
@@ -32,6 +35,7 @@ impl Trigger {
             "push" => Some(Self::Push),
             "pull_request" | "pullrequest" | "pr" => Some(Self::PullRequest),
             "manual" => Some(Self::Manual),
+            "schedule" | "scheduled" => Some(Self::Schedule),
             _ => None,
         }
     }

@@ -12,7 +12,8 @@
 
 use crate::condition::{Condition, ConditionError};
 use crate::graph::{self, GraphError};
-use crate::spec::{Job, PipelineSpec, Stage, Step, Triggers};
+use crate::cron::Cron;
+use crate::spec::{Job, PipelineSpec, Schedule, Stage, Step, Triggers};
 use quench_serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -152,6 +153,7 @@ pub fn parse(source: &str) -> Result<PipelineSpec, SpecError> {
         return Err(SpecError::NoStages);
     }
 
+    let schedules = raw.on.as_ref().map_or_else(|| Ok(Vec::new()), parse_schedules)?;
     let on = raw
         .on
         .map_or_else(|| Ok(Triggers::default()), parse_triggers)?;
@@ -165,7 +167,7 @@ pub fn parse(source: &str) -> Result<PipelineSpec, SpecError> {
     // preference to the graph error it probably caused.
     let order = graph::topological_order(&stages)?;
 
-    Ok(PipelineSpec::new(on, stages, order))
+    Ok(PipelineSpec::new(on, stages, order, schedules))
 }
 
 /// An `on` table replaces the default outright: an event it does not name
@@ -192,6 +194,37 @@ fn parse_triggers(raw: RawTriggers) -> Result<Triggers, SpecError> {
         pull_request: resolve(raw.pull_request, "pull_request")?,
         tag: resolve(raw.tag, "tag")?,
     })
+}
+
+/// `on.schedule`, each entry checked now: an expression that can never fire is a parse error, not a
+/// nightly job that silently never runs.
+fn parse_schedules(raw: &RawTriggers) -> Result<Vec<Schedule>, SpecError> {
+    let timezone = raw.timezone.as_deref().map_or("UTC", str::trim).to_string();
+    let bad = |message: String| SpecError::Toml(quench_serde::Error::new(&message));
+
+    let Some(expressions) = &raw.schedule else {
+        return Ok(Vec::new());
+    };
+    let zone = quench_tz::Zone::named(&timezone)
+        .map_err(|_| bad(format!("`on.timezone`: unknown time zone `{timezone}`")))?;
+
+    let mut schedules = Vec::with_capacity(expressions.len());
+    for expression in expressions {
+        let cron = Cron::parse(expression)
+            .map_err(|error| bad(format!("`on.schedule` entry `{expression}`: {error}")))?;
+        // A fixed reference point, so what parses never depends on today's date.
+        let reference = quench_core::time::Time::from_unix(1_700_000_000);
+        if cron.next_after(reference, &zone).is_none() {
+            return Err(bad(format!(
+                "`on.schedule` entry `{expression}` never fires (does that date exist?)"
+            )));
+        }
+        schedules.push(Schedule {
+            expression: cron.as_str().to_string(),
+            timezone: timezone.clone(),
+        });
+    }
+    Ok(schedules)
 }
 
 fn parse_stage(position: usize, raw: RawStage) -> Result<Stage, SpecError> {
@@ -396,6 +429,10 @@ struct RawTriggers {
     pull_request: Option<Vec<String>>,
     #[serde(default)]
     tag: Option<Vec<String>>,
+    #[serde(default)]
+    schedule: Option<Vec<String>>,
+    #[serde(default)]
+    timezone: Option<String>,
 }
 
 #[derive(Deserialize)]

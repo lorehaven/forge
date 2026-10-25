@@ -1,0 +1,66 @@
+[package]
+name = "forge-sectest"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Black-box security scanner for the forge services: route census, auth matrix, forged tokens, traversal, injection and protocol probes"
+publish = false
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = "README.md"
+autotests = false
+
+[lib]
+name = "forge_sectest"
+path = "src/lib.rs"
+
+[[bin]]
+name = "forge-sectest"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+quench-core = { workspace = true }
+quench-crypto = { workspace = true }
+quench-proto = { workspace = true, features = ["tls"] }
+quench-serde = { workspace = true }
+
+[dev-dependencies]
+quench-http = { workspace = true }
+quench-test = { workspace = true }
+
+[lints]
+workspace = true
+
+[features]
+# The nightly gate: shells out to cargo-deny/cargo-audit (network) and nested `cargo test`, and scans a
+# live estate. Off by default so `cargo test --workspace` never starts it.
+gate = []
+
+[[test]]
+name = "scanners"
+path = "tests/scanners.rs"
+harness = false
+
+[[test]]
+name = "gate"
+path = "tests/gate.rs"
+harness = false
+required-features = ["gate"]
+
+[[test]]
+name = "live"
+path = "tests/live.rs"
+harness = false
+required-features = ["gate"]
+
+[[test]]
+name = "selftest"
+path = "tests/selftest.rs"
+harness = false
+
+[[test]]
+name = "census"
+path = "tests/census.rs"
+harness = false

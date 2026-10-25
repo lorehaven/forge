@@ -19,6 +19,7 @@ path = "src/lib.rs"
 [dependencies]
 quench-serde = { workspace = true }
 quench-core = { workspace = true }
+quench-tz = { workspace = true }
 
 [[test]]
 name = "unit"

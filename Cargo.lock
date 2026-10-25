@@ -63,6 +63,7 @@ dependencies = [
  "quench-core",
  "quench-serde",
  "quench-test",
+ "quench-tz",
 ]
 
 [[package]]
@@ -144,6 +145,19 @@ dependencies = [
  "quench-http",
  "quench-serde",
  "quench-test-bdd",
+ "tokio",
+]
+
+[[package]]
+name = "forge-sectest"
+version = "0.1.0"
+dependencies = [
+ "quench-core",
+ "quench-crypto",
+ "quench-http",
+ "quench-proto",
+ "quench-serde",
+ "quench-test",
  "tokio",
 ]
 

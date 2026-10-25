@@ -4,6 +4,7 @@
 pub mod projects;
 pub mod queue;
 pub mod repos;
+pub mod schedules;
 pub mod worker;
 
 pub use projects::NewProject;

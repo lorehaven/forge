@@ -52,6 +52,9 @@ RUN mkdir -p /usr/local/cargo && \
       printf "token = \"%s\"\n" "${CARGO_REGISTRIES_ENNOR_TOKEN}" >> /usr/local/cargo/config.toml; \
     fi
 
+# `cargo fuzz` runs the nightly security job's coverage-guided targets (quench/fuzz) on the nightly
+# toolchain installed above.
+#
 # `anvil machete` / `anvil audit` / `anvil deny` / `anvil nextest` /
 # `anvil semver-check` and the plain `cargo llvm-cov` step all shell out to
 # these. `--locked` uses each crate's own shipped Cargo.lock rather than
@@ -60,7 +63,7 @@ RUN mkdir -p /usr/local/cargo && \
 # required a newer rustc than this base image ships.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo install --locked cargo-machete cargo-audit cargo-deny cargo-nextest cargo-llvm-cov cargo-semver-checks
+    cargo install --locked cargo-machete cargo-audit cargo-deny cargo-nextest cargo-llvm-cov cargo-semver-checks cargo-fuzz
 
 # `anvil` itself, built from this workspace rather than pinned to a published
 # version - a job wants the same anvil the commit it is testing was written

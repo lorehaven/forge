@@ -1,0 +1,12 @@
+# Files reviewed and allowed to contain `unsafe` (or an unsafe_code override).
+# scripts/security.fish fails on unsafe in any file NOT listed here: new unsafe needs a conscious review.
+# Keep each entry justified.
+
+# std::env::set_var is unsafe in edition 2024; test/startup helpers.
+cli/conveyor-cli/src/lib.rs
+cli/foreman/tests/unit/estate_tests.rs
+cli/pulley/tests/unit/env_support.rs
+# libc::kill on a supervised pid.
+cli/foreman/src/process.rs
+# Windows service FFI.
+cli/pulley/src/service/windows.rs

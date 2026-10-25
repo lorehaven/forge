@@ -432,3 +432,44 @@ async fn job_logs_reports_not_found_for_an_unknown_job() {
         .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
+
+// ---------------------------------------------------------------------------
+// schedules
+// ---------------------------------------------------------------------------
+
+#[quench_test::test]
+async fn a_repos_declared_schedules_are_listed_with_when_each_is_next_due() {
+    let Some((db, _guard)) = database().await else {
+        return skipped("a_repos_declared_schedules_are_listed_with_when_each_is_next_due");
+    };
+    let project_id = seed_project(&db).await;
+    let repo = seed_repo(&db, &project_id).await;
+    conveyor_service::scheduler::schedules::sync(
+        &db,
+        &repo.id,
+        &[conveyor_pipeline::Schedule {
+            expression: "0 0 * * *".to_string(),
+            timezone: "Europe/Warsaw".to_string(),
+        }],
+        quench_core::time::Time::now(),
+    )
+    .await
+    .expect("sync");
+    let (app, container) = app(db).await;
+
+    let resp = app
+        .call(req(Method::GET, &format!("/api/v1/repos/{}/schedules", repo.id), &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = json_body(resp).await;
+    let schedules = body.as_array().expect("array");
+    assert_eq!(schedules.len(), 1);
+    assert_eq!(schedules[0]["expression"], "0 0 * * *");
+    assert_eq!(schedules[0]["timezone"], "Europe/Warsaw");
+    assert!(schedules[0]["next_run_at"].is_string(), "{schedules:?}");
+
+    let resp = app
+        .call(req(Method::GET, "/api/v1/repos/does-not-exist/schedules", &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}

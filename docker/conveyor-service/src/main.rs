@@ -53,6 +53,9 @@ async fn main() -> std::io::Result<()> {
         notifications,
     );
 
+    // The clock for `on.schedule`: starts a `schedule` run whenever a repository's declared cron comes due.
+    conveyor_service::scheduler::schedules::spawn(state.db.clone());
+
     let health_state = HealthState::live();
     let gatehouse_health_url = gatehouse_health_url();
     health_state.spawn_ready_when(async move {

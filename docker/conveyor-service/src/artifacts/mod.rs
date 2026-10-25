@@ -282,21 +282,37 @@ impl WarehouseStore {
     }
 }
 
-/// Where a `quench-test` run leaves its results, under the checkout's `target` directory, per build profile.
-const TEST_REPORT_DIRS: [&str; 2] = ["target/debug/quench-test", "target/release/quench-test"];
+/// Where a job leaves a report conveyor keeps without being told to, and what the kept copy is called.
+///
+/// `(directory under the checkout, file, artifact name)`. The first four are what a `quench-test` run
+/// writes under `target/<profile>/quench-test`. The last two are the security gate's report - the same
+/// format, written to `target/security` by a run with `QUENCH_TEST_REPORT_DIR` pointed there - kept
+/// under names of their own so the scan page can tell it from the unit tests'.
+const REPORTS: [(&str, &str, &str); 6] = [
+    ("target/debug/quench-test", "summary.json", TESTS_SUMMARY),
+    ("target/debug/quench-test", "index.html", TESTS_REPORT_PAGE),
+    ("target/release/quench-test", "summary.json", TESTS_SUMMARY),
+    ("target/release/quench-test", "index.html", TESTS_REPORT_PAGE),
+    ("target/security", "summary.json", SECURITY_SUMMARY),
+    ("target/security", "index.html", SECURITY_REPORT_PAGE),
+];
 
-/// The files of those directories worth keeping: the merged results, and the page that shows them.
-const TEST_REPORT_FILES: [&str; 2] = ["summary.json", "index.html"];
+/// The merged results of a `quench-test` run.
+pub const TESTS_SUMMARY: &str = "summary.json";
+/// The page that shows them.
+pub const TESTS_REPORT_PAGE: &str = "index.html";
+/// The security gate's merged results.
+pub const SECURITY_SUMMARY: &str = "security-summary.json";
+/// The page that shows them.
+pub const SECURITY_REPORT_PAGE: &str = "security.html";
 
 /// What a job's runner must hand back to conveyor's workspace for [`collect`] and [`collect_test_reports`] to
-/// find it: the declared artifacts, and the test reports a `quench-test` run leaves.
+/// find it: the declared artifacts, and the reports a `quench-test` run leaves.
 #[must_use]
 pub fn exports(declared: &[String]) -> Vec<String> {
     let mut paths = declared.to_vec();
-    for directory in TEST_REPORT_DIRS {
-        for file in TEST_REPORT_FILES {
-            paths.push(format!("{directory}/{file}"));
-        }
+    for (directory, file, _) in REPORTS {
+        paths.push(format!("{directory}/{file}"));
     }
     paths
 }
@@ -318,36 +334,34 @@ pub async fn collect_test_reports(
         return (kept, problems);
     };
 
-    for directory in TEST_REPORT_DIRS {
-        for file in TEST_REPORT_FILES {
-            let declared = format!("{directory}/{file}");
-            let Some(resolved) = workspace.resolve(&declared) else {
-                continue;
-            };
-            let Ok(bytes) = tokio::fs::read(&resolved).await else {
-                continue;
-            };
-            let digest = format!(
-                "sha256:{}",
-                quench_core::hex::encode(quench_crypto::hash::sha256(&bytes))
-            );
-            let remote = format!("conveyor/{run_id}/{job_id}/{file}");
-            match store.upload(&remote, bytes).await {
-                Ok(uri) => kept.push(Collected {
-                    artifact: Artifact {
-                        id: Uuid::new_v4().to_string(),
-                        run_id: run_id.to_string(),
-                        job_id: job_id.to_string(),
-                        kind: "file".to_string(),
-                        name: file.to_string(),
-                        version: None,
-                        uri,
-                        digest: Some(digest),
-                        created_at: Time::now(),
-                    },
-                }),
-                Err(error) => problems.push(error),
-            }
+    for (directory, file, name) in REPORTS {
+        let declared = format!("{directory}/{file}");
+        let Some(resolved) = workspace.resolve(&declared) else {
+            continue;
+        };
+        let Ok(bytes) = tokio::fs::read(&resolved).await else {
+            continue;
+        };
+        let digest = format!(
+            "sha256:{}",
+            quench_core::hex::encode(quench_crypto::hash::sha256(&bytes))
+        );
+        let remote = format!("conveyor/{run_id}/{job_id}/{name}");
+        match store.upload(&remote, bytes).await {
+            Ok(uri) => kept.push(Collected {
+                artifact: Artifact {
+                    id: Uuid::new_v4().to_string(),
+                    run_id: run_id.to_string(),
+                    job_id: job_id.to_string(),
+                    kind: "file".to_string(),
+                    name: name.to_string(),
+                    version: None,
+                    uri,
+                    digest: Some(digest),
+                    created_at: Time::now(),
+                },
+            }),
+            Err(error) => problems.push(error),
         }
     }
 

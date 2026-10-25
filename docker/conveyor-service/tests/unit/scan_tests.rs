@@ -1,6 +1,6 @@
 use conveyor_service::scan::{
     CheckKind, CheckResult, parse_audit, parse_coverage, parse_lint, parse_machete, strip_ansi,
-    tests_check,
+    security_check, tests_check,
 };
 
 #[quench_test::test]
@@ -277,4 +277,44 @@ fn something_that_is_not_a_test_report_is_not_one() {
     assert_eq!(CheckKind::from_slug("tests"), Some(CheckKind::Tests));
     assert_eq!(CheckKind::Tests.slug(), "tests");
     assert_eq!(CheckKind::Tests.label(), "ui_scan_tests_title");
+}
+
+/// What the security gate writes: a `quench-test` report whose cases are stages and findings.
+const SECURITY_REPORT: &str = r#"{
+  "duration_ms": 2701000,
+  "summary": {"total": 4, "passed": 2, "failed": 1, "skipped": 1},
+  "suites": [
+    {"name": "supply_chain", "cases": [
+      {"name": "cargo_audit", "status": "failed", "message": "RUSTSEC-2026-0001: crate foo 1.2.3 is vulnerable"},
+      {"name": "cargo_deny", "status": "passed", "duration_ms": 2000}
+    ]},
+    {"name": "fuzz", "cases": [
+      {"name": "request_head", "status": "passed", "duration_ms": 600000},
+      {"name": "ws_frame", "status": "skipped"}
+    ]}
+  ]
+}"#;
+
+#[quench_test::test]
+fn a_security_report_is_a_check_of_its_own_with_each_failed_stage_a_finding() {
+    let check = security_check("nightly/security", SECURITY_REPORT).expect("a report");
+
+    assert_eq!(check.kind, CheckKind::Security);
+    assert!(!check.passed);
+    assert_eq!(check.headline, "2 passed, 1 failed, 1 skipped, 45m 1s");
+    assert_eq!(check.metric.as_deref(), Some("2/4"));
+    assert_eq!(check.findings.len(), 1);
+    assert_eq!(check.findings[0].title, "cargo_audit");
+    assert_eq!(check.findings[0].location.as_deref(), Some("supply_chain"));
+    assert!(check.findings[0].extra.as_deref().unwrap().contains("RUSTSEC-2026-0001"));
+}
+
+#[quench_test::test]
+fn security_has_its_own_slug_label_and_is_not_the_tests_check() {
+    assert_eq!(CheckKind::from_slug("security"), Some(CheckKind::Security));
+    assert_eq!(CheckKind::Security.slug(), "security");
+    assert_eq!(CheckKind::Security.label(), "ui_scan_security_title");
+    assert_ne!(CheckKind::Security, CheckKind::Tests);
+    // The same JSON read as tests keeps the tests kind: the artifact name decides, not the content.
+    assert_eq!(tests_check("t", SECURITY_REPORT).unwrap().kind, CheckKind::Tests);
 }

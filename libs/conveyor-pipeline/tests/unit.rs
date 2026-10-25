@@ -3,6 +3,8 @@
 
 #[path = "unit/condition_tests.rs"]
 mod condition_tests;
+#[path = "unit/cron_tests.rs"]
+mod cron_tests;
 #[path = "unit/graph_tests.rs"]
 mod graph_tests;
 #[path = "unit/parser_tests.rs"]

@@ -20,11 +20,30 @@ pub struct PipelineSpec {
     pub stages: Vec<Stage>,
     /// Indices into `stages`, in an order that satisfies every `needs`.
     order: Vec<usize>,
+    /// When this pipeline asks to be started on a clock (`on.schedule`), already checked.
+    pub schedules: Vec<Schedule>,
 }
 
 impl PipelineSpec {
-    pub(super) fn new(on: Triggers, stages: Vec<Stage>, order: Vec<usize>) -> Self {
-        Self { on, stages, order }
+    pub(super) fn new(
+        on: Triggers,
+        stages: Vec<Stage>,
+        order: Vec<usize>,
+        schedules: Vec<Schedule>,
+    ) -> Self {
+        Self { on, stages, order, schedules }
+    }
+
+    /// Whether this pipeline should run for `event` at `git_ref`: [`Triggers::allows`], plus the
+    /// `schedule` event, which is wanted exactly when the pipeline declares a schedule.
+    ///
+    /// A scheduled run whose file no longer declares a schedule (it was removed after the run was
+    /// queued) is therefore skipped rather than executed on a schedule nobody asked for any more.
+    pub fn allows(&self, event: &str, git_ref: &str) -> bool {
+        if event == "schedule" {
+            return !self.schedules.is_empty();
+        }
+        self.on.allows(event, git_ref)
     }
 
     /// Stage indices in an order where a stage always follows what it needs.
@@ -45,6 +64,24 @@ impl PipelineSpec {
     /// The total number of jobs across every stage.
     pub fn job_count(&self) -> usize {
         self.stages.iter().map(|stage| stage.jobs.len()).sum()
+    }
+}
+
+/// One entry of `on.schedule`: a cron expression and the time zone it is read in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Schedule {
+    /// The five-field expression (or `@daily`-style macro) as written.
+    pub expression: String,
+    /// An IANA zone name such as `Europe/Warsaw`; `UTC` unless `on.timezone` says otherwise.
+    pub timezone: String,
+}
+
+impl Schedule {
+    /// The next instant after `after` this schedule fires, or `None` if it never does.
+    pub fn next_after(&self, after: quench_core::time::Time) -> Option<quench_core::time::Time> {
+        let cron = crate::cron::Cron::parse(&self.expression).ok()?;
+        let zone = quench_tz::Zone::named(&self.timezone).ok()?;
+        cron.next_after(after, &zone)
     }
 }
 

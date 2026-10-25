@@ -3,16 +3,17 @@
 use crate::artifacts::{self, WarehouseStore};
 use crate::config::ConveyorConfig;
 use crate::credentials::store as credential_store;
-use crate::domain::{Repo, Run, Status};
+use crate::domain::{Repo, Run, Status, Trigger};
 use crate::executors::{JobCredential, JobExecutor, JobSpec, SourceSpec};
 use crate::notifications::{self, Notifications};
 use crate::pipeline::{self, Decision, EvalContext, PIPELINE_FILE};
 use crate::providers::{CommitStatusReport, Providers};
 use crate::scheduler::queue::{self, PlannedJob};
-use crate::scheduler::repos;
+use crate::scheduler::{repos, schedules};
 use crate::secrets::{Redactor, SecretKey, store as secret_store};
 use crate::workspace::{self, CheckoutRequest, HttpCredential, Workspace};
 use quench_core::stream::{FuturesUnordered, StreamExt};
+use quench_core::time::Time;
 use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -344,7 +345,26 @@ impl Worker {
         })?;
 
         let event = run.trigger.as_str();
-        if !spec.on.allows(event, &run.git_ref) {
+
+        // The pipeline on the default branch is the one whose schedules count; any other branch's
+        // `on.schedule` is ignored, or a feature branch could register a nightly job.
+        if is_default_branch(&run.git_ref, &repo.default_branch)
+            && matches!(run.trigger, Trigger::Push | Trigger::Manual | Trigger::Schedule)
+        {
+            match schedules::sync(&self.db, &repo.id, &spec.schedules, Time::now()).await {
+                Ok((0, 0)) => {}
+                Ok((added, removed)) => quench_log::info!(
+                    "{}: schedules updated from {PIPELINE_FILE} ({added} added, {removed} removed)",
+                    repo.slug()
+                ),
+                Err(error) => quench_log::warn!(
+                    "{}: could not update schedules from {PIPELINE_FILE}: {error}",
+                    repo.slug()
+                ),
+            }
+        }
+
+        if !spec.allows(event, &run.git_ref) {
             // Not a failure. Registering a repository means conveyor watches
             // it; the pipeline decides which of those events it wants.
             let _ = workspace.remove().await;
@@ -959,4 +979,9 @@ impl std::fmt::Debug for Worker {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("Worker { .. }")
     }
+}
+
+/// Whether `git_ref` (full or bare) names the repository's default branch.
+fn is_default_branch(git_ref: &str, default_branch: &str) -> bool {
+    git_ref.strip_prefix("refs/heads/").unwrap_or(git_ref) == default_branch
 }

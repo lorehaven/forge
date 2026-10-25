@@ -81,3 +81,10 @@ fn pull_request_accepts_the_spellings_providers_actually_send() {
     assert_eq!(Trigger::parse("PR"), Some(Trigger::PullRequest));
     assert_eq!(Trigger::parse("merge"), None);
 }
+
+#[quench_test::test]
+fn a_scheduled_trigger_round_trips_and_is_named_for_when_conditions() {
+    assert_eq!(Trigger::Schedule.as_str(), "schedule");
+    assert_eq!(Trigger::parse("schedule"), Some(Trigger::Schedule));
+    assert_eq!(Trigger::parse("Scheduled"), Some(Trigger::Schedule));
+}

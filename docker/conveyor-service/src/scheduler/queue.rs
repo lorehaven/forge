@@ -545,6 +545,47 @@ pub async fn list_artifacts_for_job(db: &Db, job_id: &str) -> Result<Vec<Artifac
         .collect()
 }
 
+/// The newest artifact called `name` that any run of `repo_id` left, whichever run that was.
+///
+/// For reports that only some runs produce (the nightly security run): the latest run of the
+/// repository is usually a push, which has none.
+pub async fn latest_artifact_named(
+    db: &Db,
+    repo_id: &str,
+    name: &str,
+) -> Result<Option<Artifact>, QueueError> {
+    let pool = pool(db)?;
+    let schema = schema();
+    let sql = format!(
+        "SELECT a.id, a.run_id, a.job_id, a.kind, a.name, a.version, a.uri, a.digest, a.created_at \
+         FROM {schema}.artifacts a JOIN {schema}.runs r ON r.id = a.run_id \
+         WHERE r.repo_id = $1 AND a.name = $2 \
+         ORDER BY a.created_at DESC LIMIT 1"
+    );
+
+    let row = pool
+        .query_opt(
+            &sql,
+            &[&repo_id as &dyn quench_pg::ToSql, &name],
+        )
+        .await?;
+
+    row.map(|row| {
+        Ok(Artifact {
+            id: row.get("id")?,
+            run_id: row.get("run_id")?,
+            job_id: row.get("job_id")?,
+            kind: row.get("kind")?,
+            name: row.get("name")?,
+            version: row.get("version")?,
+            uri: row.get("uri")?,
+            digest: row.get("digest")?,
+            created_at: row.get::<Time, _>("created_at")?,
+        })
+    })
+    .transpose()
+}
+
 // Reading.
 pub async fn read_run(db: &Db, run_id: &str) -> Result<Option<Run>, QueueError> {
     let pool = pool(db)?;

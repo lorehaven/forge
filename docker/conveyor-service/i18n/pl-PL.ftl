@@ -74,6 +74,7 @@ ui_scan_machete_title = Nieużywane zależności
 ui_scan_audit_title = Podatności
 ui_scan_coverage_title = Pokrycie testami
 ui_scan_tests_title = Testy
+ui_scan_security_title = Bezpieczeństwo
 ui_scan_tests_report_open = Otwórz pełny raport
 ui_scan_tests_report_download = Pobierz raport
 ui_scan_no_runs = To repozytorium jeszcze się nie uruchomiło.

@@ -4,7 +4,7 @@ use crate::credentials::store::{self as credential_store, ResolvedCredential};
 use crate::domain::{Repo, Run, Trigger};
 use crate::routers::api::authz::{can_on_project, granted_project_ids};
 use crate::routers::api::{ApiError, OptionalClaims, json_error};
-use crate::scheduler::queue::{self, NewRun, QueueError};
+use crate::scheduler::queue::{self, Enqueued, NewRun, QueueError};
 use crate::scheduler::{projects, repos};
 use crate::secrets::crypto::SecretKey;
 use crate::workspace::checkout::{basic_auth_header, credential_env};
@@ -100,6 +100,20 @@ pub async fn trigger_manual(
     git_ref: Option<String>,
     sha: Option<String>,
 ) -> Result<Run, TriggerError> {
+    let enqueued = trigger_run(db, repo_id, git_ref, sha, Trigger::Manual, None).await?;
+    Ok(enqueued.run().clone())
+}
+
+/// [`trigger_manual`] for any kind of trigger: the scheduler uses it for `schedule` runs, passing a
+/// `delivery_id` so two replicas (or a restart) firing the same schedule enqueue one run.
+pub async fn trigger_run(
+    db: &Db,
+    repo_id: &str,
+    git_ref: Option<String>,
+    sha: Option<String>,
+    trigger: Trigger,
+    delivery_id: Option<String>,
+) -> Result<Enqueued, TriggerError> {
     let repo = match repos::read(db, repo_id).await {
         Ok(Some(repo)) => repo,
         Ok(None) => return Err(TriggerError::NotFound),
@@ -135,17 +149,17 @@ pub async fn trigger_manual(
 
     let new = NewRun {
         repo_id: repo.id.clone(),
-        trigger: Trigger::Manual,
+        trigger,
         git_ref,
         sha,
         message: None,
-        // No delivery to be a duplicate of; asking for the same commit twice on purpose is allowed.
-        delivery_id: None,
+        // A manual trigger has no delivery to be a duplicate of: asking for the same commit twice on
+        // purpose is allowed. A scheduled one carries its firing's identity instead.
+        delivery_id,
         resumed_from: None,
     };
 
-    let enqueued = queue::enqueue(db, &new).await?;
-    Ok(enqueued.run().clone())
+    Ok(queue::enqueue(db, &new).await?)
 }
 
 #[post("/api/v1/repos/{repo_id}/runs")]
@@ -501,7 +515,35 @@ async fn resolve_ref(
         .ok_or_else(|| format!("{git_ref} does not exist in that repository"))
 }
 
+/// The schedules a repository's pipeline has declared, and when each next fires.
+///
+/// Read-only: the pipeline file is the source of truth, so there is nothing to create or edit here.
+/// Empty until a run of the default branch has read a pipeline that declares `on.schedule`.
+#[get("/api/v1/repos/{repo_id}/schedules")]
+pub async fn schedules(
+    OptionalClaims(claims): OptionalClaims,
+    Path(repo_id): Path<String>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    match repo_access(claims.as_ref(), &config, &db, &repo_id, "read").await {
+        Ok(Some(true)) => {}
+        Ok(Some(false)) => {
+            return json_error(StatusCode::FORBIDDEN, "no read access to this repository");
+        }
+        Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such repository"),
+        Err(error) => return ApiError::from(error).into_response(),
+    }
+
+    match crate::scheduler::schedules::list(&db, &repo_id).await {
+        Ok(found) => Response::json(StatusCode::OK, &found)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
+        Err(error) => ApiError::from(error).into_response(),
+    }
+}
+
 pub fn register_routes() {
+    let _ = schedules as fn(_, _, _, _) -> _;
     let _ = trigger as fn(_, _, _, _, _) -> _;
     let _ = list as fn(_, _, _, _) -> _;
     let _ = read as fn(_, _, _, _) -> _;

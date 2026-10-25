@@ -112,6 +112,7 @@ fn four_chips_come_out_in_a_fixed_order_regardless_of_which_checks_ran() {
         audit: Some(check(false, 2)),
         coverage: None,
         tests: None,
+        security: None,
     };
 
     let html = check_chips(Some(&summary)).render();

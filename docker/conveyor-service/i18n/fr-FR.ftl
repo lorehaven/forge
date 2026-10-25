@@ -74,6 +74,7 @@ ui_scan_machete_title = Dépendances inutilisées
 ui_scan_audit_title = Vulnérabilités
 ui_scan_coverage_title = Couverture de tests
 ui_scan_tests_title = Tests
+ui_scan_security_title = Sécurité
 ui_scan_tests_report_open = Ouvrir le rapport complet
 ui_scan_tests_report_download = Télécharger le rapport
 ui_scan_no_runs = Ce dépôt n'a pas encore été exécuté.
