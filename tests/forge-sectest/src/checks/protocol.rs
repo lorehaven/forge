@@ -27,7 +27,8 @@ struct Case {
 }
 
 fn cases(host: &str) -> Vec<Case> {
-    let head = |extra: &str| format!("POST / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n{extra}");
+    let head =
+        |extra: &str| format!("POST / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n{extra}");
     let many = (0..1000).fold(String::new(), |mut out, i| {
         let _ = write!(out, "X-H{i}: v\r\n");
         out
@@ -172,7 +173,9 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
 /// Holds a half-sent request open and measures how long the server tolerates it.
 async fn slowloris(target: &Target, host: &str) -> Option<Finding> {
     let partial = format!("GET / HTTP/1.1\r\nHost: {host}\r\nX-Slow: ");
-    let reply = wire::raw(target, partial.as_bytes(), Duration::from_secs(60)).await.ok()?;
+    let reply = wire::raw(target, partial.as_bytes(), Duration::from_secs(60))
+        .await
+        .ok()?;
     (!reply.closed).then(|| {
         Finding::new(
             Severity::Medium,

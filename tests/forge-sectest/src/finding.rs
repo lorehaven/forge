@@ -25,9 +25,15 @@ impl Severity {
 
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
-        [Self::Info, Self::Low, Self::Medium, Self::High, Self::Critical]
-            .into_iter()
-            .find(|s| s.as_str().eq_ignore_ascii_case(text))
+        [
+            Self::Info,
+            Self::Low,
+            Self::Medium,
+            Self::High,
+            Self::Critical,
+        ]
+        .into_iter()
+        .find(|s| s.as_str().eq_ignore_ascii_case(text))
     }
 }
 

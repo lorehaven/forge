@@ -39,20 +39,33 @@ fn secrets_are_caught_by_shape_not_by_a_lucky_substring() {
     let begin = parts(&["-----BE", "GIN RSA PRIV", "ATE KEY-----"]);
     assert_eq!(line_leaks_secret(&begin), Some("a private key"));
     assert_eq!(
-        line_leaks_secret(&format!("key = \"{}ABCDEFGHIJKLMNOP\"", "AK" .to_string() + "IA")),
+        line_leaks_secret(&format!(
+            "key = \"{}ABCDEFGHIJKLMNOP\"",
+            "AK".to_string() + "IA"
+        )),
         Some("an AWS access key id")
     );
     assert_eq!(
-        line_leaks_secret(&format!("t = {}{}", "gh" .to_string() + "p_", "a".repeat(36))),
+        line_leaks_secret(&format!(
+            "t = {}{}",
+            "gh".to_string() + "p_",
+            "a".repeat(36)
+        )),
         Some("a GitHub personal access token")
     );
     assert_eq!(
-        line_leaks_secret(&format!("{}{}", "xo" .to_string() + "xb-", "1234567890-abc")),
+        line_leaks_secret(&format!("{}{}", "xo".to_string() + "xb-", "1234567890-abc")),
         Some("a Slack token")
     );
     // Too short to be the real thing, or merely mentioning the word.
-    assert_eq!(line_leaks_secret(&format!("{}SHORT", "AK" .to_string() + "IA")), None);
-    assert_eq!(line_leaks_secret("the private key is stored elsewhere"), None);
+    assert_eq!(
+        line_leaks_secret(&format!("{}SHORT", "AK".to_string() + "IA")),
+        None
+    );
+    assert_eq!(
+        line_leaks_secret("the private key is stored elsewhere"),
+        None
+    );
     assert_eq!(line_leaks_secret("-----BEGIN CERTIFICATE-----"), None);
 }
 
@@ -63,12 +76,23 @@ fn the_filesystem_scan_finds_a_planted_violation_and_skips_build_output() {
     let kw = parts(&["uns", "afe"]);
     std::fs::create_dir_all(root.join("src")).unwrap();
     std::fs::create_dir_all(root.join("target/debug")).unwrap();
-    std::fs::write(root.join("src/bad.rs"), format!("fn f() {{ {kw} {{ g() }} }}\n")).unwrap();
+    std::fs::write(
+        root.join("src/bad.rs"),
+        format!("fn f() {{ {kw} {{ g() }} }}\n"),
+    )
+    .unwrap();
     std::fs::write(root.join("src/good.rs"), "fn f() {}\n").unwrap();
-    std::fs::write(root.join("target/debug/ignored.rs"), format!("{kw} fn x() {{}}\n")).unwrap();
+    std::fs::write(
+        root.join("target/debug/ignored.rs"),
+        format!("{kw} fn x() {{}}\n"),
+    )
+    .unwrap();
     std::fs::write(
         root.join("src/leak.toml"),
-        format!("k = \"{}\"\n", parts(&["-----BE", "GIN PRIV", "ATE KEY-----"])),
+        format!(
+            "k = \"{}\"\n",
+            parts(&["-----BE", "GIN PRIV", "ATE KEY-----"])
+        ),
     )
     .unwrap();
 
@@ -80,12 +104,20 @@ fn the_filesystem_scan_finds_a_planted_violation_and_skips_build_output() {
 
 #[quench_test::test]
 fn allowlists_ignore_comments_and_blanks() {
-    assert_eq!(allowlist("# why\n\n./a.rs\n  ./b.rs  \n#./c.rs\n"), ["./a.rs", "./b.rs"]);
+    assert_eq!(
+        allowlist("# why\n\n./a.rs\n  ./b.rs  \n#./c.rs\n"),
+        ["./a.rs", "./b.rs"]
+    );
 }
 
 #[quench_test::test]
 fn a_missing_program_is_a_failed_run_with_a_reason_not_a_pass() {
-    let ran = run(std::path::Path::new("."), "definitely-not-a-real-program-xyz", &[], &[]);
+    let ran = run(
+        std::path::Path::new("."),
+        "definitely-not-a-real-program-xyz",
+        &[],
+        &[],
+    );
     assert!(!ran.success);
     assert!(ran.output.contains("is it installed"), "{}", ran.output);
 }
@@ -94,7 +126,10 @@ fn a_missing_program_is_a_failed_run_with_a_reason_not_a_pass() {
 fn inside_a_git_checkout_only_project_files_are_scanned() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let root = dir.path();
-    let leak = format!("k = \"{}\"\n", parts(&["-----BE", "GIN PRIV", "ATE KEY-----"]));
+    let leak = format!(
+        "k = \"{}\"\n",
+        parts(&["-----BE", "GIN PRIV", "ATE KEY-----"])
+    );
     let git = |args: &[&str]| assert!(run(root, "git", args, &[]).success, "git {args:?}");
     git(&["init", "--quiet"]);
     std::fs::write(root.join(".gitignore"), "local.toml\nvenv/\n").unwrap();

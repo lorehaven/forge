@@ -38,7 +38,11 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
                 &path,
                 format!(
                     "Access-Control-Allow-Origin is {allow:?} for Origin {origin:?}{}",
-                    if credentials { " with credentials allowed: any site can read this as the user" } else { "" }
+                    if credentials {
+                        " with credentials allowed: any site can read this as the user"
+                    } else {
+                        ""
+                    }
                 ),
             ));
         }

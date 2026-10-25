@@ -87,9 +87,10 @@ pub async fn sync(
 
     let mut removed = 0;
     for stored in &existing {
-        if !declared.iter().any(|d| {
-            d.expression == stored.expression && d.timezone == stored.timezone
-        }) {
+        if !declared
+            .iter()
+            .any(|d| d.expression == stored.expression && d.timezone == stored.timezone)
+        {
             pool.execute(
                 &format!("DELETE FROM {schema}.schedules WHERE id = $1"),
                 &[&stored.id as &dyn quench_pg::ToSql],
@@ -145,11 +146,7 @@ async fn due(db: &Db, now: Time) -> Result<Vec<StoredSchedule>, QueueError> {
 
 /// Moves a schedule past the firing it just produced. Compare-and-set on the old instant: if another
 /// replica already advanced it, nothing changes.
-async fn advance(
-    db: &Db,
-    stored: &StoredSchedule,
-    next: Time,
-) -> Result<bool, QueueError> {
+async fn advance(db: &Db, stored: &StoredSchedule, next: Time) -> Result<bool, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
     let changed = pool
@@ -231,7 +228,10 @@ pub async fn fire_due(db: &Db, now: Time) -> Result<Tick, QueueError> {
             advance(db, &stored, next).await?;
         } else {
             // Cannot happen for a validated expression; do not loop on it forever.
-            quench_log::error!("schedule `{}` has no next firing; removing it", stored.expression);
+            quench_log::error!(
+                "schedule `{}` has no next firing; removing it",
+                stored.expression
+            );
             let pool = pool(db)?;
             pool.execute(
                 &format!("DELETE FROM {}.schedules WHERE id = $1", schema()),

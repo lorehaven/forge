@@ -1,9 +1,12 @@
-# Every push to master, and every pull request.
-on = { push = ["master"], pull_request = ["*"] }
+# Every push to master, every pull request, and - at midnight Warsaw time, through summer and winter time
+# alike - the nightly security run. The scheduled run is the `security` stage alone: every other stage opts
+# out with `event != 'schedule'`, so pushes and pull requests are exactly what they were.
+on = { push = ["master"], pull_request = ["*"], schedule = ["0 0 * * *"], timezone = "Europe/Warsaw" }
 
 # ---------------------------------------------------------------- check
 [[stage]]
 name = "check"
+when  = "event != 'schedule'"
 
 [[stage.job]]
 name  = "format"
@@ -48,6 +51,7 @@ steps = [
 # ---------------------------------------------------------------- build
 [[stage]]
 name  = "build"
+when  = "event != 'schedule'"
 needs = ["check"]
 
 [[stage.job]]
@@ -58,6 +62,7 @@ steps = [{ anvil = "build --all" }]
 # ---------------------------------------------------------------- test
 [[stage]]
 name  = "test"
+when  = "event != 'schedule'"
 needs = ["build"]
 
 [[stage.job]]
@@ -85,3 +90,28 @@ steps = [
   { run = "cargo llvm-cov report" },
 ]
 artifacts = ["lcov.info"]
+
+# ---------------------------------------------------------------- security (nightly)
+# Started by the clock (`on.schedule`), never by a push. One job, one report: supply-chain and static stages,
+# the scanner's self-test, and a live scan of the estate are quench-test cases written to target/security,
+# which conveyor keeps whatever the outcome and shows as the Security card on the repo's scan page.
+#
+# The live scan is READ-ONLY (no FORGE_SECTEST_ACTIVE): anonymous requests, forged credentials, traversal
+# and protocol probes against the running services over cluster DNS, at 20 requests/second, ~10 minutes.
+# Give it a service-account token (FORGE_SECTEST_TOKEN, as a conveyor secret) to test behind the auth wall,
+# and tighten FAIL_ON to "medium" once tests/forge-sectest/public-routes.txt records the reviewed anonymous
+# routes (`forge-sectest scan --write-baseline`).
+[[stage]]
+name = "security"
+when = "event == 'schedule'"
+
+[[stage.job]]
+name    = "nightly"
+image   = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+timeout = 3600
+env = { RUST_BACKTRACE = "1", FORGE_SECTEST_FAIL_ON = "high", FORGE_SECTEST_TARGETS = "gatehouse=http://gatehouse.forge.svc.cluster.local/gatehouse warehouse=http://warehouse.forge.svc.cluster.local/warehouse conveyor=http://conveyor.forge.svc.cluster.local/conveyor sage=http://sage.forge.svc.cluster.local/sage switchboard=http://switchboard.forge.svc.cluster.local/switchboard workbench=http://workbench.forge.svc.cluster.local/workbench gantry=http://gantry.forge.svc.cluster.local/gantry daybook=http://daybook.forge.svc.cluster.local/daybook" }
+steps = [
+  { run = "export QUENCH_TEST_REPORT_DIR=$PWD/target/security; rc=0; cargo test -p forge-sectest --test scanners || rc=1; cargo test -p forge-sectest --features gate --test gate -- --test-threads=1 || rc=1; cargo test -p forge-sectest --features gate --test live -- --test-threads=1 || rc=1; exit $rc" },
+]
+# Every finding, not only the failing ones. Kept when the job is green; a red run's findings are in the report.
+artifacts = ["target/security-findings.json"]

@@ -248,7 +248,10 @@ fn a_security_card_sits_beside_the_others_and_its_page_embeds_its_own_report() {
 
     // The page embeds the *security* report - not the unit tests' - and offers it for download.
     let page = detail(&repo(), CheckKind::Security, &security).render();
-    assert!(page.contains(r#"src="/ui/repos/lorehaven/palantir/scan/security/report""#), "{page}");
+    assert!(
+        page.contains(r#"src="/ui/repos/lorehaven/palantir/scan/security/report""#),
+        "{page}"
+    );
     assert!(page.contains("scan/security/report?download=1"));
     assert!(!page.contains("scan/tests/report"));
 }

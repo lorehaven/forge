@@ -117,7 +117,10 @@ impl Ctx {
     }
 
     pub fn routes_of<'a>(&'a self, target: &'a Target) -> impl Iterator<Item = &'a Route> {
-        self.opts.routes.iter().filter(move |r| r.service == target.name)
+        self.opts
+            .routes
+            .iter()
+            .filter(move |r| r.service == target.name)
     }
 
     /// The credential header(s) for authenticated probing, if a token was supplied.

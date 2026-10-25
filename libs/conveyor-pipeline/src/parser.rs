@@ -11,8 +11,8 @@
 //! or what the alternatives were.
 
 use crate::condition::{Condition, ConditionError};
-use crate::graph::{self, GraphError};
 use crate::cron::Cron;
+use crate::graph::{self, GraphError};
 use crate::spec::{Job, PipelineSpec, Schedule, Stage, Step, Triggers};
 use quench_serde::Deserialize;
 use std::collections::BTreeMap;
@@ -153,7 +153,10 @@ pub fn parse(source: &str) -> Result<PipelineSpec, SpecError> {
         return Err(SpecError::NoStages);
     }
 
-    let schedules = raw.on.as_ref().map_or_else(|| Ok(Vec::new()), parse_schedules)?;
+    let schedules = raw
+        .on
+        .as_ref()
+        .map_or_else(|| Ok(Vec::new()), parse_schedules)?;
     let on = raw
         .on
         .map_or_else(|| Ok(Triggers::default()), parse_triggers)?;

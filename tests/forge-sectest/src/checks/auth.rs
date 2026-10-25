@@ -66,11 +66,19 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Outcome {
             Class::Protected => protected.push(route.clone()),
             Class::NotRouted => not_routed += 1,
             Class::Public | Class::ServerError => {
-                let known = ctx.opts.baseline.as_ref().is_some_and(|b| b.contains(&route.key()));
+                let known = ctx
+                    .opts
+                    .baseline
+                    .as_ref()
+                    .is_some_and(|b| b.contains(&route.key()));
                 if known {
                     continue;
                 }
-                let severity = if route.is_mutating() { Severity::High } else { Severity::Medium };
+                let severity = if route.is_mutating() {
+                    Severity::High
+                } else {
+                    Severity::Medium
+                };
                 findings.push(Finding::new(
                     severity,
                     "auth",
@@ -108,5 +116,8 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Outcome {
             ),
         ));
     }
-    Outcome { findings, protected }
+    Outcome {
+        findings,
+        protected,
+    }
 }

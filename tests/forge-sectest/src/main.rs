@@ -37,7 +37,10 @@ Non-destructive by default. Never point this at a system you are not authorised 
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let Ok(runtime) = tokio::runtime::Builder::new_multi_thread().enable_all().build() else {
+    let Ok(runtime) = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    else {
         eprintln!("cannot start the async runtime");
         return ExitCode::from(2);
     };
@@ -91,13 +94,19 @@ async fn real_main(raw: Vec<String>) -> Result<ExitCode, String> {
     );
     let routes = census::scan_forge(&forge, &extra);
     if routes.is_empty() {
-        return Err(format!("no routes found under {}/docker (is --forge a forge checkout?)", forge.display()));
+        return Err(format!(
+            "no routes found under {}/docker (is --forge a forge checkout?)",
+            forge.display()
+        ));
     }
 
     match command.as_str() {
         "census" => {
             for route in &routes {
-                println!("{:<12} {:<7} {}  ({})", route.service, route.method, route.pattern, route.source);
+                println!(
+                    "{:<12} {:<7} {}  ({})",
+                    route.service, route.method, route.pattern, route.source
+                );
             }
             println!("\n{} routes", routes.len());
             Ok(ExitCode::SUCCESS)
@@ -110,7 +119,9 @@ async fn real_main(raw: Vec<String>) -> Result<ExitCode, String> {
 async fn scan_command(args: &Args, routes: Vec<census::Route>) -> Result<ExitCode, String> {
     let mut targets = Vec::new();
     for spec in args.values("--target") {
-        let (name, url) = spec.split_once('=').ok_or_else(|| format!("--target {spec}: expected NAME=URL"))?;
+        let (name, url) = spec
+            .split_once('=')
+            .ok_or_else(|| format!("--target {spec}: expected NAME=URL"))?;
         let mut target = Target::parse(name, url)?;
         target.insecure = args.flag("--insecure");
         targets.push(target);
@@ -125,7 +136,11 @@ async fn scan_command(args: &Args, routes: Vec<census::Route>) -> Result<ExitCod
     }
     if let Some(list) = args.value("--checks") {
         options.checks = list.split(',').map(str::trim).map(str::to_string).collect();
-        if let Some(bad) = options.checks.iter().find(|c| !ALL_CHECKS.contains(&c.as_str())) {
+        if let Some(bad) = options
+            .checks
+            .iter()
+            .find(|c| !ALL_CHECKS.contains(&c.as_str()))
+        {
             return Err(format!("--checks: unknown check {bad:?}"));
         }
     }
@@ -141,7 +156,9 @@ async fn scan_command(args: &Args, routes: Vec<census::Route>) -> Result<ExitCod
         );
     }
     let fail_on = match args.value("--fail-on") {
-        Some(level) => Severity::parse(&level).ok_or_else(|| format!("--fail-on: unknown level {level:?}"))?,
+        Some(level) => {
+            Severity::parse(&level).ok_or_else(|| format!("--fail-on: unknown level {level:?}"))?
+        }
         None => Severity::High,
     };
 
@@ -166,7 +183,10 @@ async fn scan_command(args: &Args, routes: Vec<census::Route>) -> Result<ExitCod
             keys.join("\n")
         );
         fs::write(&path, body).map_err(|e| format!("{path}: {e}"))?;
-        println!("wrote {} public routes to {path}; review them before committing", keys.len());
+        println!(
+            "wrote {} public routes to {path}; review them before committing",
+            keys.len()
+        );
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -182,5 +202,9 @@ async fn scan_command(args: &Args, routes: Vec<census::Route>) -> Result<ExitCod
         findings.len(),
         worst.map_or(String::new(), |w| format!("; worst: {w}"))
     );
-    Ok(if worst.is_some_and(|w| w >= fail_on) { ExitCode::from(1) } else { ExitCode::SUCCESS })
+    Ok(if worst.is_some_and(|w| w >= fail_on) {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    })
 }

@@ -23,7 +23,12 @@ const SKIP_DIRS: [&str; 4] = ["target", ".git", "node_modules", "dist"];
 /// This is what "in the sources" means: a virtualenv, a build directory or a gitignored local key is
 /// not, and scanning them buries real findings under noise.
 fn project_files(root: &Path) -> Option<Vec<String>> {
-    let listing = run(root, "git", &["ls-files", "--cached", "--others", "--exclude-standard"], &[]);
+    let listing = run(
+        root,
+        "git",
+        &["ls-files", "--cached", "--others", "--exclude-standard"],
+        &[],
+    );
     if !listing.success {
         return None;
     }
@@ -56,9 +61,12 @@ pub fn rust_files(root: &Path) -> Vec<String> {
 #[must_use]
 pub fn text_files(root: &Path) -> Vec<String> {
     let is_text = |name: &str| {
-        ["rs", "toml", "yml", "yaml", "json", "env", "sh", "fish", "md", "txt", "pem", "key", "cfg", "conf", "ini"]
-            .iter()
-            .any(|ext| name.rsplit('.').next() == Some(*ext))
+        [
+            "rs", "toml", "yml", "yaml", "json", "env", "sh", "fish", "md", "txt", "pem", "key",
+            "cfg", "conf", "ini",
+        ]
+        .iter()
+        .any(|ext| name.rsplit('.').next() == Some(*ext))
             && !name.ends_with("Cargo.lock")
     };
     if let Some(files) = project_files(root) {
@@ -145,7 +153,9 @@ pub fn line_leaks_secret(line: &str) -> Option<&'static str> {
     if line.contains(&begin) && line.contains(&private) {
         return Some("a private key");
     }
-    if token_after(line, "AKIA", 16, |c| c.is_ascii_uppercase() || c.is_ascii_digit()) {
+    if token_after(line, "AKIA", 16, |c| {
+        c.is_ascii_uppercase() || c.is_ascii_digit()
+    }) {
         return Some("an AWS access key id");
     }
     if token_after(line, "ghp_", 36, |c| c.is_ascii_alphanumeric()) {
@@ -176,7 +186,11 @@ pub fn secrets_in(root: &Path) -> Vec<(String, usize, &'static str)> {
     let mut found = Vec::new();
     for file in text_files(root) {
         // Fixtures and documentation legitimately contain example keys.
-        if file.contains("/tests/") || file.contains("/testdata/") || file.contains("/fixtures/") || file.ends_with(".md") {
+        if file.contains("/tests/")
+            || file.contains("/testdata/")
+            || file.contains("/fixtures/")
+            || file.ends_with(".md")
+        {
             continue;
         }
         let Ok(text) = fs::read_to_string(root.join(file.trim_start_matches("./"))) else {
@@ -236,4 +250,3 @@ pub fn run(dir: &Path, program: &str, args: &[&str], env: &[(&str, &str)]) -> Ra
 pub fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
-

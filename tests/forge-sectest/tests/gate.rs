@@ -18,7 +18,10 @@ fn ensure(ran: &Ran, what: &str) {
 
 #[quench_test::test]
 fn supply_chain_cargo_deny() {
-    ensure(&run(&root(), "cargo", &["deny", "check"], &[]), "cargo deny check");
+    ensure(
+        &run(&root(), "cargo", &["deny", "check"], &[]),
+        "cargo deny check",
+    );
 }
 
 #[quench_test::test]
@@ -42,25 +45,46 @@ fn static_unsafe_is_confined_to_allowlisted_files() {
         .map(|f| f.trim_start_matches("./").to_string())
         .collect();
     let new: Vec<_> = found.iter().filter(|f| !allowed.contains(f)).collect();
-    assert!(new.is_empty(), "NEW unsafe, not reviewed (add to scripts/unsafe-allowlist.txt once justified): {new:?}");
+    assert!(
+        new.is_empty(),
+        "NEW unsafe, not reviewed (add to scripts/unsafe-allowlist.txt once justified): {new:?}"
+    );
     let stale: Vec<_> = allowed.iter().filter(|f| !found.contains(f)).collect();
-    assert!(stale.is_empty(), "stale allowlist entries (no longer contain unsafe): {stale:?}");
-    assert!(!rust_files(&root).is_empty(), "the scan saw no Rust files under {}", root.display());
+    assert!(
+        stale.is_empty(),
+        "stale allowlist entries (no longer contain unsafe): {stale:?}"
+    );
+    assert!(
+        !rust_files(&root).is_empty(),
+        "the scan saw no Rust files under {}",
+        root.display()
+    );
 }
 
 #[quench_test::test]
 fn static_no_secrets_in_sources() {
     let root = root();
-    assert!(!text_files(&root).is_empty(), "the scan saw no files under {}", root.display());
+    assert!(
+        !text_files(&root).is_empty(),
+        "the scan saw no files under {}",
+        root.display()
+    );
     // Reviewed exceptions, one path per line - each a conscious decision that the file is not a secret.
     let allowed = std::fs::read_to_string(root.join("scripts/secrets-allowlist.txt"))
         .map(|text| allowlist(&text))
         .unwrap_or_default();
     let found: Vec<_> = secrets_in(&root)
         .into_iter()
-        .filter(|(file, _, _)| !allowed.iter().any(|a| a.trim_start_matches("./") == file.trim_start_matches("./")))
+        .filter(|(file, _, _)| {
+            !allowed
+                .iter()
+                .any(|a| a.trim_start_matches("./") == file.trim_start_matches("./"))
+        })
         .collect();
-    assert!(found.is_empty(), "secrets in sources (allow a reviewed false positive in scripts/secrets-allowlist.txt): {found:?}");
+    assert!(
+        found.is_empty(),
+        "secrets in sources (allow a reviewed false positive in scripts/secrets-allowlist.txt): {found:?}"
+    );
 }
 
 #[quench_test::test]
@@ -69,7 +93,17 @@ fn scanner_proves_itself_against_a_vulnerable_and_a_hardened_app() {
     let ran = run(
         &root(),
         "cargo",
-        &["test", "-p", "forge-sectest", "--test", "selftest", "--test", "census", "--", "--test-threads=1"],
+        &[
+            "test",
+            "-p",
+            "forge-sectest",
+            "--test",
+            "selftest",
+            "--test",
+            "census",
+            "--",
+            "--test-threads=1",
+        ],
         &[],
     );
     ensure(&ran, "forge-sectest self-test");

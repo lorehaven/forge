@@ -100,29 +100,52 @@ async fn sync_adds_new_schedules_keeps_known_ones_and_drops_withdrawn_ones() {
     let repo = register_repo(&db, "sync", "file:///nowhere").await;
     let now = Time::now();
 
-    let (added, removed) = schedules::sync(&db, &repo.id, &[nightly("0 0 * * *"), nightly("@hourly")], now)
-        .await
-        .unwrap();
+    let (added, removed) = schedules::sync(
+        &db,
+        &repo.id,
+        &[nightly("0 0 * * *"), nightly("@hourly")],
+        now,
+    )
+    .await
+    .unwrap();
     assert_eq!((added, removed), (2, 0));
     let stored = schedules::list(&db, &repo.id).await.unwrap();
     assert_eq!(stored.len(), 2);
-    assert!(stored.iter().all(|s| s.next_run_at > now && s.last_run_at.is_none()));
+    assert!(
+        stored
+            .iter()
+            .all(|s| s.next_run_at > now && s.last_run_at.is_none())
+    );
     let first_ids: Vec<_> = stored.iter().map(|s| s.id.clone()).collect();
 
     // Declaring the same thing again changes nothing - in particular it must not reset the due time.
-    let (added, removed) = schedules::sync(&db, &repo.id, &[nightly("0 0 * * *"), nightly("@hourly")], now + days(1))
-        .await
-        .unwrap();
+    let (added, removed) = schedules::sync(
+        &db,
+        &repo.id,
+        &[nightly("0 0 * * *"), nightly("@hourly")],
+        now + days(1),
+    )
+    .await
+    .unwrap();
     assert_eq!((added, removed), (0, 0));
     let again = schedules::list(&db, &repo.id).await.unwrap();
-    assert_eq!(again.iter().map(|s| s.id.clone()).collect::<Vec<_>>(), first_ids);
-    assert_eq!(again, stored, "an unchanged schedule must keep its place in time");
+    assert_eq!(
+        again.iter().map(|s| s.id.clone()).collect::<Vec<_>>(),
+        first_ids
+    );
+    assert_eq!(
+        again, stored,
+        "an unchanged schedule must keep its place in time"
+    );
 
     // Withdrawing one removes just that one; a different zone is a different schedule.
     let (added, removed) = schedules::sync(
         &db,
         &repo.id,
-        &[Schedule { expression: "0 0 * * *".into(), timezone: "Europe/Warsaw".into() }],
+        &[Schedule {
+            expression: "0 0 * * *".into(),
+            timezone: "Europe/Warsaw".into(),
+        }],
         now,
     )
     .await
@@ -137,9 +160,12 @@ async fn sync_adds_new_schedules_keeps_known_ones_and_drops_withdrawn_ones() {
 }
 
 #[quench_test::test]
-async fn a_default_branch_run_registers_the_pipelines_schedule_and_a_due_one_runs_only_its_own_stages() {
+async fn a_default_branch_run_registers_the_pipelines_schedule_and_a_due_one_runs_only_its_own_stages()
+ {
     let Some((db, _guard)) = database().await else {
-        return skipped("a_default_branch_run_registers_the_pipelines_schedule_and_a_due_one_runs_only_its_own_stages");
+        return skipped(
+            "a_default_branch_run_registers_the_pipelines_schedule_and_a_due_one_runs_only_its_own_stages",
+        );
     };
     let origin = Origin::with_pipeline(NIGHTLY);
     let repo = register_repo(&db, "nightly", &origin.url()).await;
@@ -152,8 +178,15 @@ async fn a_default_branch_run_registers_the_pipelines_schedule_and_a_due_one_run
     assert_eq!(push.status, Status::Success, "{:?}", push.error);
 
     let stored = schedules::list(&db, &repo.id).await.unwrap();
-    assert_eq!(stored.len(), 1, "the push run should have registered the schedule");
-    assert_eq!((stored[0].expression.as_str(), stored[0].timezone.as_str()), ("0 0 * * *", "Europe/Warsaw"));
+    assert_eq!(
+        stored.len(),
+        1,
+        "the push run should have registered the schedule"
+    );
+    assert_eq!(
+        (stored[0].expression.as_str(), stored[0].timezone.as_str()),
+        ("0 0 * * *", "Europe/Warsaw")
+    );
     // The push itself ran the build stage and not the scheduled one.
     let jobs = queue::list_jobs(&db, &push.id).await.unwrap();
     let status_of = |name: &str| jobs.iter().find(|j| j.name == name).map(|j| j.status);
@@ -170,7 +203,10 @@ async fn a_default_branch_run_registers_the_pipelines_schedule_and_a_due_one_run
     assert_eq!((tick.started, tick.duplicates), (1, 0));
 
     let runs = queue::list_runs(&db, Some(&repo.id), 10).await.unwrap();
-    let scheduled = runs.iter().find(|r| r.trigger == Trigger::Schedule).expect("a scheduled run");
+    let scheduled = runs
+        .iter()
+        .find(|r| r.trigger == Trigger::Schedule)
+        .expect("a scheduled run");
     assert_eq!(scheduled.git_ref, "refs/heads/master");
     assert_eq!(scheduled.sha, origin.sha);
     let finished = settle(&db, &scheduled.id).await;
@@ -179,13 +215,20 @@ async fn a_default_branch_run_registers_the_pipelines_schedule_and_a_due_one_run
     let jobs = queue::list_jobs(&db, &scheduled.id).await.unwrap();
     let status_of = |name: &str| jobs.iter().find(|j| j.name == name).map(|j| j.status);
     assert_eq!(status_of("nightly"), Some(Status::Success));
-    assert_ne!(status_of("compile"), Some(Status::Success), "the scheduled run must not redo the build");
+    assert_ne!(
+        status_of("compile"),
+        Some(Status::Success),
+        "the scheduled run must not redo the build"
+    );
 
     // It advanced past `later`, so asking again at the same instant starts nothing.
     let stored = schedules::list(&db, &repo.id).await.unwrap();
     assert!(stored[0].next_run_at > later);
     assert!(stored[0].last_run_at.is_some());
-    assert_eq!(schedules::fire_due(&db, later).await.unwrap(), schedules::Tick::default());
+    assert_eq!(
+        schedules::fire_due(&db, later).await.unwrap(),
+        schedules::Tick::default()
+    );
 }
 
 #[quench_test::test]
@@ -195,7 +238,9 @@ async fn the_same_firing_is_never_started_twice() {
     };
     let origin = Origin::with_pipeline(NIGHTLY);
     let repo = register_repo(&db, "dedupe", &origin.url()).await;
-    schedules::sync(&db, &repo.id, &[nightly("0 0 * * *")], Time::now()).await.unwrap();
+    schedules::sync(&db, &repo.id, &[nightly("0 0 * * *")], Time::now())
+        .await
+        .unwrap();
     let stored = schedules::list(&db, &repo.id).await.unwrap().remove(0);
 
     let later = Time::now() + days(2);
@@ -220,7 +265,10 @@ async fn the_same_firing_is_never_started_twice() {
         .filter(|r| r.trigger == Trigger::Schedule)
         .count();
     assert_eq!(scheduled, 1);
-    assert_eq!(delivery_id(&stored.id, stored.next_run_at), format!("schedule:{}:{}", stored.id, stored.next_run_at.timestamp()));
+    assert_eq!(
+        delivery_id(&stored.id, stored.next_run_at),
+        format!("schedule:{}:{}", stored.id, stored.next_run_at.timestamp())
+    );
 }
 
 #[quench_test::test]
@@ -230,12 +278,17 @@ async fn an_outage_over_several_firings_starts_one_catch_up_run() {
     };
     let origin = Origin::with_pipeline(NIGHTLY);
     let repo = register_repo(&db, "catchup", &origin.url()).await;
-    schedules::sync(&db, &repo.id, &[nightly("0 0 * * *")], Time::now()).await.unwrap();
+    schedules::sync(&db, &repo.id, &[nightly("0 0 * * *")], Time::now())
+        .await
+        .unwrap();
 
     // The service comes back a week later.
     let week = Time::now() + days(7);
     let tick = schedules::fire_due(&db, week).await.unwrap();
-    assert_eq!(tick.started, 1, "seven missed nights are one catch-up run, not seven");
+    assert_eq!(
+        tick.started, 1,
+        "seven missed nights are one catch-up run, not seven"
+    );
     let stored = schedules::list(&db, &repo.id).await.unwrap();
     assert!(stored[0].next_run_at > week);
     assert!(stored[0].next_run_at <= week + days(1) + Duration::seconds(60));
@@ -248,15 +301,25 @@ async fn a_disabled_repository_is_skipped_but_its_schedule_keeps_ticking_forward
     };
     let origin = Origin::with_pipeline(NIGHTLY);
     let repo = register_repo(&db, "disabled", &origin.url()).await;
-    schedules::sync(&db, &repo.id, &[nightly("0 0 * * *")], Time::now()).await.unwrap();
-    db.execute(&format!("UPDATE conveyor.repos SET enabled = FALSE WHERE id = '{}'", repo.id))
+    schedules::sync(&db, &repo.id, &[nightly("0 0 * * *")], Time::now())
         .await
         .unwrap();
+    db.execute(&format!(
+        "UPDATE conveyor.repos SET enabled = FALSE WHERE id = '{}'",
+        repo.id
+    ))
+    .await
+    .unwrap();
 
     let later = Time::now() + days(2);
     let tick = schedules::fire_due(&db, later).await.unwrap();
     assert_eq!((tick.started, tick.skipped), (0, 1));
-    assert!(queue::list_runs(&db, Some(&repo.id), 10).await.unwrap().is_empty());
+    assert!(
+        queue::list_runs(&db, Some(&repo.id), 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
     // Advanced, so re-enabling later does not fire a stale night.
     assert!(schedules::list(&db, &repo.id).await.unwrap()[0].next_run_at > later);
 }
@@ -267,13 +330,20 @@ async fn an_unreachable_repository_leaves_the_schedule_due_for_the_next_tick() {
         return skipped("an_unreachable_repository_leaves_the_schedule_due_for_the_next_tick");
     };
     let repo = register_repo(&db, "unreachable", "file:///definitely/not/a/repository").await;
-    schedules::sync(&db, &repo.id, &[nightly("0 0 * * *")], Time::now()).await.unwrap();
+    schedules::sync(&db, &repo.id, &[nightly("0 0 * * *")], Time::now())
+        .await
+        .unwrap();
     let before = schedules::list(&db, &repo.id).await.unwrap().remove(0);
 
-    let tick = schedules::fire_due(&db, Time::now() + days(2)).await.unwrap();
+    let tick = schedules::fire_due(&db, Time::now() + days(2))
+        .await
+        .unwrap();
     assert_eq!((tick.started, tick.retried), (0, 1), "{tick:?}");
     let after = schedules::list(&db, &repo.id).await.unwrap().remove(0);
-    assert_eq!(after.next_run_at, before.next_run_at, "a failed start must not consume the firing");
+    assert_eq!(
+        after.next_run_at, before.next_run_at,
+        "a failed start must not consume the firing"
+    );
 }
 
 #[quench_test::test]

@@ -349,7 +349,10 @@ impl Worker {
         // The pipeline on the default branch is the one whose schedules count; any other branch's
         // `on.schedule` is ignored, or a feature branch could register a nightly job.
         if is_default_branch(&run.git_ref, &repo.default_branch)
-            && matches!(run.trigger, Trigger::Push | Trigger::Manual | Trigger::Schedule)
+            && matches!(
+                run.trigger,
+                Trigger::Push | Trigger::Manual | Trigger::Schedule
+            )
         {
             match schedules::sync(&self.db, &repo.id, &spec.schedules, Time::now()).await {
                 Ok((0, 0)) => {}

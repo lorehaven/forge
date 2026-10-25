@@ -31,13 +31,16 @@ fn env(name: &str) -> Option<String> {
 }
 
 fn run_scan() -> Result<Scan, String> {
-    let spec = env("FORGE_SECTEST_TARGETS")
-        .ok_or("FORGE_SECTEST_TARGETS is not set: there is nothing to scan, which must not read as a pass")?;
+    let spec = env("FORGE_SECTEST_TARGETS").ok_or(
+        "FORGE_SECTEST_TARGETS is not set: there is nothing to scan, which must not read as a pass",
+    )?;
     let root = forge_sectest::gate::workspace_root();
 
     let mut targets = Vec::new();
     for entry in spec.split([' ', ',', '\n']).filter(|e| !e.is_empty()) {
-        let (name, url) = entry.split_once('=').ok_or_else(|| format!("{entry}: expected NAME=URL"))?;
+        let (name, url) = entry
+            .split_once('=')
+            .ok_or_else(|| format!("{entry}: expected NAME=URL"))?;
         let mut target = Target::parse(name, url)?;
         target.insecure = env("FORGE_SECTEST_INSECURE").is_some();
         targets.push(target);
@@ -46,7 +49,11 @@ fn run_scan() -> Result<Scan, String> {
     let extra = census::quench_route_sources(&root);
     let routes = census::scan_forge(&root, &extra);
     if routes.len() < 100 {
-        return Err(format!("the route census found only {} routes under {}", routes.len(), root.display()));
+        return Err(format!(
+            "the route census found only {} routes under {}",
+            routes.len(),
+            root.display()
+        ));
     }
 
     let mut options = Options::new(targets, routes);
@@ -54,7 +61,9 @@ fn run_scan() -> Result<Scan, String> {
     options.active = env("FORGE_SECTEST_ACTIVE").is_some();
     options.allow_remote = env("FORGE_SECTEST_ALLOW_REMOTE").is_some();
     if let Some(rps) = env("FORGE_SECTEST_RPS") {
-        options.rps = rps.parse().map_err(|_| "FORGE_SECTEST_RPS: not a number".to_string())?;
+        options.rps = rps
+            .parse()
+            .map_err(|_| "FORGE_SECTEST_RPS: not a number".to_string())?;
     }
     let baseline = env("FORGE_SECTEST_BASELINE").map_or_else(
         || root.join("tests/forge-sectest/public-routes.txt"),
@@ -70,7 +79,8 @@ fn run_scan() -> Result<Scan, String> {
         );
     }
     let fail_on = match env("FORGE_SECTEST_FAIL_ON") {
-        Some(level) => Severity::parse(&level).ok_or_else(|| format!("FORGE_SECTEST_FAIL_ON: unknown level {level:?}"))?,
+        Some(level) => Severity::parse(&level)
+            .ok_or_else(|| format!("FORGE_SECTEST_FAIL_ON: unknown level {level:?}"))?,
         None => Severity::High,
     };
     let active = options.active;
@@ -91,7 +101,12 @@ fn run_scan() -> Result<Scan, String> {
     let _ = std::fs::create_dir_all(findings_path.parent().unwrap_or(&root));
     let _ = std::fs::write(&findings_path, report_json(&findings));
 
-    Ok(Scan { findings, requests, fail_on, active })
+    Ok(Scan {
+        findings,
+        requests,
+        fail_on,
+        active,
+    })
 }
 
 fn scan() -> &'static Result<Scan, String> {
@@ -126,32 +141,61 @@ fn live_scan_actually_ran() {
         Ok(scan) => scan,
         Err(error) => panic!("the live scan did not run: {error}"),
     };
-    assert!(scan.requests >= 200, "only {} requests were made: the scan covered almost nothing", scan.requests);
+    assert!(
+        scan.requests >= 200,
+        "only {} requests were made: the scan covered almost nothing",
+        scan.requests
+    );
     let broken: Vec<String> = scan
         .findings
         .iter()
         .filter(|f| f.check == "scan")
         .map(ToString::to_string)
         .collect();
-    assert!(broken.is_empty(), "the scan itself was unreliable:\n{}", broken.join("\n"));
-    println!("{} requests, {} findings (active: {})", scan.requests, scan.findings.len(), scan.active);
+    assert!(
+        broken.is_empty(),
+        "the scan itself was unreliable:\n{}",
+        broken.join("\n")
+    );
+    println!(
+        "{} requests, {} findings (active: {})",
+        scan.requests,
+        scan.findings.len(),
+        scan.active
+    );
 }
 
 #[quench_test::test]
-fn live_auth_anonymous_routes_match_the_reviewed_baseline() { check("auth"); }
+fn live_auth_anonymous_routes_match_the_reviewed_baseline() {
+    check("auth");
+}
 #[quench_test::test]
-fn live_tokens_forged_credentials_are_refused() { check("tokens"); }
+fn live_tokens_forged_credentials_are_refused() {
+    check("tokens");
+}
 #[quench_test::test]
-fn live_traversal_paths_cannot_escape() { check("traversal"); }
+fn live_traversal_paths_cannot_escape() {
+    check("traversal");
+}
 #[quench_test::test]
-fn live_headers_responses_are_hardened() { check("headers"); }
+fn live_headers_responses_are_hardened() {
+    check("headers");
+}
 #[quench_test::test]
-fn live_cors_hostile_origins_are_refused() { check("cors"); }
+fn live_cors_hostile_origins_are_refused() {
+    check("cors");
+}
 #[quench_test::test]
-fn live_injection_hostile_input_is_contained() { check("injection"); }
+fn live_injection_hostile_input_is_contained() {
+    check("injection");
+}
 #[quench_test::test]
-fn live_protocol_smuggling_is_refused() { check("protocol"); }
+fn live_protocol_smuggling_is_refused() {
+    check("protocol");
+}
 #[quench_test::test]
-fn live_throttle_credential_guessing_is_slowed() { check("throttle"); }
+fn live_throttle_credential_guessing_is_slowed() {
+    check("throttle");
+}
 
 quench_test::main!();

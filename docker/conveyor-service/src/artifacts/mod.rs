@@ -292,7 +292,11 @@ const REPORTS: [(&str, &str, &str); 6] = [
     ("target/debug/quench-test", "summary.json", TESTS_SUMMARY),
     ("target/debug/quench-test", "index.html", TESTS_REPORT_PAGE),
     ("target/release/quench-test", "summary.json", TESTS_SUMMARY),
-    ("target/release/quench-test", "index.html", TESTS_REPORT_PAGE),
+    (
+        "target/release/quench-test",
+        "index.html",
+        TESTS_REPORT_PAGE,
+    ),
     ("target/security", "summary.json", SECURITY_SUMMARY),
     ("target/security", "index.html", SECURITY_REPORT_PAGE),
 ];

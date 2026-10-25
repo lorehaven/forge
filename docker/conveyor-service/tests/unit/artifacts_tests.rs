@@ -376,7 +376,10 @@ async fn a_security_report_is_kept_under_its_own_names_next_to_the_test_results(
 
     let (_dir, ws) = workspace(&[
         ("target/debug/quench-test/summary.json", b"{\"summary\":{}}"),
-        ("target/security/summary.json", b"{\"summary\":{\"total\":1}}"),
+        (
+            "target/security/summary.json",
+            b"{\"summary\":{\"total\":1}}",
+        ),
         ("target/security/index.html", b"<html>security</html>"),
     ]);
 
@@ -384,7 +387,10 @@ async fn a_security_report_is_kept_under_its_own_names_next_to_the_test_results(
     for remote in ["summary.json", "security-summary.json", "security.html"] {
         Mock::given(method("PUT"))
             .and(path("/api/v1/files/artifacts/file"))
-            .and(query_param("path", format!("conveyor/run-1/job-1/{remote}")))
+            .and(query_param(
+                "path",
+                format!("conveyor/run-1/job-1/{remote}"),
+            ))
             .respond_with(ResponseTemplate::new(200))
             .expect(1)
             .mount(&server)
@@ -398,7 +404,10 @@ async fn a_security_report_is_kept_under_its_own_names_next_to_the_test_results(
     let mut names: Vec<_> = kept.iter().map(|c| c.artifact.name.as_str()).collect();
     names.sort_unstable();
     // The security files must not overwrite (or be mistaken for) the unit tests' `summary.json`.
-    assert_eq!(names, ["security-summary.json", "security.html", "summary.json"]);
+    assert_eq!(
+        names,
+        ["security-summary.json", "security.html", "summary.json"]
+    );
 }
 
 #[quench_test::test]

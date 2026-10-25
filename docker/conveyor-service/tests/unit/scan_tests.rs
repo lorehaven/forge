@@ -1,6 +1,6 @@
 use conveyor_service::scan::{
-    CheckKind, CheckResult, parse_audit, parse_coverage, parse_lint, parse_machete, strip_ansi,
-    security_check, tests_check,
+    CheckKind, CheckResult, parse_audit, parse_coverage, parse_lint, parse_machete, security_check,
+    strip_ansi, tests_check,
 };
 
 #[quench_test::test]
@@ -306,7 +306,13 @@ fn a_security_report_is_a_check_of_its_own_with_each_failed_stage_a_finding() {
     assert_eq!(check.findings.len(), 1);
     assert_eq!(check.findings[0].title, "cargo_audit");
     assert_eq!(check.findings[0].location.as_deref(), Some("supply_chain"));
-    assert!(check.findings[0].extra.as_deref().unwrap().contains("RUSTSEC-2026-0001"));
+    assert!(
+        check.findings[0]
+            .extra
+            .as_deref()
+            .unwrap()
+            .contains("RUSTSEC-2026-0001")
+    );
 }
 
 #[quench_test::test]
@@ -316,5 +322,8 @@ fn security_has_its_own_slug_label_and_is_not_the_tests_check() {
     assert_eq!(CheckKind::Security.label(), "ui_scan_security_title");
     assert_ne!(CheckKind::Security, CheckKind::Tests);
     // The same JSON read as tests keeps the tests kind: the artifact name decides, not the content.
-    assert_eq!(tests_check("t", SECURITY_REPORT).unwrap().kind, CheckKind::Tests);
+    assert_eq!(
+        tests_check("t", SECURITY_REPORT).unwrap().kind,
+        CheckKind::Tests
+    );
 }

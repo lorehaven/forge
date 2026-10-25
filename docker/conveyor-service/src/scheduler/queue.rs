@@ -564,10 +564,7 @@ pub async fn latest_artifact_named(
     );
 
     let row = pool
-        .query_opt(
-            &sql,
-            &[&repo_id as &dyn quench_pg::ToSql, &name],
-        )
+        .query_opt(&sql, &[&repo_id as &dyn quench_pg::ToSql, &name])
         .await?;
 
     row.map(|row| {

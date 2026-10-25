@@ -51,7 +51,11 @@ pub fn forgeries(audiences: &[String]) -> Vec<Forgery> {
         let header = format!(r#"{{"alg":"{alg}","typ":"JWT"}}"#);
         out.push(bearer(
             &format!("alg={alg}, no signature"),
-            &format!("{}.{}.", b64(header.as_bytes()), b64(payload_text.as_bytes())),
+            &format!(
+                "{}.{}.",
+                b64(header.as_bytes()),
+                b64(payload_text.as_bytes())
+            ),
         ));
     }
 
@@ -67,14 +71,26 @@ pub fn forgeries(audiences: &[String]) -> Vec<Forgery> {
 
     let attacker = SigningKey::generate();
     if let Ok(key) = EncodingKey::from_ed_der(&attacker.to_pkcs8_der()) {
-        for kid in [None, Some("sectest"), Some("../../../dev/null"), Some("' OR '1'='1")] {
+        for kid in [
+            None,
+            Some("sectest"),
+            Some("../../../dev/null"),
+            Some("' OR '1'='1"),
+        ] {
             let mut header = Header::new(Algorithm::EdDSA);
             header.kid = kid.map(str::to_string);
             if let Ok(token) = encode(&header, &payload, &key) {
-                out.push(bearer(&format!("EdDSA with attacker key, kid={kid:?}"), &token));
+                out.push(bearer(
+                    &format!("EdDSA with attacker key, kid={kid:?}"),
+                    &token,
+                ));
             }
         }
-        if let Ok(token) = encode(&Header::new(Algorithm::EdDSA), &claims(audiences, -7200), &key) {
+        if let Ok(token) = encode(
+            &Header::new(Algorithm::EdDSA),
+            &claims(audiences, -7200),
+            &key,
+        ) {
             out.push(bearer("EdDSA attacker key, already expired", &token));
         }
     }
@@ -85,7 +101,10 @@ pub fn forgeries(audiences: &[String]) -> Vec<Forgery> {
     out.push(bearer("empty bearer", ""));
     out.push(bearer("oversized token", &"A".repeat(8000)));
 
-    for (label, pair) in [("admin:admin", "YWRtaW46YWRtaW4="), ("admin:password", "YWRtaW46cGFzc3dvcmQ=")] {
+    for (label, pair) in [
+        ("admin:admin", "YWRtaW46YWRtaW4="),
+        ("admin:password", "YWRtaW46cGFzc3dvcmQ="),
+    ] {
         out.push(Forgery {
             label: format!("basic auth {label}"),
             headers: vec![("Authorization", format!("Basic {pair}"))],
@@ -93,7 +112,10 @@ pub fn forgeries(audiences: &[String]) -> Vec<Forgery> {
     }
     out.push(Forgery {
         label: "forged session cookies".to_string(),
-        headers: vec![("Cookie", "session=admin; sid=admin; session_id=1; access_token=admin".to_string())],
+        headers: vec![(
+            "Cookie",
+            "session=admin; sid=admin; session_id=1; access_token=admin".to_string(),
+        )],
     });
     out.push(Forgery {
         label: "trusted-proxy identity headers".to_string(),

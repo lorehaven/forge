@@ -5,7 +5,14 @@ use crate::finding::{Finding, Severity};
 use crate::scan::Ctx;
 use crate::wire::{Probe, Target};
 
-const HINTS: [&str; 6] = ["login", "token", "password", "signin", "authenticate", "oauth"];
+const HINTS: [&str; 6] = [
+    "login",
+    "token",
+    "password",
+    "signin",
+    "authenticate",
+    "oauth",
+];
 const ATTEMPTS: usize = 40;
 const BODY: &str = r#"{"username":"sectest-nonexistent","email":"sectest@example.invalid","password":"wrong-password-sectest","grant_type":"password"}"#;
 
@@ -14,10 +21,12 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
         return Vec::new();
     }
     let mut findings = Vec::new();
-    for route in ctx
-        .routes_of(target)
-        .filter(|r| r.method == "POST" && HINTS.iter().any(|h| r.pattern.to_ascii_lowercase().contains(h)))
-    {
+    for route in ctx.routes_of(target).filter(|r| {
+        r.method == "POST"
+            && HINTS
+                .iter()
+                .any(|h| r.pattern.to_ascii_lowercase().contains(h))
+    }) {
         let mut statuses = Vec::with_capacity(ATTEMPTS);
         for _ in 0..ATTEMPTS {
             let probe = Probe::new("POST", &route.sample_path()).json(BODY);

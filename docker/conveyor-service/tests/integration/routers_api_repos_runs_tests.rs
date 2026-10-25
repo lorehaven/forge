@@ -458,7 +458,11 @@ async fn a_repos_declared_schedules_are_listed_with_when_each_is_next_due() {
     let (app, container) = app(db).await;
 
     let resp = app
-        .call(req(Method::GET, &format!("/api/v1/repos/{}/schedules", repo.id), &container))
+        .call(req(
+            Method::GET,
+            &format!("/api/v1/repos/{}/schedules", repo.id),
+            &container,
+        ))
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
@@ -469,7 +473,11 @@ async fn a_repos_declared_schedules_are_listed_with_when_each_is_next_due() {
     assert!(schedules[0]["next_run_at"].is_string(), "{schedules:?}");
 
     let resp = app
-        .call(req(Method::GET, "/api/v1/repos/does-not-exist/schedules", &container))
+        .call(req(
+            Method::GET,
+            "/api/v1/repos/does-not-exist/schedules",
+            &container,
+        ))
         .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

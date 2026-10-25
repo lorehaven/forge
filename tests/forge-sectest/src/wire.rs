@@ -40,10 +40,14 @@ impl Target {
         };
         let (authority, path) = rest.split_once('/').map_or((rest, ""), |(a, p)| (a, p));
         let (host, port) = match authority.rsplit_once(':') {
-            Some((h, p)) if !h.ends_with(']') || p.chars().all(|c| c.is_ascii_digit()) => {
-                (h.trim_matches(['[', ']']), p.parse().map_err(|_| format!("{url}: bad port"))?)
-            }
-            _ => (authority.trim_matches(['[', ']']), if tls { 443 } else { 80 }),
+            Some((h, p)) if !h.ends_with(']') || p.chars().all(|c| c.is_ascii_digit()) => (
+                h.trim_matches(['[', ']']),
+                p.parse().map_err(|_| format!("{url}: bad port"))?,
+            ),
+            _ => (
+                authority.trim_matches(['[', ']']),
+                if tls { 443 } else { 80 },
+            ),
         };
         if host.is_empty() {
             return Err(format!("{url}: no host"));
@@ -53,7 +57,9 @@ impl Target {
             host: host.to_string(),
             port,
             tls,
-            base_path: format!("/{}", path.trim_matches('/')).trim_end_matches('/').to_string(),
+            base_path: format!("/{}", path.trim_matches('/'))
+                .trim_end_matches('/')
+                .to_string(),
             insecure: false,
         })
     }
@@ -121,8 +127,17 @@ impl Probe {
     }
 
     fn to_bytes(&self, target: &Target) -> Vec<u8> {
-        let mut out = format!("{} {} HTTP/1.1\r\n", self.method, target.url_for(&self.path)).into_bytes();
-        let has = |name: &str| self.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case(name));
+        let mut out = format!(
+            "{} {} HTTP/1.1\r\n",
+            self.method,
+            target.url_for(&self.path)
+        )
+        .into_bytes();
+        let has = |name: &str| {
+            self.headers
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case(name))
+        };
         if !has("host") {
             out.extend_from_slice(format!("Host: {}:{}\r\n", target.host, target.port).as_bytes());
         }
@@ -171,7 +186,8 @@ impl Reply {
 
     #[must_use]
     pub fn is_html(&self) -> bool {
-        self.header("content-type").is_some_and(|v| v.to_ascii_lowercase().contains("text/html"))
+        self.header("content-type")
+            .is_some_and(|v| v.to_ascii_lowercase().contains("text/html"))
     }
 
     #[must_use]

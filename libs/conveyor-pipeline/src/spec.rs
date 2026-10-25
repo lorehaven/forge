@@ -31,7 +31,12 @@ impl PipelineSpec {
         order: Vec<usize>,
         schedules: Vec<Schedule>,
     ) -> Self {
-        Self { on, stages, order, schedules }
+        Self {
+            on,
+            stages,
+            order,
+            schedules,
+        }
     }
 
     /// Whether this pipeline should run for `event` at `git_ref`: [`Triggers::allows`], plus the

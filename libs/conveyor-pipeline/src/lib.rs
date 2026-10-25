@@ -23,7 +23,7 @@ pub mod spec;
 pub mod steps;
 
 pub use condition::{Condition, EvalContext};
+pub use cron::{Cron, CronError};
 pub use graph::{Decision, JobPlan, StagePlan, plan};
 pub use parser::{SpecError, parse};
-pub use cron::{Cron, CronError};
 pub use spec::{Job, PIPELINE_FILE, PipelineSpec, Schedule, Stage, Step, Triggers};

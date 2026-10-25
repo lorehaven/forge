@@ -34,7 +34,10 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
 
     for route in ctx.routes_of(target).filter(|r| r.method == "GET") {
         let path = format!("{}{QUERY}", route.sample_path());
-        let Some(reply) = ctx.send(target, &ctx.authed(Probe::new("GET", &path))).await else {
+        let Some(reply) = ctx
+            .send(target, &ctx.authed(Probe::new("GET", &path)))
+            .await
+        else {
             continue;
         };
         if reply.status >= 500 {
@@ -44,7 +47,10 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
                 &target.name,
                 "GET",
                 &route.pattern,
-                format!("hostile query string crashed the handler ({})", reply.status),
+                format!(
+                    "hostile query string crashed the handler ({})",
+                    reply.status
+                ),
             ));
         }
         if let Some((severity, what)) = leak_marker(&reply.body) {

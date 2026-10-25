@@ -57,7 +57,10 @@ impl Route {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Piece {
     Literal(String),
-    Param { name: String, constraint: Option<String> },
+    Param {
+        name: String,
+        constraint: Option<String>,
+    },
 }
 
 /// Splits `/v2/{name:.+}/blobs/{digest}` into literals and parameters.
@@ -144,7 +147,8 @@ pub fn parse_source(service: &str, source: &str, origin: &str) -> Vec<Route> {
             continue;
         };
         let Some(method) = METHODS.iter().find(|m| {
-            rest.strip_prefix(**m).is_some_and(|after| after.starts_with('('))
+            rest.strip_prefix(**m)
+                .is_some_and(|after| after.starts_with('('))
         }) else {
             continue;
         };
@@ -173,7 +177,10 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            if path.file_name().is_some_and(|n| n == "target" || n == "tests") {
+            if path
+                .file_name()
+                .is_some_and(|n| n == "target" || n == "tests")
+            {
                 continue;
             }
             rust_files(&path, out);
@@ -231,7 +238,12 @@ pub fn scan_forge(forge_root: &Path, extra_dirs: &[PathBuf]) -> Vec<Route> {
 /// build the workspace.
 #[must_use]
 pub fn quench_route_sources(forge_root: &Path) -> Vec<PathBuf> {
-    let from = |quench: &Path| vec![quench.join("quench-starter/src"), quench.join("quench-auth/src")];
+    let from = |quench: &Path| {
+        vec![
+            quench.join("quench-starter/src"),
+            quench.join("quench-auth/src"),
+        ]
+    };
     if let Some(dir) = std::env::var_os("FORGE_SECTEST_QUENCH_DIR") {
         return from(Path::new(&dir));
     }
@@ -255,9 +267,11 @@ pub fn quench_route_sources(forge_root: &Path) -> Vec<PathBuf> {
             .flat_map(|index| fs::read_dir(index.path()).into_iter().flatten().flatten())
             .map(|entry| entry.path())
             .filter(|path| {
-                path.file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.strip_prefix(crate_name).is_some_and(|rest| rest.starts_with('-') && rest[1..].starts_with(|c: char| c.is_ascii_digit())))
+                path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                    n.strip_prefix(crate_name).is_some_and(|rest| {
+                        rest.starts_with('-') && rest[1..].starts_with(|c: char| c.is_ascii_digit())
+                    })
+                })
             })
             .collect();
         // "quench-starter-0.4.14" sorts after "...0.4.9" as text; compare the version numerically.

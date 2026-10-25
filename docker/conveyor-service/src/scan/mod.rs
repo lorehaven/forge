@@ -257,7 +257,9 @@ async fn job_tests(db: &Db, store: &WarehouseStore, job: &Job) -> Option<CheckRe
     Some(result)
 }
 
-pub use crate::artifacts::{SECURITY_REPORT_PAGE, SECURITY_SUMMARY, TESTS_REPORT_PAGE, TESTS_SUMMARY};
+pub use crate::artifacts::{
+    SECURITY_REPORT_PAGE, SECURITY_SUMMARY, TESTS_REPORT_PAGE, TESTS_SUMMARY,
+};
 
 /// A `quench-test` report (`summary.json`) as a check: the totals as the headline, each failed test a finding.
 #[must_use]
@@ -288,7 +290,10 @@ async fn latest_security(db: &Db, store: &WarehouseStore, repo_id: &str) -> Opti
         let bytes = match store.download(&artifact.uri).await {
             Ok(bytes) => bytes,
             Err(error) => {
-                quench_log::warn!("could not read the security report of run {}: {error}", artifact.run_id);
+                quench_log::warn!(
+                    "could not read the security report of run {}: {error}",
+                    artifact.run_id
+                );
                 return None;
             }
         };
@@ -307,7 +312,10 @@ async fn latest_security(db: &Db, store: &WarehouseStore, repo_id: &str) -> Opti
         .ok()
         .and_then(|jobs| jobs.into_iter().find(|job| job.id == artifact.job_id))
         .map_or_else(|| "security".to_string(), |job| job.qualified_name());
-    result.job_name = format!("{job_name}, {}", artifact.created_at.format("%Y-%m-%d %H:%M UTC"));
+    result.job_name = format!(
+        "{job_name}, {}",
+        artifact.created_at.format("%Y-%m-%d %H:%M UTC")
+    );
     result.report_uri = queue::list_artifacts_for_job(db, &artifact.job_id)
         .await
         .ok()?

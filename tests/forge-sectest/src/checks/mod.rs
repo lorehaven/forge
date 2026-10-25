@@ -18,9 +18,21 @@ pub fn leak_marker(body: &str) -> Option<(Severity, &'static str)> {
     const MARKERS: [(&str, Severity, &str); 18] = [
         ("root:x:0:0", Severity::Critical, "contents of /etc/passwd"),
         ("root:*:0:0", Severity::Critical, "contents of /etc/passwd"),
-        ("BEGIN PRIVATE KEY", Severity::Critical, "private key material"),
-        ("BEGIN RSA PRIVATE KEY", Severity::Critical, "private key material"),
-        ("BEGIN OPENSSH PRIVATE KEY", Severity::Critical, "private key material"),
+        (
+            "BEGIN PRIVATE KEY",
+            Severity::Critical,
+            "private key material",
+        ),
+        (
+            "BEGIN RSA PRIVATE KEY",
+            Severity::Critical,
+            "private key material",
+        ),
+        (
+            "BEGIN OPENSSH PRIVATE KEY",
+            Severity::Critical,
+            "private key material",
+        ),
         ("[fonts]", Severity::Critical, "contents of win.ini"),
         ("panicked at", Severity::Medium, "a Rust panic message"),
         ("RUST_BACKTRACE", Severity::Medium, "a Rust backtrace hint"),
@@ -29,11 +41,19 @@ pub fn leak_marker(body: &str) -> Option<(Severity, &'static str)> {
         ("/home/", Severity::Medium, "a filesystem path"),
         ("/usr/src/", Severity::Medium, "a source path"),
         ("src/main.rs", Severity::Medium, "a source path"),
-        ("syntax error at or near", Severity::High, "a PostgreSQL error"),
+        (
+            "syntax error at or near",
+            Severity::High,
+            "a PostgreSQL error",
+        ),
         ("relation \"", Severity::High, "a PostgreSQL error"),
         ("SQLSTATE", Severity::High, "a database error code"),
         ("sqlx::", Severity::Medium, "a database library error"),
-        ("password authentication failed", Severity::High, "a database credential error"),
+        (
+            "password authentication failed",
+            Severity::High,
+            "a database credential error",
+        ),
     ];
     MARKERS
         .iter()

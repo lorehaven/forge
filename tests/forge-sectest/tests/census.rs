@@ -3,7 +3,9 @@
 // The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
 #![allow(clippy::wildcard_imports)]
 
-use forge_sectest::census::{Piece, parse_source, pieces, quench_route_sources, render, sample_value, scan_forge};
+use forge_sectest::census::{
+    Piece, parse_source, pieces, quench_route_sources, render, sample_value, scan_forge,
+};
 use std::fs;
 use std::path::PathBuf;
 
@@ -29,7 +31,10 @@ pub async fn remove() {}
 struct NotARoute;
 "#;
     let routes = parse_source("svc", source, "x.rs");
-    let keys: Vec<String> = routes.iter().map(forge_sectest::census::Route::key).collect();
+    let keys: Vec<String> = routes
+        .iter()
+        .map(forge_sectest::census::Route::key)
+        .collect();
     assert_eq!(
         keys,
         vec![
@@ -48,9 +53,15 @@ async fn patterns_split_into_literals_and_parameters() {
         parts,
         vec![
             Piece::Literal("/v2/".into()),
-            Piece::Param { name: "name".into(), constraint: Some(".+".into()) },
+            Piece::Param {
+                name: "name".into(),
+                constraint: Some(".+".into())
+            },
             Piece::Literal("/manifests/".into()),
-            Piece::Param { name: "reference".into(), constraint: None },
+            Piece::Param {
+                name: "reference".into(),
+                constraint: None
+            },
         ]
     );
     // Regexes may contain braces of their own.
@@ -60,7 +71,10 @@ async fn patterns_split_into_literals_and_parameters() {
 
 #[quench_test::test]
 async fn sample_values_are_inert_and_replacement_targets_one_parameter() {
-    assert_eq!(sample_value("project_id"), "00000000-0000-0000-0000-000000000000");
+    assert_eq!(
+        sample_value("project_id"),
+        "00000000-0000-0000-0000-000000000000"
+    );
     assert_eq!(sample_value("version"), "0.0.0-sectest");
     assert!(sample_value("digest").starts_with("sha256:"));
     let parts = pieces("/a/{x}/b/{y}");
@@ -74,7 +88,12 @@ async fn the_census_matches_a_naive_count_of_route_attributes() {
     // new attribute style (multi-line, new verb) slips past the census, these numbers diverge.
     let root = forge_root();
     let routes = scan_forge(&root, &[]);
-    assert!(routes.len() > 300, "only {} routes found; wrong root {}?", routes.len(), root.display());
+    assert!(
+        routes.len() > 300,
+        "only {} routes found; wrong root {}?",
+        routes.len(),
+        root.display()
+    );
 
     for entry in fs::read_dir(root.join("docker")).unwrap().flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -103,7 +122,10 @@ async fn the_census_matches_a_naive_count_of_route_attributes() {
             }
         }
         let found = routes.iter().filter(|r| r.service == service).count();
-        assert_eq!(found, naive, "{service}: census found {found}, a naive count found {naive}");
+        assert_eq!(
+            found, naive,
+            "{service}: census found {found}, a naive count found {naive}"
+        );
     }
 }
 
@@ -112,9 +134,18 @@ async fn the_shared_quench_routes_are_found_without_a_sibling_checkout() {
     // CI has no `../quench`; the sources cargo downloaded for the build must do.
     // A root with no `../quench` beside it, as in CI: only the cargo registry can answer.
     let found = quench_route_sources(std::path::Path::new("/nonexistent/forge"));
-    assert!(!found.is_empty(), "no quench-starter/quench-auth sources found anywhere");
-    let routes = found.iter().flat_map(|dir| forge_sectest::census::scan_dir("probe", dir)).count();
-    assert!(routes >= 5, "found sources {found:?} but only {routes} routes in them");
+    assert!(
+        !found.is_empty(),
+        "no quench-starter/quench-auth sources found anywhere"
+    );
+    let routes = found
+        .iter()
+        .flat_map(|dir| forge_sectest::census::scan_dir("probe", dir))
+        .count();
+    assert!(
+        routes >= 5,
+        "found sources {found:?} but only {routes} routes in them"
+    );
 }
 
 quench_test::main!();

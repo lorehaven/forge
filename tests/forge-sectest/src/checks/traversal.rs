@@ -42,7 +42,10 @@ const EXPOSED: [(&str, &str); 9] = [
 pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    for route in ctx.routes_of(target).filter(|r| r.method == "GET" && r.has_params()) {
+    for route in ctx
+        .routes_of(target)
+        .filter(|r| r.method == "GET" && r.has_params())
+    {
         let pieces = route.pieces();
         for (index, piece) in pieces.iter().enumerate() {
             if !matches!(piece, Piece::Param { .. }) {
@@ -50,7 +53,10 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
             }
             for payload in PAYLOADS {
                 let path = render(&pieces, Some((index, payload)));
-                let Some(reply) = ctx.send(target, &ctx.authed(Probe::new("GET", &path))).await else {
+                let Some(reply) = ctx
+                    .send(target, &ctx.authed(Probe::new("GET", &path)))
+                    .await
+                else {
                     continue;
                 };
                 if let Some((severity, what)) = leak_marker(&reply.body)
@@ -71,7 +77,10 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
                         &target.name,
                         "GET",
                         &route.pattern,
-                        format!("{} for parameter value {payload:?} (unhandled input)", reply.status),
+                        format!(
+                            "{} for parameter value {payload:?} (unhandled input)",
+                            reply.status
+                        ),
                     ));
                 }
             }

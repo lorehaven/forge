@@ -55,12 +55,42 @@ struct Field {
     name_base: u32,
 }
 
-const MINUTE: Field = Field { name: "minute", min: 0, max: 59, names: &[], name_base: 0 };
-const HOUR: Field = Field { name: "hour", min: 0, max: 23, names: &[], name_base: 0 };
-const DAY: Field = Field { name: "day-of-month", min: 1, max: 31, names: &[], name_base: 0 };
-const MONTH: Field = Field { name: "month", min: 1, max: 12, names: &MONTH_NAMES, name_base: 1 };
+const MINUTE: Field = Field {
+    name: "minute",
+    min: 0,
+    max: 59,
+    names: &[],
+    name_base: 0,
+};
+const HOUR: Field = Field {
+    name: "hour",
+    min: 0,
+    max: 23,
+    names: &[],
+    name_base: 0,
+};
+const DAY: Field = Field {
+    name: "day-of-month",
+    min: 1,
+    max: 31,
+    names: &[],
+    name_base: 0,
+};
+const MONTH: Field = Field {
+    name: "month",
+    min: 1,
+    max: 12,
+    names: &MONTH_NAMES,
+    name_base: 1,
+};
 // 7 is accepted as a second spelling of Sunday and folded onto 0.
-const WEEKDAY: Field = Field { name: "day-of-week", min: 0, max: 7, names: &WEEKDAY_NAMES, name_base: 0 };
+const WEEKDAY: Field = Field {
+    name: "day-of-week",
+    min: 0,
+    max: 7,
+    names: &WEEKDAY_NAMES,
+    name_base: 0,
+};
 
 impl Cron {
     /// Parses an expression.
@@ -76,7 +106,9 @@ impl Cron {
             "@weekly" => "0 0 * * 0",
             "@daily" | "@midnight" => "0 0 * * *",
             "@hourly" => "0 * * * *",
-            other if other.starts_with('@') => return err(format!("unknown schedule macro `{other}`")),
+            other if other.starts_with('@') => {
+                return err(format!("unknown schedule macro `{other}`"));
+            }
             other => other,
         };
         let fields: Vec<&str> = expanded.split_whitespace().collect();
@@ -245,7 +277,10 @@ fn value(text: &str, spec: &Field) -> Result<u32, CronError> {
     });
     match parsed {
         Some(v) if (spec.min..=spec.max).contains(&v) => Ok(v),
-        Some(v) => err(format!("{}: {v} is outside {}-{}", spec.name, spec.min, spec.max)),
+        Some(v) => err(format!(
+            "{}: {v} is outside {}-{}",
+            spec.name, spec.min, spec.max
+        )),
         None => err(format!("{}: `{text}` is not a number or name", spec.name)),
     }
 }

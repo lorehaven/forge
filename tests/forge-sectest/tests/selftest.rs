@@ -23,7 +23,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 fn decode(text: &str) -> String {
-    text.replace("%3C", "<").replace("%3E", ">").replace("%2F", "/")
+    text.replace("%3C", "<")
+        .replace("%3E", ">")
+        .replace("%2F", "/")
 }
 
 /// Everything wrong that an application can be: no auth, accepts any token, traversal, crashes,
@@ -49,7 +51,10 @@ impl Endpoint for Vulnerable {
                 Response::text(StatusCode::NOT_FOUND, "nope")
             }
         } else if path == "/boom" {
-            Response::text(StatusCode::INTERNAL_SERVER_ERROR, "thread 'main' panicked at src/main.rs:1:1")
+            Response::text(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "thread 'main' panicked at src/main.rs:1:1",
+            )
         } else if path == "/search" {
             let query = decode(req.uri().query().unwrap_or(""));
             Response::html(StatusCode::OK, format!("<html>results for {query}</html>"))
@@ -95,7 +100,12 @@ async fn serve(app: Arc<dyn Endpoint>) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let container = Arc::new(ContainerBuilder::new().build().await.unwrap());
-    tokio::spawn(serve_http_on(app, container, listener, std::future::pending::<()>()));
+    tokio::spawn(serve_http_on(
+        app,
+        container,
+        listener,
+        std::future::pending::<()>(),
+    ));
     port
 }
 
@@ -117,7 +127,10 @@ async fn serve_desync_prone() -> u16 {
                     }
                     data.extend_from_slice(&buf[..n]);
                 }
-                let requests = String::from_utf8_lossy(&data).matches(" HTTP/1.").count().max(1);
+                let requests = String::from_utf8_lossy(&data)
+                    .matches(" HTTP/1.")
+                    .count()
+                    .max(1);
                 for _ in 0..requests {
                     let _ = stream
                         .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok")
@@ -164,22 +177,60 @@ async fn every_check_flags_a_vulnerable_application() {
     let mut opts = options("vuln", port);
     opts.active = true;
     let (findings, requests) = scan::run(opts).await.unwrap();
-    let report = findings.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n");
+    let report = findings
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(requests > 50, "suspiciously few requests: {requests}");
 
-    assert!(has(&findings, "auth", Severity::High, "anonymous"), "anonymous DELETE not flagged:\n{report}");
     assert!(
-        findings.iter().any(|f| f.check == "auth" && f.path == "/admin/users"),
+        has(&findings, "auth", Severity::High, "anonymous"),
+        "anonymous DELETE not flagged:\n{report}"
+    );
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.check == "auth" && f.path == "/admin/users"),
         "public /admin/users not flagged:\n{report}"
     );
-    assert!(has(&findings, "tokens", Severity::Critical, "BYPASS"), "forged token accepted but not flagged:\n{report}");
-    assert!(has(&findings, "traversal", Severity::Critical, "PATH TRAVERSAL"), "traversal missed:\n{report}");
-    assert!(has(&findings, "injection", Severity::Medium, "crashed the handler"), "5xx missed:\n{report}");
-    assert!(has(&findings, "injection", Severity::Medium, "leaks"), "stack-trace leak missed:\n{report}");
-    assert!(has(&findings, "injection", Severity::High, "REFLECTED XSS"), "XSS missed:\n{report}");
-    assert!(has(&findings, "cors", Severity::High, "any site can read"), "credentialed CORS missed:\n{report}");
-    assert!(has(&findings, "headers", Severity::Low, "nosniff"), "missing nosniff missed:\n{report}");
-    assert!(has(&findings, "headers", Severity::Low, "VulnServer"), "Server version disclosure missed:\n{report}");
+    assert!(
+        has(&findings, "tokens", Severity::Critical, "BYPASS"),
+        "forged token accepted but not flagged:\n{report}"
+    );
+    assert!(
+        has(&findings, "traversal", Severity::Critical, "PATH TRAVERSAL"),
+        "traversal missed:\n{report}"
+    );
+    assert!(
+        has(
+            &findings,
+            "injection",
+            Severity::Medium,
+            "crashed the handler"
+        ),
+        "5xx missed:\n{report}"
+    );
+    assert!(
+        has(&findings, "injection", Severity::Medium, "leaks"),
+        "stack-trace leak missed:\n{report}"
+    );
+    assert!(
+        has(&findings, "injection", Severity::High, "REFLECTED XSS"),
+        "XSS missed:\n{report}"
+    );
+    assert!(
+        has(&findings, "cors", Severity::High, "any site can read"),
+        "credentialed CORS missed:\n{report}"
+    );
+    assert!(
+        has(&findings, "headers", Severity::Low, "nosniff"),
+        "missing nosniff missed:\n{report}"
+    );
+    assert!(
+        has(&findings, "headers", Severity::Low, "VulnServer"),
+        "Server version disclosure missed:\n{report}"
+    );
 }
 
 #[quench_test::test]
@@ -194,7 +245,11 @@ async fn a_hardened_application_produces_nothing_serious() {
         .map(ToString::to_string)
         .collect();
     assert!(requests > 50, "suspiciously few requests: {requests}");
-    assert!(serious.is_empty(), "false positives on a hardened app:\n{}", serious.join("\n"));
+    assert!(
+        serious.is_empty(),
+        "false positives on a hardened app:\n{}",
+        serious.join("\n")
+    );
 }
 
 #[quench_test::test]
@@ -205,7 +260,15 @@ async fn the_real_quench_http_server_resists_every_protocol_probe() {
     let mut opts = options("hard", port);
     opts.checks = vec!["protocol".to_string()];
     let (findings, _) = scan::run(opts).await.unwrap();
-    assert!(findings.is_empty(), "{}", findings.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n"));
+    assert!(
+        findings.is_empty(),
+        "{}",
+        findings
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
 }
 
 #[quench_test::test]
@@ -217,9 +280,16 @@ async fn a_desync_prone_server_is_caught_by_the_protocol_check() {
     assert!(
         has(&findings, "protocol", Severity::High, "REQUEST SMUGGLING"),
         "smuggling not detected:\n{}",
-        findings.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n")
+        findings
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
     );
-    assert!(has(&findings, "protocol", Severity::Medium, "accepted"), "oversized heads accepted but not flagged");
+    assert!(
+        has(&findings, "protocol", Severity::Medium, "accepted"),
+        "oversized heads accepted but not flagged"
+    );
 }
 
 #[quench_test::test]
@@ -232,8 +302,14 @@ async fn the_baseline_silences_reviewed_public_routes_and_only_those() {
 
     opts.baseline = Some(HashSet::from(["vuln GET /health".to_string()]));
     let (after, _) = scan::run(opts).await.unwrap();
-    assert!(!after.iter().any(|f| f.path == "/health"), "baselined route still reported");
-    assert!(after.iter().any(|f| f.path == "/admin/users"), "baseline must not hide other routes");
+    assert!(
+        !after.iter().any(|f| f.path == "/health"),
+        "baselined route still reported"
+    );
+    assert!(
+        after.iter().any(|f| f.path == "/admin/users"),
+        "baseline must not hide other routes"
+    );
 }
 
 #[quench_test::test]
@@ -241,29 +317,58 @@ async fn mutating_probes_never_run_without_active() {
     let port = serve(Arc::new(Vulnerable)).await;
     let (findings, _) = scan::run(options("vuln", port)).await.unwrap();
     assert!(
-        !findings.iter().any(|f| f.method == "DELETE" && f.severity > Severity::Info),
+        !findings
+            .iter()
+            .any(|f| f.method == "DELETE" && f.severity > Severity::Info),
         "a DELETE was sent without --active"
     );
-    assert!(findings.iter().any(|f| f.severity == Severity::Info && f.detail.contains("--active")));
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.severity == Severity::Info && f.detail.contains("--active"))
+    );
 }
 
 #[quench_test::test]
 async fn remote_targets_are_refused_without_explicit_consent() {
     let target = Target::parse("x", "https://production.example.com").unwrap();
-    let error = scan::run(Options::new(vec![target.clone()], Vec::new())).await.unwrap_err();
+    let error = scan::run(Options::new(vec![target.clone()], Vec::new()))
+        .await
+        .unwrap_err();
     assert!(error.contains("--allow-remote"), "{error}");
-    for private in ["http://127.0.0.1:1", "http://localhost:1", "http://10.1.2.3", "http://192.168.0.5", "http://warehouse.forge.svc:8080"] {
-        assert!(Target::parse("x", private).unwrap().is_private(), "{private}");
+    for private in [
+        "http://127.0.0.1:1",
+        "http://localhost:1",
+        "http://10.1.2.3",
+        "http://192.168.0.5",
+        "http://warehouse.forge.svc:8080",
+    ] {
+        assert!(
+            Target::parse("x", private).unwrap().is_private(),
+            "{private}"
+        );
     }
-    for public in ["http://8.8.8.8", "https://ennor.ddns.net", "http://172.32.0.1"] {
-        assert!(!Target::parse("x", public).unwrap().is_private(), "{public}");
+    for public in [
+        "http://8.8.8.8",
+        "https://ennor.ddns.net",
+        "http://172.32.0.1",
+    ] {
+        assert!(
+            !Target::parse("x", public).unwrap().is_private(),
+            "{public}"
+        );
     }
 }
 
 #[quench_test::test]
 async fn an_unreachable_target_is_an_error_not_a_clean_report() {
     // Bind then drop to get a port nothing listens on.
-    let port = TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap().port();
+    let port = TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
     let error = scan::run(options("ghost", port)).await.unwrap_err();
     assert!(error.contains("unreachable"), "{error}");
 }
