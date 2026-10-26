@@ -299,9 +299,45 @@ pub struct Job {
     pub image: Option<String>,
     /// Paths to collect once the job succeeds.
     pub artifacts: Vec<String>,
+    /// Containers that run beside the steps for as long as the job does: a database the tests talk to,
+    /// say. Honoured by the kubernetes executor, which starts them in the job's own pod (so they are
+    /// reached on `localhost`) and holds the steps back until each reports ready; the native one has
+    /// no pod to put them in and refuses a job that declares any.
+    pub services: Vec<Service>,
     /// Commands to run, in order; the first failure stops the job.
     pub steps: Vec<Step>,
 }
+
+/// A container that runs beside a job's steps. See [`Job::services`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Service {
+    /// Unique within the job, and a valid DNS label: it names the container.
+    pub name: String,
+    /// The image to run.
+    pub image: String,
+    /// Environment of the service container. Not shared with the steps, and not a place for secrets:
+    /// the values are written into the pod as they are.
+    pub env: BTreeMap<String, String>,
+    /// Arguments for the image's entrypoint; empty keeps the image's own.
+    pub args: Vec<String>,
+    /// How to tell it is up. The steps do not start before it is.
+    pub ready: Readiness,
+}
+
+/// How a [`Service`] says it is ready for the steps.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Readiness {
+    /// Ready once this command, run inside the service container, exits `0`.
+    Command(String),
+    /// Ready once this TCP port accepts connections.
+    Port(u16),
+}
+
+/// Container names the executor uses for its own, which a service may not take.
+pub const RESERVED_SERVICE_NAMES: [&str; 2] = ["checkout", "steps"];
+
+/// The longest a service name may be: a container name is a DNS label.
+pub const MAX_SERVICE_NAME: usize = 63;
 
 /// One command, and who runs it.
 ///

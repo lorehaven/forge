@@ -2,7 +2,7 @@
 //! (not an associated type) so it stays object-safe for `Arc<dyn JobExecutor>`.
 
 use crate::domain::Status;
-use crate::pipeline::Step;
+use crate::pipeline::{Service, Step};
 use crate::secrets::Redactor;
 use crate::steps::StepError;
 use crate::workspace::Workspace;
@@ -46,6 +46,10 @@ pub struct JobSpec {
     pub source: Option<SourceSpec>,
     /// Applied by the executor, not the caller, so it covers the live stream too.
     pub redactor: Redactor,
+    /// Containers to run beside the steps, each ready before the first step starts. Kubernetes puts them
+    /// in the job's pod, so the steps reach them on `localhost`; an executor with no pod to share refuses
+    /// a job that has any.
+    pub services: Vec<Service>,
     /// Checkout-relative files to bring back into conveyor's workspace once the job ends, whatever its outcome:
     /// the declared artifacts and the test reports. An executor whose jobs run elsewhere carries them over;
     /// native has them already.

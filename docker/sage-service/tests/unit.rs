@@ -23,10 +23,14 @@ mod files_embedder_tests;
 mod files_extractor_tests;
 #[path = "unit/files_images_tests.rs"]
 mod files_images_tests;
+#[path = "unit/files_rag_tests.rs"]
+mod files_rag_tests;
 #[path = "unit/grounding_pipeline_tests.rs"]
 mod grounding_pipeline_tests;
 #[path = "unit/grounding_tests.rs"]
 mod grounding_tests;
+#[path = "unit/mock_estate.rs"]
+mod mock_estate;
 #[path = "unit/observability_audit_tests.rs"]
 mod observability_audit_tests;
 #[path = "unit/observability_cost_tracking_tests.rs"]
@@ -35,12 +39,16 @@ mod observability_cost_tracking_tests;
 mod observability_metrics_tests;
 #[path = "unit/routers_chat_tests.rs"]
 mod routers_chat_tests;
+#[path = "unit/routers_files_api_tests.rs"]
+mod routers_files_api_tests;
 #[path = "unit/routers_files_tests.rs"]
 mod routers_files_tests;
 #[path = "unit/routers_ui_chat_handlers_tests.rs"]
 mod routers_ui_chat_handlers_tests;
 #[path = "unit/routers_ui_chat_sse_and_tool_render_tests.rs"]
 mod routers_ui_chat_sse_and_tool_render_tests;
+#[path = "unit/routers_ui_chat_stream_tests.rs"]
+mod routers_ui_chat_stream_tests;
 #[path = "unit/routers_ui_chat_tests.rs"]
 mod routers_ui_chat_tests;
 #[path = "unit/routers_ui_common_css_tests.rs"]

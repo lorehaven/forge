@@ -38,7 +38,9 @@ impl RagConfig {
 const DEFAULT_QUERY_INSTRUCTION: &str =
     "Given a search query, retrieve relevant passages from the uploaded documents";
 
-fn query_input(query: &str) -> String {
+/// The text embedded for a search query, wrapped in the embedding model's instruction if it has one.
+#[must_use]
+pub fn query_input(query: &str) -> String {
     let instruction = quench_core::env::get_or(
         "SAGE_EMBEDDING_QUERY_INSTRUCTION",
         DEFAULT_QUERY_INSTRUCTION,
@@ -79,7 +81,8 @@ fn db_schema() -> String {
 }
 
 /// Derive a short location label from a chunk's metadata JSON.
-fn detail_from_metadata(metadata: Option<&quench_serde::Value>) -> Option<String> {
+#[must_use]
+pub fn detail_from_metadata(metadata: Option<&quench_serde::Value>) -> Option<String> {
     let obj = metadata?.as_object()?;
     if let Some(heading) = obj.get("heading").and_then(|v| v.as_str()) {
         return Some(heading.to_string());
@@ -314,6 +317,51 @@ pub async fn load_sources_for_messages(
     map
 }
 
+/// Appends the hits that are similar enough to the prompt addition, within the character budget;
+/// returns the ones that went in (for attribution).
+pub fn append_excerpts(out: &mut String, hits: Vec<ChunkHit>, config: &RagConfig) -> Vec<ChunkHit> {
+    let relevant: Vec<_> = hits
+        .into_iter()
+        .filter(|h| h.similarity >= config.similarity_threshold)
+        .collect();
+    let mut injected = Vec::new();
+    if relevant.is_empty() {
+        return injected;
+    }
+    out.push_str(
+        "\nRELEVANT FILE EXCERPTS\n\
+         Excerpts from the uploaded files that may relate to the current message:\n",
+    );
+    let mut used_chars = 0;
+    for hit in relevant {
+        let remaining = config.max_context_chars.saturating_sub(used_chars);
+        if remaining == 0 {
+            break;
+        }
+        let mut content = hit.content.clone();
+        if content.len() > remaining {
+            let mut cut = remaining;
+            while !content.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            content.truncate(cut);
+        }
+        used_chars += content.len();
+        let location = hit
+            .detail
+            .as_ref()
+            .map(|d| format!(" · {d}"))
+            .unwrap_or_default();
+        let _ = writeln!(
+            out,
+            "[{}{} · similarity {:.2}]\n{}\n",
+            hit.file_name, location, hit.similarity, content
+        );
+        injected.push(hit);
+    }
+    injected
+}
+
 /// Builds the system-prompt addition: file list plus relevant excerpts.
 /// Returns text and injected hits (for attribution), or `None` if no ready files.
 pub async fn augment_system_prompt(
@@ -355,8 +403,7 @@ pub async fn augment_system_prompt(
         return Some((out, Vec::new()));
     }
 
-    let mut injected = Vec::new();
-    match search_chunks(
+    let injected = match search_chunks(
         db,
         switchboard,
         vllm,
@@ -367,45 +414,7 @@ pub async fn augment_system_prompt(
     )
     .await
     {
-        Ok(hits) => {
-            let relevant: Vec<_> = hits
-                .into_iter()
-                .filter(|h| h.similarity >= config.similarity_threshold)
-                .collect();
-            if !relevant.is_empty() {
-                out.push_str(
-                    "\nRELEVANT FILE EXCERPTS\n\
-                     Excerpts from the uploaded files that may relate to the current message:\n",
-                );
-                let mut used_chars = 0;
-                for hit in relevant {
-                    let remaining = config.max_context_chars.saturating_sub(used_chars);
-                    if remaining == 0 {
-                        break;
-                    }
-                    let mut content = hit.content.clone();
-                    if content.len() > remaining {
-                        let mut cut = remaining;
-                        while !content.is_char_boundary(cut) {
-                            cut -= 1;
-                        }
-                        content.truncate(cut);
-                    }
-                    used_chars += content.len();
-                    let location = hit
-                        .detail
-                        .as_ref()
-                        .map(|d| format!(" · {d}"))
-                        .unwrap_or_default();
-                    let _ = writeln!(
-                        out,
-                        "[{}{} · similarity {:.2}]\n{}\n",
-                        hit.file_name, location, hit.similarity, content
-                    );
-                    injected.push(hit);
-                }
-            }
-        }
+        Ok(hits) => append_excerpts(&mut out, hits, &config),
         Err(reason) => {
             // Search is best-effort here; the file list alone is still useful.
             quench_log::debug!(
@@ -413,8 +422,9 @@ pub async fn augment_system_prompt(
                 conversation_id,
                 reason
             );
+            Vec::new()
         }
-    }
+    };
 
     Some((out, injected))
 }

@@ -707,6 +707,13 @@ impl Turn {
                 }
             }
         };
+        // Stages reported just before the pipeline finished are still queued, and `select!` may
+        // have picked the finished pipeline over them.
+        while let Ok(progress) = progress_rx.try_recv() {
+            if tx.send(stage_event(&progress)).await.is_err() {
+                return Err(Aborted);
+            }
+        }
         if let Some(grounding) = gathered {
             self.system_message.content.push_str(&grounding.block);
             state.web_sources = grounding.sources;

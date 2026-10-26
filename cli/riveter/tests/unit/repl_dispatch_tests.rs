@@ -129,6 +129,10 @@ fn announce_target_without_a_pinned_context_reads_the_local_kubeconfig() {
     // No `kube_context` set falls through to `current_kube_context()`,
     // which only runs `kubectl config current-context` - a local,
     // read-only kubeconfig lookup, not a cluster call.
+    // Runs the real `kubectl`, which another test may have replaced on `PATH` for a moment.
+    let _guard = cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     announce_target("prod", &empty_rendered(None));
 }
 
@@ -178,6 +182,10 @@ fn handle_repl_command_render_writes_manifests_for_the_configured_environment() 
 
 #[quench_test::test]
 fn current_kube_context_does_not_panic() {
+    // Runs the real `kubectl`, which another test may have replaced on `PATH` for a moment.
+    let _guard = cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     // Whatever this machine's kubeconfig says (probably nothing) - just
     // confirm the read-only lookup completes without panicking.
     let _ = current_kube_context();

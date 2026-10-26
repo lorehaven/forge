@@ -28,6 +28,7 @@ fn spec() -> JobSpec {
             credential: None,
         }),
         redactor: Redactor::none(),
+        services: Vec::new(),
         exports: Vec::new(),
     }
 }
@@ -442,4 +443,224 @@ fn the_script_hands_exports_back_as_marker_lines_even_after_a_failed_step() {
 #[quench_test::test]
 fn a_script_without_exports_has_no_trap() {
     assert!(!manifest::script(&[vec!["true".to_string()]]).contains("trap"));
+}
+
+// ---------------------------------------------------------------------------
+// Services
+// ---------------------------------------------------------------------------
+
+fn postgres() -> conveyor_service::pipeline::Service {
+    conveyor_service::pipeline::Service {
+        name: "postgres".to_string(),
+        image: "pgvector/pgvector:pg18".to_string(),
+        env: BTreeMap::from([("POSTGRES_PASSWORD".to_string(), "postgres".to_string())]),
+        args: Vec::new(),
+        ready: conveyor_service::pipeline::Readiness::Command("pg_isready -U postgres".to_string()),
+    }
+}
+
+fn with_services(services: Vec<conveyor_service::pipeline::Service>) -> JobSpec {
+    JobSpec { services, ..spec() }
+}
+
+fn init_containers(manifest: &manifest::Manifest) -> Vec<Value> {
+    manifest.job["spec"]["template"]["spec"]["initContainers"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+}
+
+#[quench_test::test]
+fn a_service_is_a_native_sidecar_that_starts_after_the_checkout() {
+    let built = build(&with_services(vec![postgres()]));
+    let init = init_containers(&built);
+
+    // the commit is fetched first, so a bad ref does not leave a database running for nothing
+    assert_eq!(init.len(), 2);
+    assert_eq!(init[0]["name"], "checkout");
+    assert!(
+        init[0].get("restartPolicy").is_none(),
+        "the checkout runs to completion"
+    );
+
+    let service = &init[1];
+    assert_eq!(service["name"], "postgres");
+    assert_eq!(service["image"], "pgvector/pgvector:pg18");
+    // `restartPolicy: Always` on an init container is what makes it a sidecar: it keeps running beside
+    // the steps and is stopped when they finish, so the Job can complete
+    assert_eq!(service["restartPolicy"], "Always");
+    assert_eq!(
+        service["env"],
+        quench_serde::json!([{"name": "POSTGRES_PASSWORD", "value": "postgres"}])
+    );
+    assert_eq!(
+        service["securityContext"]["allowPrivilegeEscalation"],
+        false
+    );
+    assert!(service.get("args").is_none() && service.get("ports").is_none());
+
+    // the steps are still the only regular container
+    let containers = built.job["spec"]["template"]["spec"]["containers"]
+        .as_array()
+        .unwrap();
+    assert_eq!(containers.len(), 1);
+    assert_eq!(containers[0]["name"], "steps");
+}
+
+#[quench_test::test]
+fn the_steps_wait_for_a_service_by_its_startup_probe() {
+    let built = build(&with_services(vec![postgres()]));
+    let probe = &init_containers(&built)[1]["startupProbe"];
+
+    assert_eq!(
+        probe["exec"]["command"],
+        quench_serde::json!(["sh", "-c", "pg_isready -U postgres"])
+    );
+    assert_eq!(probe["periodSeconds"], 2);
+    assert_eq!(probe["timeoutSeconds"], 5);
+    // five minutes of checks at the default, so the start is given up on rather than awaited for ever
+    assert_eq!(probe["failureThreshold"], 150);
+}
+
+#[quench_test::test]
+fn the_time_a_service_gets_to_become_ready_is_configurable() {
+    let settings = Settings {
+        service_ready_timeout_secs: 60,
+        ..Settings::default()
+    };
+    let spec = with_services(vec![postgres()]);
+    let commands = vec![conveyor_service::steps::argv(&spec.steps[0]).unwrap()];
+    let built = manifest::build(&spec, &commands, "conveyor", &settings);
+    assert_eq!(
+        init_containers(&built)[1]["startupProbe"]["failureThreshold"],
+        30
+    );
+
+    // never fewer than one check, whatever the setting
+    let settings = Settings {
+        service_ready_timeout_secs: 0,
+        ..Settings::default()
+    };
+    let built = manifest::build(&spec, &commands, "conveyor", &settings);
+    assert_eq!(
+        init_containers(&built)[1]["startupProbe"]["failureThreshold"],
+        1
+    );
+}
+
+#[quench_test::test]
+fn a_port_readiness_check_is_a_tcp_probe_and_publishes_the_port() {
+    let cache = conveyor_service::pipeline::Service {
+        name: "cache".to_string(),
+        image: "redis:7".to_string(),
+        env: BTreeMap::new(),
+        args: vec!["--save".to_string(), String::new()],
+        ready: conveyor_service::pipeline::Readiness::Port(6379),
+    };
+    let built = build(&with_services(vec![cache]));
+    let service = &init_containers(&built)[1];
+
+    assert_eq!(service["startupProbe"]["tcpSocket"]["port"], 6379);
+    assert!(service["startupProbe"].get("exec").is_none());
+    assert_eq!(
+        service["ports"],
+        quench_serde::json!([{"containerPort": 6379}])
+    );
+    assert_eq!(service["args"], quench_serde::json!(["--save", ""]));
+    assert!(service.get("env").is_none(), "no environment, no env block");
+}
+
+#[quench_test::test]
+fn several_services_start_in_the_order_they_were_declared() {
+    let mut cache = postgres();
+    cache.name = "cache".to_string();
+    cache.ready = conveyor_service::pipeline::Readiness::Port(6379);
+    let built = build(&with_services(vec![postgres(), cache]));
+
+    let names: Vec<_> = init_containers(&built)
+        .iter()
+        .map(|c| c["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, ["checkout", "postgres", "cache"]);
+}
+
+#[quench_test::test]
+fn a_job_without_a_checkout_still_gets_its_services() {
+    let mut spec = with_services(vec![postgres()]);
+    spec.source = None;
+    let commands = vec![conveyor_service::steps::argv(&spec.steps[0]).unwrap()];
+    let built = manifest::build(&spec, &commands, "conveyor", &Settings::default());
+
+    let names: Vec<_> = init_containers(&built)
+        .iter()
+        .map(|c| c["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, ["postgres"]);
+}
+
+#[quench_test::test]
+fn a_job_without_services_has_the_pod_it_always_had() {
+    let built = build(&spec());
+    let init = init_containers(&built);
+    assert_eq!(init.len(), 1);
+    assert_eq!(init[0]["name"], "checkout");
+}
+
+#[quench_test::test]
+fn the_steps_secret_is_never_handed_to_a_service_nor_a_services_env_to_the_steps() {
+    let mut job = with_services(vec![postgres()]);
+    job.env
+        .insert("API_TOKEN".to_string(), "hunter2-secret".to_string());
+    let built = build(&job);
+
+    // the job's environment travels in the Secret, which only the steps container reads
+    let secret = built.secret.as_ref().expect("a secret");
+    assert!(secret["stringData"].get("API_TOKEN").is_some());
+    assert!(secret["stringData"].get("POSTGRES_PASSWORD").is_none());
+    let rendered_service = quench_serde::json::to_string(&init_containers(&built)[1]);
+    assert!(
+        !rendered_service.contains("hunter2-secret"),
+        "{rendered_service}"
+    );
+    assert!(
+        !rendered_service.contains("secretRef"),
+        "{rendered_service}"
+    );
+    assert!(
+        built.job["spec"]["template"]["spec"]["containers"][0]["envFrom"].is_array(),
+        "the steps container still reads the Secret"
+    );
+}
+
+#[quench_test::test]
+fn the_deployment_can_tune_how_long_pods_and_services_get() {
+    let _env = crate::env_support::kubernetes_env();
+    let defaults = Settings::from_env();
+    assert_eq!(
+        (
+            defaults.pod_start_timeout_secs,
+            defaults.service_ready_timeout_secs
+        ),
+        (120, 300)
+    );
+
+    quench_core::env::set("CONVEYOR_K8S_POD_START_SECS", "45");
+    quench_core::env::set("CONVEYOR_K8S_SERVICE_READY_SECS", "90");
+    let tuned = Settings::from_env();
+    quench_core::env::set("CONVEYOR_K8S_POD_START_SECS", "soon");
+    let garbled = Settings::from_env();
+    quench_core::env::remove("CONVEYOR_K8S_POD_START_SECS");
+    quench_core::env::remove("CONVEYOR_K8S_SERVICE_READY_SECS");
+
+    assert_eq!(
+        (
+            tuned.pod_start_timeout_secs,
+            tuned.service_ready_timeout_secs
+        ),
+        (45, 90)
+    );
+    assert_eq!(
+        garbled.pod_start_timeout_secs, 120,
+        "an unreadable value falls back"
+    );
 }

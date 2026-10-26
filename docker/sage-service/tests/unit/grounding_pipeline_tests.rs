@@ -3,15 +3,13 @@
 //! for gatehouse, switchboard, vLLM and the web page being read.
 
 use crate::env_support::env_lock;
-use quench_test::mock::matchers::{body_string_contains, method, path};
-use quench_test::mock::{Mock, MockServer, ResponseTemplate};
-use sage_service::clients::switchboard::{SwitchboardClient, VllmInstance};
+use crate::mock_estate::{answerer, completion, json, mock_estate, on_chat};
+use quench_test::mock::matchers::{method, path};
+use quench_test::mock::{Mock, ResponseTemplate};
 use sage_service::clients::vllm::{ChatMessage, VllmClient};
 use sage_service::grounding::*;
 use sage_service::tools::{SearchProvider, SearchProviderRegistry};
 use std::time::Duration;
-
-const EMBEDDING_MODEL: &str = "Qwen/Qwen3-Embedding-0.6B";
 
 const fn config() -> GroundingConfig {
     GroundingConfig {
@@ -26,81 +24,6 @@ const fn config() -> GroundingConfig {
         verify_timeout: Duration::from_secs(10),
         cite_repair: false,
     }
-}
-
-fn json(status: u16, body: &quench_serde::Value) -> ResponseTemplate {
-    ResponseTemplate::new(status)
-        .set_body_raw(quench_serde::json::to_string(body), "application/json")
-}
-
-/// A chat completion whose message content is `content`.
-fn completion(content: &str) -> ResponseTemplate {
-    json(
-        200,
-        &quench_serde::json!({"choices": [{"message": {"content": content}}]}),
-    )
-}
-
-fn instance_json(model: &str, port: u16, task: Option<&str>) -> quench_serde::Value {
-    quench_serde::json!({
-        "id": format!("id-{model}"),
-        "namespace": "ns",
-        "model": model,
-        "host": "127.0.0.1",
-        "port": port,
-        "quantization": null,
-        "max_model_len": null,
-        "gpu_memory_utilization": null,
-        "enable_prefix_caching": false,
-        "task": task,
-        "started_at": quench_core::time::Time::now().to_rfc3339(),
-        "status": "running"
-    })
-}
-
-fn answerer(server: &MockServer) -> VllmInstance {
-    quench_serde::json::from_str(&quench_serde::json::to_string(&instance_json(
-        "chat-model",
-        server.address().port(),
-        None,
-    )))
-    .expect("an instance")
-}
-
-/// Mounts the token endpoint and a switchboard that lists the embedding model and `extra` models.
-async fn mock_estate(extra: &[&str]) -> (MockServer, SwitchboardClient) {
-    let server = MockServer::start().await;
-    let port = server.address().port();
-    Mock::given(method("POST"))
-        .and(path("/api/v1/token"))
-        .respond_with(json(
-            200,
-            &quench_serde::json!({"access_token": "t", "expires_in": 3600}),
-        ))
-        .mount(&server)
-        .await;
-    let mut instances = vec![instance_json(EMBEDDING_MODEL, port, Some("embed"))];
-    instances.extend(extra.iter().map(|m| instance_json(m, port, None)));
-    Mock::given(method("GET"))
-        .and(path("/api/v1/vllm/instances"))
-        .respond_with(json(200, &quench_serde::Value::Array(instances)))
-        .mount(&server)
-        .await;
-    quench_core::env::set("SWITCHBOARD_URL", server.uri());
-    quench_core::env::set("GATEHOUSE_URL", server.uri());
-    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "secret");
-    quench_core::env::set("SAGE_EMBEDDING_MODEL", EMBEDDING_MODEL);
-    let switchboard = SwitchboardClient::new();
-    (server, switchboard)
-}
-
-async fn on_chat(server: &MockServer, prompt_marker: &str, response: ResponseTemplate) {
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .and(body_string_contains(prompt_marker))
-        .respond_with(response)
-        .mount(server)
-        .await;
 }
 
 struct Search(String);

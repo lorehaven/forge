@@ -1,11 +1,9 @@
-//! End-to-end coverage of `main.rs`'s dispatch, which has no other way to be
-//! exercised - `Commands::Build`/`Test`/`Release`/`Docker::*` all shell out
-//! to real cargo/git/docker operations that would be slow or actively
-//! harmful to run in a test (`anvil release` creates commits and tags;
-//! `anvil docker build` needs a real Dockerfile and daemon), so only
-//! `list` - read-only, backed by a real `cargo metadata` call - is driven
-//! through the compiled binary here. Everything else in `main.rs`'s dispatch
-//! table is a one-line match arm identical in shape to this one.
+//! End-to-end tests of the `anvil` binary, run as a child process.
+//!
+//! `list` and `config check` run for real against this workspace. Everything that would build, publish
+//! or push (`release`, `docker *`, `build`, `test`, ...) runs in a throwaway git workspace (see
+//! `cli/flow_support.rs`) with `cargo` and `docker` replaced by stand-ins that only record their
+//! arguments, so nothing is ever published. Kept apart from `unit`, which holds what runs in-process.
 
 // The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
 #![allow(clippy::wildcard_imports)]
@@ -126,5 +124,12 @@ fn config_check_rejects_a_malformed_anvil_toml_and_lists_every_problem() {
         .stdout(predicate::str::contains("bogus_top_level"))
         .stdout(predicate::str::contains("docker.modules.core"));
 }
+
+#[path = "cli/command_flow_tests.rs"]
+mod command_flow_tests;
+#[path = "cli/flow_support.rs"]
+mod flow_support;
+#[path = "cli/release_flow_tests.rs"]
+mod release_flow_tests;
 
 quench_test::main!();

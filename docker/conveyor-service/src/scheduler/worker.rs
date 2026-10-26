@@ -766,6 +766,7 @@ impl Worker {
                 }),
             }),
             redactor,
+            services: job.services.clone(),
             exports: artifacts::exports(&job.artifacts),
         };
 

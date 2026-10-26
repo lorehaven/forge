@@ -27,6 +27,8 @@ mod image_updates_tests;
 mod login_cmd_tests;
 #[path = "unit/multi_tests.rs"]
 mod multi_tests;
+#[path = "unit/package_cmd_tests.rs"]
+mod package_cmd_tests;
 #[path = "unit/package_tests.rs"]
 mod package_tests;
 #[path = "unit/prune_tests.rs"]

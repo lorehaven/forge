@@ -8,6 +8,8 @@ mod support;
 mod api_tests;
 #[path = "unit/authz_tests.rs"]
 mod authz_tests;
+#[path = "unit/cluster_kube_tests.rs"]
+mod cluster_kube_tests;
 #[path = "unit/db_tests.rs"]
 mod db_tests;
 #[path = "unit/deployments_api_tests.rs"]

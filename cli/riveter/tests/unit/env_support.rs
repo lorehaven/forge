@@ -11,3 +11,10 @@ pub fn cwd_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
 }
+
+/// Shared lock for tests that set `RIVETER_*` variables (the Warehouse URL and credentials): they are
+/// process-global, and `Registry::from_env` reads them.
+pub fn env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}

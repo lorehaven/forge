@@ -2,6 +2,7 @@
 //! One `batch/v1` Job per conveyor job; an init container fetches the commit into an `emptyDir`.
 
 use crate::executors::engine::{JobCredential, JobSpec};
+use crate::pipeline::{Readiness, Service};
 use crate::workspace::checkout::basic_auth_header;
 use quench_serde::{Value, json};
 use std::collections::BTreeMap;
@@ -173,6 +174,11 @@ pub fn build(
         "volumes": [{ "name": WORKSPACE_VOLUME, "emptyDir": {} }],
     });
 
+    // The checkout first, then the services: a job whose commit cannot be fetched should not have
+    // started a database for nothing. Init containers run in order, and each one that is a sidecar
+    // (`restartPolicy: Always`) must have started - passed its startup probe - before the next begins.
+    let mut init_containers: Vec<Value> = Vec::new();
+
     if let Some(source) = &spec.source {
         let mut checkout = json!({
             "name": "checkout",
@@ -187,7 +193,16 @@ pub fn build(
         if let Some(env) = credential_env_vars(source.credential.as_ref()) {
             checkout["env"] = env;
         }
-        pod["initContainers"] = json!([checkout]);
+        init_containers.push(checkout);
+    }
+
+    init_containers.extend(
+        spec.services
+            .iter()
+            .map(|service| service_container(service, settings.service_ready_timeout_secs)),
+    );
+    if !init_containers.is_empty() {
+        pod["initContainers"] = json!(init_containers);
     }
 
     if secret.is_some() {
@@ -214,6 +229,55 @@ pub fn build(
     });
 
     Manifest { name, job, secret }
+}
+
+/// How often a service's readiness is checked while it starts.
+const SERVICE_PROBE_PERIOD_SECS: u64 = 2;
+
+/// Each probe run gets this long, so a hung `pg_isready` counts as a failure instead of stalling the start.
+const SERVICE_PROBE_TIMEOUT_SECS: u64 = 5;
+
+/// A service as a native sidecar: an init container that keeps running (`restartPolicy: Always`).
+///
+/// That is what makes it fit a Job. The steps container does not start until the service has passed its
+/// startup probe, the pod shares one network so the steps reach it on `localhost`, and when the steps
+/// finish the kubelet stops the service - where a service in `containers` would keep the Job running for
+/// ever. If it never becomes ready within `ready_timeout_secs` the container is restarted and the pod
+/// stays pending until the Job's deadline, which fails the job with the pod's own message.
+///
+/// The environment is written into the pod as it is, not into the job's Secret: the steps container reads
+/// that Secret, and a service must not be handed what the steps are not (nor the steps what the service is).
+fn service_container(service: &Service, ready_timeout_secs: u64) -> Value {
+    let mut container = json!({
+        "name": service.name,
+        "image": service.image,
+        "restartPolicy": "Always",
+        "securityContext": hardened(),
+    });
+
+    if !service.env.is_empty() {
+        container["env"] = service
+            .env
+            .iter()
+            .map(|(name, value)| json!({ "name": name, "value": value }))
+            .collect();
+    }
+    if !service.args.is_empty() {
+        container["args"] = json!(service.args);
+    }
+
+    let mut probe = match &service.ready {
+        Readiness::Command(command) => json!({ "exec": { "command": ["sh", "-c", command] } }),
+        Readiness::Port(port) => {
+            container["ports"] = json!([{ "containerPort": port }]);
+            json!({ "tcpSocket": { "port": port } })
+        }
+    };
+    probe["periodSeconds"] = json!(SERVICE_PROBE_PERIOD_SECS);
+    probe["timeoutSeconds"] = json!(SERVICE_PROBE_TIMEOUT_SECS);
+    probe["failureThreshold"] = json!((ready_timeout_secs / SERVICE_PROBE_PERIOD_SECS).max(1));
+    container["startupProbe"] = probe;
+    container
 }
 
 /// Hands the checkout container its credential via `GIT_CONFIG_*`, not embedded in `checkout_script`'s argv text.
@@ -257,6 +321,11 @@ pub struct Settings {
     pub service_account: Option<String>,
     /// How long a finished Job lingers if conveyor never cleans it up.
     pub ttl_seconds: i32,
+    /// How long a job's services get to become ready before the start is given up on.
+    pub service_ready_timeout_secs: u64,
+    /// How long a pod gets to leave `Pending` (scheduling, image pulls) before the job is failed. A job
+    /// with services is given `service_ready_timeout_secs` more.
+    pub pod_start_timeout_secs: u64,
 }
 
 impl Settings {
@@ -272,6 +341,15 @@ impl Settings {
             ttl_seconds: quench_core::env::get_or("CONVEYOR_K8S_TTL_SECONDS", "3600")
                 .parse()
                 .unwrap_or(3600),
+            service_ready_timeout_secs: quench_core::env::get_or(
+                "CONVEYOR_K8S_SERVICE_READY_SECS",
+                "300",
+            )
+            .parse()
+            .unwrap_or(300),
+            pod_start_timeout_secs: quench_core::env::get_or("CONVEYOR_K8S_POD_START_SECS", "120")
+                .parse()
+                .unwrap_or(120),
         }
     }
 }
@@ -283,6 +361,8 @@ impl Default for Settings {
             default_image: DEFAULT_IMAGE.to_string(),
             service_account: None,
             ttl_seconds: 3600,
+            service_ready_timeout_secs: 300,
+            pod_start_timeout_secs: 120,
         }
     }
 }

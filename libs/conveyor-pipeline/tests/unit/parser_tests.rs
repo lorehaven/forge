@@ -606,3 +606,162 @@ fn malformed_toml_is_reported_as_such() {
     let error = error("[[stage]\nname = \"build\"");
     assert!(matches!(error, SpecError::Toml(_)), "{error:?}");
 }
+
+// ---------------------------------------------------------------------------
+// Services
+// ---------------------------------------------------------------------------
+
+/// A one-job pipeline whose job declares `services` (TOML text placed under `[[stage.job]]`).
+fn with_services(services: &str) -> String {
+    format!(
+        "[[stage]]\nname = \"test\"\n[[stage.job]]\nname = \"unit\"\nsteps = [\"true\"]\n{services}\n"
+    )
+}
+
+#[quench_test::test]
+fn a_job_can_declare_services_that_run_beside_its_steps() {
+    use conveyor_pipeline::spec::{Readiness, Service};
+
+    let spec = parse(&with_services(
+        r#"
+[[stage.job.service]]
+name  = "postgres"
+image = "pgvector/pgvector:pg18"
+env   = { POSTGRES_PASSWORD = "postgres" }
+ready = "pg_isready -U postgres"
+
+[[stage.job.service]]
+name  = "cache"
+image = "redis:7"
+args  = ["--save", ""]
+port  = 6379
+"#,
+    ))
+    .expect("parses");
+
+    let services = &spec.stages[0].jobs[0].services;
+    assert_eq!(
+        services[0],
+        Service {
+            name: "postgres".into(),
+            image: "pgvector/pgvector:pg18".into(),
+            env: [("POSTGRES_PASSWORD".to_string(), "postgres".to_string())].into(),
+            args: Vec::new(),
+            ready: Readiness::Command("pg_isready -U postgres".into()),
+        }
+    );
+    assert_eq!(services[1].ready, Readiness::Port(6379));
+    assert_eq!(services[1].args, ["--save", ""]);
+    assert!(services[1].env.is_empty());
+}
+
+#[quench_test::test]
+fn a_job_without_services_has_none() {
+    let spec = parse(&with_services("")).expect("parses");
+    assert!(spec.stages[0].jobs[0].services.is_empty());
+}
+
+#[quench_test::test]
+fn an_invalid_service_names_the_job_the_position_and_the_reason() {
+    let cases = [
+        (
+            r#"name = "", image = "x", port = 1"#,
+            "service 1 of job 'unit' in stage 'test': has an empty name",
+        ),
+        (
+            r#"name = "Postgres", image = "x", port = 1"#,
+            "`Postgres` is not a valid name",
+        ),
+        (
+            r#"name = "pg_db", image = "x", port = 1"#,
+            "`pg_db` is not a valid name",
+        ),
+        (
+            r#"name = "-pg", image = "x", port = 1"#,
+            "`-pg` is not a valid name",
+        ),
+        (
+            r#"name = "steps", image = "x", port = 1"#,
+            "`steps` is a name the executor uses",
+        ),
+        (
+            r#"name = "checkout", image = "x", port = 1"#,
+            "`checkout` is a name the executor uses",
+        ),
+        (r#"name = "pg", image = " ", port = 1"#, "`pg` has no image"),
+        (
+            r#"name = "pg", image = "x""#,
+            "says nothing about when it is ready",
+        ),
+        (
+            r#"name = "pg", image = "x", ready = "true", port = 1"#,
+            "sets both `ready` and `port`",
+        ),
+        (
+            r#"name = "pg", image = "x", ready = " ""#,
+            "has an empty `ready` command",
+        ),
+        (r#"name = "pg", image = "x", port = 0"#, "`pg` has port 0"),
+        (
+            r#"name = "pg", image = "x", port = 1, env = { "" = "v" }"#,
+            "environment variable with no name",
+        ),
+    ];
+    for (service, expected) in cases {
+        // one key per line, which is how a table is written
+        let source = with_services(&format!(
+            "[[stage.job.service]]\n{}",
+            service.replace(", ", "\n")
+        ));
+        let error = message(&source);
+        assert!(error.contains(expected), "{service}: {error}");
+        assert!(
+            matches!(
+                self::error(&source),
+                SpecError::BadService { position: 1, .. }
+            ),
+            "{service}"
+        );
+    }
+}
+
+#[quench_test::test]
+fn a_service_name_cannot_repeat_and_the_position_counts_from_one() {
+    let source = with_services(
+        r#"
+[[stage.job.service]]
+name = "db"
+image = "x"
+port = 1
+[[stage.job.service]]
+name = "db"
+image = "y"
+port = 2
+"#,
+    );
+    let error = message(&source);
+    assert!(error.contains("service 2 of job 'unit'"), "{error}");
+    assert!(error.contains("`db` is declared twice"), "{error}");
+}
+
+#[quench_test::test]
+fn a_service_name_may_be_as_long_as_a_container_name_can_be() {
+    let longest = "a".repeat(63);
+    let ok = with_services(&format!(
+        "[[stage.job.service]]\nname = \"{longest}\"\nimage = \"x\"\nport = 1\n"
+    ));
+    assert!(parse(&ok).is_ok());
+    let too_long = with_services(&format!(
+        "[[stage.job.service]]\nname = \"{}\"\nimage = \"x\"\nport = 1\n",
+        "a".repeat(64)
+    ));
+    assert!(message(&too_long).contains("is not a valid name"));
+}
+
+#[quench_test::test]
+fn an_unknown_service_key_is_rejected_rather_than_ignored() {
+    let error = message(&with_services(
+        "[[stage.job.service]]\nname = \"pg\"\nimage = \"x\"\nport = 1\nvolumes = [\"/data\"]\n",
+    ));
+    assert!(error.contains("volumes"), "{error}");
+}

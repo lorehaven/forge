@@ -67,6 +67,25 @@ impl JobExecutor for NativeExecutor {
             });
         }
 
+        // Refused rather than ignored: the steps would run against a database that is not there, and
+        // fail with a connection error that says nothing about why.
+        if !spec.services.is_empty() {
+            let names = spec
+                .services
+                .iter()
+                .map(|service| service.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(ExecError::Unsupported {
+                executor: "native",
+                what: format!(
+                    "run the services ({names}) of job {}: they run in the job's pod, which this \
+                     executor does not have; use the kubernetes executor",
+                    spec.name
+                ),
+            });
+        }
+
         if spec.image.is_some() {
             // Not an error - refusing it would make the repo unbuildable on a single-node deployment.
             quench_log::warn!(

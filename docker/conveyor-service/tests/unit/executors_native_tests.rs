@@ -23,6 +23,7 @@ fn spec(name: &str, steps: Vec<Step>) -> JobSpec {
         image: None,
         source: None,
         redactor: Redactor::none(),
+        services: Vec::new(),
         exports: Vec::new(),
     }
 }
@@ -486,4 +487,32 @@ async fn a_subscriber_receives_output_as_it_happens() {
     .expect("should not time out");
 
     assert!(received, "expected the line to arrive on the live channel");
+}
+
+#[quench_test::test]
+async fn a_job_with_services_is_refused_because_there_is_no_pod_to_run_them_in() {
+    use conveyor_service::pipeline::{Readiness, Service};
+
+    let executor = NativeExecutor::new();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let workspace = Workspace::new(dir.path().to_path_buf());
+    let mut job = spec("with-db", vec![run("true")]);
+    job.services = vec![Service {
+        name: "postgres".to_string(),
+        image: "postgres:17".to_string(),
+        env: BTreeMap::new(),
+        args: Vec::new(),
+        ready: Readiness::Port(5432),
+    }];
+
+    let error = executor
+        .start(&job, &workspace)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.starts_with("native executor cannot run the services (postgres)"),
+        "{error}"
+    );
+    assert!(error.contains("use the kubernetes executor"), "{error}");
 }

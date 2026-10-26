@@ -15,6 +15,7 @@ fn job(name: &str) -> Job {
         timeout: None,
         image: None,
         artifacts: Vec::new(),
+        services: Vec::new(),
         steps: vec![Step::Run("true".to_string())],
     }
 }

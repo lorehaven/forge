@@ -13,7 +13,10 @@
 use crate::condition::{Condition, ConditionError};
 use crate::cron::Cron;
 use crate::graph::{self, GraphError};
-use crate::spec::{Job, PipelineSpec, Schedule, Stage, Step, Triggers};
+use crate::spec::{
+    Job, MAX_SERVICE_NAME, PipelineSpec, RESERVED_SERVICE_NAMES, Readiness, Schedule, Service,
+    Stage, Step, Triggers,
+};
 use quench_serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -89,6 +92,19 @@ pub enum SpecError {
         /// The step's 1-based position within the job.
         ordinal: usize,
         /// Why the step is invalid.
+        reason: String,
+    },
+
+    /// One of a job's `[[stage.job.service]]` entries is invalid.
+    #[error("service {position} of job '{job}' in stage '{stage}': {reason}")]
+    BadService {
+        /// The stage the offending job is in.
+        stage: String,
+        /// The job the service is declared on.
+        job: String,
+        /// The service's 1-based position within the job.
+        position: usize,
+        /// Why the service is invalid.
         reason: String,
     },
 
@@ -328,6 +344,18 @@ fn parse_job(stage: &str, index: usize, only_job: bool, raw: RawJob) -> Result<J
         });
     }
 
+    let mut services: Vec<Service> = Vec::with_capacity(raw.services.len());
+    for (index, raw_service) in raw.services.into_iter().enumerate() {
+        let service =
+            parse_service(raw_service, &services).map_err(|reason| SpecError::BadService {
+                stage: stage.to_string(),
+                job: name.clone(),
+                position: index + 1,
+                reason,
+            })?;
+        services.push(service);
+    }
+
     let mut steps = Vec::with_capacity(raw.steps.len());
     for (ordinal, value) in raw.steps.into_iter().enumerate() {
         steps.push(parse_step(value).map_err(|reason| SpecError::BadStep {
@@ -346,8 +374,76 @@ fn parse_job(stage: &str, index: usize, only_job: bool, raw: RawJob) -> Result<J
         timeout: raw.timeout,
         image: raw.image,
         artifacts: raw.artifacts,
+        services,
         steps,
     })
+}
+
+/// Checks one service, given the ones declared before it on the same job.
+fn parse_service(raw: RawService, earlier: &[Service]) -> Result<Service, String> {
+    let name = raw.name.trim().to_string();
+    if name.is_empty() {
+        return Err("has an empty name".to_string());
+    }
+    if !is_dns_label(&name) {
+        return Err(format!(
+            "`{name}` is not a valid name: use lowercase letters, digits and `-`, \
+             starting and ending with a letter or digit, at most {MAX_SERVICE_NAME} long"
+        ));
+    }
+    if RESERVED_SERVICE_NAMES.contains(&name.as_str()) {
+        return Err(format!(
+            "`{name}` is a name the executor uses for its own containers; pick another"
+        ));
+    }
+    if earlier.iter().any(|service| service.name == name) {
+        return Err(format!("`{name}` is declared twice on this job"));
+    }
+
+    let image = raw.image.trim().to_string();
+    if image.is_empty() {
+        return Err(format!("`{name}` has no image"));
+    }
+
+    if raw.env.keys().any(|key| key.trim().is_empty()) {
+        return Err(format!("`{name}` has an environment variable with no name"));
+    }
+
+    let ready = match (raw.ready, raw.port) {
+        (Some(command), None) if !command.trim().is_empty() => Readiness::Command(command),
+        (Some(_), None) => return Err(format!("`{name}` has an empty `ready` command")),
+        (None, Some(0)) => return Err(format!("`{name}` has port 0")),
+        (None, Some(port)) => Readiness::Port(port),
+        (Some(_), Some(_)) => {
+            return Err(format!(
+                "`{name}` sets both `ready` and `port`; a service is ready by one or the other"
+            ));
+        }
+        (None, None) => {
+            return Err(format!(
+                "`{name}` says nothing about when it is ready: set `ready = \"<command>\"` or \
+                 `port = <n>`, or the steps would start before it is up"
+            ));
+        }
+    };
+
+    Ok(Service {
+        name,
+        image,
+        env: raw.env,
+        args: raw.args,
+        ready,
+    })
+}
+
+/// A lowercase RFC 1123 label, which is what a container name must be.
+fn is_dns_label(value: &str) -> bool {
+    value.len() <= MAX_SERVICE_NAME
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && !value.starts_with('-')
+        && !value.ends_with('-')
 }
 
 /// Converts one entry of a `steps` array, returning the reason it could not be.
@@ -467,6 +563,8 @@ struct RawJob {
     image: Option<String>,
     #[serde(default)]
     artifacts: Vec<String>,
+    #[serde(default, rename = "service")]
+    services: Vec<RawService>,
     #[serde(default)]
     steps: Vec<quench_serde::Value>,
 
@@ -475,4 +573,19 @@ struct RawJob {
     /// a key that belongs one level up.
     #[serde(default)]
     needs: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawService {
+    name: String,
+    image: String,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default)]
+    ready: Option<String>,
+    #[serde(default)]
+    port: Option<u16>,
 }

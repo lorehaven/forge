@@ -30,9 +30,10 @@ Conveyor abstracts "where a job's steps actually run" behind a single `JobExecut
   - Secrets go in a Kubernetes `Secret` referenced by `envFrom`, not inline in the pod spec where anyone who can read pods can read them. It is deleted with the Job.
   - Cancelling a run deletes the Job with background propagation, so the pod goes with it rather than being orphaned.
   - Steps run as one script that announces each step on stderr, which is how the log follower knows which step is running and which one failed.
+  - A job's [`service`](#services) containers are native sidecars in the same pod: they start after the checkout, the steps wait until each reports ready, and they are stopped when the steps finish. This needs Kubernetes 1.29 or later.
   - If the cluster is unreachable at startup, conveyor refuses to run anything at all and every job fails saying so — it never falls back to `native`, since running a repository's pipeline inside conveyor's own container instead is the one substitution that must never happen silently.
 
-  Configured with `CONVEYOR_K8S_NAMESPACE` (defaults to conveyor's own namespace), `CONVEYOR_K8S_DEFAULT_IMAGE` (for a job whose pipeline names no `image`), `CONVEYOR_K8S_GIT_IMAGE` (the init container's image), `CONVEYOR_K8S_SERVICE_ACCOUNT` (what the pods run as) and `CONVEYOR_K8S_TTL_SECONDS` (how long a finished Job lingers if conveyor never cleans it up). Conveyor's own service account needs `create`, `get`, `list` and `delete` on `jobs`, `pods`, `pods/log` and `secrets` in that namespace.
+  Configured with `CONVEYOR_K8S_NAMESPACE` (defaults to conveyor's own namespace), `CONVEYOR_K8S_DEFAULT_IMAGE` (for a job whose pipeline names no `image`), `CONVEYOR_K8S_GIT_IMAGE` (the init container's image), `CONVEYOR_K8S_SERVICE_ACCOUNT` (what the pods run as) `CONVEYOR_K8S_TTL_SECONDS` (how long a finished Job lingers if conveyor never cleans it up), `CONVEYOR_K8S_POD_START_SECS` (how long a pod gets to leave `Pending`, 120 by default) and `CONVEYOR_K8S_SERVICE_READY_SECS` (how long a job's services get to become ready, 300 by default, added to the pod's time). Conveyor's own service account needs `create`, `get`, `list` and `delete` on `jobs`, `pods`, `pods/log` and `secrets` in that namespace.
 
   **This has not been run against a real cluster.** Every decision about what gets submitted is unit-tested (`tests/unit/executors_manifest_tests.rs`), and the unreachable-cluster path is verified, but the round trip — pod scheduled, log followed, verdict read back — has not been. Try it on something disposable first.
 - **`mock`** records what it was asked to do and returns a scripted result. Tests only.
@@ -145,9 +146,43 @@ The expression is the usual five fields, read in `timezone` (an IANA name, UTC b
 | `timeout` | Seconds. Defaults to `CONVEYOR_JOB_TIMEOUT_SECS`. |
 | `image` | Kubernetes executor only; ignored by the native one. |
 | `artifacts` | Paths to collect once the job succeeds. |
+| `service` | Containers to run beside the steps (a `[[stage.job.service]]` table each); see [Services](#services). |
 | `steps` | Required, at least one. |
 
 **`needs` goes on the stage, not the job.** Dependencies are between stages; a `needs` on a job is rejected with a message saying so rather than silently ignored.
+
+### Services
+
+A job can have containers that run beside its steps for as long as it does: a database the tests talk to, a cache, a mock of something external. Each is a `[[stage.job.service]]` table:
+
+```toml
+[[stage.job]]
+name = "coverage"
+env  = { DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres" }
+
+[[stage.job.service]]
+name  = "postgres"
+image = "pgvector/pgvector:pg18"
+env   = { POSTGRES_PASSWORD = "postgres" }
+ready = "pg_isready -h 127.0.0.1 -U postgres"
+
+steps = ["cargo test --workspace"]
+```
+
+| On a `[[stage.job.service]]` | |
+|---|---|
+| `name` | Required. Lowercase letters, digits and `-` (at most 63), unique within the job; it names the container, so `checkout` and `steps` are taken. |
+| `image` | Required. |
+| `env` | Environment of the service container. Not shared with the steps, and written into the pod as it is, so not a place for secrets. |
+| `args` | Arguments for the image's entrypoint; leave out to keep the image's own. |
+| `ready` | A command, run inside the service container, that exits `0` once it is up. |
+| `port` | Instead of `ready`: up once this TCP port accepts connections. |
+
+Exactly one of `ready` and `port` is required: a service that says nothing about when it is up would race the steps. The steps do not start until every service has passed its check. They reach a service on `127.0.0.1`, at the port the image listens on, because the containers share the pod's network; two services cannot both listen on the same port. Check readiness the way the steps will connect: Postgres's image first runs a temporary server that listens only on a socket, so `pg_isready` without `-h 127.0.0.1` can pass before the real one is up.
+
+If a service cannot be started - the image cannot be pulled, or it keeps restarting without becoming ready - the job fails with the container's own reason, and the tail of each service's log is added to the run's log under a `--- service <name> ---` heading. The same is done when the steps fail, since the service is often why.
+
+Only the Kubernetes executor can run services. The native executor, which has no pod to put them in, refuses a job that declares any. Each job gets its own services, started fresh and discarded with the pod, so two runs never share a database.
 
 ### Steps
 

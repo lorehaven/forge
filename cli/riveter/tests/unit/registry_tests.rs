@@ -1,13 +1,8 @@
 use quench_test::mock::matchers::{body_bytes, body_string_contains, header, method, path};
 use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use riveter::registry::{Registry, warehouse_url};
-use std::sync::{Mutex, OnceLock};
 
-/// `Registry::from_env` reads process-global variables.
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
+use crate::env_support::env_lock;
 
 const VARS: [&str; 5] = [
     "RIVETER_WAREHOUSE_URL",

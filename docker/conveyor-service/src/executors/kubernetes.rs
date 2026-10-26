@@ -24,8 +24,8 @@ use tokio::sync::broadcast;
 
 const LOG_CHANNEL_CAPACITY: usize = 1024;
 
-/// How long to wait for the pod to exist before giving up on following its log.
-const POD_WAIT_ATTEMPTS: u32 = 120;
+/// How many lines of each service's log are copied into the run's log when the job fails.
+const SERVICE_LOG_TAIL: u32 = 100;
 
 #[derive(Debug, Clone)]
 struct Running {
@@ -178,8 +178,21 @@ impl JobExecutor for KubernetesExecutor {
             .expect("job registry poisoned")
             .insert(spec.id.clone(), running.clone());
 
+        // Image pulls and readiness checks happen before the pod leaves `Pending`, so a job with services
+        // is given the time its services were promised on top of the time a pod needs.
+        let patience = self.settings.pod_start_timeout_secs
+            + if spec.services.is_empty() {
+                0
+            } else {
+                self.settings.service_ready_timeout_secs
+            };
+
         tokio::spawn(watch(
-            self.pods_api(),
+            Watched {
+                pods: self.pods_api(),
+                patience_secs: patience,
+                services: spec.services.iter().map(|s| s.name.clone()).collect(),
+            },
             self.jobs_api(),
             built.name,
             spec.name.clone(),
@@ -274,9 +287,19 @@ fn is_gone(error: &KubeError) -> bool {
 }
 
 // Watching.
+
+/// The job's pods, and what to wait for and report about them.
+struct Watched {
+    pods: Api,
+    /// How long the pod gets to leave `Pending`.
+    patience_secs: u64,
+    /// The names of the job's service containers, whose logs are worth showing when it goes wrong.
+    services: Vec<String>,
+}
+
 /// Follows the job's pod, recording its output and its outcome.
 async fn watch(
-    pods: Api,
+    cluster: Watched,
     jobs: Api,
     object_name: String,
     job_name: String,
@@ -284,21 +307,27 @@ async fn watch(
     running: Running,
     exports: (Exports, std::path::PathBuf),
 ) {
-    let Some(pod_name) = await_pod(&pods, &object_name).await else {
-        finish(
-            &running,
-            Status::Failed,
-            None,
-            Some(format!("no pod was scheduled for {object_name}")),
-        );
-        return;
+    let pods = &cluster.pods;
+    let pod_name = match await_pod(pods, &object_name, cluster.patience_secs).await {
+        PodWait::Started(name) => name,
+        PodWait::Stuck { pod, reason } => {
+            if let Some(pod) = &pod {
+                show_service_logs(pods, pod, &cluster.services, &redactor, &running).await;
+            }
+            finish(&running, Status::Failed, None, Some(reason));
+            return;
+        }
     };
 
     // Before the verdict: the worker collects from the workspace as soon as the job reads as finished.
-    follow_logs(&pods, &pod_name, &redactor, &running, exports).await;
+    follow_logs(pods, &pod_name, &redactor, &running, exports).await;
 
     // Log ending doesn't settle the verdict; the Job's own status decides pass/fail.
     let outcome = await_completion(&jobs, &object_name).await;
+    if matches!(outcome, Outcome::Failed(_)) {
+        // The service that was supposed to be there is often why the steps failed.
+        show_service_logs(pods, &pod_name, &cluster.services, &redactor, &running).await;
+    }
     match outcome {
         Outcome::Succeeded => finish(&running, Status::Success, Some(0), None),
         Outcome::Failed(reason) => finish(&running, Status::Failed, None, reason),
@@ -316,27 +345,129 @@ async fn watch(
     );
 }
 
-/// Waits for the Job's pod to appear and start.
-async fn await_pod(pods: &Api, object_name: &str) -> Option<String> {
-    let selector = ListParams::default().labels(&format!("job-name={object_name}"));
+/// How waiting for the pod ended.
+#[derive(Debug, PartialEq, Eq)]
+enum PodWait {
+    /// The pod is past `Pending`: its containers are running (or have been).
+    Started(String),
+    /// It never got there. `pod` is its name if it exists at all; `reason` is what to tell the user.
+    Stuck { pod: Option<String>, reason: String },
+}
 
-    for _ in 0..POD_WAIT_ATTEMPTS {
+/// Waits for the Job's pod to appear and start.
+async fn await_pod(pods: &Api, object_name: &str, patience_secs: u64) -> PodWait {
+    let selector = ListParams::default().labels(&format!("job-name={object_name}"));
+    let mut pod_name: Option<String> = None;
+    let mut stalled: Option<String> = None;
+
+    for _ in 0..patience_secs.max(1) {
         if let Ok(list) = pods.list(&selector).await
             && let Some(pod) = list.items.first()
         {
+            pod_name = Object(pod).name().map(str::to_string);
             let phase = pod
                 .pointer("/status/phase")
                 .and_then(Value::as_str)
                 .unwrap_or("Pending");
 
             // `Pending` covers image pulls/init container, neither producing log output yet.
-            if phase != "Pending" {
-                return Object(pod).name().map(str::to_string);
+            if phase != "Pending"
+                && let Some(name) = &pod_name
+            {
+                return PodWait::Started(name.clone());
             }
+            stalled = describe_stall(pod);
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
-    None
+
+    let reason = match (&pod_name, stalled) {
+        (None, _) => format!("no pod was scheduled for {object_name}"),
+        (Some(_), Some(stall)) => format!("the pod did not start in time: {stall}"),
+        (Some(_), None) => "the pod did not start in time".to_string(),
+    };
+    PodWait::Stuck {
+        pod: pod_name,
+        reason,
+    }
+}
+
+/// What is holding a `Pending` pod up, if a container says: an image that cannot be pulled, a service
+/// that keeps restarting without ever reporting ready.
+fn describe_stall(pod: &Value) -> Option<String> {
+    let statuses = |pointer: &str| {
+        pod.pointer(pointer)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    };
+    let mut all = statuses("/status/initContainerStatuses");
+    all.extend(statuses("/status/containerStatuses"));
+
+    all.iter().find_map(|status| {
+        let name = status.get("name")?.as_str()?;
+        if let Some(waiting) = status.pointer("/state/waiting") {
+            let reason = waiting.get("reason").and_then(Value::as_str)?;
+            // The ordinary states of a pod on its way up are not a stall.
+            if matches!(reason, "PodInitializing" | "ContainerCreating") {
+                return None;
+            }
+            return Some(match waiting.get("message").and_then(Value::as_str) {
+                Some(message) if !message.is_empty() => format!("{name}: {reason}: {message}"),
+                _ => format!("{name}: {reason}"),
+            });
+        }
+        let restarts = status
+            .get("restartCount")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        (restarts > 0 && status.get("started").and_then(Value::as_bool) == Some(false)).then(|| {
+            format!("{name} keeps restarting before it reports ready (restarted {restarts} times)")
+        })
+    })
+}
+
+/// Copies the tail of each service's log into the run's log, under a heading of its own.
+async fn show_service_logs(
+    pods: &Api,
+    pod_name: &str,
+    services: &[String],
+    redactor: &Redactor,
+    running: &Running,
+) {
+    for service in services {
+        let params = LogParams {
+            container: Some(service.clone()),
+            tail_lines: Some(SERVICE_LOG_TAIL),
+            ..LogParams::default()
+        };
+        let text = match pods.logs(pod_name, &params).await {
+            Ok(text) => text,
+            Err(error) => format!("(no log: {error})"),
+        };
+        record(
+            running,
+            redactor,
+            &format!("--- service {service}: last log lines ---"),
+        );
+        for line in text.lines() {
+            record(running, redactor, &format!("[{service}] {line}"));
+        }
+    }
+}
+
+/// Adds one line to the log, after whatever is there.
+fn record(running: &Running, redactor: &Redactor, line: &str) {
+    let mut history = running.history.lock().expect("log history poisoned");
+    let chunk = LogChunk {
+        seq: history.len() as u64,
+        stream: Stream::Stdout,
+        line: redactor.apply(line),
+        at: Time::now(),
+    };
+    history.push(chunk.clone());
+    drop(history);
+    let _ = running.publisher.send(chunk);
 }
 
 /// Streams the work container's output into the shared history and channel.

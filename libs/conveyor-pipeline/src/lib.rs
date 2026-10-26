@@ -27,5 +27,6 @@ pub use cron::{Cron, CronError};
 pub use graph::{Decision, JobPlan, StagePlan, plan};
 pub use parser::{SpecError, parse};
 pub use spec::{
-    Job, PIPELINE_FILE, PipelineSpec, Schedule, Stage, StageSelectionError, Step, Triggers,
+    Job, PIPELINE_FILE, PipelineSpec, Readiness, Schedule, Service, Stage, StageSelectionError,
+    Step, Triggers,
 };
