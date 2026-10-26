@@ -379,3 +379,39 @@ fn a_repository_pipeline_that_declares_a_schedule_runs_only_its_security_stage_o
         }
     }
 }
+
+#[quench_test::test]
+fn a_timezone_without_a_schedule_is_accepted_and_changes_nothing() {
+    // `timezone` only says how `schedule` is read. Alone it is harmless, so it must neither fail the
+    // parse (a pipeline mid-edit would stop building) nor invent a schedule.
+    let spec = parse(&format!(
+        "on = {{ push = [\"master\"], timezone = \"Europe/Warsaw\" }}{STAGE}"
+    ))
+    .unwrap();
+    assert!(spec.schedules.is_empty());
+    assert!(spec.allows("push", "master"));
+    assert!(!spec.allows("schedule", "master"));
+
+    // A zone that does not exist is still an error when it is the only thing there: a typo should
+    // surface now, not on the day a schedule is added.
+    let error = parse(&format!(
+        "on = {{ schedule = [\"0 0 * * *\"], timezone = \"Europe/Warsw\" }}{STAGE}"
+    ))
+    .unwrap_err();
+    assert!(error.to_string().contains("unknown time zone"), "{error}");
+}
+
+#[quench_test::test]
+fn a_zoned_schedule_crosses_new_year_on_the_local_clock() {
+    // Midnight in Warsaw on 1 January is 23:00Z on 31 December: the firing belongs to the *local* date.
+    let zone = warsaw();
+    assert_eq!(
+        next("0 0 1 1 *", "2026-06-01T00:00:00Z", &zone).as_deref(),
+        Some("2026-12-31T23:00:00Z")
+    );
+    // And the one after that is a year on, not a day later.
+    assert_eq!(
+        next("0 0 1 1 *", "2026-12-31T23:00:00Z", &zone).as_deref(),
+        Some("2027-12-31T23:00:00Z")
+    );
+}
