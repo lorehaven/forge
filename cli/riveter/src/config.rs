@@ -2,6 +2,9 @@ use quench_serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct RiveterConfig {
+    /// Warehouse including its base path, e.g. `https://host/warehouse`: where rivets are published
+    /// and pulled. `RIVETER_WAREHOUSE_URL` wins over it.
+    pub warehouse_url: Option<String>,
     #[serde(default)]
     pub env: EnvConfig,
 }

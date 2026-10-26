@@ -1,6 +1,6 @@
 use quench_test::mock::matchers::{body_bytes, body_string_contains, header, method, path};
 use quench_test::mock::{Mock, MockServer, ResponseTemplate};
-use riveter::registry::Registry;
+use riveter::registry::{Registry, warehouse_url};
 use std::sync::{Mutex, OnceLock};
 
 /// `Registry::from_env` reads process-global variables.
@@ -362,4 +362,53 @@ async fn from_env_reports_refused_client_credentials() {
     .await;
 
     assert!(format!("{err:#}").contains("Gatehouse refused"), "{err:#}");
+}
+
+#[quench_test::test]
+fn the_environment_beats_the_config_and_blanks_do_not_count() {
+    let env = Some("https://env/warehouse".to_string());
+    let config = Some("https://config/warehouse".to_string());
+    assert_eq!(
+        warehouse_url(env, config.clone()).as_deref(),
+        Some("https://env/warehouse")
+    );
+    assert_eq!(
+        warehouse_url(None, config.clone()).as_deref(),
+        Some("https://config/warehouse")
+    );
+    assert_eq!(
+        warehouse_url(Some("  ".to_string()), config).as_deref(),
+        Some("https://config/warehouse")
+    );
+    assert!(warehouse_url(None, Some(String::new())).is_none());
+    assert!(warehouse_url(None, None).is_none());
+}
+
+#[quench_test::test]
+fn from_env_finds_the_warehouse_in_riveter_toml() {
+    let _env = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _cwd = crate::env_support::cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    clear_env();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let original = std::env::current_dir().unwrap();
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    quench_core::env::set("RIVETER_WAREHOUSE_TOKEN", "tok");
+    let without = Registry::from_env().unwrap_err().to_string();
+    std::fs::write(
+        ".riveter.toml",
+        "warehouse_url = \"https://host/warehouse\"\n",
+    )
+    .unwrap();
+    let with = Registry::from_env();
+
+    quench_core::env::remove("RIVETER_WAREHOUSE_TOKEN");
+    std::env::set_current_dir(original).unwrap();
+
+    assert!(without.contains(".riveter.toml"), "{without}");
+    assert!(with.is_ok(), "{:?}", with.err());
 }

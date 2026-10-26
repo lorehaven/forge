@@ -92,7 +92,9 @@ details.job > summary::-webkit-details-marker { display: none; }
 .finding-severity-warning { background: var(--fui-warning-soft-bg); color: var(--fui-warning-soft-text); border-color: var(--fui-warning-soft-border); }
 .finding-severity-critical, .finding-severity-high { background: var(--fui-error-soft-bg); color: var(--fui-error-soft-text); border-color: var(--fui-error-soft-border); }
 .finding-severity-medium { background: var(--fui-warning-soft-bg); color: var(--fui-warning-soft-text); border-color: var(--fui-warning-soft-border); }
-.finding-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; padding: .75rem 1.5rem; border-bottom: 1px solid var(--fui-border); }
+/* `.panel form` stacks fields in a column; the level filter is one row of boxes and wraps on narrow screens. */
+.panel form.finding-filter { flex-direction: row; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; padding: .75rem 1.5rem; border-bottom: 1px solid var(--fui-border); }
+.panel form.finding-filter button { margin-left: auto; }
 .finding-filter-level { display: flex; align-items: center; gap: .4rem; }
 .finding-severity-error { background: var(--fui-error-soft-bg); color: var(--fui-error-soft-text); border-color: var(--fui-error-soft-border); }
 

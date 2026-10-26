@@ -341,7 +341,7 @@ An optional `values.yaml` (`NAME: value`) or `values.toml` (`NAME = "default"`) 
 `riveter login` stores a Gatehouse application token in the git-ignored `.riveter.secret.toml`; Warehouse commands trade it for a short-lived token on every run, so `RIVETER_WAREHOUSE_TOKEN` or client credentials are no longer needed (they still win when set).
 
 ```
-RIVETER_WAREHOUSE_URL     Warehouse, including its base path (https://host/warehouse)
+RIVETER_WAREHOUSE_URL     Warehouse, including its base path (https://host/warehouse); or `warehouse_url` in .riveter.toml, which the variable overrides
 RIVETER_WAREHOUSE_TOKEN   a bearer token, or instead:
 RIVETER_GATEHOUSE_URL + RIVETER_CLIENT_ID + RIVETER_CLIENT_SECRET
                           exchanged for a token with Gatehouse's client_credentials grant
@@ -435,7 +435,7 @@ Recognised `defaults:` keys are `container_name`, `service_account`, `pull_polic
 
 - `overlays/<env>/overlay.yaml` — the environment's resource declarations, optionally pinning `kube_context`.
 - `overlays/<env>/.env` — variables referenced with `${NAME}` inside that environment's overlay only (no cross-environment fallback).
-- `.riveter.toml` — records the environment set by `env set`; shared state in the working directory, so a second terminal running `env set` retargets the first.
+- `.riveter.toml` — records the environment set by `env set`, and optionally `warehouse_url` (Warehouse including its base path, for `publish`/`pull`; `RIVETER_WAREHOUSE_URL` wins); shared state in the working directory, so a second terminal running `env set` retargets the first.
 - Templates live in `src/templates/`, embedded into the binary at compile time; a resource's lowercased `kind` maps to `<kind>.yaml.j2`.
 
 Rendered manifests are written to `manifests/<env>-manifests.<scope>.yaml` (or `-manifests.selection.yaml` for targeted renders); a manifest containing a Secret is written `0600`. Riveter also writes `manifests/.gitignore` so rendered output is never committed.

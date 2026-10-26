@@ -60,3 +60,35 @@ fn load_config_reports_invalid_toml() {
         assert!(error.to_string().contains("Failed to parse"));
     });
 }
+
+#[quench_test::test]
+fn the_warehouse_url_is_read_and_survives_a_save() {
+    in_temp_cwd(|| {
+        std::fs::write(
+            ".riveter.toml",
+            "warehouse_url = \"https://ennor.ddns.net/warehouse\"\n\n[env]\ncurrent = \"forge\"\n",
+        )
+        .unwrap();
+        let mut config = load_config().unwrap();
+        assert_eq!(
+            config.warehouse_url.as_deref(),
+            Some("https://ennor.ddns.net/warehouse")
+        );
+
+        // `riveter env use` loads and saves the file; the URL must not be dropped by that.
+        config.env.current = Some("media".to_string());
+        save_config(&config).unwrap();
+        let reloaded = load_config().unwrap();
+        assert_eq!(
+            reloaded.warehouse_url.as_deref(),
+            Some("https://ennor.ddns.net/warehouse")
+        );
+        assert_eq!(reloaded.env.current.as_deref(), Some("media"));
+    });
+}
+
+#[quench_test::test]
+fn a_config_without_a_warehouse_url_still_parses() {
+    let config: RiveterConfig = quench_serde::toml::from_str("[env]\ncurrent = \"x\"\n").unwrap();
+    assert!(config.warehouse_url.is_none());
+}

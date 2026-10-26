@@ -47,6 +47,15 @@ fn var(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.trim().is_empty())
 }
 
+/// The environment's Warehouse URL, else the one in `.riveter.toml`; empty values count as unset.
+#[must_use]
+pub fn warehouse_url(from_env: Option<String>, from_config: Option<String>) -> Option<String> {
+    let usable = |url: String| Some(url).filter(|u| !u.trim().is_empty());
+    from_env
+        .and_then(usable)
+        .or_else(|| from_config.and_then(usable))
+}
+
 impl Registry {
     /// A registry at `base` (Warehouse's URL including its base path, e.g.
     /// `https://host/warehouse`), authenticating with `token` if given.
@@ -64,7 +73,8 @@ impl Registry {
 
     /// Configured from the environment (and a `.env` in the working directory):
     ///
-    /// - `RIVETER_WAREHOUSE_URL` - Warehouse including its base path.
+    /// - `RIVETER_WAREHOUSE_URL` - Warehouse including its base path; or `warehouse_url` in
+    ///   `.riveter.toml`, which the variable overrides.
     /// - `RIVETER_WAREHOUSE_TOKEN` - a bearer token, **or**
     /// - `RIVETER_GATEHOUSE_URL` with `RIVETER_CLIENT_ID` and `RIVETER_CLIENT_SECRET`,
     ///   exchanged for a token with the client-credentials grant, **or**
@@ -73,9 +83,13 @@ impl Registry {
     pub fn from_env() -> Result<Self> {
         quench_core::dotenv::load().ok();
 
-        let base = var("RIVETER_WAREHOUSE_URL").context(
+        let base = warehouse_url(
+            var("RIVETER_WAREHOUSE_URL"),
+            crate::config::load_config()?.warehouse_url,
+        )
+        .context(
             "RIVETER_WAREHOUSE_URL is not set - point it at Warehouse, including its base path \
-             (e.g. https://host/warehouse)",
+             (e.g. https://host/warehouse), or set `warehouse_url` in .riveter.toml",
         )?;
 
         let token = if let Some(token) = var("RIVETER_WAREHOUSE_TOKEN") {
