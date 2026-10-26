@@ -88,6 +88,16 @@ fn static_no_secrets_in_sources() {
 }
 
 #[quench_test::test]
+fn static_no_symlink_points_outside_the_checkout() {
+    // A symlink to an absolute path works on one machine and breaks every clone made anywhere else.
+    let found = symlinks_leaving_the_project(&root());
+    assert!(
+        found.is_empty(),
+        "symlinks that leave the project (path, target): {found:?}"
+    );
+}
+
+#[quench_test::test]
 fn scanner_proves_itself_against_a_vulnerable_and_a_hardened_app() {
     // The live scan below is only worth reading if the scanner is known to detect what it claims to.
     let ran = run(

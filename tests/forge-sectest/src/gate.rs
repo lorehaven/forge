@@ -36,13 +36,72 @@ fn project_files(root: &Path) -> Option<Vec<String>> {
         .output
         .lines()
         .filter(|line| !line.is_empty())
-        // Deleted but not yet committed paths are still listed; they cannot be read.
-        .filter(|line| root.join(line).is_file())
+        // Deleted but not yet committed paths are still listed; they cannot be read. A symlink is not a file of
+        // the project either: scanning through it reads whatever it points at, which may be a local,
+        // untracked file (and is reported by `symlinks_leaving_the_project` if it should not be there).
+        .filter(|line| {
+            root.join(line)
+                .symlink_metadata()
+                .is_ok_and(|meta| meta.file_type().is_file())
+        })
         .map(|line| format!("./{line}"))
         .collect();
     files.sort();
     files.dedup();
     (!files.is_empty()).then_some(files)
+}
+
+/// Where a symlink in the project points, when that is somewhere a checkout elsewhere cannot follow.
+///
+/// An absolute target names a path on one machine; a relative one that climbs out of the project does too.
+/// Either breaks the first clone made anywhere else - CI, a release tag's baseline check - and a symlink
+/// into a developer's own files can also leak whatever it reaches.
+fn escapes(path: &str, target: &Path) -> bool {
+    use std::path::Component;
+    if target.is_absolute() {
+        return true;
+    }
+    let mut depth = Path::new(path.trim_start_matches("./"))
+        .parent()
+        .map_or(0, |parent| parent.components().count());
+    for component in target.components() {
+        match component {
+            Component::ParentDir => {
+                if depth == 0 {
+                    return true;
+                }
+                depth -= 1;
+            }
+            Component::Normal(_) => depth += 1,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Symlinks of the project that point outside it, as `(path, target)`.
+#[must_use]
+pub fn symlinks_leaving_the_project(root: &Path) -> Vec<(String, String)> {
+    let listing = run(
+        root,
+        "git",
+        &["ls-files", "--cached", "--others", "--exclude-standard"],
+        &[],
+    );
+    if !listing.success {
+        return Vec::new();
+    }
+    let mut found: Vec<(String, String)> = listing
+        .output
+        .lines()
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| {
+            let target = std::fs::read_link(root.join(line)).ok()?;
+            escapes(line, &target).then(|| (format!("./{line}"), target.display().to_string()))
+        })
+        .collect();
+    found.sort();
+    found
 }
 
 /// Every `.rs` file of the project (relative paths, `./`-prefixed, sorted).

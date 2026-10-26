@@ -144,4 +144,41 @@ fn inside_a_git_checkout_only_project_files_are_scanned() {
     assert_eq!(secrets[0].0, "./tracked.toml");
 }
 
+#[cfg(unix)]
+#[quench_test::test]
+fn symlinks_that_leave_the_project_are_found_and_are_not_followed_by_the_secret_scan() {
+    use std::os::unix::fs::symlink;
+    let outside = quench_core::tmp::TempDir::new().unwrap();
+    let leak = format!(
+        "k = \"{}\"\n",
+        parts(&["-----BE", "GIN PRIV", "ATE KEY-----"])
+    );
+    std::fs::write(outside.path().join("local.pem"), &leak).unwrap();
+
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let root = dir.path();
+    let git = |args: &[&str]| assert!(run(root, "git", args, &[]).success, "git {args:?}");
+    git(&["init", "--quiet"]);
+    std::fs::create_dir_all(root.join("a/b")).unwrap();
+    std::fs::write(root.join("a/real.toml"), "x = 1\n").unwrap();
+    // Fine: relative, and stays inside (also through `..`).
+    symlink("../real.toml", root.join("a/b/inside.toml")).unwrap();
+    symlink("real.toml", root.join("a/sibling.toml")).unwrap();
+    // Not fine: absolute, and one that climbs out of the project.
+    symlink(
+        outside.path().join("local.pem"),
+        root.join("a/absolute.pem"),
+    )
+    .unwrap();
+    symlink("../../../elsewhere/key.pem", root.join("a/b/climbs.pem")).unwrap();
+    git(&["add", "-A"]);
+
+    let found = symlinks_leaving_the_project(root);
+    let paths: Vec<&str> = found.iter().map(|(path, _)| path.as_str()).collect();
+    assert_eq!(paths, ["./a/absolute.pem", "./a/b/climbs.pem"], "{found:?}");
+
+    // A symlink to a key kept outside the project is not a key in the project.
+    assert!(secrets_in(root).is_empty(), "{:?}", secrets_in(root));
+}
+
 quench_test::main!();
