@@ -18,20 +18,7 @@ fn db() -> Db {
     Db::InMemory(InMemoryDb::new())
 }
 
-/// `attach`/`reprocess` construct `SwitchboardClient`/`VllmClient`, which
-/// panic without these env vars set - every test in this binary that
-/// tolerates the same fixed values sets them idempotently rather than
-/// coordinating through a lock (see `docker/gatehouse-service/src/crypto.rs`'s
-/// `TEST_KEY_MATERIAL` convention for why concurrent identical writes are
-/// safe here). Matches `routers_files_tests.rs`'s `ensure_switchboard_env`.
-fn ensure_switchboard_env() {
-    quench_core::env::set("GATEHOUSE_URL", "http://127.0.0.1:1");
-    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    quench_core::env::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
-}
-
 async fn app(db: Db) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
-    ensure_switchboard_env();
     register_routes();
     let container = ContainerBuilder::new()
         .provide(db)

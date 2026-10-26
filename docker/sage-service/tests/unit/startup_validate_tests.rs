@@ -15,7 +15,7 @@ use sage_service::startup::validate_startup;
 /// elsewhere in this workspace) since every test in this file needs them and
 /// nothing here reads their actual value.
 fn with_switchboard_credentials() {
-    quench_core::env::set("GATEHOUSE_URL", "https://gatehouse.test");
+    quench_core::env::set("GATEHOUSE_URL", "http://127.0.0.1:1");
     quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
 }
 

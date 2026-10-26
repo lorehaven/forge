@@ -146,9 +146,8 @@ async fn callback_reports_an_error_without_a_state_cookie() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 async fn logout_redirects_when_gatehouse_is_configured() {
     // `GATEHOUSE_URL` is process-global and other files in this shared
-    // `tests/unit` binary set it to this same dummy value without
-    // coordination (see `routers_chat_tests::ensure_switchboard_env`) - an
-    // identical idempotent write is safe to race, unlike removing it, which
+    // `tests/unit` binary rely on the same dummy value, which `main` in
+    // `tests/unit.rs` sets before any test runs - writing it again is safe, unlike removing it, which
     // would break any of those tests running concurrently. That means the
     // "not configured" (503) branch can't be exercised reliably from this
     // binary; only the "configured" (redirect) branch is tested here.

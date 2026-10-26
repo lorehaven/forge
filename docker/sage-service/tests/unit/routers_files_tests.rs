@@ -96,17 +96,10 @@ fn db() -> Db {
     Db::InMemory(InMemoryDb::new())
 }
 
-fn ensure_switchboard_env() {
-    quench_core::env::set("GATEHOUSE_URL", "http://127.0.0.1:1");
-    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    quench_core::env::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
-}
-
 async fn app(
     db: Db,
     jwt_config: JwtConfig,
 ) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
-    ensure_switchboard_env();
     sage_service::routers::files::register_routes();
     let container = ContainerBuilder::new()
         .provide(db)
@@ -463,7 +456,6 @@ fn upload_form(
 
 #[quench_test::test]
 async fn create_uploaded_file_requires_exactly_one_scope() {
-    ensure_switchboard_env();
     let db = db();
     let switchboard = SwitchboardClient::new();
     let vllm = VllmClient::new();
@@ -477,7 +469,6 @@ async fn create_uploaded_file_requires_exactly_one_scope() {
 
 #[quench_test::test]
 async fn create_uploaded_file_rejects_an_unsupported_extension() {
-    ensure_switchboard_env();
     let db = db();
     let switchboard = SwitchboardClient::new();
     let vllm = VllmClient::new();
@@ -491,7 +482,6 @@ async fn create_uploaded_file_rejects_an_unsupported_extension() {
 
 #[quench_test::test]
 async fn create_uploaded_file_rejects_an_empty_file() {
-    ensure_switchboard_env();
     let db = db();
     let switchboard = SwitchboardClient::new();
     let vllm = VllmClient::new();
@@ -505,7 +495,6 @@ async fn create_uploaded_file_rejects_an_empty_file() {
 
 #[quench_test::test]
 async fn create_uploaded_file_reports_not_found_for_a_missing_conversation() {
-    ensure_switchboard_env();
     let db = db();
     let switchboard = SwitchboardClient::new();
     let vllm = VllmClient::new();
@@ -519,7 +508,6 @@ async fn create_uploaded_file_reports_not_found_for_a_missing_conversation() {
 
 #[quench_test::test]
 async fn create_uploaded_file_is_forbidden_for_someone_elses_conversation() {
-    ensure_switchboard_env();
     let db = db();
     seed_conversation(&db, "conv-1", "bob", None).await;
     let switchboard = SwitchboardClient::new();
@@ -534,7 +522,6 @@ async fn create_uploaded_file_is_forbidden_for_someone_elses_conversation() {
 
 #[quench_test::test]
 async fn create_uploaded_file_reports_not_found_for_a_missing_project() {
-    ensure_switchboard_env();
     let db = db();
     let switchboard = SwitchboardClient::new();
     let vllm = VllmClient::new();
@@ -555,7 +542,6 @@ async fn create_uploaded_file_reports_not_found_for_a_missing_project() {
 /// silently degraded.
 #[quench_test::test]
 async fn create_uploaded_file_refuses_to_write_without_postgres() {
-    ensure_switchboard_env();
     let db = db();
     seed_conversation(&db, "conv-1", "alice", None).await;
     let switchboard = SwitchboardClient::new();

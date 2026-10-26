@@ -30,25 +30,7 @@ fn config() -> SageConfig {
     }
 }
 
-/// `SwitchboardClient::new()` panics unless `GATEHOUSE_URL` and
-/// `CLIENT_SECRET_SAGE_SWITCHBOARD` are set - it never actually needs to
-/// reach either service in these tests (switchboard isn't running), so any
-/// non-empty value works. `quench_core::env::set` with a fixed value is idempotent
-/// under this crate's parallel test binary - concurrent identical writes
-/// race harmlessly, unlike a var different tests need different values for.
-fn ensure_switchboard_env() {
-    // Loopback ports nothing listens on refuse the connection immediately;
-    // a DNS name (the production default, and an earlier version of this
-    // fixture) can take the better part of a minute to fail via resolver
-    // timeout instead. Both `GATEHOUSE_URL` (the OAuth token endpoint
-    // `ClientCredentialsClient` hits first) and `SWITCHBOARD_URL` need this.
-    quench_core::env::set("GATEHOUSE_URL", "http://127.0.0.1:1");
-    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    quench_core::env::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
-}
-
 async fn app() -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
-    ensure_switchboard_env();
     chat::register_routes();
     let container = ContainerBuilder::new()
         .provide(SwitchboardClient::new())

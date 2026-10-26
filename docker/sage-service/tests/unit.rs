@@ -23,6 +23,8 @@ mod files_embedder_tests;
 mod files_extractor_tests;
 #[path = "unit/files_images_tests.rs"]
 mod files_images_tests;
+#[path = "unit/grounding_pipeline_tests.rs"]
+mod grounding_pipeline_tests;
 #[path = "unit/grounding_tests.rs"]
 mod grounding_tests;
 #[path = "unit/observability_audit_tests.rs"]
@@ -96,4 +98,14 @@ mod tools_tests;
 #[path = "unit/tools_web_search_tests.rs"]
 mod tools_web_search_tests;
 
-quench_test::main!();
+fn main() {
+    // Tests that only need a `SwitchboardClient` to construct (and never expect it to answer) rely on
+    // these. They are set here, before any test thread exists, so that no test has to write them:
+    // the tests that mock switchboard set other values under `env_lock`, and an unlocked write from
+    // a test running beside them would replace theirs. Loopback ports nothing listens on refuse a
+    // connection at once, where a hostname can take most of a minute to fail on a resolver timeout.
+    quench_core::env::set("GATEHOUSE_URL", "http://127.0.0.1:1");
+    quench_core::env::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
+    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
+    std::process::exit(quench_test::run_registered());
+}
