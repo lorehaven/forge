@@ -237,7 +237,11 @@ async fn gather_ranks_the_snippets_by_embedding_similarity() {
     .expect("grounded");
 
     assert!(!grounding.unavailable);
-    assert!(grounding.block.contains("330 metres"), "{}", grounding.block);
+    assert!(
+        grounding.block.contains("330 metres"),
+        "{}",
+        grounding.block
+    );
     assert!(!grounding.block.contains("tall in the south"));
     assert_eq!(grounding.sources.len(), 1);
     assert_eq!(grounding.sources[0].domain, "near.example");
@@ -308,7 +312,11 @@ async fn gather_reads_pages_and_falls_back_to_natural_order_without_an_embedder(
     .expect("grounded");
 
     assert!(!grounding.unavailable);
-    assert!(grounding.block.contains("276 metres"), "{}", grounding.block);
+    assert!(
+        grounding.block.contains("276 metres"),
+        "{}",
+        grounding.block
+    );
     assert!(grounding.block.contains("Snippet from the broken page."));
     assert_eq!(grounding.sources.len(), 2);
 
@@ -383,7 +391,11 @@ async fn gather_says_so_when_the_search_finds_nothing_usable() {
     .expect("a notice, not silence");
     assert!(grounding.unavailable);
     assert!(grounding.sources.is_empty());
-    assert!(grounding.block.contains("no usable results"), "{}", grounding.block);
+    assert!(
+        grounding.block.contains("no usable results"),
+        "{}",
+        grounding.block
+    );
 }
 
 #[allow(clippy::await_holding_lock)]
@@ -548,9 +560,15 @@ async fn finalize_answer_appends_the_fact_check_warning() {
         "How high is the tower?",
     )
     .await;
-    assert!(out.starts_with("The tower is 330 metres high [1]."), "{out}");
+    assert!(
+        out.starts_with("The tower is 330 metres high [1]."),
+        "{out}"
+    );
     assert!(out.contains("⚠ Not in the sources:"), "{out}");
-    assert!(out.contains("- It opened in 1950 — no source says so"), "{out}");
+    assert!(
+        out.contains("- It opened in 1950 — no source says so"),
+        "{out}"
+    );
     assert!(!out.contains("minor"), "{out}");
 }
 
@@ -564,7 +582,9 @@ async fn verify_uses_the_configured_model_when_running_else_the_answerer_and_fai
     on_chat(
         &server,
         "careful fact-checker",
-        completion(r#"{"notice":"","unsupported":[{"claim":"x","severity":"contradicted","reason":"r"}]}"#),
+        completion(
+            r#"{"notice":"","unsupported":[{"claim":"x","severity":"contradicted","reason":"r"}]}"#,
+        ),
     )
     .await;
     let vllm = VllmClient::new();
@@ -573,9 +593,17 @@ async fn verify_uses_the_configured_model_when_running_else_the_answerer_and_fai
 
     // a verifier that is running is the one asked
     cfg.verifier_model = Some("judge-model".to_string());
-    let note = verify(&cfg, &switchboard, &vllm, &answerer(&server), "A.", EVIDENCE, "d")
-        .await
-        .expect("a warning");
+    let note = verify(
+        &cfg,
+        &switchboard,
+        &vllm,
+        &answerer(&server),
+        "A.",
+        EVIDENCE,
+        "d",
+    )
+    .await
+    .expect("a warning");
     assert!(note.contains("could not be verified"), "{note}");
     let sent = server.received_requests().await.expect("recorded");
     let asked = sent
@@ -587,9 +615,17 @@ async fn verify_uses_the_configured_model_when_running_else_the_answerer_and_fai
     // one that is not running falls back to the answerer
     cfg.verifier_model = Some("absent-model".to_string());
     assert!(
-        verify(&cfg, &switchboard, &vllm, &answerer(&server), "A.", EVIDENCE, "d")
-            .await
-            .is_some()
+        verify(
+            &cfg,
+            &switchboard,
+            &vllm,
+            &answerer(&server),
+            "A.",
+            EVIDENCE,
+            "d"
+        )
+        .await
+        .is_some()
     );
     let sent = server.received_requests().await.expect("recorded");
     let last = sent
@@ -604,8 +640,16 @@ async fn verify_uses_the_configured_model_when_running_else_the_answerer_and_fai
     on_chat(&broken, "careful fact-checker", ResponseTemplate::new(500)).await;
     cfg.verifier_model = None;
     assert!(
-        verify(&cfg, &switchboard, &VllmClient::new(), &answerer(&broken), "A.", EVIDENCE, "d")
-            .await
-            .is_none()
+        verify(
+            &cfg,
+            &switchboard,
+            &VllmClient::new(),
+            &answerer(&broken),
+            "A.",
+            EVIDENCE,
+            "d"
+        )
+        .await
+        .is_none()
     );
 }

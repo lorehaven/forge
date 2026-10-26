@@ -200,7 +200,10 @@ async fn chat_json_returns_the_message_content_and_sends_the_schema() {
     assert_eq!(body["model"], "m");
     assert_eq!(body["stream"], false);
     assert_eq!(body["max_tokens"], 50);
-    assert_eq!(body["response_format"]["json_schema"]["name"], "search_plan");
+    assert_eq!(
+        body["response_format"]["json_schema"]["name"],
+        "search_plan"
+    );
 }
 
 #[quench_test::test]
@@ -375,7 +378,10 @@ async fn embeddings_reject_a_count_mismatch_a_refusal_and_a_garbled_body() {
         )
         .await
         .expect_err("one vector for two inputs");
-    assert!(err.to_string().contains("1 embeddings for 2 inputs"), "{err}");
+    assert!(
+        err.to_string().contains("1 embeddings for 2 inputs"),
+        "{err}"
+    );
 
     let refused = MockServer::start().await;
     mount(
