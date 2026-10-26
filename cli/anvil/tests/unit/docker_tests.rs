@@ -376,3 +376,121 @@ fn process_all_packages_is_a_no_op_success_for_an_empty_config() {
     let result = process_all_packages(&config, |_| Ok(()), "test-op");
     assert!(result.is_ok());
 }
+
+/// What the Dockerfile `COPY`s out of its builder stage from the package's own directory, with the build
+/// arguments filled in: `config`, and `i18n` (or whatever `RESOURCE_DIR` says).
+fn copied_package_dirs(
+    dockerfile: &str,
+    build_args: &std::collections::BTreeMap<String, String>,
+) -> Vec<String> {
+    let default_of = |name: &str| {
+        dockerfile.lines().find_map(|line| {
+            line.trim()
+                .strip_prefix(&format!("ARG {name}="))
+                .map(|value| value.trim().trim_matches('"').to_string())
+        })
+    };
+    let marker = "${RESOURCES_PATH}/";
+    dockerfile
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("COPY --from=builder"))
+        .filter_map(|line| {
+            let after = line.split(marker).nth(1)?;
+            let dir = after.split_whitespace().next()?;
+            Some(
+                match dir
+                    .strip_prefix("${")
+                    .and_then(|rest| rest.strip_suffix('}'))
+                {
+                    Some(name) => build_args.get(name).cloned().or_else(|| default_of(name))?,
+                    None => dir.to_string(),
+                },
+            )
+        })
+        .collect()
+}
+
+#[quench_test::test]
+fn every_image_the_estate_builds_has_the_directories_its_dockerfile_copies() {
+    let _guard = stable_cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = root.canonicalize().expect("the workspace root");
+    let config: Config = quench_serde::toml::from_str(
+        &std::fs::read_to_string(root.join(".anvil.toml")).expect("the estate's .anvil.toml"),
+    )
+    .expect("a valid .anvil.toml");
+
+    let metadata = anvil::cargo_meta::cargo_metadata().expect("cargo metadata");
+    let packages = anvil::cargo_meta::workspace_packages(&metadata).expect("workspace packages");
+
+    // What a commit would contain: tracked files and new ones that are not ignored. Git keeps no empty
+    // directory, so a directory that holds nothing is not there in the checkout an image is built from.
+    let listed = std::process::Command::new("git")
+        .current_dir(&root)
+        .args(["ls-files", "--cached", "--others", "--exclude-standard"])
+        .output()
+        .expect("git ls-files");
+    assert!(listed.status.success(), "git ls-files failed");
+    let files: Vec<String> = String::from_utf8_lossy(&listed.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect();
+
+    let mut missing = Vec::new();
+    for module in config.docker.modules.values() {
+        for package in &module.packages {
+            let dockerfile = get_dockerfile_for_package(&config, package).expect("a Dockerfile");
+            let text = std::fs::read_to_string(root.join(&dockerfile))
+                .unwrap_or_else(|e| panic!("{dockerfile}: {e}"));
+            let args = get_build_args_for_package(&config, package).expect("build args");
+            let directory = packages
+                .iter()
+                .find(|p| &p.name == package)
+                .unwrap_or_else(|| panic!("{package} is not a workspace member"))
+                .relative_dir(&root)
+                .expect("the package directory");
+
+            for copied in copied_package_dirs(&text, &args) {
+                let prefix = format!("{}/{copied}/", directory.display());
+                if !files.iter().any(|file| file.starts_with(&prefix)) {
+                    missing.push(format!(
+                        "{package}: {dockerfile} copies {prefix}, which holds no committed file \
+                         (add a `.gitkeep` if it is meant to be empty)"
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "image builds would fail:\n{}",
+        missing.join("\n")
+    );
+}
+
+#[quench_test::test]
+fn the_copied_directories_follow_the_dockerfile_and_the_packages_build_args() {
+    let dockerfile = "ARG RESOURCE_DIR=i18n\n\
+        COPY --from=builder --chown=999:999 /usr/src/app/${RESOURCES_PATH}/config ./config\n\
+        COPY --from=builder --chown=999:999 /usr/src/app/${RESOURCES_PATH}/${RESOURCE_DIR} ./${RESOURCE_DIR}\n\
+        COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/${PROJECT_NAME} ./service\n";
+    let none = std::collections::BTreeMap::new();
+    assert_eq!(copied_package_dirs(dockerfile, &none), ["config", "i18n"]);
+    let migrations =
+        std::collections::BTreeMap::from([("RESOURCE_DIR".to_string(), "migrations".to_string())]);
+    assert_eq!(
+        copied_package_dirs(dockerfile, &migrations),
+        ["config", "migrations"]
+    );
+    // a Dockerfile that copies a fixed directory and no config
+    assert_eq!(
+        copied_package_dirs(
+            "COPY --from=builder /usr/src/app/${RESOURCES_PATH}/i18n ./i18n\n",
+            &none
+        ),
+        ["i18n"]
+    );
+}
