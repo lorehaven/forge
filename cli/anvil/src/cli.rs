@@ -197,6 +197,8 @@ pub enum Commands {
         #[command(subcommand)]
         command: ConfigCommands,
     },
+    /// Print a registry bearer token, for Cargo's `credential-provider = [\"cargo:token-from-stdout\", \"anvil\", \"registry-token\"]`
+    RegistryToken,
     /// Mint an application token and store it in the git-ignored `.anvil.secret.toml`
     Login {
         /// Gatehouse including its base path (defaults to the one already stored)

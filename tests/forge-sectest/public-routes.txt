@@ -1,0 +1,74 @@
+# Reviewed anonymous routes: `service METHOD pattern`, one per line.
+# Every line is a deliberate decision that the route needs no credentials. Derived from the 2026-10-26
+# nightly (routes that answered 200/302/308 to a caller with nothing); anything new shows up as an `auth`
+# finding until it is added here after review.
+#
+# Deliberately NOT listed: warehouse `/v2/*` (registry protocol, must always require a token) and routes
+# that answered 400/422 (the probe was malformed, so the scan reports them as inconclusive instead).
+#
+# By design: /health*, swagger-ui and the root redirect on every service, gatehouse's login/registration/
+# password-reset pages and /.well-known/jwks.json, and each UI's /ui/status.
+conveyor GET /
+conveyor GET /health
+conveyor GET /health/live
+conveyor GET /health/ready
+conveyor GET /swagger-ui
+conveyor GET /swagger-ui/
+conveyor GET /ui/status
+daybook GET /
+daybook GET /health
+daybook GET /health/live
+daybook GET /health/ready
+daybook GET /swagger-ui
+daybook GET /swagger-ui/
+gantry GET /
+gantry GET /health
+gantry GET /health/live
+gantry GET /health/ready
+gantry GET /swagger-ui
+gantry GET /swagger-ui/
+gantry GET /ui/status
+gatehouse GET /
+gatehouse GET /.well-known/jwks.json
+gatehouse GET /health
+gatehouse GET /health/live
+gatehouse GET /health/ready
+gatehouse GET /swagger-ui
+gatehouse GET /swagger-ui/
+gatehouse GET /ui/forgot-password
+gatehouse GET /ui/forgot-password/
+gatehouse GET /ui/login
+gatehouse GET /ui/login/
+gatehouse GET /ui/register
+gatehouse GET /ui/register/
+gatehouse GET /ui/resend-verification
+gatehouse GET /ui/resend-verification/
+gatehouse GET /ui/status
+sage GET /
+sage GET /health
+sage GET /health/live
+sage GET /health/ready
+sage GET /swagger-ui
+sage GET /swagger-ui/
+sage GET /ui/status
+switchboard GET /
+switchboard GET /health
+switchboard GET /health/live
+switchboard GET /health/ready
+switchboard GET /swagger-ui
+switchboard GET /swagger-ui/
+switchboard GET /ui/status
+warehouse GET /
+warehouse GET /health
+warehouse GET /health/live
+warehouse GET /health/ready
+warehouse GET /swagger-ui
+warehouse GET /swagger-ui/
+warehouse GET /ui/status
+workbench GET /
+workbench GET /health
+workbench GET /health/live
+workbench GET /health/ready
+workbench GET /swagger-ui
+workbench GET /swagger-ui/
+workbench GET /ui/status

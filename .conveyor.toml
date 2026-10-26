@@ -11,11 +11,13 @@ when  = "event != 'schedule'"
 [[stage.job]]
 name  = "format"
 image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL"]
 steps = [{ anvil = "format --check" }]
 
 [[stage.job]]
 name  = "lint"
 image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL"]
 # `--json` so the scan summary page (`crate::scan`) can parse clippy's own
 # structured diagnostics instead of scraping this step's human log - see
 # ANVIL-3. `deny`'s own step stays plain text: nothing reads its log back.
@@ -24,6 +26,7 @@ steps = [{ anvil = "lint --all-targets --deny-warnings --json" }]
 [[stage.job]]
 name  = "deps"
 image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL"]
 steps = [
   { anvil = "machete --json" },
   { anvil = "audit --json" },
@@ -33,6 +36,7 @@ steps = [
 [[stage.job]]
 name  = "semver-check"
 image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL"]
 steps = [
   # conveyor's checkout is usually a shallow, single-commit clone (see
   # workspace/checkout.rs) - `anvil semver-check`'s default baseline is the
@@ -57,6 +61,7 @@ needs = ["check"]
 [[stage.job]]
 name  = "workspace"
 image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL"]
 steps = [{ anvil = "build --all" }]
 
 # ---------------------------------------------------------------- test
@@ -68,6 +73,7 @@ needs = ["build"]
 [[stage.job]]
 name  = "unit"
 image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL"]
 env   = { RUST_BACKTRACE = "1" }
 # The tests run on quench-test's own harness, which leaves a JSON/HTML report of the whole run in
 # target/debug/quench-test; conveyor keeps `summary.json` and `index.html` from there as artifacts and shows the
@@ -78,6 +84,7 @@ steps = [{ anvil = "test --all" }]
 [[stage.job]]
 name      = "coverage"
 image     = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL"]
 env       = { RUST_BACKTRACE = "1" }
 # `--lcov`/`--text` are separate report formats - one invocation can only
 # produce one, so the run that actually exercises the tests is kept
@@ -99,8 +106,8 @@ artifacts = ["lcov.info"]
 # The live scan is READ-ONLY (no FORGE_SECTEST_ACTIVE): anonymous requests, forged credentials, traversal
 # and protocol probes against the running services over cluster DNS, at 20 requests/second, ~10 minutes.
 # Give it a service-account token (FORGE_SECTEST_TOKEN, as a conveyor secret) to test behind the auth wall,
-# and tighten FAIL_ON to "medium" once tests/forge-sectest/public-routes.txt records the reviewed anonymous
-# routes (`forge-sectest scan --write-baseline`).
+# FAIL_ON is "medium": tests/forge-sectest/public-routes.txt records the reviewed anonymous routes, so a new
+# unreviewed one fails the night until it is added there (or protected).
 [[stage]]
 name = "security"
 when = "event == 'schedule'"
@@ -108,8 +115,9 @@ when = "event == 'schedule'"
 [[stage.job]]
 name    = "nightly"
 image   = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL"]
 timeout = 3600
-env = { RUST_BACKTRACE = "1", FORGE_SECTEST_FAIL_ON = "high", FORGE_SECTEST_TARGETS = "gatehouse=http://gatehouse.forge.svc.cluster.local/gatehouse warehouse=http://warehouse.forge.svc.cluster.local/warehouse conveyor=http://conveyor.forge.svc.cluster.local/conveyor sage=http://sage.forge.svc.cluster.local/sage switchboard=http://switchboard.forge.svc.cluster.local/switchboard workbench=http://workbench.forge.svc.cluster.local/workbench gantry=http://gantry.forge.svc.cluster.local/gantry daybook=http://daybook.forge.svc.cluster.local/daybook" }
+env = { RUST_BACKTRACE = "1", FORGE_SECTEST_FAIL_ON = "medium", FORGE_SECTEST_TARGETS = "gatehouse=http://gatehouse.forge.svc.cluster.local/gatehouse warehouse=http://warehouse.forge.svc.cluster.local/warehouse conveyor=http://conveyor.forge.svc.cluster.local/conveyor sage=http://sage.forge.svc.cluster.local/sage switchboard=http://switchboard.forge.svc.cluster.local/switchboard workbench=http://workbench.forge.svc.cluster.local/workbench gantry=http://gantry.forge.svc.cluster.local/gantry daybook=http://daybook.forge.svc.cluster.local/daybook" }
 steps = [
   { run = "export QUENCH_TEST_REPORT_DIR=$PWD/target/security; rc=0; cargo test -p forge-sectest --test scanners || rc=1; cargo test -p forge-sectest --features gate --test gate -- --test-threads=1 || rc=1; cargo test -p forge-sectest --features gate --test live -- --test-threads=1 || rc=1; exit $rc" },
 ]

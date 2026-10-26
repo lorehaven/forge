@@ -72,6 +72,41 @@ pub fn registry_token_env(
     Ok(Some((var, gatehouse_auth::bearer(&token))))
 }
 
+/// Stored credentials, or - for a CI job with no secret file - `ANVIL_APP_TOKEN` and
+/// `ANVIL_GATEHOUSE_URL` from the environment.
+pub fn credentials_from(
+    dir: &Path,
+    env: impl Fn(&str) -> Option<String>,
+) -> Result<Option<Credentials>> {
+    let from_env = |name: &str| {
+        env(name)
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    };
+    if let (Some(app_token), Some(gatehouse_url)) =
+        (from_env("ANVIL_APP_TOKEN"), from_env("ANVIL_GATEHOUSE_URL"))
+    {
+        return Ok(Some(Credentials {
+            gatehouse_url,
+            app_token,
+        }));
+    }
+    gatehouse_auth::load(TOOL, dir)
+}
+
+/// The `Authorization` value Cargo sends to a private registry, as a Cargo credential provider
+/// prints it: `Bearer <short-lived access token>`.
+///
+/// # Errors
+///
+/// When there are no credentials, or Gatehouse refuses or cannot be reached.
+pub fn registry_token(dir: &Path, env: impl Fn(&str) -> Option<String>) -> Result<String> {
+    let credentials = credentials_from(dir, env)?.context(
+        "no credentials: run `anvil login`, or set ANVIL_APP_TOKEN and ANVIL_GATEHOUSE_URL",
+    )?;
+    Ok(gatehouse_auth::bearer(&exchange(&credentials)?))
+}
+
 fn exchange(credentials: &Credentials) -> Result<String> {
     gatehouse_auth::access_token(credentials)
         .context("could not get an access token from the stored application token")

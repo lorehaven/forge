@@ -138,6 +138,18 @@ gatehouse_url = "https://host/gatehouse"
 
 `[docker].registry` is only optional when every package sets its own `registries` override. Every Docker build always receives `PROJECT_NAME` and `RESOURCES_PATH` build args derived from the module/package name; `build_args` entries are appended after those, so a package can override `RESOURCES_PATH` if it genuinely needs a different one. This lets one parameterized Dockerfile serve many packages — prefer `build_args` over forking a Dockerfile for a one-line difference.
 
+### `anvil registry-token`
+
+Prints `Bearer <short-lived access token>` for the private registry, exchanging the stored application token (or, in CI, `ANVIL_APP_TOKEN` + `ANVIL_GATEHOUSE_URL` from the environment) the way `anvil release` does. It exists to be a Cargo credential provider, so every `cargo` call - anvil's or a pipeline's own - gets a fresh token only when the registry asks for one (`CRATES_REQUIRE_AUTH_FOR_READS=true` makes the sparse index say `auth-required`):
+
+```toml
+# ~/.cargo/config.toml, or the rust-builder image's /usr/local/cargo/config.toml
+[registries.ennor]
+credential-provider = ["cargo:token-from-stdout", "anvil", "registry-token"]
+```
+
+The secret file is looked up from the working directory upwards, so one `.anvil.secret.toml` in a parent of your checkouts serves them all.
+
 `[release].gatehouse_url` is optional: the Gatehouse (with its base path) that `anvil login` uses when `--gatehouse-url` is not given. It is not a secret, so it belongs here rather than in `.anvil.secret.toml`.
 
 `[release].commit_message_template` is optional; the line above is what an unset one already defaults to. It supports three placeholders, substituted against whichever packages a real run actually version-bumped: `{summary}` (the default's comma-joined `pkg vX.Y.Z, pkg2 vX.Y.Z`), `{changelog}` (the same packages as one `- pkg vX.Y.Z` bullet per line, for a multi-line commit body), and `{count}` (how many packages were bumped).

@@ -390,6 +390,11 @@ pub fn job_state(job: &Job) -> Element {
         )
 }
 
+/// The link a browser can follow: artifacts are stored under warehouse's in-cluster address.
+fn public_uri(uri: &str) -> String {
+    crate::scan::warehouse_store().map_or_else(|| uri.to_string(), |store| store.public_uri(uri))
+}
+
 fn artifacts_panel(artifacts: &[Artifact]) -> Element {
     let mut panel = div().class("panel").child(
         div()
@@ -402,7 +407,10 @@ fn artifacts_panel(artifacts: &[Artifact]) -> Element {
         list = list.child(
             div()
                 .class("artifact")
-                .child(a().attr("href", &artifact.uri).text(&artifact.name))
+                .child(
+                    a().attr("href", public_uri(&artifact.uri))
+                        .text(&artifact.name),
+                )
                 .child_opt(
                     artifact
                         .digest

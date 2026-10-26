@@ -87,3 +87,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release -p anvil -p riveter && \
     cp target/release/anvil target/release/riveter /usr/local/cargo/bin/ && \
     rm -rf /usr/src/app
+
+# Once the registry requires a token to read, Cargo asks `anvil registry-token` for one whenever it needs
+# it: a fresh short-lived bearer token each time, from the job's ANVIL_APP_TOKEN / ANVIL_GATEHOUSE_URL
+# secrets. Added only now, after anvil exists - the build above has to resolve crates without it (with
+# the CARGO_REGISTRIES_ENNOR_TOKEN build argument, if the registry already asks for one).
+RUN printf 'credential-provider = ["cargo:token-from-stdout", "anvil", "registry-token"]\n' >> /usr/local/cargo/config.toml

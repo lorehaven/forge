@@ -96,6 +96,26 @@ impl Endpoint for Hardened {
     }
 }
 
+/// A server-rendered UI: pages send callers without a session to the login page, and one page
+/// wants parameters before it looks at anything.
+struct Pages;
+
+#[async_trait]
+impl Endpoint for Pages {
+    async fn call(&self, req: Request) -> Response {
+        let response = match req.uri().path() {
+            "/ui/modal" if req.uri().query().is_none() => {
+                Response::text(StatusCode::BAD_REQUEST, "missing field `id`")
+            }
+            "/ui/home" | "/ui/modal" => {
+                Response::new(StatusCode::FOUND).header("location", "/ui/login")
+            }
+            _ => Response::not_found(),
+        };
+        response.header("x-content-type-options", "nosniff")
+    }
+}
+
 async fn serve(app: Arc<dyn Endpoint>) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -230,6 +250,38 @@ async fn every_check_flags_a_vulnerable_application() {
     assert!(
         has(&findings, "headers", Severity::Low, "VulnServer"),
         "Server version disclosure missed:\n{report}"
+    );
+}
+
+#[quench_test::test]
+async fn login_redirects_are_protection_and_rejected_probes_are_inconclusive() {
+    let port = serve(Arc::new(Pages)).await;
+    let service = "pages";
+    let target = Target::parse(service, &format!("http://127.0.0.1:{port}")).unwrap();
+    let routes = vec![
+        Route::new(service, "GET", "/ui/home"),
+        Route::new(service, "GET", "/ui/modal"),
+    ];
+    let mut opts = Options::new(vec![target], routes);
+    opts.rps = 2000;
+    let (findings, _) = scan::run(opts).await.unwrap();
+    let report = findings
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        findings.iter().all(|f| f.check != "tokens"),
+        "a redirect to login was reported as a failed denial:\n{report}"
+    );
+    assert!(
+        findings.iter().all(|f| f.severity <= Severity::Info),
+        "nothing here is a finding above info:\n{report}"
+    );
+    assert!(
+        has(&findings, "auth", Severity::Info, "/ui/modal"),
+        "the unprobed route should still be mentioned:\n{report}"
     );
 }
 

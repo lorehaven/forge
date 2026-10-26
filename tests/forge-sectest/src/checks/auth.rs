@@ -22,18 +22,28 @@ const LOGIN_HINTS: [&str; 6] = ["login", "authorize", "sso", "signin", "oauth", 
 #[derive(Debug, PartialEq, Eq)]
 enum Class {
     Protected,
+    /// 400/422: the request was rejected for its parameters, so whether auth guards the route is unknown.
+    Inconclusive,
     NotRouted,
     Public,
     ServerError,
+}
+
+/// A redirect whose target is a login or authorisation page: the page is behind auth.
+pub(crate) fn redirects_to_login(reply: &Reply) -> bool {
+    matches!(reply.status, 301 | 302 | 303 | 307 | 308) && {
+        let location = reply.header("location").unwrap_or("").to_ascii_lowercase();
+        LOGIN_HINTS.iter().any(|hint| location.contains(hint))
+    }
 }
 
 fn classify(reply: &Reply) -> Class {
     match reply.status {
         401 | 403 => Class::Protected,
         404 | 405 => Class::NotRouted,
+        400 | 422 => Class::Inconclusive,
         301 | 302 | 303 | 307 | 308 => {
-            let location = reply.header("location").unwrap_or("").to_ascii_lowercase();
-            if LOGIN_HINTS.iter().any(|hint| location.contains(hint)) {
+            if redirects_to_login(reply) {
                 Class::Protected
             } else {
                 Class::Public
@@ -48,6 +58,7 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Outcome {
     let mut findings = Vec::new();
     let mut protected = Vec::new();
     let (mut skipped, mut not_routed, mut total) = (0usize, 0usize, 0usize);
+    let mut inconclusive: Vec<String> = Vec::new();
 
     for route in ctx.routes_of(target) {
         if route.is_mutating() && !ctx.opts.active {
@@ -65,6 +76,7 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Outcome {
         match classify(&reply) {
             Class::Protected => protected.push(route.clone()),
             Class::NotRouted => not_routed += 1,
+            Class::Inconclusive => inconclusive.push(format!("{} {}", route.method, route.pattern)),
             Class::Public | Class::ServerError => {
                 let known = ctx
                     .opts
@@ -94,6 +106,27 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Outcome {
         }
     }
 
+    if !inconclusive.is_empty() {
+        let shown = inconclusive
+            .iter()
+            .take(8)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        let more = inconclusive.len().saturating_sub(8);
+        findings.push(Finding::new(
+            Severity::Info,
+            "auth",
+            &target.name,
+            "-",
+            "-",
+            format!(
+                "{} routes rejected the probe as malformed (400/422), so whether auth guards them is unknown - give them valid parameters to test: {shown}{}",
+                inconclusive.len(),
+                if more > 0 { format!(" and {more} more") } else { String::new() }
+            ),
+        ));
+    }
     if skipped > 0 {
         findings.push(Finding::new(
             Severity::Info,

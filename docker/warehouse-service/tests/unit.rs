@@ -24,6 +24,8 @@ mod files_storage_tests;
 mod middleware_auth_tests;
 #[path = "unit/middleware_limits_tests.rs"]
 mod middleware_limits_tests;
+#[path = "unit/middleware_registry_root_tests.rs"]
+mod middleware_registry_root_tests;
 #[path = "unit/routers_admin_crates_gc_tests.rs"]
 mod routers_admin_crates_gc_tests;
 #[path = "unit/routers_admin_docker_gc_tests.rs"]

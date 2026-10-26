@@ -57,3 +57,44 @@ fn registry_token_env_reports_an_unreachable_gatehouse() {
     let err = registry_token_env("ennor", dir.path(), |_| false).unwrap_err();
     assert!(err.to_string().contains("access token"));
 }
+
+#[quench_test::test]
+fn credentials_come_from_the_environment_when_there_is_no_secret_file() {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let env = |name: &str| match name {
+        "ANVIL_APP_TOKEN" => Some(" lht_ci \n".to_string()),
+        "ANVIL_GATEHOUSE_URL" => Some("https://host/gatehouse".to_string()),
+        _ => None,
+    };
+    let credentials = credentials_from(dir.path(), env).unwrap().unwrap();
+    assert_eq!(credentials.app_token, "lht_ci");
+    assert_eq!(credentials.gatehouse_url, "https://host/gatehouse");
+}
+
+#[quench_test::test]
+fn half_an_environment_falls_back_to_the_secret_file() {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let env = |name: &str| (name == "ANVIL_APP_TOKEN").then(|| "lht_ci".to_string());
+    assert!(credentials_from(dir.path(), env).unwrap().is_none());
+}
+
+#[quench_test::test]
+fn registry_token_without_credentials_says_how_to_get_some() {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let error = registry_token(dir.path(), |_| None)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("anvil login"), "{error}");
+    assert!(error.contains("ANVIL_APP_TOKEN"), "{error}");
+}
+
+#[quench_test::test]
+fn registry_token_reports_an_unreachable_gatehouse() {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let env = |name: &str| match name {
+        "ANVIL_APP_TOKEN" => Some("lht_ci".to_string()),
+        "ANVIL_GATEHOUSE_URL" => Some("http://127.0.0.1:1".to_string()),
+        _ => None,
+    };
+    assert!(registry_token(dir.path(), env).is_err());
+}

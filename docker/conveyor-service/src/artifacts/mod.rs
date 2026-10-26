@@ -78,6 +78,8 @@ impl std::fmt::Debug for Identity {
 #[derive(Debug, Clone)]
 pub struct WarehouseStore {
     base_url: String,
+    /// What a browser reaches warehouse at, when that is not `base_url` (which may be cluster-internal).
+    public_url: Option<String>,
     storage: String,
     identity: Identity,
     http: quench_client::transport::Client,
@@ -113,6 +115,9 @@ impl WarehouseStore {
 
         Some(Self {
             base_url: base_url.to_string(),
+            public_url: Some(quench_core::env::get_or("WAREHOUSE_PUBLIC_URL", "").trim())
+                .map(|url| url.trim_end_matches('/').to_string())
+                .filter(|url| !url.is_empty()),
             storage: quench_core::env::get_or("CONVEYOR_ARTIFACT_STORAGE", "artifacts"),
             identity,
             http: quench_client::transport::Client::builder()
@@ -129,6 +134,7 @@ impl WarehouseStore {
     pub fn new(base_url: &str, storage: &str, credentials: Option<(String, String)>) -> Self {
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
+            public_url: None,
             storage: storage.to_string(),
             identity: credentials.map_or(Identity::None, |(user, password)| {
                 Identity::Basic(user, password)
@@ -137,6 +143,22 @@ impl WarehouseStore {
                 .timeout(std::time::Duration::from_secs(30))
                 .build()
                 .unwrap_or_default(),
+        }
+    }
+
+    /// Links to artifacts start with `public_url` instead of the address this store talks to.
+    #[must_use]
+    pub fn with_public_url(mut self, public_url: &str) -> Self {
+        self.public_url = Some(public_url.trim_end_matches('/').to_string());
+        self
+    }
+
+    /// `uri` as a browser can open it: the stored address, with the public host in place of the internal one.
+    #[must_use]
+    pub fn public_uri(&self, uri: &str) -> String {
+        match (&self.public_url, uri.strip_prefix(&self.base_url)) {
+            (Some(public), Some(rest)) => format!("{public}{rest}"),
+            _ => uri.to_string(),
         }
     }
 

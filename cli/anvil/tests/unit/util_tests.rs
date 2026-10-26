@@ -1,5 +1,6 @@
 use anvil::util::{
-    log_file_path, print_log_tail, run_command, run_command_json, run_command_streamed, wants_json,
+    log_file_path, print_log_tail, run_command, run_command_json, run_command_streamed,
+    stdout_is_data, wants_json,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -166,4 +167,23 @@ fn wants_json_is_false_without_the_flag() {
     assert!(!wants_json(&args(&["anvil", "lint"])));
     assert!(!wants_json(&args(&["anvil", "--help"])));
     assert!(!wants_json(&args(&["anvil"])));
+}
+
+#[quench_test::test]
+fn stdout_is_data_for_json_and_for_the_registry_token() {
+    let args = |a: &[&str]| a.iter().map(ToString::to_string).collect::<Vec<_>>();
+    assert!(stdout_is_data(&args(&["anvil", "lint", "--json"])));
+    assert!(stdout_is_data(&args(&["anvil", "registry-token"])));
+    assert!(stdout_is_data(&args(&[
+        "anvil",
+        "--silent",
+        "registry-token"
+    ])));
+    assert!(!stdout_is_data(&args(&["anvil", "lint"])));
+    assert!(!stdout_is_data(&args(&[
+        "anvil",
+        "build",
+        "-p",
+        "registry-token"
+    ])));
 }

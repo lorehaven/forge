@@ -418,3 +418,32 @@ fn the_runner_is_asked_to_hand_back_the_security_report_too() {
     assert!(exports.contains(&"target/security/summary.json".to_string()));
     assert!(exports.contains(&"target/security/index.html".to_string()));
 }
+
+#[quench_test::test]
+fn public_uri_swaps_the_internal_host_for_the_public_one() {
+    let store = WarehouseStore::new(
+        "http://warehouse.forge.svc.cluster.local/warehouse/",
+        "artifacts",
+        None,
+    )
+    .with_public_url("https://ennor.ddns.net/warehouse/");
+    assert_eq!(
+        store.public_uri("http://warehouse.forge.svc.cluster.local/warehouse/api/v1/files/artifacts/file?path=a%2Fb"),
+        "https://ennor.ddns.net/warehouse/api/v1/files/artifacts/file?path=a%2Fb"
+    );
+}
+
+#[quench_test::test]
+fn public_uri_leaves_other_addresses_and_unconfigured_stores_alone() {
+    let plain = WarehouseStore::new("http://warehouse/warehouse", "artifacts", None);
+    assert_eq!(
+        plain.public_uri("http://warehouse/warehouse/x"),
+        "http://warehouse/warehouse/x"
+    );
+
+    let public = plain.with_public_url("https://ennor.ddns.net/warehouse");
+    assert_eq!(
+        public.public_uri("https://elsewhere/x"),
+        "https://elsewhere/x"
+    );
+}

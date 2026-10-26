@@ -5,6 +5,7 @@
 //! single 2xx anywhere is a critical authentication bypass.
 
 use crate::census::Route;
+use crate::checks::auth;
 use crate::finding::{Finding, Severity};
 use crate::scan::Ctx;
 use crate::wire::{Probe, Target};
@@ -149,6 +150,10 @@ pub async fn run(ctx: &Ctx, target: &Target, protected: &[Route]) -> Vec<Finding
             let Some(reply) = ctx.send(target, &probe).await else {
                 continue;
             };
+            // A page answering with a redirect to login is refusing, the way a browser is told to.
+            if auth::redirects_to_login(&reply) {
+                continue;
+            }
             let (severity, what) = match reply.status {
                 401 | 403 | 404 | 405 => continue,
                 200..=299 => (

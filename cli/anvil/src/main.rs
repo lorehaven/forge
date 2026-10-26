@@ -1,11 +1,11 @@
 use anvil::cli::{Cli, Commands, ConfigCommands, DockerCommands};
 use anvil::commands;
 use anvil::config;
-use anvil::util::{OutputMode, set_output_mode, wants_json};
+use anvil::util::{OutputMode, set_output_mode, stdout_is_data};
 use quench_args::Parser;
 use quench_cli::require::require_binary;
 use quench_cli::terminal::print_box_banner;
-use quench_core::Result;
+use quench_core::{Context, Result};
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -13,11 +13,11 @@ fn main() -> Result<()> {
     // A `--json` command's stdout is meant to be piped straight to a
     // consumer - keep anvil's own banner off it, same reasoning as
     // `run_command_json` skipping the status lines around the command itself.
-    if !wants_json(&args) {
+    if !stdout_is_data(&args) {
         print_box_banner("Anvil CLI", "workspace build and release");
     }
     require_binary("cargo", "anvil shells out to it for nearly every command")?;
-    let config = config::load_config(wants_json(&args))?;
+    let config = config::load_config(stdout_is_data(&args))?;
     let cli = Cli::parse();
 
     set_output_mode(if cli.silent {
@@ -101,6 +101,13 @@ fn main() -> Result<()> {
             scope,
             days,
         } => commands::login::login(&config, gatehouse_url, username, name, scope, days)?,
+        Commands::RegistryToken => {
+            let dir = std::env::current_dir().context("finding the working directory")?;
+            println!(
+                "{}",
+                commands::login::registry_token(&dir, |name| std::env::var(name).ok())?
+            );
+        }
         Commands::Config { command } => match command {
             ConfigCommands::Check => commands::config_check::check()?,
         },

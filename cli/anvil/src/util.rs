@@ -313,3 +313,15 @@ pub fn print_log_tail(log_path: &PathBuf) {
 pub fn wants_json(args: &[String]) -> bool {
     args.iter().any(|arg| arg == "--json")
 }
+
+/// Whether stdout is data for another program - a `--json` command's output, or the token
+/// `registry-token` hands to Cargo - so anvil must print nothing of its own there.
+#[must_use]
+pub fn stdout_is_data(args: &[String]) -> bool {
+    wants_json(args)
+        || args
+            .iter()
+            .skip(1)
+            .find(|arg| !arg.starts_with('-'))
+            .is_some_and(|command| command == "registry-token")
+}

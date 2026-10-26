@@ -13,6 +13,7 @@ use std::sync::Arc;
 use warehouse_service::docker_token::DockerTokenConfig;
 use warehouse_service::middleware::auth::WarehouseAuth;
 use warehouse_service::middleware::limits::WarehouseLimits;
+use warehouse_service::middleware::registry_root::RegistryRootOnly;
 use warehouse_service::routers;
 
 /// Sends `/v2/*` and `/token` to the raw docker router (fixed at the server root by protocol);
@@ -92,6 +93,8 @@ async fn main() -> std::io::Result<()> {
         routers::crates::reads_require_auth(),
     );
     let base_path_app = routers::admin::wrap_auth(base_path_app, jwt_config, &base_path);
+    // The registry protocol exists at the root only; route discovery also mounts it under BASE_PATH, unauthenticated.
+    let base_path_app = wrap(base_path_app, RegistryRootOnly::new(&base_path));
 
     // WarehouseAuth self-restricts to /v2/* and passes /token through, so wrapping the whole tree is safe.
     let loader = quench_config::ConfigLoader::new("WAREHOUSE");
