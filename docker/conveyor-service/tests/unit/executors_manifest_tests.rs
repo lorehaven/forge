@@ -664,3 +664,92 @@ fn the_deployment_can_tune_how_long_pods_and_services_get() {
         "an unreadable value falls back"
     );
 }
+
+// ---------------------------------------------------------------------------
+// This repository's own pipeline, as a pod
+// ---------------------------------------------------------------------------
+
+/// The repository's `coverage` job, from the file on disk to the Job conveyor would create: the parser, the
+/// job as the scheduler hands it to an executor, and the manifest.
+#[quench_test::test]
+fn the_coverage_job_of_this_repository_becomes_a_pod_with_a_database_beside_its_steps() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.conveyor.toml");
+    let source = std::fs::read_to_string(&path).expect("the repository's .conveyor.toml");
+    let pipeline = conveyor_service::pipeline::parse(&source).expect("it parses");
+    let job = pipeline
+        .stages
+        .iter()
+        .flat_map(|stage| &stage.jobs)
+        .find(|job| job.name == "coverage")
+        .expect("a coverage job");
+
+    let spec = JobSpec {
+        id: "0f8f0e0e-1111-2222-3333-444455556666".to_string(),
+        name: "test/coverage".to_string(),
+        steps: job.steps.clone(),
+        env: job.env.clone(),
+        timeout: Duration::from_mins(60),
+        image: job.image.clone(),
+        source: spec().source,
+        redactor: Redactor::none(),
+        services: job.services.clone(),
+        exports: Vec::new(),
+    };
+    let built = build(&spec);
+    let pod = &built.job["spec"]["template"]["spec"];
+
+    // the checkout, then the database, then the steps
+    let init: Vec<_> = init_containers(&built)
+        .iter()
+        .map(|c| c["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(init, ["checkout", "postgres"]);
+    let database = &init_containers(&built)[1];
+    assert_eq!(database["restartPolicy"], "Always");
+    assert_eq!(database["image"], "pgvector/pgvector:pg18");
+    assert_eq!(
+        database["startupProbe"]["exec"]["command"][2],
+        "pg_isready -h 127.0.0.1 -U postgres"
+    );
+    assert_eq!(pod["containers"].as_array().unwrap().len(), 1);
+
+    // every service's test database URL reaches the steps through the Secret, which the steps container
+    // reads whole - not as environment entries written into the pod spec
+    let secret = built
+        .secret
+        .as_ref()
+        .expect("the job's environment is a Secret");
+    for service in [
+        "CONVEYOR",
+        "DAYBOOK",
+        "FOUNDRY",
+        "GANTRY",
+        "GATEHOUSE",
+        "SAGE",
+        "WAREHOUSE",
+        "WORKBENCH",
+    ] {
+        let key = format!("{service}_TEST_DATABASE_URL");
+        let url = secret["stringData"][&key]
+            .as_str()
+            .unwrap_or_else(|| panic!("{key} is not in the Secret"));
+        assert!(url.contains("@127.0.0.1:5432/"), "{key}: {url}");
+    }
+    let steps = &pod["containers"][0];
+    assert!(
+        steps.get("env").is_none(),
+        "no inline environment on the steps container"
+    );
+    assert!(steps["envFrom"][0]["secretRef"]["name"].is_string());
+
+    // the schema is applied before the tests, by the first step
+    let script = steps["args"][0].as_str().expect("the steps script");
+    let apply = script.find("foundry-service").expect("the apply step");
+    let coverage = script
+        .find("cargo llvm-cov --workspace")
+        .expect("the coverage step");
+    assert!(
+        apply < coverage,
+        "the database is filled before the tests run"
+    );
+}

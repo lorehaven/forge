@@ -765,3 +765,76 @@ fn an_unknown_service_key_is_rejected_rather_than_ignored() {
     ));
     assert!(error.contains("volumes"), "{error}");
 }
+
+// ---------------------------------------------------------------------------
+// This repository's own pipeline
+// ---------------------------------------------------------------------------
+
+/// A typo in `.conveyor.toml` fails the pipeline for every push, and only a push would say so.
+#[quench_test::test]
+fn this_repositorys_own_pipeline_parses_and_gives_the_coverage_job_a_database() {
+    use conveyor_pipeline::spec::Readiness;
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.conveyor.toml");
+    let source = std::fs::read_to_string(&path).expect("the repository's .conveyor.toml");
+    let spec = parse(&source).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+
+    let coverage = spec
+        .stages
+        .iter()
+        .flat_map(|stage| &stage.jobs)
+        .find(|job| job.name == "coverage")
+        .expect("a coverage job");
+
+    let database = coverage
+        .services
+        .iter()
+        .find(|service| service.name == "postgres")
+        .expect("the coverage job runs a database beside its steps");
+    // checked over TCP, which the image's temporary start-up server does not answer on
+    assert!(
+        matches!(&database.ready, Readiness::Command(command) if command.contains("-h 127.0.0.1")),
+        "{:?}",
+        database.ready
+    );
+
+    // every service with database-backed tests is pointed at it
+    for service in [
+        "CONVEYOR",
+        "DAYBOOK",
+        "FOUNDRY",
+        "GANTRY",
+        "GATEHOUSE",
+        "SAGE",
+        "WAREHOUSE",
+        "WORKBENCH",
+    ] {
+        let url = coverage
+            .env
+            .get(&format!("{service}_TEST_DATABASE_URL"))
+            .unwrap_or_else(|| panic!("{service}_TEST_DATABASE_URL is not set"));
+        assert!(url.contains("@127.0.0.1:5432/"), "{service}: {url}");
+    }
+
+    // the schema is installed before the tests run
+    let first = coverage.steps.first().expect("steps").command().to_string();
+    assert!(
+        first.contains("foundry-service") && first.contains("apply"),
+        "{first}"
+    );
+    for module in [
+        "conveyor",
+        "daybook",
+        "gantry",
+        "gatehouse",
+        "sage",
+        "switchboard",
+        "warehouse",
+        "workbench",
+    ] {
+        assert!(
+            first.contains(&format!("--install {module}")),
+            "{module} in {first}"
+        );
+    }
+}

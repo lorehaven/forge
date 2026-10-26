@@ -85,18 +85,34 @@ steps = [{ anvil = "test --all" }]
 name      = "coverage"
 image     = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
 secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL"]
-env       = { RUST_BACKTRACE = "1" }
+# The services' integration tests skip themselves unless their `<SERVICE>_TEST_DATABASE_URL` points at a
+# database with the module installed. This job gives them one: a Postgres beside the steps (below), which
+# `foundry-service apply` fills first. Without it they would not run here and their code would count as
+# uncovered. 127.0.0.1, not `localhost`: a name can resolve to ::1, which the database is not listening on.
+env       = { RUST_BACKTRACE = "1", CONVEYOR_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", DAYBOOK_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", FOUNDRY_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", GANTRY_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", GATEHOUSE_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", SAGE_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", WAREHOUSE_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", WORKBENCH_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres" }
 # `--lcov`/`--text` are separate report formats - one invocation can only
 # produce one, so the run that actually exercises the tests is kept
 # report-less and the two reports are regenerated from its profile data
 # instead of re-running everything twice. The plain `report` (no format
 # flag) is the human table `crate::scan::parse_coverage` reads.
 steps = [
+  # Every module the tests use, one `--install` each; the modules they depend on come with them.
+  { run = "cargo run -q -p foundry-service -- apply --catalog docker/foundry-service/migrations --database-url postgres://postgres:postgres@127.0.0.1:5432/postgres --install conveyor --install daybook --install gantry --install gatehouse --install sage --install switchboard --install warehouse --install workbench" },
   { run = "cargo llvm-cov --workspace --no-report" },
   { run = "cargo llvm-cov report --lcov --output-path lcov.info" },
   { run = "cargo llvm-cov report" },
 ]
 artifacts = ["lcov.info"]
+
+# A throwaway database for this job alone. It is a sidecar in the job's pod, so the steps reach it on
+# 127.0.0.1 and it is gone with the pod; two runs never share one. The check goes over TCP on purpose: the
+# image first runs a temporary server that listens only on a socket, and a check through the socket would
+# let the steps start before the real one is up.
+[[stage.job.service]]
+name  = "postgres"
+image = "pgvector/pgvector:pg18"
+env   = { POSTGRES_PASSWORD = "postgres" }
+ready = "pg_isready -h 127.0.0.1 -U postgres"
 
 # ---------------------------------------------------------------- security (nightly)
 # Started by the clock (`on.schedule`), never by a push. One job, one report: supply-chain and static stages,
