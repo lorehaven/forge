@@ -1,0 +1,13 @@
+[[migrations]]
+id = "0009-run-stages"
+author = "conveyor-service"
+since = "0.1.0"
+
+# The stages a run was asked to be limited to ("run with parameters"): a JSON array of stage names, or NULL
+# for the whole pipeline. It lives on the run, not in the request, so a restart carries the same selection
+# and the run page can say what was chosen.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.runs
+    ADD COLUMN IF NOT EXISTS stages TEXT;
+"""

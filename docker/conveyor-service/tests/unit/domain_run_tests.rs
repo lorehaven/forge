@@ -21,6 +21,7 @@ fn run_at(git_ref: &str, sha: &str) -> Run {
         attempt: 0,
         error: None,
         resumed_from: None,
+        stages: None,
     }
 }
 

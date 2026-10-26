@@ -197,3 +197,21 @@ fn credential_sets_git_username_does_not_clobber_the_login_username() {
     };
     assert_eq!(args.git_username, "x-access-token");
 }
+
+#[quench_test::test]
+fn stage_can_be_repeated() {
+    let cli = Cli::try_parse_from([
+        "conveyor",
+        "run",
+        "lorehaven/forge",
+        "--stage",
+        "security",
+        "--stage",
+        "check,lint",
+    ])
+    .unwrap();
+    let Commands::Run(args) = cli.command else {
+        panic!("expected `run`");
+    };
+    assert_eq!(args.stages, ["security", "check,lint"]);
+}

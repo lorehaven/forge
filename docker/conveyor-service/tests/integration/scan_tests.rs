@@ -22,6 +22,7 @@ fn new_run(repo_id: &str, sha: &str) -> NewRun {
         message: Some("a commit".to_string()),
         delivery_id: None,
         resumed_from: None,
+        stages: None,
     }
 }
 
@@ -364,4 +365,250 @@ async fn the_report_page_is_not_found_without_a_stored_report() {
             .await;
         assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{path}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Each check comes from the newest run that produced it - not from the newest run
+// ---------------------------------------------------------------------------
+
+const TESTS_JSON: &str = r#"{"duration_ms": 1000, "summary": {"total": 3, "passed": 3, "failed": 0, "skipped": 0}, "suites": []}"#;
+const SECURITY_JSON: &str = r#"{"duration_ms": 5000, "summary": {"total": 4, "passed": 3, "failed": 1, "skipped": 0},
+    "suites": [{"name": "static", "cases": [{"name": "secrets", "status": "failed", "message": "a private key"}]}]}"#;
+
+/// A run of `trigger` with one job, queued after a short pause so runs order the way they were made.
+async fn make_run(
+    db: &quench_db::prelude::Db,
+    repo_id: &str,
+    trigger: Trigger,
+    stage: &str,
+    name: &str,
+) -> (conveyor_service::domain::Run, conveyor_service::domain::Job) {
+    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+    let mut new = new_run(repo_id, SHA);
+    new.trigger = trigger;
+    let run = queue::enqueue(db, &new)
+        .await
+        .expect("enqueue")
+        .run()
+        .clone();
+    let jobs = queue::create_jobs(
+        db,
+        &run.id,
+        &[conveyor_service::scheduler::queue::PlannedJob {
+            stage: stage.to_string(),
+            name: name.to_string(),
+            needs: vec![],
+            status: Status::Success,
+            error: None,
+            reused_from_run: None,
+        }],
+    )
+    .await
+    .expect("create job");
+    (run, jobs[0].clone())
+}
+
+/// Gives a job the lint/machete/audit steps and logs a quality run leaves.
+async fn leave_quality_results(db: &quench_db::prelude::Db, job: &conveyor_service::domain::Job) {
+    let t0 = Time::now();
+    queue::record_steps(db, &job.id, &anvil_steps(t0))
+        .await
+        .expect("steps");
+    queue::append_logs(db, &job.id, &anvil_logs(t0))
+        .await
+        .expect("logs");
+}
+
+async fn leave_artifact(
+    db: &quench_db::prelude::Db,
+    server: &quench_test::mock::MockServer,
+    run: &conveyor_service::domain::Run,
+    job: &conveyor_service::domain::Job,
+    name: &str,
+    body: Option<&str>,
+) {
+    use quench_test::mock::matchers::{method, path, query_param};
+    use quench_test::mock::{Mock, ResponseTemplate};
+
+    let remote = format!("conveyor/{}/{}/{name}", run.id, job.id);
+    if let Some(body) = body {
+        Mock::given(method("GET"))
+            .and(path("/api/v1/files/artifacts/file"))
+            .and(query_param("path", remote.clone()))
+            .respond_with(ResponseTemplate::new(200).set_body_string(body))
+            .mount(server)
+            .await;
+    }
+    queue::record_artifact(
+        db,
+        &conveyor_service::domain::Artifact {
+            id: quench_core::uuid::Uuid::new_v4().to_string(),
+            run_id: run.id.clone(),
+            job_id: job.id.clone(),
+            kind: "file".to_string(),
+            name: name.to_string(),
+            version: None,
+            uri: format!("{}/api/v1/files/artifacts/file?path={remote}", server.uri()),
+            digest: None,
+            created_at: Time::now(),
+        },
+    )
+    .await
+    .expect("record artifact");
+}
+
+#[quench_test::test]
+async fn a_newer_security_only_run_does_not_blank_the_other_checks() {
+    use conveyor_service::artifacts::WarehouseStore;
+    use quench_test::mock::MockServer;
+
+    let Some((db, _guard)) = database().await else {
+        return skipped("a_newer_security_only_run_does_not_blank_the_other_checks");
+    };
+    let repo = register_repo(&db, "mixed", "file:///nowhere").await;
+    let server = MockServer::start().await;
+    let store = WarehouseStore::new(&server.uri(), "artifacts", None);
+
+    // A push: quality steps and test results.
+    let (push, push_job) = make_run(&db, &repo.id, Trigger::Push, "quality", "checks").await;
+    leave_quality_results(&db, &push_job).await;
+    leave_artifact(
+        &db,
+        &server,
+        &push,
+        &push_job,
+        scan::TESTS_SUMMARY,
+        Some(TESTS_JSON),
+    )
+    .await;
+
+    // Then, newer, the nightly: nothing but a security report.
+    let (nightly, nightly_job) =
+        make_run(&db, &repo.id, Trigger::Schedule, "security", "nightly").await;
+    leave_artifact(
+        &db,
+        &server,
+        &nightly,
+        &nightly_job,
+        scan::SECURITY_SUMMARY,
+        Some(SECURITY_JSON),
+    )
+    .await;
+
+    let summary = scan::latest_with(&db, &repo.id, Some(&store))
+        .await
+        .expect("scan");
+
+    // The newest run is the nightly ...
+    assert_eq!(
+        summary.run.as_ref().map(|r| r.id.as_str()),
+        Some(nightly.id.as_str())
+    );
+    // ... and it did not take the push's results away.
+    assert!(summary.lint.is_some() && summary.machete.is_some() && summary.audit.is_some());
+    assert!(
+        summary.tests.as_ref().is_some_and(|t| t.passed),
+        "{:?}",
+        summary.tests
+    );
+    // Security is there too, failed, and says it came from the scheduled run.
+    let security = summary.security.as_ref().expect("a security result");
+    assert!(!security.passed);
+    assert_eq!(security.findings[0].title, "secrets");
+
+    // Each knows where it came from.
+    for kind in [
+        scan::CheckKind::Lint,
+        scan::CheckKind::Machete,
+        scan::CheckKind::Audit,
+        scan::CheckKind::Tests,
+    ] {
+        assert_eq!(
+            summary.origin(kind).map(|r| r.id.as_str()),
+            Some(push.id.as_str()),
+            "{kind:?}"
+        );
+    }
+    let from = summary.origin(scan::CheckKind::Security).expect("origin");
+    assert_eq!(from.id, nightly.id);
+    assert_eq!(from.trigger, Trigger::Schedule);
+}
+
+#[quench_test::test]
+async fn a_security_report_survives_any_number_of_newer_pushes() {
+    use conveyor_service::artifacts::WarehouseStore;
+    use quench_test::mock::MockServer;
+
+    let Some((db, _guard)) = database().await else {
+        return skipped("a_security_report_survives_any_number_of_newer_pushes");
+    };
+    let repo = register_repo(&db, "pushed-over", "file:///nowhere").await;
+    let server = MockServer::start().await;
+    let store = WarehouseStore::new(&server.uri(), "artifacts", None);
+
+    let (nightly, nightly_job) =
+        make_run(&db, &repo.id, Trigger::Schedule, "security", "nightly").await;
+    leave_artifact(
+        &db,
+        &server,
+        &nightly,
+        &nightly_job,
+        scan::SECURITY_SUMMARY,
+        Some(SECURITY_JSON),
+    )
+    .await;
+
+    // More pushes than the number of recent runs searched for step results: security must still be found.
+    let mut newest = None;
+    for _ in 0..3 {
+        let (push, job) = make_run(&db, &repo.id, Trigger::Push, "quality", "checks").await;
+        leave_quality_results(&db, &job).await;
+        newest = Some(push);
+    }
+    let newest = newest.expect("pushes");
+
+    let summary = scan::latest_with(&db, &repo.id, Some(&store))
+        .await
+        .expect("scan");
+    assert_eq!(
+        summary
+            .origin(scan::CheckKind::Security)
+            .map(|r| r.id.as_str()),
+        Some(nightly.id.as_str())
+    );
+    assert_eq!(
+        summary.origin(scan::CheckKind::Lint).map(|r| r.id.as_str()),
+        Some(newest.id.as_str())
+    );
+    assert_eq!(
+        summary.run.as_ref().map(|r| r.id.as_str()),
+        Some(newest.id.as_str())
+    );
+}
+
+#[quench_test::test]
+async fn the_newest_run_that_produced_a_check_wins_over_older_ones() {
+    let Some((db, _guard)) = database().await else {
+        return skipped("the_newest_run_that_produced_a_check_wins_over_older_ones");
+    };
+    let repo = register_repo(&db, "newest-wins", "file:///nowhere").await;
+
+    let (older, older_job) = make_run(&db, &repo.id, Trigger::Push, "quality", "checks").await;
+    leave_quality_results(&db, &older_job).await;
+    let (newer, newer_job) = make_run(&db, &repo.id, Trigger::Push, "quality", "checks").await;
+    leave_quality_results(&db, &newer_job).await;
+    // A newer run still that ran nothing at all (a skipped or failed-early run) takes nothing away.
+    let (empty, _job) = make_run(&db, &repo.id, Trigger::Push, "build", "compile").await;
+
+    let summary = scan::latest(&db, &repo.id).await.expect("scan");
+    assert_eq!(
+        summary.run.as_ref().map(|r| r.id.as_str()),
+        Some(empty.id.as_str())
+    );
+    assert_eq!(
+        summary.origin(scan::CheckKind::Lint).map(|r| r.id.as_str()),
+        Some(newer.id.as_str())
+    );
+    assert_ne!(newer.id, older.id);
+    assert!(summary.lint.is_some() && summary.audit.is_some());
 }

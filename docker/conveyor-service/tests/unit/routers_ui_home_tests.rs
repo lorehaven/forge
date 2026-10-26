@@ -113,6 +113,7 @@ fn four_chips_come_out_in_a_fixed_order_regardless_of_which_checks_ran() {
         coverage: None,
         tests: None,
         security: None,
+        origins: vec![],
     };
 
     let html = check_chips(Some(&summary)).render();

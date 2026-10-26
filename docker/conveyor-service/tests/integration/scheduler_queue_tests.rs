@@ -20,6 +20,7 @@ fn new_run(repo_id: &str, sha: &str) -> NewRun {
         message: Some("a commit".to_string()),
         delivery_id: None,
         resumed_from: None,
+        stages: None,
     }
 }
 

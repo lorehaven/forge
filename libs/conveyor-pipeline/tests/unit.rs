@@ -9,6 +9,8 @@ mod cron_tests;
 mod graph_tests;
 #[path = "unit/parser_tests.rs"]
 mod parser_tests;
+#[path = "unit/selection_tests.rs"]
+mod selection_tests;
 #[path = "unit/spec_tests.rs"]
 mod spec_tests;
 #[path = "unit/steps_mod_tests.rs"]

@@ -72,9 +72,12 @@ pub(super) async fn scan_detail_page(
 
     render_page(
         StatusCode::OK,
-        content()
-            .class("home-content")
-            .child(detail(&repo, kind, check)),
+        content().class("home-content").child(detail_from(
+            &repo,
+            kind,
+            check,
+            summary.origin(kind),
+        )),
     )
 }
 
@@ -184,7 +187,10 @@ pub fn overview(repo: &Repo, summary: &ScanSummary) -> Element {
 fn header_row(repo: &Repo) -> Element {
     div()
         .class("home-header")
-        .child(h3().text(repo.slug()))
+        .child(
+            h3().text(repo.slug())
+                .child(super::launch::launch_link(repo)),
+        )
         .child(
             p().class("home-subtitle")
                 .attr("data-i18n", "ui_scan_subtitle"),
@@ -204,12 +210,20 @@ pub fn overview_body(repo: &Repo, summary: &ScanSummary) -> Element {
     }
 
     let mut grid = div().class("scan-grid");
-    grid = grid.child_opt(summary.lint.as_ref().map(|c| card(repo, c)));
-    grid = grid.child_opt(summary.machete.as_ref().map(|c| card(repo, c)));
-    grid = grid.child_opt(summary.audit.as_ref().map(|c| card(repo, c)));
-    grid = grid.child_opt(summary.coverage.as_ref().map(|c| card(repo, c)));
-    grid = grid.child_opt(summary.tests.as_ref().map(|c| card(repo, c)));
-    grid = grid.child_opt(summary.security.as_ref().map(|c| card(repo, c)));
+    for kind in [
+        CheckKind::Lint,
+        CheckKind::Machete,
+        CheckKind::Audit,
+        CheckKind::Coverage,
+        CheckKind::Tests,
+        CheckKind::Security,
+    ] {
+        grid = grid.child_opt(
+            summary
+                .get(kind)
+                .map(|check| card_from(repo, check, summary.origin(kind))),
+        );
+    }
     container = container.child(grid);
 
     container
@@ -229,6 +243,22 @@ fn run_row(run: &crate::domain::Run) -> Element {
 
 #[must_use]
 pub fn card(repo: &Repo, check: &CheckResult) -> Element {
+    card_from(repo, check, None)
+}
+
+/// "abc1234 · schedule · 3 hours ago": which run said this, since each check is the newest of its own kind.
+fn origin_text(run: &crate::domain::Run) -> String {
+    format!(
+        "{} · {} · {}",
+        run.short_sha(),
+        run.trigger,
+        format::relative(run.queued_at)
+    )
+}
+
+/// A check's card, with the run it came from when that is known.
+#[must_use]
+pub fn card_from(repo: &Repo, check: &CheckResult, origin: Option<&crate::domain::Run>) -> Element {
     let status_class = if check.passed {
         "status-success"
     } else {
@@ -258,12 +288,35 @@ pub fn card(repo: &Repo, check: &CheckResult) -> Element {
                 .attr("data-i18n", check.kind.label()),
         )
         .child(div().class("scan-card-headline").text(&check.headline))
+        .child_opt(origin.map(|run| div().class("scan-card-origin muted").text(origin_text(run))))
 }
 
 // Detail: every finding for one check.
 #[must_use]
 pub fn detail(repo: &Repo, kind: CheckKind, check: &CheckResult) -> Element {
+    detail_from(repo, kind, check, None)
+}
+
+/// A check's page, with the run it came from when that is known.
+#[must_use]
+pub fn detail_from(
+    repo: &Repo,
+    kind: CheckKind,
+    check: &CheckResult,
+    origin: Option<&crate::domain::Run>,
+) -> Element {
     let back_href = ui_path(&format!("/repos/{}/{}/scan", repo.owner, repo.name));
+    let subtitle = origin.map_or_else(
+        || format!("{} - from {}", check.headline, check.job_name),
+        |run| {
+            format!(
+                "{} - from {} ({})",
+                check.headline,
+                check.job_name,
+                origin_text(run)
+            )
+        },
+    );
 
     div()
         .class("home-container")
@@ -276,10 +329,7 @@ pub fn detail(repo: &Repo, kind: CheckKind, check: &CheckResult) -> Element {
                         .attr("data-i18n", "ui_scan_back"),
                 )
                 .child(h3().attr("data-i18n", kind.label()))
-                .child(
-                    p().class("home-subtitle")
-                        .text(format!("{} - from {}", check.headline, check.job_name)),
-                ),
+                .child(p().class("home-subtitle").text(subtitle)),
         )
         .child_opt(check.report_uri.as_ref().map(|_| report_viewer(repo, kind)))
         .child(findings_list(&check.findings))

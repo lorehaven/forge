@@ -42,6 +42,7 @@ async fn finished_run(db: &Db, repo_id: &str, git_ref: &str, status: Status) -> 
             message: None,
             delivery_id: None,
             resumed_from: None,
+            stages: None,
         },
     )
     .await

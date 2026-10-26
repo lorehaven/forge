@@ -17,6 +17,8 @@ mod executors_manifest_tests;
 mod executors_mock_tests;
 #[path = "unit/executors_native_tests.rs"]
 mod executors_native_tests;
+#[path = "unit/launch_tests.rs"]
+mod launch_tests;
 #[path = "unit/notifications_tests.rs"]
 mod notifications_tests;
 #[path = "unit/pipelines_pager_tests.rs"]

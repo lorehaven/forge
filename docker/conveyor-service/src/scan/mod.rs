@@ -114,8 +114,14 @@ pub struct CheckResult {
     pub report_uri: Option<String>,
 }
 
-#[derive(Debug, Default)]
+/// What each check last said, and which run said it.
+///
+/// Every check is taken from the newest run that actually produced it, not from the newest run: a
+/// nightly security run has no lint or tests, and a push has no security report, so neither may blank
+/// the other's card. [`origin`](Self::origin) says where each came from.
+#[derive(Debug, Default, Clone)]
 pub struct ScanSummary {
+    /// The repository's newest run, whatever it did.
     pub run: Option<Run>,
     pub lint: Option<CheckResult>,
     pub machete: Option<CheckResult>,
@@ -124,9 +130,31 @@ pub struct ScanSummary {
     pub tests: Option<CheckResult>,
     /// From the most recent run that produced a security report, which is not necessarily `run`.
     pub security: Option<CheckResult>,
+    /// The run each present check came from.
+    pub origins: Vec<(CheckKind, Run)>,
 }
 
 impl ScanSummary {
+    /// The run that produced `kind`'s result.
+    #[must_use]
+    pub fn origin(&self, kind: CheckKind) -> Option<&Run> {
+        self.origins
+            .iter()
+            .find(|(k, _)| *k == kind)
+            .map(|(_, run)| run)
+    }
+
+    fn set(&mut self, kind: CheckKind, result: CheckResult) {
+        match kind {
+            CheckKind::Lint => self.lint = Some(result),
+            CheckKind::Machete => self.machete = Some(result),
+            CheckKind::Audit => self.audit = Some(result),
+            CheckKind::Coverage => self.coverage = Some(result),
+            CheckKind::Tests => self.tests = Some(result),
+            CheckKind::Security => self.security = Some(result),
+        }
+    }
+
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.lint.is_none()
@@ -163,44 +191,124 @@ pub fn warehouse_store() -> Option<&'static WarehouseStore> {
     STORE.get_or_init(WarehouseStore::from_env).as_ref()
 }
 
-/// [`latest`] reading test summaries from `store` (none: no test summary).
+/// How many of a repository's newest runs are searched for a check the newest ones did not produce.
+const SEARCH_RUNS: i64 = 40;
+
+/// The checks that are read from a run's own steps.
+const STEP_CHECKS: [CheckKind; 4] = [
+    CheckKind::Lint,
+    CheckKind::Machete,
+    CheckKind::Audit,
+    CheckKind::Coverage,
+];
+
+/// [`latest`] reading test summaries from `store` (none: no test or security summary).
 pub async fn latest_with(
     db: &Db,
     repo_id: &str,
     store: Option<&WarehouseStore>,
 ) -> Result<ScanSummary, QueueError> {
-    let security = match store {
-        Some(store) => latest_security(db, store, repo_id).await,
-        None => None,
-    };
-    let Some(run) = queue::list_runs(db, Some(repo_id), 1)
-        .await?
-        .into_iter()
-        .next()
-    else {
-        return Ok(ScanSummary::default());
-    };
-
-    let jobs = queue::list_jobs(db, &run.id).await?;
+    let runs = queue::list_runs(db, Some(repo_id), SEARCH_RUNS).await?;
     let mut summary = ScanSummary {
-        run: Some(run),
-        security,
+        run: runs.first().cloned(),
         ..ScanSummary::default()
     };
 
-    for job in &jobs {
-        collect_job_checks(db, job, &mut summary).await?;
-        if let Some(store) = store
-            && let Some(result) = job_tests(db, store, job).await
-            // Several jobs may run tests (the coverage job runs them again): the one that saw most is the
-            // summary.
-            && summary.tests.as_ref().is_none_or(|kept| tests_seen(&result) > tests_seen(kept))
-        {
+    // Lint, machete, audit and coverage: each from the newest run whose steps produced it.
+    for run in &runs {
+        if STEP_CHECKS.iter().all(|kind| summary.get(*kind).is_some()) {
+            break;
+        }
+        let found = step_checks(db, run).await?;
+        for kind in STEP_CHECKS {
+            if summary.get(kind).is_none()
+                && let Some(result) = found.get(kind)
+            {
+                summary.set(kind, result.clone());
+                summary.origins.push((kind, run.clone()));
+            }
+        }
+    }
+
+    // Tests and security leave artifacts, so they are found by name across all runs, however many
+    // newer runs there have been since.
+    if let Some(store) = store {
+        if let Some((result, run)) = latest_tests(db, store, repo_id, &runs).await {
+            summary.origins.push((CheckKind::Tests, run));
             summary.tests = Some(result);
+        }
+        if let Some((result, run)) = latest_security(db, store, repo_id, &runs).await {
+            summary.origins.push((CheckKind::Security, run));
+            summary.security = Some(result);
         }
     }
 
     Ok(summary)
+}
+
+/// What a run's own steps said, for the checks that are read from steps.
+///
+/// A finished run never changes, so its answer is kept: the home page asks for every repository on every
+/// refresh, and a run's logs are the expensive part. A run still going is read afresh each time.
+async fn step_checks(db: &Db, run: &Run) -> Result<ScanSummary, QueueError> {
+    type Cache = std::sync::Mutex<std::collections::HashMap<String, ScanSummary>>;
+    static CACHE: std::sync::OnceLock<Cache> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+
+    if run.status.is_terminal()
+        && let Ok(cache) = cache.lock()
+        && let Some(found) = cache.get(&run.id)
+    {
+        return Ok(found.clone());
+    }
+
+    let mut found = ScanSummary::default();
+    for job in &queue::list_jobs(db, &run.id).await? {
+        collect_job_checks(db, job, &mut found).await?;
+    }
+
+    if run.status.is_terminal()
+        && let Ok(mut cache) = cache.lock()
+    {
+        if cache.len() >= 256 {
+            cache.clear();
+        }
+        cache.insert(run.id.clone(), found.clone());
+    }
+    Ok(found)
+}
+
+/// The test results of the newest run that left any, with that run.
+async fn latest_tests(
+    db: &Db,
+    store: &WarehouseStore,
+    repo_id: &str,
+    recent: &[Run],
+) -> Option<(CheckResult, Run)> {
+    let artifact = queue::latest_artifact_named(db, repo_id, TESTS_SUMMARY)
+        .await
+        .ok()??;
+    let run = run_for(db, recent, &artifact.run_id).await?;
+
+    let mut best: Option<CheckResult> = None;
+    for job in &queue::list_jobs(db, &run.id).await.ok()? {
+        if let Some(result) = job_tests(db, store, job).await
+            // Several jobs may run tests (the coverage job runs them again): the one that saw most is the
+            // summary.
+            && best.as_ref().is_none_or(|kept| tests_seen(&result) > tests_seen(kept))
+        {
+            best = Some(result);
+        }
+    }
+    best.map(|result| (result, run))
+}
+
+/// A run we may already hold in `recent`, else read from the database.
+async fn run_for(db: &Db, recent: &[Run], run_id: &str) -> Option<Run> {
+    match recent.iter().find(|run| run.id == run_id) {
+        Some(run) => Some(run.clone()),
+        None => queue::read_run(db, run_id).await.ok()?,
+    }
 }
 
 /// How many tests a tests check saw: the total of its `passed/total` metric.
@@ -275,7 +383,12 @@ pub fn security_check(job_name: &str, json: &str) -> Option<CheckResult> {
 }
 
 /// The newest security report any run of the repository left, as a check.
-async fn latest_security(db: &Db, store: &WarehouseStore, repo_id: &str) -> Option<CheckResult> {
+async fn latest_security(
+    db: &Db,
+    store: &WarehouseStore,
+    repo_id: &str,
+    recent: &[Run],
+) -> Option<(CheckResult, Run)> {
     let artifact = queue::latest_artifact_named(db, repo_id, SECURITY_SUMMARY)
         .await
         .ok()??;
@@ -322,7 +435,8 @@ async fn latest_security(db: &Db, store: &WarehouseStore, repo_id: &str) -> Opti
         .into_iter()
         .find(|a| a.name == SECURITY_REPORT_PAGE)
         .map(|a| a.uri);
-    Some(result)
+    let run = run_for(db, recent, &artifact.run_id).await?;
+    Some((result, run))
 }
 
 fn report_check(kind: CheckKind, job_name: &str, json: &str) -> Option<CheckResult> {

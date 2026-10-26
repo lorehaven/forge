@@ -40,6 +40,10 @@ pub struct TriggerRun {
     /// The commit to build; without it conveyor asks the repository what the ref currently points at.
     #[serde(default)]
     pub sha: Option<String>,
+    /// Run only these stages, whatever their own `when` says (so the nightly-only security stage can be
+    /// run by hand). Absent: the whole pipeline.
+    #[serde(default)]
+    pub stages: Option<Vec<String>>,
 }
 
 /// `TriggerRun`, but an absent/empty body means "every field default" - `Json<T>` alone rejects zero bytes as invalid JSON.
@@ -72,6 +76,8 @@ pub enum TriggerError {
     ResolveFailed(String),
     #[error("{0}")]
     BadSha(String),
+    #[error("{0}")]
+    BadStages(String),
     #[error(transparent)]
     Queue(#[from] QueueError),
 }
@@ -82,7 +88,9 @@ impl From<TriggerError> for ApiError {
             let status = match &error {
                 TriggerError::NotFound => StatusCode::NOT_FOUND,
                 TriggerError::Disabled => StatusCode::CONFLICT,
-                TriggerError::BadRef(_) | TriggerError::BadSha(_) => StatusCode::BAD_REQUEST,
+                TriggerError::BadRef(_) | TriggerError::BadSha(_) | TriggerError::BadStages(_) => {
+                    StatusCode::BAD_REQUEST
+                }
                 TriggerError::ResolveFailed(_) => StatusCode::BAD_GATEWAY,
                 TriggerError::Queue(_) => unreachable!(),
             };
@@ -100,7 +108,7 @@ pub async fn trigger_manual(
     git_ref: Option<String>,
     sha: Option<String>,
 ) -> Result<Run, TriggerError> {
-    let enqueued = trigger_run(db, repo_id, git_ref, sha, Trigger::Manual, None).await?;
+    let enqueued = trigger_run(db, repo_id, git_ref, sha, Trigger::Manual, None, None).await?;
     Ok(enqueued.run().clone())
 }
 
@@ -113,7 +121,9 @@ pub async fn trigger_run(
     sha: Option<String>,
     trigger: Trigger,
     delivery_id: Option<String>,
+    stages: Option<Vec<String>>,
 ) -> Result<Enqueued, TriggerError> {
+    let stages = normalize_stages(stages)?;
     let repo = match repos::read(db, repo_id).await {
         Ok(Some(repo)) => repo,
         Ok(None) => return Err(TriggerError::NotFound),
@@ -157,9 +167,40 @@ pub async fn trigger_run(
         // purpose is allowed. A scheduled one carries its firing's identity instead.
         delivery_id,
         resumed_from: None,
+        stages,
     };
 
     Ok(queue::enqueue(db, &new).await?)
+}
+
+/// A stage selection as it will be stored: trimmed, without blanks or repeats. `Some` but empty is a mistake
+/// (a run that does nothing), not "everything".
+fn normalize_stages(stages: Option<Vec<String>>) -> Result<Option<Vec<String>>, TriggerError> {
+    let Some(stages) = stages else {
+        return Ok(None);
+    };
+    let mut clean: Vec<String> = Vec::new();
+    for stage in stages.iter().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        if stage.len() > 128 || stage.chars().any(char::is_control) {
+            return Err(TriggerError::BadStages(format!(
+                "`{stage}` is not a stage name"
+            )));
+        }
+        if !clean.iter().any(|c| c == stage) {
+            clean.push(stage.to_string());
+        }
+    }
+    if clean.is_empty() {
+        return Err(TriggerError::BadStages(
+            "select at least one stage".to_string(),
+        ));
+    }
+    if clean.len() > 64 {
+        return Err(TriggerError::BadStages(
+            "too many stages selected".to_string(),
+        ));
+    }
+    Ok(Some(clean))
 }
 
 #[post("/api/v1/repos/{repo_id}/runs")]
@@ -179,8 +220,18 @@ pub async fn trigger(
         Err(error) => return ApiError::from(error).into_response(),
     }
 
-    match trigger_manual(&db, &repo_id, body.git_ref, body.sha).await {
-        Ok(run) => Response::json(StatusCode::ACCEPTED, &run)
+    match trigger_run(
+        &db,
+        &repo_id,
+        body.git_ref,
+        body.sha,
+        Trigger::Manual,
+        None,
+        body.stages,
+    )
+    .await
+    {
+        Ok(enqueued) => Response::json(StatusCode::ACCEPTED, enqueued.run())
             .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(error) => ApiError::from(error).into_response(),
     }
@@ -424,6 +475,8 @@ pub async fn restart_run(db: &Db, run_id: &str) -> Result<Run, RestartError> {
         // Not a redelivery - any number of restarts may follow one failure.
         delivery_id: None,
         resumed_from: Some(source.id.clone()),
+        // The same selection: a restart of a run limited to some stages is limited to the same ones.
+        stages: source.stages.clone(),
     };
 
     let enqueued = queue::enqueue(db, &new).await?;
@@ -542,7 +595,33 @@ pub async fn schedules(
     }
 }
 
+/// The stages a repository's pipeline has (from its recent runs) and whether an ordinary run includes
+/// each - what the "run with parameters" form offers.
+#[get("/api/v1/repos/{repo_id}/stages")]
+pub async fn stages(
+    OptionalClaims(claims): OptionalClaims,
+    Path(repo_id): Path<String>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    match repo_access(claims.as_ref(), &config, &db, &repo_id, "read").await {
+        Ok(Some(true)) => {}
+        Ok(Some(false)) => {
+            return json_error(StatusCode::FORBIDDEN, "no read access to this repository");
+        }
+        Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such repository"),
+        Err(error) => return ApiError::from(error).into_response(),
+    }
+
+    match crate::scheduler::stages::known(&db, &repo_id).await {
+        Ok(found) => Response::json(StatusCode::OK, &found)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
+        Err(error) => ApiError::from(error).into_response(),
+    }
+}
+
 pub fn register_routes() {
+    let _ = stages as fn(_, _, _, _) -> _;
     let _ = schedules as fn(_, _, _, _) -> _;
     let _ = trigger as fn(_, _, _, _, _) -> _;
     let _ = list as fn(_, _, _, _) -> _;

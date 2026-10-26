@@ -79,6 +79,7 @@ async fn push_run(db: &Db, repo_id: &str, git_ref: &str, sha: &str) -> String {
             message: None,
             delivery_id: None,
             resumed_from: None,
+            stages: None,
         },
     )
     .await

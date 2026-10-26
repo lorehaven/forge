@@ -24,6 +24,8 @@ mod routers_ui_pipelines_http_tests;
 mod routers_ui_repos_tests;
 #[path = "integration/routers_ui_runs_http_tests.rs"]
 mod routers_ui_runs_http_tests;
+#[path = "integration/run_with_stages_tests.rs"]
+mod run_with_stages_tests;
 #[path = "integration/scan_tests.rs"]
 mod scan_tests;
 #[path = "integration/scheduler_projects_tests.rs"]

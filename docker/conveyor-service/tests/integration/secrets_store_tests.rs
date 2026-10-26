@@ -423,6 +423,7 @@ async fn queue_run(db: &Db, repo_id: &str, sha: &str) -> String {
             message: None,
             delivery_id: None,
             resumed_from: None,
+            stages: None,
         },
     )
     .await

@@ -80,6 +80,9 @@ details.job > summary::-webkit-details-marker { display: none; }
 .scan-card-count { font-size: 2.25rem; font-weight: 600; line-height: 1.1; color: var(--fui-text); }
 .scan-card-title { font-size: .8125rem; font-weight: 500; color: var(--fui-text-tertiary); }
 .scan-card-headline { font-size: .9rem; color: var(--fui-text-secondary); }
+.launch-stages { display: flex; flex-direction: column; gap: .5rem; margin: .5rem 0 1rem; }
+.launch-stage { display: flex; align-items: center; gap: .625rem; }
+.scan-card-origin { font-size: .75rem; margin-top: .25rem; color: var(--fui-text-tertiary); }
 .finding-list { display: flex; flex-direction: column; gap: .75rem; }
 .finding-item { padding: .875rem 1.25rem; border: 1px solid var(--fui-border); border-radius: var(--fui-radius-lg); background: var(--fui-surface); }
 .finding-head { display: flex; align-items: center; gap: .625rem; font-weight: 600; flex-wrap: wrap; }

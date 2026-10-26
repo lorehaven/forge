@@ -66,6 +66,8 @@ pub struct NewRun {
     pub delivery_id: Option<String>,
     /// The run being restarted, if this is a restart.
     pub resumed_from: Option<String>,
+    /// Limit the run to these stages (`None`: the whole pipeline).
+    pub stages: Option<Vec<String>>,
 }
 
 /// What enqueueing did.
@@ -94,12 +96,13 @@ pub async fn enqueue(db: &Db, new: &NewRun) -> Result<Enqueued, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
     let id = Uuid::new_v4().to_string();
+    let stages = new.stages.as_ref().map(quench_serde::json::to_string);
 
     // `DO NOTHING`, not a pre-check: two replicas can race the same delivery.
     let sql = format!(
         "INSERT INTO {schema}.runs \
-         (id, repo_id, trigger, git_ref, sha, message, delivery_id, status, resumed_from) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', $8) \
+         (id, repo_id, trigger, git_ref, sha, message, delivery_id, status, resumed_from, stages) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', $8, $9) \
          ON CONFLICT (delivery_id) WHERE delivery_id IS NOT NULL DO NOTHING \
          RETURNING {RUN_COLUMNS}"
     );
@@ -116,6 +119,7 @@ pub async fn enqueue(db: &Db, new: &NewRun) -> Result<Enqueued, QueueError> {
                 &new.message,
                 &new.delivery_id,
                 &new.resumed_from,
+                &stages,
             ],
         )
         .await?;
@@ -768,7 +772,7 @@ pub async fn list_steps(db: &Db, job_id: &str) -> Result<Vec<StepState>, QueueEr
 // Rows.
 const RUN_COLUMNS: &str = "id, repo_id, trigger, git_ref, sha, message, delivery_id, status, \
                            queued_at, started_at, finished_at, claimed_by, claimed_at, attempt, \
-                           error, resumed_from";
+                           error, resumed_from, stages";
 
 const JOB_COLUMNS: &str = "id, run_id, stage, name, needs, status, exit_code, started_at, \
                            finished_at, error, reused_from_run";
@@ -796,6 +800,11 @@ fn run_from_row(row: &quench_pg::Row) -> Result<Run, QueueError> {
         attempt: row.get("attempt")?,
         error: row.get("error")?,
         resumed_from: row.get("resumed_from")?,
+        stages: row
+            .get::<Option<String>, _>("stages")?
+            .map(|text| quench_serde::json::from_str(&text))
+            .transpose()
+            .map_err(|error| QueueError::BadRow(format!("stages is not a string list: {error}")))?,
     })
 }
 

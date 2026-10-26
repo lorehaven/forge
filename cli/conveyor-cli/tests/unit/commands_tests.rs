@@ -528,6 +528,7 @@ async fn run_queues_a_run_and_prints_its_id() {
             repo: "repo-1".to_string(),
             git_ref: Some("master".to_string()),
             sha: None,
+            stages: vec![],
             wait: false,
         },
     )
@@ -562,6 +563,7 @@ async fn run_with_wait_polls_until_the_run_succeeds() {
             repo: "repo-1".to_string(),
             git_ref: None,
             sha: None,
+            stages: vec![],
             wait: true,
         },
     )
@@ -598,6 +600,7 @@ async fn run_with_wait_fails_when_the_run_fails() {
             repo: "repo-1".to_string(),
             git_ref: None,
             sha: None,
+            stages: vec![],
             wait: true,
         },
     )
@@ -1008,4 +1011,36 @@ async fn credential_requires_a_scope() {
     .await
     .unwrap_err();
     assert!(err.to_string().contains("needs a scope"), "{err}");
+}
+
+#[quench_test::test]
+async fn run_sends_the_chosen_stages_split_and_trimmed() {
+    use quench_test::mock::matchers::body_json;
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v1/repos/repo-1/runs"))
+        .and(body_json(json!({"stages": ["security", "check", "lint"]})))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&json!({"id": "run-1", "git_ref": "m", "sha": "abc"})),
+            "application/json",
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client_for(&server).await;
+    run(
+        &client,
+        &RunArgs {
+            repo: "repo-1".to_string(),
+            git_ref: None,
+            sha: None,
+            // Repeated flags and comma lists both work, and blanks are dropped.
+            stages: vec!["security".to_string(), " check , lint,".to_string()],
+            wait: false,
+        },
+    )
+    .await
+    .expect("run");
 }

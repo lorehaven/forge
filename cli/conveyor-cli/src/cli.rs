@@ -203,6 +203,10 @@ pub struct RunArgs {
     /// ref currently points at.
     #[arg(long)]
     pub sha: Option<String>,
+    /// Run only this stage, whatever its own `when` says (so a nightly-only stage can be run by hand).
+    /// Repeat it, or separate names with commas, to run several together.
+    #[arg(long = "stage", value_name = "STAGE")]
+    pub stages: Vec<String>,
     /// Wait for the run to finish, and exit non-zero if it fails
     #[arg(long)]
     pub wait: bool,

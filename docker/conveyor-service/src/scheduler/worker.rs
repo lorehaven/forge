@@ -380,6 +380,18 @@ impl Worker {
             ));
         }
 
+        // A run asked to be limited to some stages ("run with parameters") is planned from just those,
+        // each forced on whatever its own `when` says. Done here, after the checkout, because the stage
+        // names can only be checked against the pipeline the commit actually carries.
+        let spec = match &run.stages {
+            Some(stages) => spec
+                .only(stages)
+                .map_err(|error| WorkerError::BadPipeline {
+                    reason: error.to_string(),
+                })?,
+            None => spec,
+        };
+
         let context = EvalContext::new(event, &run.git_ref, &run.sha);
         let plan = pipeline::plan(&spec, &context);
 

@@ -28,6 +28,7 @@ fn run(status: Status) -> Run {
         attempt: 1,
         error: None,
         resumed_from: None,
+        stages: None,
     }
 }
 

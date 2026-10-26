@@ -76,6 +76,10 @@ pub struct Run {
 
     /// The run this one restarted; its passed stages are carried over - see `worker::execute_jobs`.
     pub resumed_from: Option<String>,
+
+    /// The stages this run was asked to be limited to ("run with parameters"); `None` is the whole pipeline.
+    #[serde(default)]
+    pub stages: Option<Vec<String>>,
 }
 
 impl Run {

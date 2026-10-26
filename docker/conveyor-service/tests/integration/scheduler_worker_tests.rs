@@ -68,6 +68,7 @@ async fn queue_run(db: &Db, repo_id: &str, git_ref: &str, sha: &str) -> String {
             message: None,
             delivery_id: None,
             resumed_from: None,
+            stages: None,
         },
     )
     .await
@@ -297,6 +298,7 @@ async fn restart(db: &Db, first_run: &Run) -> String {
             message: None,
             delivery_id: None,
             resumed_from: Some(first_run.id.clone()),
+            stages: None,
         },
     )
     .await

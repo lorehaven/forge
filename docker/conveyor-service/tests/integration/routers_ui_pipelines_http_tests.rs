@@ -78,6 +78,7 @@ async fn runs_list_page_lists_a_queued_run_scoped_to_its_project_and_a_later_pag
             message: Some("a commit".to_string()),
             delivery_id: None,
             resumed_from: None,
+            stages: None,
         },
     )
     .await
@@ -112,6 +113,7 @@ async fn runs_list_page_scoped_to_an_unrelated_project_shows_no_runs() {
             message: Some("a commit".to_string()),
             delivery_id: None,
             resumed_from: None,
+            stages: None,
         },
     )
     .await

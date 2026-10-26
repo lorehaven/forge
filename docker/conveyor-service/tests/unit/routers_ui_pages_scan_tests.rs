@@ -37,6 +37,7 @@ fn run() -> Run {
         attempt: 0,
         error: None,
         resumed_from: None,
+        stages: None,
     }
 }
 
@@ -79,6 +80,7 @@ fn renders_cards_with_counts_and_links() {
         coverage: None,
         tests: None,
         security: None,
+        origins: vec![],
     };
 
     let html = overview(&repo(), &summary).render();
@@ -254,4 +256,30 @@ fn a_security_card_sits_beside_the_others_and_its_page_embeds_its_own_report() {
     );
     assert!(page.contains("scan/security/report?download=1"));
     assert!(!page.contains("scan/tests/report"));
+}
+
+#[quench_test::test]
+fn each_card_says_which_run_it_came_from() {
+    let check = CheckResult {
+        kind: CheckKind::Security,
+        job_name: "security/nightly".to_string(),
+        passed: true,
+        headline: "all clear".to_string(),
+        findings: vec![],
+        metric: Some("4/4".to_string()),
+        report_uri: None,
+    };
+    let mut nightly = run();
+    nightly.trigger = conveyor_service::domain::Trigger::Schedule;
+
+    let html =
+        conveyor_service::routers::ui::pages::scan::card_from(&repo(), &check, Some(&nightly))
+            .render();
+    assert!(html.contains("scan-card-origin"), "{html}");
+    assert!(html.contains(nightly.short_sha()), "{html}");
+    assert!(html.contains("schedule"), "{html}");
+
+    // Without a known origin there is no line to show, and the card is the one it always was.
+    let plain = card(&repo(), &check).render();
+    assert!(!plain.contains("scan-card-origin"));
 }

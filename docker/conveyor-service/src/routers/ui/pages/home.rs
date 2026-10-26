@@ -483,7 +483,11 @@ fn repo_row(repo: &Repo, scan: Option<&ScanSummary>, scope: Option<&str>) -> Ele
                 .attr("data-i18n", "ui_repo_disabled")
         }))
         .child(element("td").child(check_chips(scan)))
-        .child(element("td").child(run_button(repo, scope)))
+        .child(
+            element("td")
+                .child(run_button(repo, scope))
+                .child(super::launch::launch_link(repo)),
+        )
 }
 
 /// One chip per check, colored by what the most recent run found - the counts mirror the scan page's cards.

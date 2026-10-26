@@ -311,6 +311,12 @@ fn meta_row(run: &Run) -> Element {
     div()
         .class("run-meta")
         .child(labelled("ui_meta_trigger", &run.trigger.to_string()))
+        // A run limited to some stages says which, since the jobs list alone cannot tell "not selected" from "failed".
+        .child_opt(
+            run.stages
+                .as_ref()
+                .map(|stages| labelled("ui_meta_stages", &stages.join(", "))),
+        )
         .child(labelled("ui_meta_queued", &format::relative(run.queued_at)))
         .child(labelled(
             "ui_meta_duration",

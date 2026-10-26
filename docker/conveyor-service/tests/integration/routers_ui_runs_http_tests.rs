@@ -62,6 +62,7 @@ async fn run_page_renders_ok_for_a_queued_run() {
             message: Some("a commit".to_string()),
             delivery_id: None,
             resumed_from: None,
+            stages: None,
         },
     )
     .await
@@ -113,6 +114,7 @@ async fn run_state_renders_the_fragment_with_no_jobs_yet() {
             message: Some("a commit".to_string()),
             delivery_id: None,
             resumed_from: None,
+            stages: None,
         },
     )
     .await
@@ -145,6 +147,7 @@ async fn run_state_with_a_matching_job_count_omits_the_job_list_swap() {
             message: Some("a commit".to_string()),
             delivery_id: None,
             resumed_from: None,
+            stages: None,
         },
     )
     .await

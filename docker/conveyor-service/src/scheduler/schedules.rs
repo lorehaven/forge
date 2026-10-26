@@ -252,6 +252,7 @@ async fn start(db: &Db, repo: &Repo, stored: &StoredSchedule) -> Result<bool, Tr
         None,
         Trigger::Schedule,
         Some(delivery_id(&stored.id, stored.next_run_at)),
+        None,
     )
     .await?;
     Ok(enqueued.is_new())

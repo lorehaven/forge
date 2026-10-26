@@ -225,6 +225,16 @@ pub async fn run(client: &Client, args: &RunArgs) -> Result<()> {
     if let Some(sha) = &args.sha {
         body["sha"] = json!(sha);
     }
+    let stages: Vec<&str> = args
+        .stages
+        .iter()
+        .flat_map(|stage| stage.split(','))
+        .map(str::trim)
+        .filter(|stage| !stage.is_empty())
+        .collect();
+    if !stages.is_empty() {
+        body["stages"] = json!(stages);
+    }
 
     let started: Value = client.post(&format!("/repos/{id}/runs"), &body).await?;
     let run_id = string(&started, "id");

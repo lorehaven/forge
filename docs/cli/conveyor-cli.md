@@ -36,7 +36,7 @@ Repositories can be referred to as `owner/name` anywhere an id is accepted.
 |---|---|
 | `repo add <owner/name> <clone-url> [--provider github\|generic] [--default-branch <branch>]` | Register a repository. |
 | `repo list` / `repo enable <repo>` / `repo disable <repo>` / `repo remove <repo>` | Manage repositories. |
-| `run <repo> [--git-ref <ref>] [--sha <sha>] [--wait]` | Start a run. |
+| `run <repo> [--git-ref <ref>] [--sha <sha>] [--stage <name>]... [--wait]` | Start a run. `--stage` limits it to the named stages (repeat it, or comma-separate), each forced on whatever its own `when` says. |
 | `runs [--repo <repo>] [--limit <n>]` | List recent runs (default limit 20). |
 | `show <run-id>` | One run: its jobs, why any were skipped, its artifacts. |
 | `logs <run-id\|job-id> [--follow\|-f]` | Print or follow output. |
@@ -44,6 +44,8 @@ Repositories can be referred to as `owner/name` anywhere an id is accepted.
 | `secret set <name> [value] [--repo <repo>]` | Write a secret (reads from stdin if `value` is omitted). |
 | `secret list [--repo <repo>]` / `secret remove <name> [--repo <repo>]` | Manage secrets. |
 | `validate [path]` | Check a `.conveyor.toml` (default `.conveyor.toml`) without sending it anywhere. |
+
+`run --stage security` runs the nightly-only security stage by hand, alone; `--stage check --stage security` runs both. An unknown stage fails the run with the list of stages the pipeline has.
 
 `run --wait` polls until the run rests and exits non-zero if it failed, so it can end a script:
 

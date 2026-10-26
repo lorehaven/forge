@@ -39,6 +39,57 @@ impl PipelineSpec {
         }
     }
 
+    /// The pipeline reduced to the named stages, for a run someone asked to be limited to them.
+    ///
+    /// A named stage runs **whatever its own `when` says**: asking for the nightly-only `security` stage
+    /// by name is exactly how it is run by hand. Its `needs` on stages that were not named are dropped
+    /// rather than blocking it - the selection is the whole plan. A job's own `when` still applies inside
+    /// a selected stage, since that is a finer guard on what the job may do.
+    ///
+    /// # Errors
+    ///
+    /// [`StageSelectionError`] when nothing is named, or a name is not a stage of this pipeline; the
+    /// error lists the stages there are.
+    pub fn only(&self, names: &[String]) -> Result<Self, StageSelectionError> {
+        let mut wanted: Vec<&str> = Vec::new();
+        for name in names.iter().map(|n| n.trim()).filter(|n| !n.is_empty()) {
+            if !wanted.contains(&name) {
+                wanted.push(name);
+            }
+        }
+        let available: Vec<String> = self.stages.iter().map(|s| s.name.clone()).collect();
+        let unknown: Vec<String> = wanted
+            .iter()
+            .filter(|name| !available.iter().any(|a| a == *name))
+            .map(|name| (*name).to_string())
+            .collect();
+        if wanted.is_empty() || !unknown.is_empty() {
+            return Err(StageSelectionError { unknown, available });
+        }
+
+        let stages: Vec<Stage> = self
+            .stages
+            .iter()
+            .filter(|stage| wanted.contains(&stage.name.as_str()))
+            .map(|stage| {
+                let mut stage = stage.clone();
+                stage.when = None;
+                stage.needs.retain(|need| wanted.contains(&need.as_str()));
+                stage
+            })
+            .collect();
+        // A subset of an acyclic graph has no cycle; the fallback only keeps this total.
+        let order = crate::graph::topological_order(&stages)
+            .unwrap_or_else(|_| (0..stages.len()).collect());
+
+        Ok(Self {
+            on: self.on.clone(),
+            stages,
+            order,
+            schedules: self.schedules.clone(),
+        })
+    }
+
     /// Whether this pipeline should run for `event` at `git_ref`: [`Triggers::allows`], plus the
     /// `schedule` event, which is wanted exactly when the pipeline declares a schedule.
     ///
@@ -71,6 +122,35 @@ impl PipelineSpec {
         self.stages.iter().map(|stage| stage.jobs.len()).sum()
     }
 }
+
+/// A stage selection ([`PipelineSpec::only`]) that cannot be applied.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StageSelectionError {
+    /// Names asked for that are not stages of the pipeline.
+    pub unknown: Vec<String>,
+    /// The stages the pipeline has, in declaration order.
+    pub available: Vec<String>,
+}
+
+impl std::fmt::Display for StageSelectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.unknown.is_empty() {
+            return write!(
+                f,
+                "no stages were selected; this pipeline has: {}",
+                self.available.join(", ")
+            );
+        }
+        write!(
+            f,
+            "no such stage: {}; this pipeline has: {}",
+            self.unknown.join(", "),
+            self.available.join(", ")
+        )
+    }
+}
+
+impl std::error::Error for StageSelectionError {}
 
 /// One entry of `on.schedule`: a cron expression and the time zone it is read in.
 #[derive(Clone, Debug, PartialEq, Eq)]
