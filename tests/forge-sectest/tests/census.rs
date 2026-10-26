@@ -4,7 +4,8 @@
 #![allow(clippy::wildcard_imports)]
 
 use forge_sectest::census::{
-    Piece, parse_source, pieces, quench_route_sources, render, sample_value, scan_forge,
+    Piece, locked_route_sources, parse_source, pieces, quench_route_sources, render, sample_value,
+    scan_forge,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -130,13 +131,15 @@ async fn the_census_matches_a_naive_count_of_route_attributes() {
 }
 
 #[quench_test::test]
-async fn the_shared_quench_routes_are_found_without_a_sibling_checkout() {
-    // CI has no `../quench`; the sources cargo downloaded for the build must do.
-    // A root with no `../quench` beside it, as in CI: only the cargo registry can answer.
-    let found = quench_route_sources(std::path::Path::new("/nonexistent/forge"));
-    assert!(
-        !found.is_empty(),
-        "no quench-starter/quench-auth sources found anywhere"
+async fn the_shared_quench_routes_are_found_at_the_locked_versions_without_a_sibling_checkout() {
+    // CI has no `../quench`, and a job that compiles only this crate never downloaded these two. Asking
+    // cargo for the workspace's locked copies is what works there - tested directly, not through the
+    // sibling shortcut that happens to answer on a developer's machine.
+    let found = locked_route_sources(&forge_root());
+    assert_eq!(
+        found.len(),
+        2,
+        "quench-starter and quench-auth should both resolve: {found:?}"
     );
     let routes = found
         .iter()
@@ -145,6 +148,16 @@ async fn the_shared_quench_routes_are_found_without_a_sibling_checkout() {
     assert!(
         routes >= 5,
         "found sources {found:?} but only {routes} routes in them"
+    );
+}
+
+#[quench_test::test]
+async fn with_no_environment_or_sibling_to_help_the_lookup_still_finds_them() {
+    // A root with no `../quench` beside it and no override: the full chain, as in CI.
+    let found = quench_route_sources(std::path::Path::new("/nonexistent/forge"));
+    assert!(
+        !found.is_empty(),
+        "no quench-starter/quench-auth sources found anywhere"
     );
 }
 

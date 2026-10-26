@@ -233,9 +233,10 @@ pub fn scan_forge(forge_root: &Path, extra_dirs: &[PathBuf]) -> Vec<Route> {
 
 /// Where the shared quench routes (health, auth, swagger - every service links them in) can be read.
 ///
-/// In order: `FORGE_SECTEST_QUENCH_DIR`; a `quench` checkout next to `forge_root`; and, in CI where
-/// neither exists, the newest `quench-starter`/`quench-auth` sources cargo already downloaded to
-/// build the workspace.
+/// In order: `FORGE_SECTEST_QUENCH_DIR`; a `quench` checkout next to `forge_root`; the exact
+/// `quench-starter`/`quench-auth` versions this workspace is locked to, found with `cargo metadata`
+/// (which makes sure they are downloaded - in CI a job that compiles only this crate would otherwise
+/// have none); and, last, the newest copies already sitting in cargo's registry cache.
 #[must_use]
 pub fn quench_route_sources(forge_root: &Path) -> Vec<PathBuf> {
     let from = |quench: &Path| {
@@ -251,7 +252,57 @@ pub fn quench_route_sources(forge_root: &Path) -> Vec<PathBuf> {
     if sibling.join("quench-starter/src").is_dir() {
         return from(&sibling);
     }
+    let locked = locked_route_sources(forge_root);
+    if !locked.is_empty() {
+        return locked;
+    }
+    cached_route_sources()
+}
 
+/// The crates' `src` directories at the versions `forge_root`'s lockfile resolves, via `cargo metadata`.
+#[must_use]
+pub fn locked_route_sources(forge_root: &Path) -> Vec<PathBuf> {
+    use quench_serde::Value;
+
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let Ok(output) = std::process::Command::new(cargo)
+        .args(["metadata", "--format-version", "1", "--manifest-path"])
+        .arg(forge_root.join("Cargo.toml"))
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    let Ok(metadata) = quench_serde::json::from_slice::<Value>(&output.stdout) else {
+        return Vec::new();
+    };
+    let Some(packages) = metadata.get("packages").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    let mut found = Vec::new();
+    for wanted in ["quench-starter", "quench-auth"] {
+        let manifest = packages
+            .iter()
+            .find(|package| package.get("name").and_then(Value::as_str) == Some(wanted))
+            .and_then(|package| package.get("manifest_path"))
+            .and_then(Value::as_str);
+        if let Some(src) = manifest
+            .map(Path::new)
+            .and_then(Path::parent)
+            .map(|dir| dir.join("src"))
+            .filter(|src| src.is_dir())
+        {
+            found.push(src);
+        }
+    }
+    found
+}
+
+/// The newest `quench-starter`/`quench-auth` already unpacked in cargo's registry cache, if any.
+fn cached_route_sources() -> Vec<PathBuf> {
     let cargo_home = std::env::var_os("CARGO_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(".cargo")));

@@ -47,6 +47,10 @@ fn run_scan() -> Result<Scan, String> {
     }
 
     let extra = census::quench_route_sources(&root);
+    // Without them the scan would quietly skip health, login and swagger on every service.
+    if extra.len() < 2 {
+        return Err("could not find the quench-starter/quench-auth sources: the scan would miss every shared route (set FORGE_SECTEST_QUENCH_DIR)".to_string());
+    }
     let routes = census::scan_forge(&root, &extra);
     if routes.len() < 100 {
         return Err(format!(
