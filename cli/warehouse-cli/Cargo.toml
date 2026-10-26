@@ -1,6 +1,6 @@
 [package]
 name = "warehouse-cli"
-version = "0.1.14"
+version = "0.1.15"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Warehouse - cli tool"
