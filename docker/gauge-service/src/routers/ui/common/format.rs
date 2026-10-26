@@ -1,0 +1,64 @@
+//! Numbers as people read them.
+
+#[must_use]
+pub fn bytes(value: f64) -> String {
+    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let mut v = value.max(0.0);
+    let mut unit = 0;
+    while v >= 1024.0 && unit < UNITS.len() - 1 {
+        v /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 || v >= 100.0 {
+        format!("{v:.0} {}", UNITS[unit])
+    } else if v >= 10.0 {
+        format!("{v:.1} {}", UNITS[unit])
+    } else {
+        format!("{v:.2} {}", UNITS[unit])
+    }
+}
+
+#[must_use]
+pub fn rate(value: f64) -> String {
+    format!("{}/s", bytes(value))
+}
+
+#[must_use]
+pub fn pct(value: f64) -> String {
+    format!("{value:.0}%")
+}
+
+#[must_use]
+pub fn duration(secs: f64) -> String {
+    let s = secs.max(0.0) as u64;
+    let (d, h, m) = (s / 86_400, s % 86_400 / 3600, s % 3600 / 60);
+    if d > 0 {
+        format!("{d}d {h}h")
+    } else if h > 0 {
+        format!("{h}h {m}m")
+    } else {
+        format!("{m}m")
+    }
+}
+
+/// "3h 12m ago" for a time `secs` in the past; "just now" under a minute.
+#[must_use]
+pub fn ago(secs: f64) -> String {
+    if secs < 60.0 {
+        "just now".to_string()
+    } else {
+        format!("{} ago", duration(secs))
+    }
+}
+
+/// How full a bar is, as the CSS class that colours it.
+#[must_use]
+pub fn level(pct: f64) -> &'static str {
+    if pct >= 90.0 {
+        "gg-crit"
+    } else if pct >= 75.0 {
+        "gg-warn"
+    } else {
+        "gg-ok"
+    }
+}

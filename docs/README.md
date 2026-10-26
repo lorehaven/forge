@@ -21,6 +21,7 @@ docs/
 │   ├── conveyor-service.md
 │   ├── foundry-service.md
 │   ├── gantry-service.md
+│   ├── gauge-service.md
 │   ├── gatehouse-service.md
 │   ├── sage-service.md
 │   ├── switchboard-service.md
@@ -49,6 +50,7 @@ Long-running quench-http services, each with its own Postgres schema, started lo
 - [Sage Service](./docker/sage-service.md) — AI chat/workspace app with RAG file upload, built on models Switchboard serves
 - [Workbench Service](./docker/workbench-service.md) — task management: projects, issues, comments and labels, behind the same realm auth
 - [Daybook Service](./docker/daybook-service.md) — backend-only personal task inbox and project lists
+- [Gauge Service](./docker/gauge-service.md) — host metrics dashboard: CPU, memory, GPU, disks and network from PCP and node_exporter, no database
 - [Gantry Service](./docker/gantry-service.md) — installs, upgrades, stops, starts and swaps what runs in the cluster, as `.rivet` packages applied by runner Jobs
 
 ## CLI Tools (`cli/*`)
@@ -169,7 +171,7 @@ services.
 .
 ├── cli/           # binaries: anvil, conveyor-cli, foreman, pulley, riveter,
 │                  #           toolbox, warehouse-cli, welder
-├── docker/        # services: conveyor, foundry, gantry, gatehouse,
+├── docker/        # services: conveyor, foundry, gantry, gatehouse, gauge,
 │                  #           sage, switchboard, warehouse, workbench (each its own image)
 ├── libs/          # shared crates: conveyor-pipeline, rivet-package
 ├── examples/      # runnable references: vllm_cluster_test

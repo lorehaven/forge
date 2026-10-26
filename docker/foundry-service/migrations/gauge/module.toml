@@ -1,0 +1,4 @@
+name = "gauge"
+version = "0.1.0"
+description = "Gauge - host metrics dashboard; keeps no state, so this module has no migrations (foreman installs one per selected service)"
+default_schema = "gauge"

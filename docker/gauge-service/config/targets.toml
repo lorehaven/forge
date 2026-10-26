@@ -1,0 +1,22 @@
+# The hosts Gauge watches. `kind` is `pcp` (pmproxy, default port 44322) or `node` (node_exporter, 9100).
+interval_secs = 10
+
+[[target]]
+name = "ossiriand"
+kind = "pcp"
+url = "http://ossiriand:44322"
+# PCP has no GPU module here: take the GPUs and temperatures from node_exporter (run with --collector.drm).
+also = "http://ossiriand:9100"
+
+[[target]]
+name = "nogrod"
+kind = "node"
+url = "http://192.168.0.8:9100"
+
+
+# The dev machine; it is switched off now and then, so it shows as unreachable until it is back.
+[[target]]
+name = "lorien"
+kind = "pcp"
+url = "http://192.168.0.2:44322"
+also = "http://192.168.0.2:9100"

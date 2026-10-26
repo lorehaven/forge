@@ -80,6 +80,12 @@ actions = ["read", "deploy", "scale", "activate", "rollback"]
 # be allowed to upgrade `media` and nothing else.
 resource_types = ["target"]
 
+[services.gauge]
+label = "Gauge"
+home = true
+description = "Host metrics: CPU, memory, GPU, disks and network."
+actions = ["read"]
+
 # Gatehouse administers itself through the same catalog it hands to every
 # other service, which is what lets user administration be delegated below
 # full admin. Assigning the `admin` or `service` role is deliberately NOT one
@@ -105,6 +111,7 @@ conveyor = ["read"]
 workbench = ["read"]
 daybook = ["read"]
 gantry = ["read"]
+gauge = ["read"]
 
 [templates.editor]
 sage = ["read", "write"]
@@ -115,6 +122,7 @@ workbench = ["read", "write"]
 daybook = ["read", "write"]
 # Reading only: what Gantry can do to the cluster is granted deliberately, never by a template.
 gantry = ["read"]
+gauge = ["read"]
 
 # Everything short of assigning roles: create, edit, delete a user, and grant
 # them catalog permissions. What "avoid using admin day to day" runs on.

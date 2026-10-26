@@ -1,0 +1,35 @@
+# required
+header_label = Gauge
+footer_label = © 2026 Paweł Walus — Order of Devs
+locale_label = Idioma
+theme_label = Tema
+
+ui_header_home = Gauge
+ui_home_button = Inicio
+ui_nav_hosts = Hosts
+ui_hosts_none = No hay hosts configurados.
+ui_host_not_found = No existe ese host.
+ui_state_up = activo
+ui_state_down = inalcanzable
+ui_cpu = CPU
+ui_memory = Memoria
+ui_swap = Swap
+ui_gpu = GPU
+ui_gpu_busy = GPU en uso
+ui_vram = VRAM
+ui_disk = Discos
+ui_network = Red
+ui_load = Carga
+ui_uptime = Tiempo activo
+ui_temps = Temperaturas
+ui_back = ← Hosts
+ui_waiting = Esperando la primera lectura…
+ui_col_device = Dispositivo
+ui_col_used = Usado
+ui_col_size = Tamaño
+ui_col_read = Lectura
+ui_col_write = Escritura
+ui_col_rx = Recibido
+ui_col_tx = Enviado
+ui_col_name = Nombre
+ui_col_temp = Temperatura
