@@ -98,6 +98,16 @@ fn is_release_relevant_file_accepts_known_source_extensions() {
 }
 
 #[quench_test::test]
+fn is_release_relevant_file_accepts_assets_that_are_compiled_in() {
+    assert!(is_release_relevant_file(
+        "src/routers/ui/common/conveyor.css"
+    ));
+    assert!(is_release_relevant_file("src/routers/ui/common/app.js"));
+    assert!(is_release_relevant_file("src/routers/ui/common/page.html"));
+    assert!(is_release_relevant_file("src/routers/ui/common/icon.svg"));
+}
+
+#[quench_test::test]
 fn is_release_relevant_file_rejects_docs_and_extensionless_files() {
     assert!(!is_release_relevant_file("README.md"));
     assert!(!is_release_relevant_file("LICENSE"));

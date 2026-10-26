@@ -19,9 +19,11 @@ pub enum ReleaseKind {
 /// Extensions that can actually affect what gets built or published.
 /// A file diff restricted to this allowlist ignores docs, licenses, and
 /// other metadata-only edits, so a README-only commit doesn't trigger a
-/// release.
+/// release. Stylesheets, scripts, pages and icons count: services compile them in with `include_str!`,
+/// so a CSS-only change still changes the binary.
 const RELEASE_RELEVANT_EXTENSIONS: &[&str] = &[
-    "rs", "toml", "j2", "feature", "ftl", "yaml", "yml", "sh", "py", "sql", "json", "proto",
+    "rs", "toml", "j2", "feature", "ftl", "yaml", "yml", "sh", "py", "sql", "json", "proto", "css",
+    "js", "html", "svg",
 ];
 
 #[must_use]
