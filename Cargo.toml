@@ -18,7 +18,7 @@ license = "MIT"
 readme = "README.md"
 
 [workspace.dependencies]
-conveyor-pipeline = { path = "libs/conveyor-pipeline", registry = "ennor", version = "0.1.0" }
+conveyor-pipeline = { path = "libs/conveyor-pipeline", registry = "ennor", version = "0.2.0" }
 gatehouse-auth = { path = "libs/gatehouse-auth", registry = "ennor", version = "0.1.0" }
 forge-ui = { path = "libs/forge-ui", version = "0.1.0" }
 libc = { version = "0.2" }
