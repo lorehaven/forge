@@ -93,6 +93,8 @@ exit 0
             .env("KUBECTL_LOG", &self.kubectl_log)
             .env("KUBECTL_DIFF_EXIT", "0")
             .env("NO_COLOR", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
             .env_remove("RIVETER_ENV")
             .env_remove("RIVETER_WAREHOUSE_URL")
             .env_remove("RIVETER_WAREHOUSE_TOKEN")
@@ -126,7 +128,10 @@ fn finish(output: &std::process::Output) -> Run {
 }
 
 fn git(dir: &Path, args: &[&str]) {
+    // Nothing from the machine's own git configuration (a signing key, a hooks path) decides the outcome.
     let status = Command::new("git")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
         .current_dir(dir)
         .args(["-c", "user.email=t@example.com", "-c", "user.name=t"])
         .args(args)

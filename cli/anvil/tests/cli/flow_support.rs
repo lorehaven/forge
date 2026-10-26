@@ -36,8 +36,18 @@ fn real_cargo() -> PathBuf {
         .expect("cargo on PATH")
 }
 
+/// Runs `git` with nothing taken from the machine's own configuration: a signing key or a `core.hooksPath`
+/// somewhere would otherwise decide whether a test passes.
+fn isolated_git(command: &mut Command) -> &mut Command {
+    command
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+}
+
 pub fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
+    let mut command = Command::new("git");
+    let output = isolated_git(&mut command)
         .current_dir(dir)
         .args(["-c", "user.email=ci@example.com", "-c", "user.name=ci"])
         .args(args)
@@ -90,6 +100,10 @@ impl Workspace {
             &["init", "-q", "--bare", remote.to_str().unwrap()],
         );
         git(&work, &["init", "-q", "-b", "main"]);
+        // For the commits anvil makes itself (the version bump): a CI pod has no identity of its own, and
+        // git refuses to guess one from the hostname.
+        git(&work, &["config", "user.email", "ci@example.com"]);
+        git(&work, &["config", "user.name", "ci"]);
         git(&work, &["add", "."]);
         git(&work, &["commit", "-q", "-m", "initial"]);
         git(
@@ -126,7 +140,21 @@ case \"$*\" in *\"$ANVIL_TEST_FAIL\"*) echo 'docker failed' >&2; exit 1 ;; esac
 exit 0
 ",
         );
-        for tool in ["cargo", "docker"] {
+        // Anvil checks that a plugin's own binary exists before running `cargo <plugin>`. The `cargo` shim
+        // answers the call, so these only have to be there: whether the machine has the real ones installed
+        // (a CI image does not have `cargo-edit`) must not decide the outcome.
+        let plugins = [
+            "cargo-upgrade",
+            "cargo-audit",
+            "cargo-machete",
+            "cargo-deny",
+            "cargo-semver-checks",
+            "cargo-nextest",
+        ];
+        for plugin in plugins {
+            write(&bin.join(plugin), "#!/bin/sh\nexit 0\n");
+        }
+        for tool in ["cargo", "docker"].into_iter().chain(plugins) {
             fs::set_permissions(bin.join(tool), fs::Permissions::from_mode(0o755)).unwrap();
         }
 
@@ -156,9 +184,15 @@ exit 0
             std::env::var("PATH").unwrap_or_default()
         );
         let mut command = Command::new(env!("CARGO_BIN_EXE_anvil"));
+        isolated_git(&mut command);
         command
             .current_dir(self.work())
             .args(args)
+            // A CI job carries credentials for anvil (`ANVIL_APP_TOKEN`, `ANVIL_GATEHOUSE_URL`), and with
+            // them `registry-token` and `release` would call a real Gatehouse. A test says so if it wants
+            // them, through `envs`.
+            .env_remove("ANVIL_APP_TOKEN")
+            .env_remove("ANVIL_GATEHOUSE_URL")
             .env("PATH", path)
             .env("ANVIL_TEST_LOG", &self.log)
             .env("ANVIL_TEST_FAIL_PUBLISH", "-no-package-")
