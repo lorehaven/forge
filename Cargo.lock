@@ -44,7 +44,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "conveyor-cli"
-version = "0.3.26"
+version = "0.3.27"
 dependencies = [
  "conveyor-pipeline",
  "quench-args",
@@ -58,7 +58,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-pipeline"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "quench-core",
  "quench-serde",
@@ -68,7 +68,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.6.36"
+version = "0.6.37"
 dependencies = [
  "conveyor-pipeline",
  "forge-ui",
@@ -183,7 +183,7 @@ dependencies = [
 
 [[package]]
 name = "foundry-service"
-version = "0.2.30"
+version = "0.2.31"
 dependencies = [
  "quench-args",
  "quench-cli",
@@ -229,7 +229,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-service"
-version = "0.3.23"
+version = "0.3.24"
 dependencies = [
  "forge-ui",
  "quench-auth",
@@ -852,7 +852,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.4.13"
+version = "0.4.14"
 dependencies = [
  "conveyor-pipeline",
  "gatehouse-auth",
