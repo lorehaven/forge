@@ -164,3 +164,6 @@ ui_palette_blue = Blau
 ui_palette_purple = Violett
 ui_palette_rose = Rosé
 ui_palette_orange = Orange
+ui_findings_title = Scanner-Funde
+ui_findings_apply = Anwenden
+ui_findings_none = Nichts auf den gewählten Stufen.

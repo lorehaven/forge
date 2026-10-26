@@ -164,3 +164,6 @@ ui_palette_blue = Azul
 ui_palette_purple = Morado
 ui_palette_rose = Rosa
 ui_palette_orange = Naranja
+ui_findings_title = Hallazgos del escáner
+ui_findings_apply = Aplicar
+ui_findings_none = Nada en los niveles elegidos.

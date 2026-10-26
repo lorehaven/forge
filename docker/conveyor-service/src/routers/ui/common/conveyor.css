@@ -90,6 +90,10 @@ details.job > summary::-webkit-details-marker { display: none; }
 .finding-extra { margin-top: .5rem; font-size: .8125rem; color: var(--fui-text-tertiary); font-style: italic; }
 .finding-severity { font-size: .7rem; font-weight: 600; padding: .125rem .5rem; border-radius: 999px; background: var(--fui-gray-soft-bg); color: var(--fui-gray-soft-text); border: 1px solid var(--fui-gray-soft-border); }
 .finding-severity-warning { background: var(--fui-warning-soft-bg); color: var(--fui-warning-soft-text); border-color: var(--fui-warning-soft-border); }
+.finding-severity-critical, .finding-severity-high { background: var(--fui-error-soft-bg); color: var(--fui-error-soft-text); border-color: var(--fui-error-soft-border); }
+.finding-severity-medium { background: var(--fui-warning-soft-bg); color: var(--fui-warning-soft-text); border-color: var(--fui-warning-soft-border); }
+.finding-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem; padding: .75rem 1.5rem; border-bottom: 1px solid var(--fui-border); }
+.finding-filter-level { display: flex; align-items: center; gap: .4rem; }
 .finding-severity-error { background: var(--fui-error-soft-bg); color: var(--fui-error-soft-text); border-color: var(--fui-error-soft-border); }
 
 /* chips + manual-run button */

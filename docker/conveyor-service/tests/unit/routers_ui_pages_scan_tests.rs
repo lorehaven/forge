@@ -1,5 +1,9 @@
+use conveyor_service::domain::Artifact;
 use conveyor_service::domain::{Provider, Repo, Run, Status, Trigger};
-use conveyor_service::routers::ui::pages::scan::{card, detail, overview, overview_body};
+use conveyor_service::routers::ui::pages::scan::{
+    FindingsQuery, card, detail, overview, overview_body, scanner_findings,
+};
+use conveyor_service::scan::findings::{self, ScanFinding};
 use conveyor_service::scan::{CheckKind, CheckResult, Finding, ScanSummary};
 use quench_core::time::Time;
 
@@ -282,4 +286,92 @@ fn each_card_says_which_run_it_came_from() {
     // Without a known origin there is no line to show, and the card is the one it always was.
     let plain = card(&repo(), &check).render();
     assert!(!plain.contains("scan-card-origin"));
+}
+
+fn scan_findings() -> Vec<ScanFinding> {
+    findings::parse(
+        r#"[
+          {"severity":"low","check":"headers","service":"gatehouse","method":"GET","path":"/","detail":"missing nosniff"},
+          {"severity":"critical","check":"tokens","service":"warehouse","method":"GET","path":"/x","detail":"BYPASS"},
+          {"severity":"medium","check":"auth","service":"conveyor","method":"GET","path":"/ui/status","detail":"answered 200"},
+          {"severity":"info","check":"auth","service":"sage","method":"-","path":"-","detail":"15 mutating routes were not probed"}
+        ]"#,
+    )
+    .unwrap()
+}
+
+fn findings_artifact() -> Artifact {
+    Artifact {
+        id: "a-1".to_string(),
+        run_id: "run-1".to_string(),
+        job_id: "job-1".to_string(),
+        kind: "file".to_string(),
+        name: findings::FINDINGS_ARTIFACT.to_string(),
+        version: None,
+        uri: "http://warehouse/x".to_string(),
+        digest: None,
+        created_at: Time::now(),
+    }
+}
+
+#[quench_test::test]
+fn the_findings_panel_lists_every_level_by_default() {
+    let all = findings::chosen_levels(&[], false);
+    let html = scanner_findings(&repo(), &scan_findings(), &findings_artifact(), &all).render();
+    for needle in [
+        "missing nosniff",
+        "BYPASS",
+        "answered 200",
+        "were not probed",
+    ] {
+        assert!(html.contains(needle), "{needle}: {html}");
+    }
+    assert_eq!(html.matches("checked=\"checked\"").count(), 5, "{html}");
+    assert!(
+        html.contains("low (1)") && html.contains("high (0)"),
+        "{html}"
+    );
+}
+
+#[quench_test::test]
+fn the_findings_panel_shows_only_the_ticked_levels() {
+    let chosen = findings::chosen_levels(&["medium".to_string(), "low".to_string()], true);
+    let html = scanner_findings(&repo(), &scan_findings(), &findings_artifact(), &chosen).render();
+    assert!(
+        html.contains("missing nosniff") && html.contains("answered 200"),
+        "{html}"
+    );
+    assert!(
+        !html.contains("BYPASS") && !html.contains("were not probed"),
+        "{html}"
+    );
+    assert_eq!(html.matches("checked=\"checked\"").count(), 2, "{html}");
+}
+
+#[quench_test::test]
+fn unticking_every_level_shows_none_rather_than_everything() {
+    let chosen = findings::chosen_levels(&[], true);
+    assert!(chosen.is_empty());
+    let html = scanner_findings(&repo(), &scan_findings(), &findings_artifact(), &chosen).render();
+    assert!(!html.contains("BYPASS"), "{html}");
+    assert!(html.contains("ui_findings_none"), "{html}");
+}
+
+#[quench_test::test]
+fn the_filter_query_reads_repeated_levels_and_tolerates_none() {
+    let some: FindingsQuery =
+        quench_serde::urlencoded::from_str("filtered=1&level=high&level=low").unwrap();
+    assert_eq!(some.level, ["high", "low"]);
+    assert!(some.filtered.is_some());
+    let none: FindingsQuery = quench_serde::urlencoded::from_str("").unwrap();
+    assert!(none.level.is_empty() && none.filtered.is_none());
+}
+
+#[quench_test::test]
+fn findings_sort_most_severe_first_and_junk_is_refused() {
+    let order: Vec<String> = scan_findings().into_iter().map(|f| f.severity).collect();
+    assert_eq!(order, ["critical", "medium", "low", "info"]);
+    assert!(findings::parse("not json").is_none());
+    assert!(findings::parse("{}").is_none());
+    assert_eq!(findings::counts(&scan_findings()), [1, 0, 1, 1, 1]);
 }

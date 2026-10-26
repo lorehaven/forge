@@ -1,8 +1,10 @@
 //! Renders a repo's code-quality summary (`crate::scan` owns the data): an
 //! overview card per check, and a detail subpage listing that check's findings.
 
+use crate::domain::Artifact;
 use crate::domain::Repo;
 use crate::routers::ui::common::{PageAuth, format, render_page, ui_login_redirect, ui_path};
+use crate::scan::findings::{self, ScanFinding, chosen_levels};
 use crate::scan::{CheckKind, CheckResult, Finding, ScanSummary};
 use crate::scheduler::repos;
 use quench_core::bytes::Bytes;
@@ -41,10 +43,20 @@ pub(super) async fn scan_page(
     )
 }
 
+/// The severity filter of the scanner's findings: one `level` per ticked box.
+#[derive(Debug, Default, Deserialize)]
+pub struct FindingsQuery {
+    #[serde(default)]
+    pub level: Vec<String>,
+    /// Set by the filter form, so unticking every box is not mistaken for "never filtered".
+    pub filtered: Option<String>,
+}
+
 #[get("/ui/repos/{owner}/{name}/scan/{category}")]
 pub(super) async fn scan_detail_page(
     PageAuth(authenticated): PageAuth,
     Path((owner, name, category)): Path<(String, String, String)>,
+    Query(query): Query<FindingsQuery>,
     Inject(db): Inject<Db>,
 ) -> Response {
     if !authenticated {
@@ -70,15 +82,125 @@ pub(super) async fn scan_detail_page(
         return not_found();
     };
 
-    render_page(
-        StatusCode::OK,
-        content().class("home-content").child(detail_from(
-            &repo,
-            kind,
-            check,
-            summary.origin(kind),
-        )),
-    )
+    let mut page = detail_from(&repo, kind, check, summary.origin(kind));
+    if kind == CheckKind::Security
+        && let Some((found, artifact)) = crate::scan::latest_findings(&db, &repo.id).await
+    {
+        let chosen = chosen_levels(&query.level, query.filtered.is_some());
+        page = page.child(scanner_findings(&repo, &found, &artifact, &chosen));
+    }
+
+    render_page(StatusCode::OK, content().class("home-content").child(page))
+}
+
+/// Every finding of the latest scan at the chosen levels, with a box per level to change them.
+#[must_use]
+pub fn scanner_findings(
+    repo: &Repo,
+    found: &[ScanFinding],
+    artifact: &Artifact,
+    chosen: &[&str],
+) -> Element {
+    let counts = findings::counts(found);
+    let action = ui_path(&format!(
+        "/repos/{}/{}/scan/security",
+        repo.owner, repo.name
+    ));
+
+    let mut filter = form()
+        .attr("method", "get")
+        .attr("action", action)
+        .class("finding-filter")
+        .child(
+            input()
+                .attr("type", "hidden")
+                .attr("name", "filtered")
+                .attr("value", "1"),
+        );
+    for (level, count) in findings::LEVELS.iter().zip(counts) {
+        let id = format!("level-{level}");
+        let mut tick = checkbox()
+            .attr("id", &id)
+            .attr("name", "level")
+            .attr("value", level);
+        if chosen.contains(level) {
+            tick = tick.attr("checked", "checked");
+        }
+        filter = filter.child(
+            div().class("finding-filter-level").child(tick).child(
+                label().attr("for", &id).child(
+                    span()
+                        .class(level_class(level))
+                        .text(format!("{level} ({count})")),
+                ),
+            ),
+        );
+    }
+    filter = filter.child(
+        button()
+            .attr("type", "submit")
+            .attr("data-i18n", "ui_findings_apply"),
+    );
+
+    let shown: Vec<&ScanFinding> = found
+        .iter()
+        .filter(|finding| chosen.contains(&finding.severity.as_str()))
+        .collect();
+    let mut list = div().class("finding-list");
+    for finding in &shown {
+        list = list.child(scanner_finding_row(finding));
+    }
+
+    div()
+        .class("panel")
+        .attr("id", "scanner-findings")
+        .child(
+            div()
+                .class("panel-title")
+                .child(span().attr("data-i18n", "ui_findings_title"))
+                .child(span().class("muted").text(format!(
+                    " - {} / {} - {}",
+                    shown.len(),
+                    found.len(),
+                    artifact.created_at.format("%Y-%m-%d %H:%M UTC")
+                ))),
+        )
+        .child(filter)
+        .child(if shown.is_empty() {
+            div().class("panel").child(empty_state("ui_findings_none"))
+        } else {
+            list
+        })
+}
+
+fn scanner_finding_row(finding: &ScanFinding) -> Element {
+    let route = if finding.method == "-" || finding.method.is_empty() {
+        finding.service.clone()
+    } else {
+        format!("{} {} {}", finding.service, finding.method, finding.path)
+    };
+    div()
+        .class("finding-item")
+        .child(
+            div()
+                .class("finding-head")
+                .child(div().class("finding-title").text(route))
+                .child(
+                    span()
+                        .class(level_class(&finding.severity))
+                        .text(&finding.severity),
+                ),
+        )
+        .child(
+            div()
+                .class("finding-meta")
+                .child(span().class("mono").text(&finding.check)),
+        )
+        .child(div().class("finding-extra").text(&finding.detail))
+}
+
+fn level_class(level: &str) -> String {
+    format!("finding-severity finding-severity-{level}")
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -399,7 +521,7 @@ fn severity_class(severity: &str) -> String {
 
 pub(super) fn register_routes() {
     let _ = scan_page as fn(_, _, _) -> _;
-    let _ = scan_detail_page as fn(_, _, _) -> _;
+    let _ = scan_detail_page as fn(_, _, _, _) -> _;
     let _ = check_report as fn(_, _, _, _) -> _;
 }
 

@@ -3,6 +3,8 @@
 //! Reads the last run's own step output; never triggers or shells out. The test results come from the
 //! `summary.json` a `quench-test` run leaves among the job's artifacts in warehouse.
 
+pub mod findings;
+
 use crate::artifacts::WarehouseStore;
 use crate::domain::{Job, Run, Status};
 use crate::executors::Stream;
@@ -380,6 +382,29 @@ pub fn tests_check(job_name: &str, json: &str) -> Option<CheckResult> {
 #[must_use]
 pub fn security_check(job_name: &str, json: &str) -> Option<CheckResult> {
     report_check(CheckKind::Security, job_name, json)
+}
+
+/// The newest scan findings any run of the repository left, with the run they came from.
+pub async fn latest_findings(
+    db: &Db,
+    repo_id: &str,
+) -> Option<(Vec<findings::ScanFinding>, crate::domain::Artifact)> {
+    let store = warehouse_store()?;
+    let artifact = queue::latest_artifact_named(db, repo_id, findings::FINDINGS_ARTIFACT)
+        .await
+        .ok()??;
+    let bytes = match store.download(&artifact.uri).await {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            quench_log::warn!(
+                "could not read the scan findings of run {}: {error}",
+                artifact.run_id
+            );
+            return None;
+        }
+    };
+    let found = findings::parse(&String::from_utf8_lossy(&bytes))?;
+    Some((found, artifact))
 }
 
 /// The newest security report any run of the repository left, as a check.

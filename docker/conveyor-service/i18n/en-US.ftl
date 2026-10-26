@@ -164,3 +164,6 @@ ui_palette_blue = Blue
 ui_palette_purple = Purple
 ui_palette_rose = Rose
 ui_palette_orange = Orange
+ui_findings_title = Scanner findings
+ui_findings_apply = Apply
+ui_findings_none = Nothing at the selected levels.
