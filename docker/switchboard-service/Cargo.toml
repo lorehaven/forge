@@ -1,6 +1,6 @@
 [package]
 name = "switchboard-service"
-version = "0.5.27"
+version = "0.5.28"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Switchboard - dashboard/management service"

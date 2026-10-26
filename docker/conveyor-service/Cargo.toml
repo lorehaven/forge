@@ -1,6 +1,6 @@
 [package]
 name = "conveyor-service"
-version = "0.6.35"
+version = "0.6.36"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Conveyor - the Forge CI/CD service: webhooks, pipelines and runs"

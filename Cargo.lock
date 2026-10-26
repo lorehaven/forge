@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "anvil"
-version = "0.4.16"
+version = "0.4.17"
 dependencies = [
  "gatehouse-auth",
  "quench-args",
@@ -44,7 +44,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "conveyor-cli"
-version = "0.3.25"
+version = "0.3.26"
 dependencies = [
  "conveyor-pipeline",
  "quench-args",
@@ -68,7 +68,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.6.35"
+version = "0.6.36"
 dependencies = [
  "conveyor-pipeline",
  "forge-ui",
@@ -197,7 +197,7 @@ dependencies = [
 
 [[package]]
 name = "gantry-service"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "forge-ui",
  "quench-auth",
@@ -835,7 +835,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.4.12"
+version = "0.4.13"
 dependencies = [
  "conveyor-pipeline",
  "gatehouse-auth",
@@ -890,7 +890,7 @@ dependencies = [
 
 [[package]]
 name = "sage-service"
-version = "0.5.32"
+version = "0.5.33"
 dependencies = [
  "forge-ui",
  "quench-auth",
@@ -959,7 +959,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "switchboard-service"
-version = "0.5.27"
+version = "0.5.28"
 dependencies = [
  "forge-ui",
  "quench-auth",
