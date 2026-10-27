@@ -1,13 +1,13 @@
 use anvil::cargo_meta;
 use anvil::commands::release::{
-    DEFAULT_COMMIT_MESSAGE_TEMPLATE, ReleaseKind, ReleasePlanItem, build_release_plan, bump_patch,
-    bump_patch_versions, changed_workspace_dependencies, collect_package_dependencies,
-    compute_package_layers, ensure_release_tags_absent, get_transitive_dependencies,
-    git_show_file_at_tag, is_docker_package, is_release_relevant_file, latest_package_tag,
-    nothing_to_release_message, package_changed_since_tag, package_tag_name,
-    print_dry_run_plan_with_layers, release_action_label, render_commit_message,
-    resolve_release_targets, resolve_single_package, set_manifest_version, should_install_package,
-    tag_exists, workspace_dependencies_table,
+    DEFAULT_COMMIT_MESSAGE_TEMPLATE, PackageDependencies, ReleaseKind, ReleasePlanItem,
+    build_release_plan, bump_patch, bump_patch_versions, changed_workspace_dependencies,
+    collect_package_dependencies, compute_package_layers, ensure_release_tags_absent,
+    get_transitive_dependencies, git_show_file_at_tag, is_docker_package, is_release_relevant_file,
+    latest_package_tag, nothing_to_release_message, package_changed_since_tag, package_tag_name,
+    print_dry_run_plan_with_layers, release_action_label, release_order_graph,
+    render_commit_message, resolve_release_targets, resolve_single_package, set_manifest_version,
+    should_install_package, tag_exists, workspace_dependencies_table,
 };
 use anvil::config::{Config, DockerConfig, DockerModuleConfig, InstallConfig};
 use quench_serde::json;
@@ -678,4 +678,140 @@ fn bump_patch_versions_skips_items_not_flagged_for_a_bump() {
     let plan = vec![plan_item("pkg-a", ReleaseKind::Cargo, false, false)];
     let touched = bump_patch_versions(&metadata, &plan).unwrap();
     assert!(touched.is_empty());
+}
+
+fn deps(publish: &[&str], dev: &[&str]) -> PackageDependencies {
+    let publish_deps: Vec<String> = publish.iter().map(ToString::to_string).collect();
+    let mut member_deps = publish_deps.clone();
+    member_deps.extend(dev.iter().map(ToString::to_string));
+    PackageDependencies {
+        member_deps,
+        publish_deps,
+        external_workspace_deps: HashSet::new(),
+    }
+}
+
+fn layers_of(graph: &HashMap<String, PackageDependencies>) -> HashMap<String, usize> {
+    let mut names: Vec<String> = graph.keys().cloned().collect();
+    names.sort();
+    compute_package_layers(&names, &release_order_graph(graph))
+}
+
+#[quench_test::test]
+fn a_cycle_through_dev_dependencies_does_not_scramble_the_layers() {
+    // The shape that went wrong: the core crate's tests use a test helper that depends on the core
+    // crate, and the packages released after them depend on both.
+    let graph = HashMap::from([
+        ("core".to_string(), deps(&[], &["test"])),
+        ("test".to_string(), deps(&["core"], &[])),
+        ("ui".to_string(), deps(&[], &["test"])),
+        ("ui-web".to_string(), deps(&["ui"], &["test"])),
+        (
+            "fullstack".to_string(),
+            deps(&["ui-web", "core"], &["test"]),
+        ),
+    ]);
+    let layers = layers_of(&graph);
+    assert_eq!(layers["core"], 0);
+    assert_eq!(
+        layers["test"], 1,
+        "the dev edge core -> test closes a cycle and is dropped"
+    );
+    assert_eq!(
+        layers["ui"], 2,
+        "a dev-dependency that can be ordered first, is"
+    );
+    assert_eq!(layers["ui-web"], 3);
+    assert_eq!(layers["fullstack"], 4);
+    assert!(
+        layers.values().all(|l| *l < 10),
+        "no runaway layers: {layers:?}"
+    );
+}
+
+#[quench_test::test]
+fn release_order_ignores_a_dev_edge_only_where_it_would_close_a_cycle() {
+    let graph = HashMap::from([
+        ("a".to_string(), deps(&["b"], &["c"])),
+        ("b".to_string(), deps(&[], &["a"])), // a cycle with a -> b: dropped
+        ("c".to_string(), deps(&[], &[])),    // a plain dev-dependency: kept
+    ]);
+    let order = release_order_graph(&graph);
+    assert_eq!(order["b"], Vec::<String>::new());
+    let mut a = order["a"].clone();
+    a.sort();
+    assert_eq!(a, vec!["b".to_string(), "c".to_string()]);
+}
+
+#[quench_test::test]
+fn compute_package_layers_survives_a_cycle_and_does_not_depend_on_input_order() {
+    let graph = HashMap::from([
+        ("x".to_string(), vec!["y".to_string()]),
+        ("y".to_string(), vec!["x".to_string(), "z".to_string()]),
+        ("z".to_string(), vec![]),
+    ]);
+    let forward: Vec<String> = ["x", "y", "z"].map(String::from).to_vec();
+    let backward: Vec<String> = ["z", "y", "x"].map(String::from).to_vec();
+    let a = compute_package_layers(&forward, &graph);
+    let b = compute_package_layers(&backward, &graph);
+    assert_eq!(a, b);
+    assert_eq!(a["z"], 0);
+    assert!(a["x"] < 5 && a["y"] < 5, "{a:?}");
+    assert_eq!(compute_package_layers(&[], &graph).len(), 0);
+}
+
+#[quench_test::test]
+fn collect_package_dependencies_tells_publish_dependencies_from_dev_ones() {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let manifest = |name: &str, body: &str| {
+        let path = dir.path().join(name);
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(
+            path.join("Cargo.toml"),
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n{body}"),
+        )
+        .unwrap();
+        path.join("Cargo.toml").display().to_string()
+    };
+    let app = manifest(
+        "app",
+        "[dependencies]\nlib = { workspace = true }\nserde = { workspace = true }\n\
+         [build-dependencies]\ngen = { workspace = true }\n\
+         [dev-dependencies]\nhelper = { workspace = true }\nlib = { workspace = true }\n\
+         [target.'cfg(unix)'.dependencies]\nunixlib = { workspace = true }\n\
+         [target.'cfg(windows)'.dev-dependencies]\nwinhelper = { workspace = true }\n",
+    );
+    let others: Vec<String> = ["lib", "gen", "helper", "unixlib", "winhelper"]
+        .iter()
+        .map(|n| manifest(n, ""))
+        .collect();
+    let package = |name: &str, path: &str| json!({ "id": name, "name": name, "manifest_path": path, "version": "0.1.0" });
+    let mut packages = vec![package("app", &app)];
+    for (name, path) in ["lib", "gen", "helper", "unixlib", "winhelper"]
+        .iter()
+        .zip(&others)
+    {
+        packages.push(package(name, path));
+    }
+    let members: Vec<&str> = vec!["app", "lib", "gen", "helper", "unixlib", "winhelper"];
+    let metadata = json!({ "workspace_members": members, "packages": packages });
+
+    let found = collect_package_dependencies(&metadata).unwrap();
+    let app = &found["app"];
+    let mut publish = app.publish_deps.clone();
+    publish.sort();
+    assert_eq!(
+        publish,
+        ["gen", "lib", "unixlib"],
+        "dependencies, build-dependencies and target.* ones"
+    );
+    let mut all = app.member_deps.clone();
+    all.sort();
+    assert_eq!(
+        all,
+        ["gen", "helper", "lib", "unixlib", "winhelper"],
+        "change detection still sees dev ones"
+    );
+    assert!(app.external_workspace_deps.contains("serde"));
+    assert!(!app.publish_deps.contains(&"helper".to_string()));
 }

@@ -38,9 +38,13 @@ pub fn is_release_relevant_file(path: &str) -> bool {
 /// detected.
 #[derive(Debug)]
 pub struct PackageDependencies {
-    /// Workspace-member names, used for release-order layering and to
+    /// Workspace-member names from every dependency table, used to
     /// propagate "needs release" to dependents when a member changed.
     pub member_deps: Vec<String>,
+    /// The members `cargo publish` needs in the registry first: the
+    /// `dependencies` and `build-dependencies` tables (the `target.*`
+    /// ones included), but not `dev-dependencies`.
+    pub publish_deps: Vec<String>,
     /// Non-member dependency names pulled in via `{ workspace = true }`.
     /// Their real version lives in the root `[workspace.dependencies]`
     /// table, not in this package's own manifest, so a diff over this
@@ -72,7 +76,7 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
     let metadata = cargo_meta::cargo_metadata()?;
     let targets = resolve_release_targets(config, &metadata, package, all)?;
     let mut plan = build_release_plan(config, &metadata, &targets)?;
-    plan.sort_by_key(|item| item.layer);
+    plan.sort_by(|a, b| (a.layer, &a.package).cmp(&(b.layer, &b.package)));
 
     // The full dependency-ordered graph - every target and its transitive
     // dependencies, whether or not each one has actually changed - so a
@@ -92,7 +96,7 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
     }
 
     // Sort plan by layer for execution order
-    plan.sort_by_key(|item| item.layer);
+    plan.sort_by(|a, b| (a.layer, &a.package).cmp(&(b.layer, &b.package)));
 
     // Show the plan before asking for confirmation.
     print_dry_run_plan_with_layers(&plan);
@@ -283,7 +287,8 @@ pub fn build_release_plan(
         get_transitive_dependencies(target, &dep_graph, &mut visited);
         all_targets.extend(visited);
     }
-    let all_targets: Vec<String> = all_targets.into_iter().collect();
+    let mut all_targets: Vec<String> = all_targets.into_iter().collect();
+    all_targets.sort(); // a plan that reads the same on every run
 
     // Identify which packages actually need release (have changes or dependencies changed)
     let mut packages_to_release: HashSet<String> = HashSet::new();
@@ -362,7 +367,7 @@ pub fn build_release_plan(
     // Layers cover every target and its transitive dependencies, not just
     // the ones that need release - `--dry-run` shows the whole graph in
     // dependency order, including packages already up to date.
-    let layers = compute_package_layers(&all_targets, &dep_graph);
+    let layers = compute_package_layers(&all_targets, &release_order_graph(&package_deps));
 
     // Build plan items
     let mut plan = Vec::new();
@@ -600,16 +605,17 @@ pub fn collect_package_dependencies(
         })?;
 
         let mut member_deps = Vec::new();
+        let mut publish_deps = Vec::new();
         let mut external_workspace_deps = HashSet::new();
 
-        for table_name in ["dependencies", "dev-dependencies", "build-dependencies"] {
-            let Some(table) = manifest_value.get(table_name).and_then(|d| d.as_object()) else {
-                continue;
-            };
+        for (is_dev, table) in dependency_tables(&manifest_value) {
             for (dep_name, dep_value) in table {
                 if member_names.contains(dep_name.as_str()) {
                     if !member_deps.contains(dep_name) {
                         member_deps.push(dep_name.clone());
+                    }
+                    if !is_dev && !publish_deps.contains(dep_name) {
+                        publish_deps.push(dep_name.clone());
                     }
                     continue;
                 }
@@ -627,12 +633,36 @@ pub fn collect_package_dependencies(
             pkg.name.clone(),
             PackageDependencies {
                 member_deps,
+                publish_deps,
                 external_workspace_deps,
             },
         );
     }
 
     Ok(result)
+}
+
+/// Every dependency table of a manifest as `(is_dev, entries)`: the three top-level ones, and the
+/// same three under each `[target.<cfg>]`.
+fn dependency_tables(manifest: &quench_serde::Value) -> Vec<(bool, &quench_serde::Map)> {
+    const TABLES: [(&str, bool); 3] = [
+        ("dependencies", false),
+        ("build-dependencies", false),
+        ("dev-dependencies", true),
+    ];
+    let mut found = Vec::new();
+    let mut scopes = vec![manifest];
+    if let Some(targets) = manifest.get("target").and_then(|t| t.as_object()) {
+        scopes.extend(targets.values());
+    }
+    for scope in scopes {
+        for (name, is_dev) in TABLES {
+            if let Some(table) = scope.get(name).and_then(|d| d.as_object()) {
+                found.push((is_dev, table));
+            }
+        }
+    }
+    found
 }
 
 /// What to say when the `needs_release`-filtered plan is empty. That is a
@@ -959,50 +989,106 @@ pub fn get_transitive_dependencies(
     }
 }
 
+/// The graph release order is computed from: the members `cargo publish` needs first
+/// (`publish_deps`), plus each `dev-dependencies` edge that does not close a cycle.
+///
+/// Workspaces are full of dev-dependency cycles (a crate's tests use a test helper that depends
+/// on the crate). Publishing never needs the dev side, since a dev-dependency only has to exist
+/// in the registry, and the helper is long since there. A dev-dependency on a member that is
+/// being published in the same run is still ordered before its dependent, when that can be done.
+#[must_use]
+#[allow(clippy::implicit_hasher)] // a private call graph built with the default hasher
+pub fn release_order_graph(
+    package_deps: &HashMap<String, PackageDependencies>,
+) -> HashMap<String, Vec<String>> {
+    let mut graph: HashMap<String, Vec<String>> = package_deps
+        .iter()
+        .map(|(name, deps)| (name.clone(), deps.publish_deps.clone()))
+        .collect();
+    let mut names: Vec<&String> = package_deps.keys().collect();
+    names.sort();
+    for name in names {
+        let mut dev: Vec<&String> = package_deps[name]
+            .member_deps
+            .iter()
+            .filter(|dep| !package_deps[name].publish_deps.contains(dep))
+            .collect();
+        dev.sort();
+        for dep in dev {
+            if !reaches(&graph, dep, name) {
+                graph.entry(name.clone()).or_default().push(dep.clone());
+            }
+        }
+    }
+    graph
+}
+
+/// Whether `to` is reachable from `from` by following `graph`'s dependency edges.
+fn reaches(graph: &HashMap<String, Vec<String>>, from: &str, to: &str) -> bool {
+    let mut seen = HashSet::new();
+    let mut stack = vec![from];
+    while let Some(node) = stack.pop() {
+        if node == to {
+            return true;
+        }
+        if seen.insert(node) {
+            stack.extend(graph.get(node).into_iter().flatten().map(String::as_str));
+        }
+    }
+    false
+}
+
+/// Each package's layer: 0 for one with no dependencies among `packages`, otherwise one more than
+/// its deepest dependency, so everything in a layer can be released once the layers before it are.
+///
+/// A cycle cannot be ordered; the edge that closes it is ignored, so the result is always finite
+/// and independent of the order `packages` is given in.
 #[must_use]
 #[allow(clippy::implicit_hasher)]
 pub fn compute_package_layers(
     packages: &[String],
     graph: &HashMap<String, Vec<String>>,
 ) -> HashMap<String, usize> {
-    let packages_set: HashSet<&String> = packages.iter().collect();
-    let mut layers: HashMap<String, usize> = HashMap::new();
-
-    for pkg in packages {
+    fn layer_of<'a>(
+        pkg: &'a str,
+        members: &HashSet<&'a str>,
+        graph: &'a HashMap<String, Vec<String>>,
+        layers: &mut HashMap<&'a str, usize>,
+        visiting: &mut HashSet<&'a str>,
+    ) -> usize {
+        if let Some(layer) = layers.get(pkg) {
+            return *layer;
+        }
+        visiting.insert(pkg);
         let mut layer = 0;
-        if let Some(deps) = graph.get(pkg) {
-            for dep in deps {
-                if packages_set.contains(dep) {
-                    layer = layer.max(layers.get(dep).copied().unwrap_or(0) + 1);
-                }
-            }
+        let mut deps: Vec<&str> = graph
+            .get(pkg)
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+            .filter(|dep| members.contains(dep) && !visiting.contains(dep))
+            .collect();
+        deps.sort_unstable();
+        for dep in deps {
+            layer = layer.max(layer_of(dep, members, graph, layers, visiting) + 1);
         }
-        layers.insert(pkg.clone(), layer);
+        visiting.remove(pkg);
+        layers.insert(pkg, layer);
+        layer
     }
 
-    // Iteratively refine layers until stable
-    for _ in 0..packages.len() {
-        let mut changed = false;
-        for pkg in packages {
-            let mut new_layer = 0;
-            if let Some(deps) = graph.get(pkg) {
-                for dep in deps {
-                    if packages_set.contains(dep) {
-                        new_layer = new_layer.max(layers.get(dep).copied().unwrap_or(0) + 1);
-                    }
-                }
-            }
-            if new_layer > layers[pkg] {
-                layers.insert(pkg.clone(), new_layer);
-                changed = true;
-            }
-        }
-        if !changed {
-            break;
-        }
+    let members: HashSet<&str> = packages.iter().map(String::as_str).collect();
+    let mut sorted: Vec<&str> = members.iter().copied().collect();
+    sorted.sort_unstable();
+    let mut layers = HashMap::new();
+    let mut visiting = HashSet::new();
+    for pkg in sorted {
+        layer_of(pkg, &members, graph, &mut layers, &mut visiting);
     }
-
     layers
+        .into_iter()
+        .map(|(pkg, layer)| (pkg.to_string(), layer))
+        .collect()
 }
 
 pub fn print_dry_run_plan_with_layers(plan: &[ReleasePlanItem]) {
