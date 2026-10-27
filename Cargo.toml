@@ -45,14 +45,14 @@ quench-qr = { registry = "ennor", version = "0.1.1" }
 quench-regex = { registry = "ennor", version = "0.1.1" }
 quench-schema = { registry = "ennor", version = "0.1.2" }
 quench-serde = { registry = "ennor", version = "0.1.6" }
-quench-starter = { registry = "ennor", version = "0.4.15" }
+quench-starter = { registry = "ennor", version = "0.4.16" }
 quench-test = { registry = "ennor", version = "0.1.2" }
 quench-test-bdd = { registry = "ennor", version = "0.1.2" }
 quench-tls = { registry = "ennor", version = "0.1.7" }
 quench-template = { registry = "ennor", version = "0.1.2" }
 quench-tz = { registry = "ennor", version = "0.1.2" }
-quench-web = { registry = "ennor", version = "0.1.22" }
-quench-web-components = { registry = "ennor", version = "0.1.17" }
+quench-web = { registry = "ennor", version = "0.1.23" }
+quench-web-components = { registry = "ennor", version = "0.1.18" }
 rivet-package = { path = "libs/rivet-package", registry = "ennor", version = "0.1.0" }
 tokio = { version = "1.54", features = ["full"] }
 
