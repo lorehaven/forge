@@ -1,0 +1,16 @@
+# Read by the `quench` command. Packages are daybook-app, daybook-core and so on.
+name = "daybook"
+template = "web"
+[android]
+keystore = "release.keystore"
+key_alias = "release"
+package = "dev.lorehaven.daybook"
+
+[linux]
+id = "dev.lorehaven.daybook"
+title = "Daybook"
+wm_class = "dev.lorehaven.daybook"
+icon = "icon.png"
+bin = "daybook"
+# A native app: nothing but libc (the default is a web host's WebKit and GTK).
+depends = ""

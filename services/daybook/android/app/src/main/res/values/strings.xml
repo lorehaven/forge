@@ -1,0 +1,7 @@
+<resources>
+    <string name="widget_description">Your tasks from a list or label, with a button to add one.</string>
+    <string name="widget_add_task">Add task</string>
+    <string name="widget_pick_list">Show list</string>
+    <string name="widget_empty_tasks">No tasks</string>
+    <string name="widget_empty_signed_out">Open Daybook to sign in</string>
+</resources>

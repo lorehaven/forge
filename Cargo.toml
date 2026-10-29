@@ -3,6 +3,14 @@ members = [
   "cli/*",
   "docker/*",
   "libs/*",
+  "services/daybook/service",
+  "services/daybook/core",
+  "services/daybook/net",
+  "services/daybook/host",
+  "services/daybook/app",
+  "services/daybook/desktop",
+  "services/daybook/surface",
+  "services/daybook/web",
   "services/forklift/app",
   "services/forklift/core",
   "services/forklift/desktop",
@@ -39,7 +47,7 @@ quench-desktop-native = { registry = "ennor", version = "0.1.3" }
 quench-style = { registry = "ennor", version = "0.1.2" }
 quench-ui = { registry = "ennor", version = "0.1.3" }
 quench-ui-native = { registry = "ennor", version = "0.1.3" }
-quench-ui-web = { registry = "ennor", version = "0.1.3" }
+quench-ui-web = { registry = "ennor", version = "0.1.7" }
 quench-archive = { registry = "ennor", version = "0.1.1" }
 quench-args = { registry = "ennor", version = "0.1.1" }
 quench-auth = { registry = "ennor", version = "0.4.14" }
@@ -52,6 +60,7 @@ quench-core = { registry = "ennor", version = "0.1.6" }
 quench-crypto = { registry = "ennor", version = "0.1.8" }
 quench-db = { registry = "ennor", version = "0.2.13" }
 quench-html = { registry = "ennor", version = "0.1.1" }
+quench-fullstack = { registry = "ennor", version = "0.1.7" }
 quench-http = { registry = "ennor", version = "0.1.14" }
 quench-k8s = { registry = "ennor", version = "0.1.3" }
 quench-log = { registry = "ennor", version = "0.1.8" }
@@ -71,6 +80,12 @@ quench-template = { registry = "ennor", version = "0.1.2" }
 quench-tz = { registry = "ennor", version = "0.1.2" }
 quench-web = { registry = "ennor", version = "0.1.23" }
 quench-web-components = { registry = "ennor", version = "0.1.18" }
+daybook-app = { path = "services/daybook/app" }
+daybook-core = { path = "services/daybook/core" }
+daybook-desktop = { path = "services/daybook/desktop" }
+daybook-host = { path = "services/daybook/host", default-features = false }
+daybook-net = { path = "services/daybook/net", default-features = false }
+daybook-web = { path = "services/daybook/web" }
 forklift-app = { path = "services/forklift/app" }
 forklift-core = { path = "services/forklift/core" }
 forklift-host = { path = "services/forklift/host" }
@@ -114,6 +129,10 @@ opt-level = 3
 debug-assertions = false
 overflow-checks = false
 [profile.dev.package.forklift-app]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+[profile.dev.package.daybook-app]
 opt-level = 3
 debug-assertions = false
 overflow-checks = false

@@ -1,0 +1,48 @@
+# One version for every build: the desktop app's (the Android app takes it from there too, as Hoist's does).
+[artifacts.programs.daybook]
+program = "dev.lorehaven.daybook"
+dir = "services/daybook"
+version_file = "desktop/Cargo.toml"
+
+[[artifacts.programs.daybook.targets]]
+platform = "android"
+format = "apk"
+build = ["quench", "build", "apk", "--release"]
+file = "dist/daybook-${version_name}-${version_code}.apk"
+
+# Linux ships in the formats the distributions install, plus the sources, as Hoist does.
+[[artifacts.programs.daybook.targets]]
+name = "linux-deb"
+platform = "linux"
+label = "Daybook"
+format = "deb"
+arch = "x86_64"
+build = ["quench", "build", "deb"]
+file = "dist/daybook_${version_name}_amd64.deb"
+
+[[artifacts.programs.daybook.targets]]
+name = "linux-rpm"
+platform = "linux"
+label = "Daybook"
+format = "rpm"
+arch = "x86_64"
+build = ["quench", "build", "rpm"]
+file = "dist/daybook-${version_name}-1.x86_64.rpm"
+
+[[artifacts.programs.daybook.targets]]
+name = "linux-arch"
+platform = "linux"
+label = "Daybook"
+format = "pkg.tar.zst"
+arch = "x86_64"
+build = ["quench", "build", "arch"]
+file = "dist/daybook-${version_name}-1-x86_64.pkg.tar.zst"
+
+[[artifacts.programs.daybook.targets]]
+name = "linux-source"
+platform = "linux"
+label = "Daybook"
+format = "tar.gz"
+arch = "universal"
+build = ["quench", "build", "source"]
+file = "dist/daybook-${version_name}.tar.gz"

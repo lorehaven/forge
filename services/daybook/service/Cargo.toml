@@ -1,0 +1,60 @@
+[package]
+name = "daybook-service"
+version = "0.2.8"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Daybook - personal tasks and project lists"
+keywords = ["tasks", "todo", "productivity"]
+categories = ["web-programming"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+autotests = false
+
+[lib]
+name = "daybook_service"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "daybook-service"
+path = "src/main.rs"
+
+[dependencies]
+daybook-web = { workspace = true }
+quench-fullstack = { workspace = true }
+quench-ui = { workspace = true }
+quench-ui-web = { workspace = true }
+quench-serde = { workspace = true }
+quench-core = { workspace = true }
+quench-tz = { workspace = true }
+quench-auth = { workspace = true }
+quench-db = { workspace = true }
+quench-http = { workspace = true }
+quench-log = { workspace = true }
+quench-pg = { workspace = true }
+quench-starter = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+quench-serde = { workspace = true }
+quench-core = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+harness = false
+
+[[test]]
+name = "recurrence"
+path = "tests/recurrence.rs"
+harness = false
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false

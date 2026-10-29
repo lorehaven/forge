@@ -395,6 +395,7 @@ package = "daybook-service"
 port = 12443
 base_path = "/daybook"
 needs = ["gatehouse"]
+workdir = "services/daybook/service"
 cert_from = "docker/warehouse-service"
 
 # Hoist's public catalogue (F-Droid, IzzyOnDroid and Aptoide merged), in services/hoist beside the app. The first

@@ -1,0 +1,37 @@
+[package]
+name = "daybook-host"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+autotests = false
+
+# The brain both hosts share, with no screen and no device in it: the controller that loads, changes (at once on screen,
+# undone if the service refuses) and schedules reminders, the `Platform` it asks for the device's part, and the worker
+# thread that talks to the services. The hosts (Android, Linux) give it a platform.
+[lib]
+name = "daybook_host"
+path = "src/lib.rs"
+
+[[test]]
+name = "controller"
+path = "tests/controller.rs"
+harness = false
+
+# `native` is what a program has (the blocking client and the worker thread); the browser's build leaves it off.
+[features]
+default = ["native"]
+native = ["daybook-net/client"]
+
+[dependencies]
+daybook-core = { workspace = true }
+daybook-net = { workspace = true }
+quench-core = { workspace = true }
+quench-serde = { workspace = true }
+quench-tz = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }

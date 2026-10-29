@@ -1,0 +1,7 @@
+<resources>
+    <style name="AppTheme" parent="android:Theme.DeviceDefault.NoActionBar" />
+    <style name="WidgetPickerTheme" parent="@android:style/Theme.DeviceDefault.Dialog.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
+</resources>

@@ -1,0 +1,32 @@
+[package]
+name = "daybook-app"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+
+# The interface: sign-in, the lists, the tasks and their form. The app does no I/O: it asks its host for things
+# (`daybook_core::Request`) and is told what happened (`daybook_core::Msg`), so the same screens run on every host
+# (Android, Linux, the browser) and in tests.
+[lib]
+name = "daybook_app"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+daybook-core = { workspace = true }
+quench-core = { workspace = true }
+quench-tz = { workspace = true }
+quench-ui = { workspace = true }
+
+[[test]]
+name = "screens"
+path = "tests/screens.rs"
+harness = false
+
+[dev-dependencies]
+quench-test = { workspace = true }

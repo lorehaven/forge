@@ -1,0 +1,49 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <!-- quench:permissions -->
+
+    <application
+        android:label="Daybook"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/AppTheme"
+        android:allowBackup="false"
+        android:supportsRtl="true"
+        android:extractNativeLibs="true"
+        android:enableOnBackInvokedCallback="false"
+        android:networkSecurityConfig="@xml/network_security_config">
+        <receiver android:name=".ReminderReceiver" android:exported="false" />
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <activity android:name=".SurfaceActivity" android:exported="true" android:launchMode="singleTop" android:windowSoftInputMode="adjustResize" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|uiMode|density|fontScale|layoutDirection|locale">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- quench:activity -->
+        </activity>
+        <!-- Home-screen widget: the provider draws it, the service supplies its task rows, the activity is the
+             "which list?" dialog opened from its title, the job keeps its snapshot fresh with the app closed. -->
+        <receiver android:name=".DaybookWidgetProvider" android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/daybook_widget_info" />
+        </receiver>
+        <service android:name=".DaybookWidgetService" android:exported="false" android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <activity android:name=".ListPickerActivity" android:excludeFromRecents="true" android:exported="false" android:taskAffinity="" android:theme="@style/WidgetPickerTheme" />
+        <service android:name=".WidgetRefreshJobService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- quench:components -->
+    </application>
+</manifest>

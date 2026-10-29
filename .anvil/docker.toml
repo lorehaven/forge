@@ -65,6 +65,8 @@ registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 module_name = "daybook"
 image_name = "daybook"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+# The browser client: the image builds `daybook-web` and ships it in `web/` (the service serves it at /ui).
+build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "daybook-web" }
 
 [docker.modules.docker.hoist-service]
 module_name = "hoist"

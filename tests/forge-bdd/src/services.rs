@@ -83,8 +83,18 @@ impl Fixture {
         Self { workspace_root }
     }
 
+    /// Where a service's crate lives: under `docker/`, or, for a service that is part of an app, in that app's
+    /// `service/` directory (`daybook-service` is `services/daybook/service`).
     fn service_dir(&self, package: &str) -> PathBuf {
-        self.workspace_root.join("docker").join(package)
+        let in_docker = self.workspace_root.join("docker").join(package);
+        if in_docker.is_dir() {
+            return in_docker;
+        }
+        let app = package.strip_suffix("-service").unwrap_or(package);
+        self.workspace_root
+            .join("services")
+            .join(app)
+            .join("service")
     }
 
     fn binary(&self, package: &str) -> PathBuf {
