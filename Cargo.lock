@@ -408,7 +408,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-service"
-version = "0.3.27"
+version = "0.3.28"
 dependencies = [
  "forge-ui",
  "quench-auth",
