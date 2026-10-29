@@ -2,11 +2,9 @@
 members = [
   "cli/*",
   "docker/*",
-  "examples/*",
   "libs/*",
   "tests/*",
 ]
-exclude = ["examples/vllm_cluster_test"]
 resolver = "2"
 
 [workspace.package]

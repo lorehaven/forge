@@ -52,6 +52,11 @@ pub const MONITORED_CRATES: &[MonitoredCrate] = &[
         package: "warehouse-cli",
         binary: "warehouse",
     },
+    // From the quench workspace, published to the same registry: the `quench` command that makes and runs apps.
+    MonitoredCrate {
+        package: "quench-tool",
+        binary: "quench",
+    },
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]

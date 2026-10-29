@@ -40,6 +40,7 @@ cargo run -p forge-toolbox
 | `riveter` | `riveter` |
 | `welder` | `welder` |
 | `warehouse-cli` | `warehouse` |
+| `quench-tool` | `quench` (from the quench workspace, same registry) |
 
 Docker-only services under `docker/` are not listed, since nothing installs them with `cargo install`.
 

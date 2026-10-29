@@ -8,7 +8,7 @@
 # was written against: a plan that uses a new riveter flag must not meet an older riveter at run time.
 # Lives outside docker/ for the same reason rust-builder does (every direct child of docker/ must be a crate).
 #
-#   docker build -f ci/gantry-runner/Dockerfile -t ossiriand.arda:8080/forge/gantry/runner:<gantry version> .
+#   docker build -f images/gantry-runner/Dockerfile -t ossiriand.arda:8080/forge/gantry/runner:<gantry version> .
 #
 # Tag it with Gantry's version: the service names the image, and the two are released together.
 

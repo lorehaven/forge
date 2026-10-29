@@ -170,6 +170,43 @@ command = [
 done = "database rebuilt; `foreman` starts the estate"
 
 # ---------------------------------------------------------------------------
+# Images
+# ---------------------------------------------------------------------------
+#
+# The two images the pipelines run in (`images/`): rust-builder, which every `.conveyor.toml` job uses, and
+# gantry-runner, which a Gantry Job runs. Run by hand, `foreman run <name>`:
+#
+#   foreman run build-rust-builder       build it locally
+#   foreman run publish-rust-builder     build it, then push it to the registry
+#   foreman run build-gantry-runner      likewise for the runner
+#   foreman run publish-gantry-runner
+#
+# Pushing needs `docker login ossiriand.arda:8080` first. Both images compile this workspace, so the
+# registry's crate token is passed as a build argument when ENNOR_TOKEN is set in the environment (see
+# scripts/image.sh; the crates are public to read otherwise). The runner is tagged with Gantry's version, because the service names the
+# image and the two are released together; rust-builder is `latest`.
+
+[tasks.build-rust-builder]
+description = "building images/rust-builder"
+command = ["bash", "scripts/image.sh", "rust-builder", "build"]
+done = "rust-builder built"
+
+[tasks.publish-rust-builder]
+description = "building and pushing images/rust-builder"
+command = ["bash", "scripts/image.sh", "rust-builder", "publish"]
+done = "rust-builder pushed"
+
+[tasks.build-gantry-runner]
+description = "building images/gantry-runner"
+command = ["bash", "scripts/image.sh", "gantry-runner", "build"]
+done = "gantry-runner built"
+
+[tasks.publish-gantry-runner]
+description = "building and pushing images/gantry-runner"
+command = ["bash", "scripts/image.sh", "gantry-runner", "publish"]
+done = "gantry-runner pushed"
+
+# ---------------------------------------------------------------------------
 # Services
 # ---------------------------------------------------------------------------
 

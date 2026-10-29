@@ -11,7 +11,7 @@
 #
 # Lives outside docker/ on purpose: the workspace's `docker/*` member glob
 # (root Cargo.toml) expects every direct subdirectory of docker/ to be a
-# crate with its own Cargo.toml - a docker/ci/ with none broke `cargo` for the
+# crate with its own Cargo.toml - a docker/images/ with none broke `cargo` for the
 # whole workspace, not just this image's own build.
 #
 # glibc (Debian), not Alpine/musl: this image never ships anything, it only

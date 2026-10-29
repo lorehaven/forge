@@ -98,7 +98,7 @@ GANTRY_PACKAGES_DIR=./packages gantry-service
 | `WAREHOUSE_URL` | - | Warehouse including its base path. With `GATEHOUSE_URL` and `WAREHOUSE_CLIENT_SECRET` it authenticates as the `gantry-warehouse` client (client credentials, audience `warehouse` only); without them it asks anonymously, which only a Warehouse with auth off answers. |
 | `WAREHOUSE_CLIENT_ID` | `gantry-warehouse` | |
 | `GANTRY_NAMESPACE` | pod's own, else `forge` | Where runner Jobs go. |
-| `GANTRY_RUNNER_IMAGE` | | The runner image (`riveter`, `kubectl`, `gantry-runner`), built from `ci/gantry-runner/Dockerfile` and tagged with Gantry's version. |
+| `GANTRY_RUNNER_IMAGE` | | The runner image (`riveter`, `kubectl`, `gantry-runner`), built from `images/gantry-runner/Dockerfile` (`foreman run build-gantry-runner`, or `publish-gantry-runner` to push it) and tagged with Gantry's version. |
 | `GANTRY_RUNNER_SERVICE_ACCOUNT` | `gantry-runner` | |
 | `GANTRY_RUNNER_CREDENTIALS_SECRET` | `gantry-runner-credentials` | Registry credentials the Job fetches packages with (`RIVETER_WAREHOUSE_URL`, `RIVETER_GATEHOUSE_URL`, `RIVETER_CLIENT_ID`, `RIVETER_CLIENT_SECRET`). |
 | `GANTRY_AGE_KEY_SECRET` | `gantry-age-key` | The Secret holding the age key (`age.key`) that opens a package's encrypted values. Not made by the overlay - it is the one thing that is not in git: `kubectl -n forge create secret generic gantry-age-key --from-file=age.key=$HOME/.config/riveter/age.key`. |

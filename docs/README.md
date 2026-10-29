@@ -30,8 +30,6 @@ docs/
 ├── libs/                   # libs/* shared crates
 │   ├── conveyor-pipeline.md
 │   └── rivet-package.md
-├── examples/                # examples/* runnable references
-│   └── vllm_cluster_test.md
 └── tests/                   # tests/* suites
     └── forge-bdd.md
 ```
@@ -71,9 +69,8 @@ Long-running quench-http services, each with its own Postgres schema, started lo
 
 The `quench-*` crates (auth, starter, web, web-components, db, cache, client, config, cli) that every `docker/*` service and several `cli/*` tools depend on now live in the sibling [quench](https://github.com/lorehaven/quench) repository and are pulled in from the `ennor` cargo registry like any other dependency — see that repo's own docs for per-crate reference.
 
-## Examples & Tests
+## Tests
 
-- [Example: vLLM Cluster Test](./examples/vllm_cluster_test.md) — standalone Docker/K8s connectivity smoke test
 - [Forge BDD](./tests/forge-bdd.md) — the workspace's single Cucumber BDD suite, run via `foreman test`
 
 ## Prerequisites
@@ -174,9 +171,8 @@ services.
 ├── docker/        # services: conveyor, foundry, gantry, gatehouse, gauge,
 │                  #           sage, switchboard, warehouse, workbench (each its own image)
 ├── libs/          # shared crates: conveyor-pipeline, rivet-package
-├── examples/      # runnable references: vllm_cluster_test
 ├── tests/         # forge-bdd, the cross-service Cucumber suite
-├── ci/            # CI-only images: rust-builder, and gantry-runner (what Gantry's Jobs run)
+├── images/        # CI-only images: rust-builder, and gantry-runner (what Gantry's Jobs run)
 ├── docs/          # this documentation tree
 └── foreman.toml   # what foreman starts locally, on which ports
 ```

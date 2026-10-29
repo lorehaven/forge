@@ -190,6 +190,8 @@ done = "database ready"           # printed on success
 | `warn` | printed as a warning before the command runs |
 | `done` | printed on success |
 
+This workspace's own `foreman.toml` uses manual tasks to build and publish the two CI images in `images/`: `foreman run build-rust-builder`, `publish-rust-builder`, `build-gantry-runner` and `publish-gantry-runner` (`publish` builds, then pushes; they call `scripts/image.sh`, which passes `ENNOR_TOKEN` as a build argument when it is set, and pushing needs `docker login` first).
+
 ### `[[notes]]` and `[[warnings]]`
 
 ```toml

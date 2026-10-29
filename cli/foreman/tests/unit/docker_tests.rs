@@ -61,7 +61,7 @@ fn container_name_uses_the_override_when_set() {
 #[quench_test::test]
 fn require_docker_agrees_with_whether_docker_is_actually_on_path() {
     // Some dev sandboxes have a real docker daemon on PATH; the CI build
-    // image (`ci/rust-builder`) deliberately does not - it only compiles and
+    // image (`images/rust-builder`) deliberately does not - it only compiles and
     // tests the workspace, it never runs containers. So this can't assume
     // either way; it checks `require_docker()` against the real environment
     // instead, the same way `startup_validate_tests.rs` treats `which`

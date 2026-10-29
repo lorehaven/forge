@@ -10,6 +10,6 @@ docker/Dockerfile*
 **/*.pem
 **/*.sh
 /vllm/
-/ci/
+/images/
 /docs/
 /plans/
