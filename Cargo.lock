@@ -625,9 +625,9 @@ dependencies = [
 
 [[package]]
 name = "quench-desktop-native"
-version = "0.1.4"
+version = "0.1.5"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "82bd47f682511412361566748198b2fb1e5ac0f72e2426d16086a60d0d20f174"
+checksum = "228826460f10c879f78bdc5de40c20bd40b8bfad2ecf794b00f206fd7e3eec94"
 dependencies = [
  "quench-desktop-atspi",
  "quench-desktop-wayland",
@@ -637,9 +637,9 @@ dependencies = [
 
 [[package]]
 name = "quench-desktop-wayland"
-version = "0.1.3"
+version = "0.1.4"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "69c569f16da0ff6477a0295bb93ee763ab39242b51899f7ec7e8ba1a1c4c6a68"
+checksum = "dcdb052db4e036e63e721a7b5adeb00bfb33976cef1fb71f1b22fbcc38ee4927"
 dependencies = [
  "libc",
  "quench-raster",
