@@ -49,6 +49,28 @@ impl Artifact {
     }
 }
 
+/// The program id of this app in the registry (what the warehouse files its builds under).
+pub const SELF_PROGRAM: &str = "dev.lorehaven.hoist";
+
+/// What this app is called, for a registry row that carries no label.
+pub const SELF_NAME: &str = "Hoist";
+
+/// `0.1.3` as `1003`, `1.2.3` as `1002003`: the number the registry's builds of one version carry (the same
+/// arithmetic `quench` and `anvil` use). A part over 999 counts as 999; anything that is not `major.minor.patch`
+/// counts as `0.0.0`.
+#[must_use]
+pub fn version_code(version: &str) -> i64 {
+    let mut parts = version
+        .split(['.', '-', '+'])
+        .map(|p| p.parse::<i64>().unwrap_or(0));
+    let (major, minor, patch) = (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0).min(999),
+        parts.next().unwrap_or(0).min(999),
+    );
+    major * 1_000_000 + minor * 1_000 + patch
+}
+
 /// A program that is on this machine.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Installed {

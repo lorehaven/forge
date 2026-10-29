@@ -63,10 +63,18 @@ pub fn build_entries(
     }
     let mut entries: Vec<Entry> = latest
         .into_values()
-        .map(|artifact| Entry {
-            latest: artifact.clone(),
-            installed: installed.get(&artifact.program).cloned(),
-            is_self: artifact.program == self_program,
+        .map(|artifact| {
+            let mut latest = artifact.clone();
+            let is_self = artifact.program == self_program;
+            // Builds published before the registry was told this app's name have only the program id to show.
+            if is_self && latest.label.as_deref().is_none_or(str::is_empty) {
+                latest.label = Some(crate::SELF_NAME.to_string());
+            }
+            Entry {
+                latest,
+                installed: installed.get(&artifact.program).cloned(),
+                is_self,
+            }
         })
         .collect();
     let rank = |state: InstallState| match state {

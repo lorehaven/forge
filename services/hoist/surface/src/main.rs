@@ -18,7 +18,7 @@ use quench_ui::mount;
 use quench_ui_native::NativeRenderer;
 
 /// The application id this app has on the device: what it is called in the catalog.
-const SELF_PROGRAM: &str = "dev.lorehaven.hoist";
+use hoist_core::SELF_PROGRAM;
 
 type Deliver = Rc<dyn Fn(Msg)>;
 

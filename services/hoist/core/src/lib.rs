@@ -9,7 +9,7 @@ pub mod model;
 pub mod public;
 pub mod updates;
 
-pub use model::{Artifact, Installed, format_bytes};
+pub use model::{Artifact, Installed, SELF_NAME, SELF_PROGRAM, format_bytes, version_code};
 pub use public::{Category, PublicApp, PublicPage, PublicQuery, home_categories, suggestions};
 pub use updates::{Entry, InstallState, build_entries, state_for};
 

@@ -1,4 +1,7 @@
-use hoist_core::{Artifact, InstallState, Installed, build_entries, format_bytes, state_for, step};
+use hoist_core::{
+    Artifact, InstallState, Installed, SELF_NAME, SELF_PROGRAM, build_entries, format_bytes,
+    state_for, step, version_code,
+};
 use quench_serde::json;
 use std::collections::BTreeMap;
 
@@ -186,3 +189,43 @@ fn the_scaffolds_counter_still_steps() {
 }
 
 quench_test::main!();
+
+#[quench_test::test]
+fn this_app_is_named_even_when_the_registry_sent_no_label_and_is_installed_at_its_own_version() {
+    // Builds published before the registry was told the name have no label: the program id is not what to show.
+    let unnamed = artifact(SELF_PROGRAM, None, 1002);
+    let other = artifact("dev.example.other", None, 5);
+    let mut installed = BTreeMap::new();
+    installed.insert(
+        SELF_PROGRAM.to_string(),
+        Installed {
+            program: SELF_PROGRAM.to_string(),
+            version_code: version_code("0.1.3"),
+            version_name: "0.1.3".to_string(),
+        },
+    );
+    let entries = build_entries(&[unnamed, other], &installed, SELF_PROGRAM);
+    let me = entries.iter().find(|e| e.is_self).unwrap();
+    assert_eq!(me.latest.title(), SELF_NAME);
+    // The running 0.1.3 is newer than the registry's 0.1.2: nothing to install.
+    assert_eq!(me.state(), InstallState::UpToDate);
+    // Another program with no label keeps its id, and an app that was told its name keeps that name.
+    let other = entries.iter().find(|e| !e.is_self).unwrap();
+    assert_eq!(other.latest.title(), "dev.example.other");
+    assert_eq!(other.state(), InstallState::NotInstalled);
+}
+
+#[quench_test::test]
+fn a_version_is_one_number_the_same_way_quench_and_anvil_make_it() {
+    for (version, code) in [
+        ("0.1.0", 1000),
+        ("0.1.3", 1003),
+        ("1.2.3", 1_002_003),
+        ("0.1.3-rc1", 1003),
+        ("0.1.3+b7", 1003),
+        ("0.1.2000", 1999),
+        ("x", 0),
+    ] {
+        assert_eq!(version_code(version), code, "{version}");
+    }
+}
