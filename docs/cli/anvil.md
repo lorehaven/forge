@@ -14,6 +14,7 @@ Anvil is the workspace build tool for the Forge Cargo workspace. It wraps `cargo
 - **Config validation**: `config check` validates `.anvil.toml` against anvil's own schema and reports every problem found in one pass (unknown fields, missing `packages`/`dockerfile`, a package override that doesn't match its module's `packages`, ...), rather than the one-error-at-a-time story a plain TOML parse gives.
 - **API stability**: `semver-check -p <name> [--baseline-rev <rev>]` diffs a library crate's public API with `cargo-semver-checks` against a git revision (default: the commit before its last `Cargo.toml` version bump) rather than a registry version, since the crates this workspace publishes live on the private `ennor` registry that `cargo-semver-checks` can't query directly. A package on its first release - no earlier commit to diff against - compares against a synthetic empty API instead of erroring, so nothing reads as a breaking change.
 - **Run/serve mode**: `run` builds and runs a package binary; with `--serve` it watches for file changes and rebuilds/restarts, with interactive hotkeys.
+- **Artifact releases**: `artifact release <name>` builds a program's apps and desktop packages and publishes them to the warehouse's artifact registry (`anvil artifact list` shows what is configured); see [Artifact releases](#artifact-releases).
 - **Docker integration**: builds, tags, pushes, and releases Docker images for packages declared under `[docker.modules.*]` in `.anvil.toml`, including multi-registry pushes and per-package `build_args`.
 - **Release automation**: `release` bumps a package's patch version, commits, and then either runs the Docker release flow or `cargo publish` (+ `cargo install` when the package is also listed under `[install].packages`). `--dry-run` shows the full dependency-ordered plan across every configured release/Docker package - not just the ones that happen to have changed - so it also works as a plain "what would a full release touch" report. The version-bump commit message is configurable via `[release].commit_message_template`.
 
@@ -137,6 +138,39 @@ gatehouse_url = "https://host/gatehouse"
 ```
 
 `[docker].registry` is only optional when every package sets its own `registries` override. Every Docker build always receives `PROJECT_NAME` and `RESOURCES_PATH` build args derived from the module/package name; `build_args` entries are appended after those, so a package can override `RESOURCES_PATH` if it genuinely needs a different one. This lets one parameterized Dockerfile serve many packages — prefer `build_args` over forking a Dockerfile for a one-line difference.
+
+### Artifact releases
+
+`anvil artifact release <name> [--target <t>] [--dry-run] [--allow-dirty] [--skip-existing]` builds what `[artifacts.programs.<name>]` lists and sends each file to the warehouse, with the login `anvil login` keeps (a short-lived token is fetched once per release; mint the stored one with `--scope warehouse:write`). The tools that make the packages know nothing of the warehouse: for pedlar that is `quench build apk --release` and `quench build deb`.
+
+```toml
+[artifacts]
+warehouse_url = "https://host/warehouse"          # with its base path
+
+[artifacts.programs.pedlar]
+program = "dev.lorehaven.pedlar"                  # what the warehouse files every platform's build under
+dir = "services/pedlar"                           # where the builds run and `file` is looked for (default: the root)
+version_file = "Cargo.toml"                       # its [workspace.package] (else [package]) version is the release's
+
+[[artifacts.programs.pedlar.targets]]
+platform = "android"                              # android, linux, windows or macos
+format = "apk"                                    # required off Android: deb, tar.gz, AppImage, msi, ...
+build = ["quench", "build", "apk", "--release"]   # run in `dir`
+file = "dist/pedlar-${version_name}-${version_code}.apk"
+
+[[artifacts.programs.pedlar.targets]]
+name = "linux"                                    # what --target calls it (default: the platform)
+platform = "linux"
+format = "deb"
+arch = "x86_64"                                   # optional: x86_64, aarch64 or universal
+build = ["quench", "build", "deb"]
+file = "dist/pedlar_${version_name}_amd64.deb"
+```
+
+- **One version.** `version_name` is the version of `version_file` and `version_code` is `major * 1_000_000 + minor * 1_000 + patch` (`0.1.3` is `1003`), the number `quench` derives for the APK too, so every platform's build of a release agrees. `${version_name}`, `${version_code}` and `${program}` are replaced in `build` and `file`; the first two are also in the build's environment as `ANVIL_VERSION_NAME` and `ANVIL_VERSION_CODE`.
+- **The protocol** is the warehouse's: `PUT {warehouse_url}/api/v1/artifacts/{program}/{platform}/{version_code}` with the file as the body (for an APK the warehouse reads the id and version out of the manifest; elsewhere `?format=`, `arch`, `version_name`, `label` and `filename` say them). `201` is published; `409` means that version exists (versions are immutable: raise the version, or `--skip-existing` to leave that one and go on, which finishes a release that stopped half way); `401`/`403` say to `anvil login --scope warehouse:write`.
+- **Safety.** A tree with uncommitted changes is refused (the published build must be traceable to a commit; the commit is printed, `-dirty` with `--allow-dirty`). `--dry-run` builds and checks everything and sends nothing, and asks for no token.
+- `anvil config check` validates the `[artifacts]` tables (`format` is required off Android).
 
 ### `anvil registry-token`
 

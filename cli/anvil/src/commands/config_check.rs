@@ -32,7 +32,12 @@ impl fmt::Display for ConfigIssue {
     }
 }
 
-const TOP_FIELDS: &[&str] = &["docker", "install", "release"];
+const TOP_FIELDS: &[&str] = &["docker", "install", "release", "artifacts"];
+const ARTIFACTS_FIELDS: &[&str] = &["warehouse_url", "programs"];
+const PROGRAM_FIELDS: &[&str] = &["program", "dir", "version_file", "targets"];
+const TARGET_FIELDS: &[&str] = &[
+    "name", "platform", "format", "arch", "label", "build", "file",
+];
 const DOCKER_FIELDS: &[&str] = &[
     "registry",
     "cargo_registry",
@@ -206,8 +211,82 @@ pub fn validate(content: &str) -> Result<Vec<ConfigIssue>, quench_serde::Error> 
         }
     }
 
+    if let Some(artifacts) = table.get("artifacts") {
+        check_artifacts(artifacts, &mut issues);
+    }
+
     issues.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(issues)
+}
+
+fn check_artifacts(artifacts: &Value, issues: &mut Vec<ConfigIssue>) {
+    let Some(table) = expect_table(artifacts, "artifacts", issues) else {
+        return;
+    };
+    unknown_fields(table, ARTIFACTS_FIELDS, "artifacts", issues);
+    if let Some(url) = table.get("warehouse_url") {
+        expect_string(url, "artifacts.warehouse_url", issues);
+    }
+    let Some(programs) = table.get("programs") else {
+        return;
+    };
+    let Some(programs) = expect_table(programs, "artifacts.programs", issues) else {
+        return;
+    };
+    for (name, program) in programs.iter() {
+        let path = format!("artifacts.programs.{name}");
+        let Some(program) = expect_table(program, &path, issues) else {
+            continue;
+        };
+        unknown_fields(program, PROGRAM_FIELDS, &path, issues);
+        for field in ["program", "version_file"] {
+            if let Some(v) = require(program, field, &path, issues) {
+                expect_string(v, &format!("{path}.{field}"), issues);
+            }
+        }
+        if let Some(dir) = program.get("dir") {
+            expect_string(dir, &format!("{path}.dir"), issues);
+        }
+        let Some(targets) = require(program, "targets", &path, issues) else {
+            continue;
+        };
+        let Some(list) = targets.as_array() else {
+            issues.push(ConfigIssue {
+                path: format!("{path}.targets"),
+                message: format!("expected an array of tables, found {}", targets.type_name()),
+            });
+            continue;
+        };
+        for (i, target) in list.iter().enumerate() {
+            let tpath = format!("{path}.targets[{i}]");
+            let Some(target) = expect_table(target, &tpath, issues) else {
+                continue;
+            };
+            unknown_fields(target, TARGET_FIELDS, &tpath, issues);
+            for field in ["platform", "file"] {
+                if let Some(v) = require(target, field, &tpath, issues) {
+                    expect_string(v, &format!("{tpath}.{field}"), issues);
+                }
+            }
+            if let Some(v) = require(target, "build", &tpath, issues) {
+                expect_string_array(v, &format!("{tpath}.build"), issues);
+            }
+            for field in ["name", "format", "arch", "label"] {
+                if let Some(v) = target.get(field) {
+                    expect_string(v, &format!("{tpath}.{field}"), issues);
+                }
+            }
+            // Off Android the warehouse cannot read the identity out of the file: the format has to be said.
+            let platform = target.get("platform").and_then(Value::as_str);
+            if platform.is_some_and(|p| p != "android") && !target.contains_key("format") {
+                issues.push(ConfigIssue {
+                    path: tpath,
+                    message: "`format` is required off Android (`deb`, `tar.gz`, ...): the warehouse takes it from the upload"
+                        .to_string(),
+                });
+            }
+        }
+    }
 }
 
 fn check_docker(docker: &Value, issues: &mut Vec<ConfigIssue>) {

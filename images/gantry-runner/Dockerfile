@@ -29,7 +29,6 @@ WORKDIR /usr/src/app
 COPY Cargo.toml Cargo.lock ./
 COPY cli ./cli
 COPY docker ./docker
-COPY examples ./examples
 COPY libs ./libs
 COPY tests ./tests
 

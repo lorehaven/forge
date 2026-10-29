@@ -1,3 +1,4 @@
+pub mod artifact;
 pub mod build;
 pub mod config_check;
 pub mod docker;

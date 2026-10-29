@@ -197,6 +197,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: ConfigCommands,
     },
+    /// Build a program's apps and desktop packages and send them to the warehouse
+    Artifact {
+        #[command(subcommand)]
+        command: ArtifactCommands,
+    },
     /// Print a registry bearer token, for Cargo's `credential-provider = [\"cargo:token-from-stdout\", \"anvil\", \"registry-token\"]`
     RegistryToken,
     /// Mint an application token and store it in the git-ignored `.anvil.secret.toml`
@@ -217,6 +222,29 @@ pub enum Commands {
         #[arg(long)]
         days: Option<i64>,
     },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ArtifactCommands {
+    /// Build every target of a program (or one with --target) and publish it to the warehouse
+    Release {
+        /// The program, as named under [artifacts.programs] in `.anvil.toml`
+        name: String,
+        /// Only this target (`android`, `linux`, ...)
+        #[arg(long)]
+        target: Option<String>,
+        /// Build and check everything, but send nothing
+        #[arg(long)]
+        dry_run: bool,
+        /// Release with uncommitted changes in the tree
+        #[arg(long)]
+        allow_dirty: bool,
+        /// A version the warehouse already has is skipped instead of an error
+        #[arg(long)]
+        skip_existing: bool,
+    },
+    /// List what can be released
+    List,
 }
 
 #[derive(Subcommand, Debug)]

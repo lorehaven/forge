@@ -1,9 +1,11 @@
 // The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
-#![allow(clippy::wildcard_imports)]
+#![allow(clippy::wildcard_imports, clippy::literal_string_with_formatting_args)]
 
 #[path = "support.rs"]
 mod support;
 
+#[path = "unit/artifact_tests.rs"]
+mod artifact_tests;
 #[path = "unit/build_tests.rs"]
 mod build_tests;
 #[path = "unit/cargo_meta_tests.rs"]

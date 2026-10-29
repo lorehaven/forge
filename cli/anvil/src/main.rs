@@ -1,4 +1,4 @@
-use anvil::cli::{Cli, Commands, ConfigCommands, DockerCommands};
+use anvil::cli::{ArtifactCommands, Cli, Commands, ConfigCommands, DockerCommands};
 use anvil::commands;
 use anvil::config;
 use anvil::util::{OutputMode, set_output_mode, stdout_is_data};
@@ -108,10 +108,33 @@ fn main() -> Result<()> {
                 commands::login::registry_token(&dir, |name| std::env::var(name).ok())?
             );
         }
+        Commands::Artifact { command } => artifact(&config, command)?,
         Commands::Config { command } => match command {
             ConfigCommands::Check => commands::config_check::check()?,
         },
     }
 
     Ok(())
+}
+
+fn artifact(config: &config::Config, command: ArtifactCommands) -> Result<()> {
+    match command {
+        ArtifactCommands::Release {
+            name,
+            target,
+            dry_run,
+            allow_dirty,
+            skip_existing,
+        } => commands::artifact::release(
+            config,
+            &name,
+            &commands::artifact::Options {
+                target,
+                dry_run,
+                allow_dirty,
+                skip_existing,
+            },
+        ),
+        ArtifactCommands::List => commands::artifact::list(config, &mut std::io::stdout()),
+    }
 }

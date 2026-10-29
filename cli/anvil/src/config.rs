@@ -14,6 +14,9 @@ pub struct Config {
 
     #[serde(default)]
     pub release: ReleaseConfig,
+
+    #[serde(default)]
+    pub artifacts: ArtifactsConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -102,6 +105,56 @@ pub struct ReleaseConfig {
     /// tokens at. Not a secret, so it lives here rather than in the secret file.
     #[serde(default)]
     pub gatehouse_url: Option<String>,
+}
+
+/// What `anvil artifact release` sends to the warehouse: apps and desktop builds, not crates or images.
+#[derive(Debug, Default, Deserialize)]
+pub struct ArtifactsConfig {
+    /// The warehouse, including its base path (`https://host/warehouse`).
+    #[serde(default)]
+    pub warehouse_url: Option<String>,
+    /// What can be released, by name: `[artifacts.programs.<name>]`.
+    #[serde(default)]
+    pub programs: BTreeMap<String, ArtifactProgram>,
+}
+
+/// One program and the builds it ships as.
+#[derive(Debug, Default, Deserialize)]
+pub struct ArtifactProgram {
+    /// The application id the warehouse files every platform's build under (`dev.lorehaven.pedlar`).
+    pub program: String,
+    /// Where the builds run and `file` is looked for, from the workspace root (default: the root).
+    #[serde(default)]
+    pub dir: Option<String>,
+    /// The `Cargo.toml` whose version is the release's (`[workspace.package]`, else `[package]`), from `dir`.
+    pub version_file: String,
+    #[serde(default)]
+    pub targets: Vec<ArtifactTarget>,
+}
+
+/// One build of the program for one platform.
+#[derive(Debug, Default, Deserialize)]
+pub struct ArtifactTarget {
+    /// What `--target` calls it (default: the platform).
+    #[serde(default)]
+    pub name: Option<String>,
+    /// `android`, `linux`, `windows` or `macos`.
+    pub platform: String,
+    /// `apk` for Android (the warehouse reads the manifest); required for everything else (`deb`, `tar.gz`, ...).
+    #[serde(default)]
+    pub format: Option<String>,
+    /// `x86_64`, `aarch64` or `universal`.
+    #[serde(default)]
+    pub arch: Option<String>,
+    /// What people see for this build, if not the program's own label.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// The command that makes the file, run in `dir`. `${version_name}`, `${version_code}` and `${program}` are
+    /// replaced in every argument, and the first two are also in the environment as `ANVIL_VERSION_NAME` and
+    /// `ANVIL_VERSION_CODE`.
+    pub build: Vec<String>,
+    /// The file the build leaves, from `dir`; the same placeholders are replaced in it.
+    pub file: String,
 }
 
 /// `quiet` suppresses the fallback warnings below.

@@ -280,3 +280,51 @@ fn the_estates_own_anvil_toml_has_no_issues() {
     let content = std::fs::read_to_string(path).expect("the estate's .anvil.toml");
     assert_eq!(validate(&content).expect("parses"), Vec::new());
 }
+
+#[quench_test::test]
+fn artifacts_are_checked_field_by_field() {
+    let good = r#"
+[artifacts]
+warehouse_url = "https://w.example/warehouse"
+
+[artifacts.programs.pedlar]
+program = "dev.lorehaven.pedlar"
+version_file = "Cargo.toml"
+
+[[artifacts.programs.pedlar.targets]]
+platform = "android"
+build = ["quench", "build", "apk", "--release"]
+file = "dist/x.apk"
+
+[[artifacts.programs.pedlar.targets]]
+platform = "linux"
+format = "deb"
+build = ["quench", "build", "deb"]
+file = "dist/x.deb"
+"#;
+    assert_eq!(validate(good).expect("parses"), Vec::new());
+    let bad = r#"
+[artifacts.programs.pedlar]
+version_file = "Cargo.toml"
+colour = "red"
+
+[[artifacts.programs.pedlar.targets]]
+platform = "linux"
+build = "quench build deb"
+file = "dist/x.deb"
+"#;
+    let issues: Vec<String> = validate(bad)
+        .expect("parses")
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let all = issues.join("\n");
+    for want in [
+        "artifacts.programs.pedlar: missing required field `program`",
+        "unknown field `colour`",
+        "artifacts.programs.pedlar.targets[0].build: expected an array of strings",
+        "`format` is required off Android",
+    ] {
+        assert!(all.contains(want), "{want} in:\n{all}");
+    }
+}

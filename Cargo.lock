@@ -9,6 +9,7 @@ dependencies = [
  "gatehouse-auth",
  "quench-args",
  "quench-cli",
+ "quench-client",
  "quench-core",
  "quench-serde",
  "quench-test",
