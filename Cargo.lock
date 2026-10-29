@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-service"
-version = "0.3.26"
+version = "0.3.27"
 dependencies = [
  "forge-ui",
  "quench-auth",
@@ -318,6 +318,7 @@ dependencies = [
  "hoist-net",
  "quench-crypto",
  "quench-desktop-native",
+ "quench-raster",
  "quench-serde",
  "quench-style",
  "quench-test",
