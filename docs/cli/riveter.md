@@ -304,7 +304,7 @@ Run `riveter` or `riveter repl` with no arguments to enter the interactive shell
 
 ## Packages
 
-A package is one whole overlay directory, versioned, as a `<name>-<version>.rivet` (a checksummed `tar.zst`; the format is [rivet-package](../libs/rivet-package.md)). The registry it lives in is [Warehouse's rivet registry](../docker/warehouse-service.md#rivet-registry). `overlays/forge/` becomes the package `forge`: the directory name *is* the package name, because the overlay's own `{% include "forge/base.yaml.j2" %}` lines spell it out, so an install puts the files back under `overlays/<name>/` and nothing needs rewriting.
+A package is one whole overlay directory, versioned, as a `<name>-<version>.rivet` (a checksummed `tar.zst`; the format is [rivet-package](../libs/rivet-package.md)). The registry it lives in is [Warehouse's rivet registry](../docker/warehouse-service.md#rivet-registry). `overlays/forge/` becomes the package `forge`: the directory name *is* the package name, because the overlay's own `{% raw %}{% include "forge/base.yaml.j2" %}{% endraw %}` lines spell it out, so an install puts the files back under `overlays/<name>/` and nothing needs rewriting.
 
 ### Packing
 
@@ -411,7 +411,7 @@ An overlay can set its own fallbacks for every pod-based resource with a top-lev
 
 ```yaml
 defaults:
-  service_account: my-app-{{ env }}-sa   # `env` is the environment's name
+  service_account: my-app-{% raw %}{{ env }}{% endraw %}-sa   # `env` is the environment's name
   container_name: app
   pull_policy: IfNotPresent
 
