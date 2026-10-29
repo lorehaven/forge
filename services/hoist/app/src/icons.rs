@@ -25,6 +25,24 @@ fn icon(paths: &str, class: &str) -> Element {
         .class(class)
 }
 
+/// An eye: show what is typed.
+#[must_use]
+pub fn eye(class: &str) -> Element {
+    icon(
+        "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0",
+        class,
+    )
+}
+
+/// An eye struck through: hide what is typed.
+#[must_use]
+pub fn eye_off(class: &str) -> Element {
+    icon(
+        "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0M4 4l16 16",
+        class,
+    )
+}
+
 #[must_use]
 pub fn download(class: &str) -> Element {
     icon("M12 4v11M7 11l5 5 5-5M5 20h14", class)

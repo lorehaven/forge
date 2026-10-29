@@ -111,6 +111,13 @@ pub struct Setup {
     pub auto_check: bool,
     /// Whether there is a public catalogue tab (Android installs from it; the desktop has none).
     pub public: bool,
+    /// How long a message (the toast) stays, in milliseconds; 0 keeps it until the next one. A host with timers
+    /// sets about four seconds.
+    pub toast_ms: u32,
+    /// How long the loader stays once it has come up, in milliseconds; 0 takes it down as soon as the work is done.
+    /// A host with timers sets a few hundred: a check that answers in 40 ms would otherwise flash for a frame and
+    /// look like nothing happened.
+    pub loader_min_ms: u32,
 }
 
 /// Where the messages go once the views exist.
@@ -531,16 +538,17 @@ pub fn hoist(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Hoist {
                 .into_view()
             })
         };
-        let (shown, working) = (message.clone(), busy.clone());
+        // A message stays a few seconds, long enough to read, and goes.
+        if setup.toast_ms > 0 {
+            crate::toast::dismiss_after(&message, setup.toast_ms);
+        }
+        let shown = message.clone();
+        let working = crate::toast::lingering(&busy, setup.loader_min_ms);
         div()
             .attr("id", "hoist")
             .child(bar)
             .child(div().class("hoist-body").child(panels))
-            .child(
-                p().attr("id", "message")
-                    .attr("role", "status")
-                    .text_fn(move || shown.get()),
-            )
+            .child(crate::toast::toast(&shown))
             .child(View::show(
                 move || working.get(),
                 || {
@@ -636,6 +644,42 @@ fn schedule_check(
     });
 }
 
+/// A password field with an eye beside it: what is typed stays hidden until the eye is pressed (and hidden again by
+/// pressing it once more), so a mistyped password can be seen.
+fn password_field(text: &str, field: &Field) -> Element {
+    let shown = create_signal(false);
+    let (kind, flip, icon_when) = (shown.clone(), shown.clone(), shown.clone());
+    let control = field
+        .input()
+        .class("q-textfield-input hoist-password-input")
+        .attr_fn("type", move || {
+            if kind.get() { "text" } else { "password" }.to_string()
+        });
+    let eye = button()
+        .attr("type", "button")
+        .attr("id", "show-password")
+        .attr("aria-label", "Show password")
+        .class("q-iconbtn hoist-eye")
+        .child(View::dynamic(move || {
+            if icon_when.get() {
+                crate::icons::eye_off("q-icon").into_view()
+            } else {
+                crate::icons::eye("q-icon").into_view()
+            }
+        }))
+        .on_click(move || flip.set(!flip.get()));
+    div()
+        .class("q-textfield")
+        .child(
+            label()
+                .attr("for", field.name())
+                .class("q-textfield-label")
+                .text(text),
+        )
+        .child(div().class("hoist-password").child(control).child(eye))
+        .child(field.error_view().class("q-textfield-error"))
+}
+
 /// The sign-in form: the server, a user name and a password; the password goes to the host once and is not kept.
 fn login_form(server: &str, requests: Rc<dyn Fn(Request)>, busy: Signal<bool>) -> View {
     let server_field = Field::new("server", server).rule(rules::check(
@@ -665,7 +709,7 @@ fn login_form(server: &str, requests: Rc<dyn Fn(Request)>, busy: Signal<bool>) -
             .attr("id", "login-form")
             .child(text_field("Server URL", &server_field, "url", None))
             .child(text_field("Username", &user, "text", None))
-            .child(text_field("Password", &password, "password", None))
+            .child(password_field("Password", &password))
             .child(form.error_view())
             .child(
                 button()

@@ -13,6 +13,7 @@ android {
         // `quench build apk` passes the version from .quench.toml.
         versionCode = (project.findProperty("quench.versionCode") as String?)?.toInt() ?: 1
         versionName = (project.findProperty("quench.versionName") as String?) ?: "0.1.0"
+        manifestPlaceholders["appLabel"] = "Hoist"
     }
 
     // aapt skips asset directories that start with an underscore by default, which would drop the
@@ -48,6 +49,12 @@ android {
     }
 
     buildTypes {
+        // A debug build is a separate app: it is signed with another key, so it could not replace the release one
+        // (and uninstalling that would take its data), and the two can be told apart on the phone.
+        debug {
+            applicationIdSuffix = ".debug"
+            manifestPlaceholders["appLabel"] = "Hoist (debug)"
+        }
         release {
             isMinifyEnabled = false
             if (System.getenv("QUENCH_KEYSTORE") != null) signingConfig = signingConfigs.getByName("release")

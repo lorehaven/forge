@@ -221,8 +221,11 @@ class QuenchSurfaceView(context: Context) : SurfaceView(context), SurfaceHolder.
     override fun onCheckIsTextEditor(): Boolean = true
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-        outAttrs.inputType = InputType.TYPE_CLASS_TEXT
-        outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_FULLSCREEN
+        // No suggestions or autocorrect: a keyboard that "fixes" a user name, or adds a space after a suggestion, makes a
+        // sign-in fail for no reason anyone can see, and the page draws its own text.
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        outAttrs.imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_FULLSCREEN or
+            EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
         outAttrs.initialSelStart = imeAnchor
         outAttrs.initialSelEnd = imeCursor
         return Connection(this)

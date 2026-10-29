@@ -180,6 +180,14 @@ pub fn package_formats(os_release: &str) -> Vec<&'static str> {
     }
 }
 
+/// `session`, set to write every refresh token into `store` the moment it is given. A refresh spends the old token,
+/// so one that is only kept when the request after it succeeds is lost whenever that request fails or the app is
+/// closed meanwhile - and the next start is signed out.
+fn kept(session: Session, store: &Store, server: &str) -> Session {
+    let (store, server) = (store.clone(), server.to_string());
+    session.keeping_tokens(move |token| store.write(&server, token))
+}
+
 /// Hands a downloaded file to the desktop (`xdg-open`: the installer or package manager that handles its type).
 ///
 /// # Errors
@@ -211,7 +219,7 @@ pub fn work_with(
     let mut server = stored
         .as_ref()
         .map_or_else(|| DEFAULT_SERVER.to_string(), |s| s.0.clone());
-    let mut session = stored.map(|(s, t)| Session::resume(&s, &t));
+    let mut session = stored.map(|(s, t)| kept(Session::resume(&s, &t), store, &s));
     let (os, arch) = (std::env::consts::OS, std::env::consts::ARCH);
     // On Linux a program is published once in each package format; the app shows the one this system installs.
     let formats = (os == "linux").then(|| {
@@ -223,6 +231,7 @@ pub fn work_with(
             )
         })
     });
+    let trace = std::env::var_os("HOIST_TRACE").is_some();
     while let Ok(request) = requests.recv() {
         let answer = match request {
             Request::Login {
@@ -232,8 +241,8 @@ pub fn work_with(
             } => match hoist_net::login(&url, &username, &password) {
                 Ok(s) => {
                     store.write(&url, s.refresh_token());
+                    session = Some(kept(s, store, &url));
                     server = url;
-                    session = Some(s);
                     Msg::LoggedIn
                 }
                 Err(e) => Msg::LoginFailed(e.to_string()),
@@ -317,7 +326,8 @@ pub fn work_with(
                 store.save_preferences(auto_check);
                 if url != server {
                     // The session carries on at the new address (and is kept there for the next run).
-                    session = session.map(|s| Session::resume(&url, s.refresh_token()));
+                    session = session
+                        .map(|s| kept(Session::resume(&url, s.refresh_token()), store, &url));
                     if let Some(s) = &session {
                         store.write(&url, s.refresh_token());
                     }
@@ -370,6 +380,11 @@ pub fn work_with(
                 Msg::SignedOut
             }
         };
+        if trace {
+            // What the worker answered, cut short: the kind of answer and a few words, never a request.
+            let said: String = format!("{answer:?}").chars().take(160).collect();
+            eprintln!("hoist-worker: {said}");
+        }
         if answers.send(answer).is_err() {
             return;
         }

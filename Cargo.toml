@@ -95,33 +95,60 @@ fn_params_excessive_bools = "allow"
 
 # Hoist's screens are laid out and painted on every change by the native renderer; unoptimised that is ~200 ms on a
 # phone and every tap feels slow. These crates are built once, so optimising them costs nothing after the first build,
-# and nothing else in the workspace uses them.
+# and nothing else in the workspace uses them. The assertions and overflow checks of a debug build cost them a good part
+# of their speed again, so they are off.
 [profile.dev.package.hoist-app]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.quench-css]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.quench-layout]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.quench-paint]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.quench-text]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.quench-image]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.quench-raster]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.quench-svg]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.quench-ui]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.quench-ui-native]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.quench-style]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.quench-desktop-native]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.quench-android-surface]
 opt-level = 3
+debug-assertions = false
+overflow-checks = false
 
 # The browser build, as `quench build --release` makes it (Hoist and the other quench projects): small and slow to compile.
 [profile.wasm]

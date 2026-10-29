@@ -78,6 +78,21 @@ fn serve(state: &Arc<Mutex<State>>, mut stream: TcpStream) {
             "401 Unauthorized",
             b"{\"error\":\"mfa_required\"}",
         ),
+        ("POST", "/gatehouse/api/v1/auth/login") if body.contains("\"locked\"") => respond(
+            &mut stream,
+            "401 Unauthorized",
+            b"{\"error\":\"account_locked\"}",
+        ),
+        ("POST", "/gatehouse/api/v1/auth/login") if body.contains("\"disabled\"") => respond(
+            &mut stream,
+            "401 Unauthorized",
+            b"{\"error\":\"account_disabled\"}",
+        ),
+        ("POST", "/gatehouse/api/v1/auth/login") if body.contains("\"unconfirmed\"") => respond(
+            &mut stream,
+            "401 Unauthorized",
+            b"{\"error\":\"email_unverified\"}",
+        ),
         ("POST", "/gatehouse/api/v1/auth/login") if body.contains("\"hunter2\"") => {
             let t = tokens(&mut s);
             respond(&mut stream, "200 OK", t.as_bytes());
@@ -109,8 +124,10 @@ fn serve(state: &Arc<Mutex<State>>, mut stream: TcpStream) {
             }
         }
         ("GET", p) if p.starts_with("/hoist/v1/") => {
-            if auth != format!("Bearer {}", s.access) {
+            if auth != format!("Bearer {}", s.access) || s.public_status == 401 {
                 respond(&mut stream, "401 Unauthorized", b"{}");
+            } else if s.public_status == 500 {
+                respond(&mut stream, "500 Internal Server Error", b"{}");
             } else if s.public_status == 404 {
                 respond(&mut stream, "404 Not Found", b"{}");
             } else if p.starts_with("/hoist/v1/categories") {
@@ -136,6 +153,11 @@ const PAGE: &str = r#"{"total":3,"offset":0,"limit":2,"items":[{"package_name":"
 const ROWS: &str = r#"[{"program":"mathom","platform":"linux","arch":"x86_64","format":"deb","version_code":12,"version_name":"1.2.0","filename":"mathom_1.2.0.deb","size_bytes":5,"sha256":"HASH","label":"Mathom","uploaded_by":"ci","yanked":false,"created_at":"2026-10-28T12:00:00Z"}]"#;
 
 fn start() -> (String, Arc<Mutex<State>>) {
+    // Short, so a server that never answers (below) is given up on quickly; the stand-ins answer at once.
+    hoist_net::set_timeouts(
+        std::time::Duration::from_millis(600),
+        std::time::Duration::from_secs(10),
+    );
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
     let state = Arc::new(Mutex::new(State {
@@ -387,3 +409,88 @@ fn a_public_download_carries_no_token_and_is_checked_when_it_can_be() {
 }
 
 quench_test::main!();
+
+#[quench_test::test]
+fn the_public_service_turning_a_good_session_away_is_not_a_sign_out() {
+    let (base, state) = start();
+    let mut session = login(&base, "ann", "hunter2").unwrap();
+    state.lock().unwrap().public_status = 401;
+    assert_eq!(
+        session.public_categories().unwrap_err(),
+        NetError::PublicRefused(401),
+        "the registry's login is not what the other service rejected"
+    );
+    // The same session still reads the registry.
+    assert_eq!(session.catalog("linux").unwrap().len(), 1);
+}
+
+#[quench_test::test]
+fn a_new_refresh_token_is_kept_even_when_the_request_that_needed_it_fails() {
+    let (base, state) = start();
+    login(&base, "ann", "hunter2").unwrap();
+    let kept: Arc<Mutex<Vec<String>>> = Arc::default();
+    let sink = Arc::clone(&kept);
+    let mut resumed = Session::resume(&base, "refresh-1")
+        .keeping_tokens(move |token| sink.lock().unwrap().push(token.to_string()));
+    state.lock().unwrap().public_status = 500;
+    // The refresh happens (the old token is spent), then the request fails.
+    assert_eq!(
+        resumed.public_categories().unwrap_err(),
+        NetError::Status(500)
+    );
+    assert_eq!(
+        *kept.lock().unwrap(),
+        ["refresh-2"],
+        "handed over before the failure, so the next start can use it"
+    );
+}
+
+#[quench_test::test]
+fn a_login_refused_for_a_reason_other_than_the_password_says_so() {
+    let (base, _state) = start();
+    // The user names stand for the accounts the stand-in refuses.
+    assert_eq!(
+        login(&base, "locked", "hunter2").unwrap_err(),
+        NetError::AccountLocked
+    );
+    assert_eq!(
+        login(&base, "disabled", "hunter2").unwrap_err(),
+        NetError::AccountDisabled
+    );
+    assert_eq!(
+        login(&base, "unconfirmed", "hunter2").unwrap_err(),
+        NetError::EmailUnverified
+    );
+    // A wrong password is still just that.
+    assert_eq!(
+        login(&base, "ann", "wrong").unwrap_err(),
+        NetError::Unauthorized
+    );
+    assert!(NetError::AccountLocked.to_string().contains("locked"));
+}
+
+#[quench_test::test]
+fn a_server_that_never_answers_is_given_up_on_so_the_worker_is_not_held_for_ever() {
+    let (_base, _state) = start(); // fixes the short timeouts
+    // Accepts the connection, reads nothing, says nothing.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for stream in listener.incoming().flatten() {
+            held.push(stream);
+        }
+    });
+    let started = std::time::Instant::now();
+    let mut session = Session::resume(&format!("http://{addr}"), "refresh-1");
+    let err = session.catalog("linux").unwrap_err();
+    assert!(
+        matches!(err, NetError::Network(_)),
+        "a network error, not a hang: {err:?}"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "gave up after {:?}",
+        started.elapsed()
+    );
+}

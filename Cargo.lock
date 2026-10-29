@@ -318,7 +318,6 @@ dependencies = [
  "hoist-net",
  "quench-crypto",
  "quench-desktop-native",
- "quench-raster",
  "quench-serde",
  "quench-style",
  "quench-test",

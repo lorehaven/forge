@@ -9,6 +9,8 @@
 use std::fmt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use std::time::Duration;
 
 use hoist_core::{Artifact, Category, PublicApp, PublicPage, PublicQuery};
 use quench_client::blocking::Client;
@@ -31,6 +33,14 @@ pub enum NetError {
     HashMismatch,
     /// Any other answer from the server.
     Status(u16),
+    /// Too many wrong passwords: gatehouse refuses this account for a while, even with the right one.
+    AccountLocked,
+    /// An administrator turned this account off.
+    AccountDisabled,
+    /// The account's email address was never confirmed.
+    EmailUnverified,
+    /// The public catalogue's service turned the (valid) session away. Not a sign-out: the registry is still open.
+    PublicRefused(u16),
 }
 
 impl fmt::Display for NetError {
@@ -47,6 +57,16 @@ impl fmt::Display for NetError {
             Self::PublicDisabled => f.write_str("this server has no public catalogue"),
             Self::HashMismatch => f.write_str("the download was corrupted, try again"),
             Self::Status(code) => write!(f, "the server answered {code}"),
+            Self::AccountLocked => f.write_str(
+                "this account is locked after too many wrong passwords: try again in about 15 minutes, or have it unlocked in gatehouse",
+            ),
+            Self::AccountDisabled => f.write_str("this account is disabled"),
+            Self::EmailUnverified => {
+                f.write_str("confirm the email address of this account first (gatehouse sent a link)")
+            }
+            Self::PublicRefused(code) => {
+                write!(f, "the public catalogue is not available ({code})")
+            }
         }
     }
 }
@@ -66,22 +86,86 @@ struct Tokens {
     expires_in: i64,
 }
 
+/// How long a call to a service may take (the whole call), and how long a file may take to arrive.
+///
+/// A call that never answers would hold the worker thread for ever, and with it everything waiting behind it: the
+/// loader spins and nothing else is asked.
+static TIMEOUTS: OnceLock<(Duration, Duration)> = OnceLock::new();
+
+/// Sets the timeouts, once and before the first call (the first call fixes them). A test uses short ones.
+pub fn set_timeouts(call: Duration, transfer: Duration) {
+    let _ = TIMEOUTS.set((call, transfer));
+}
+
+fn timeouts() -> (Duration, Duration) {
+    *TIMEOUTS.get_or_init(|| (Duration::from_secs(20), Duration::from_secs(15 * 60)))
+}
+
+/// The client for calls: made once, because a client owns the threads its requests run on.
+fn client() -> &'static Client {
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        Client::builder()
+            .timeout(timeouts().0)
+            .build()
+            .expect("the default client configuration is valid")
+    })
+}
+
+/// The client for files, which are allowed their time.
+fn transfer_client() -> &'static Client {
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        Client::builder()
+            .timeout(timeouts().1)
+            .build()
+            .expect("the default client configuration is valid")
+    })
+}
+
+/// What is told the new refresh token, the moment a refresh gives one.
+type OnRefresh = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
 /// A signed-in session against one server.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Session {
     base: String,
     access: String,
     refresh: String,
     expires_in: i64,
+    on_refresh: Option<OnRefresh>,
+}
+
+impl fmt::Debug for Session {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // The tokens stay out of any log.
+        f.debug_struct("Session")
+            .field("base", &self.base)
+            .field("expires_in", &self.expires_in)
+            .finish_non_exhaustive()
+    }
 }
 
 fn base_of(url: &str) -> String {
     url.trim().trim_end_matches('/').to_string()
 }
 
+/// With `HOIST_TRACE` set (a debug build sets it), says what was asked and what came back - the method, the path
+/// without its query, the status - on stderr. Never a token, a password or a body.
+fn trace(method: &str, url: &str, outcome: &str) {
+    if std::env::var_os("HOIST_TRACE").is_some() {
+        let path = url.split('?').next().unwrap_or(url);
+        eprintln!("hoist-net: {method} {path} -> {outcome}");
+    }
+}
+
 fn post_json(client: &Client, url: &str, body: &Value) -> Result<(u16, String), NetError> {
-    let response = client.post(url).json(body).send().map_err(network)?;
+    let response = client.post(url).json(body).send().map_err(|e| {
+        trace("POST", url, &format!("failed: {e}"));
+        network(e)
+    })?;
     let status = response.status().as_u16();
+    trace("POST", url, &status.to_string());
     Ok((status, response.text().map_err(network)?))
 }
 
@@ -94,10 +178,15 @@ fn tokens(base: &str, status: u16, text: &str) -> Result<Session, NetError> {
                 access: t.access_token,
                 refresh: t.refresh_token,
                 expires_in: t.expires_in,
+                on_refresh: None,
             })
         }
         401 | 403 if text.contains("mfa_required") => Err(NetError::MfaRequired),
         400..=403 if text.contains("mfa_required") => Err(NetError::MfaRequired),
+        // Gatehouse says why in the body (`{"error": "account_locked"}`): a locked account is not a wrong password.
+        400 | 401 | 403 if text.contains("account_locked") => Err(NetError::AccountLocked),
+        400 | 401 | 403 if text.contains("account_disabled") => Err(NetError::AccountDisabled),
+        400 | 401 | 403 if text.contains("email_unverified") => Err(NetError::EmailUnverified),
         400 | 401 | 403 => Err(NetError::Unauthorized),
         other => Err(NetError::Status(other)),
     }
@@ -111,7 +200,7 @@ pub fn login(base: &str, username: &str, password: &str) -> Result<Session, NetE
     let base = base_of(base);
     let body = json!({ "username": username, "password": password });
     let (status, text) = post_json(
-        &Client::new(),
+        client(),
         &format!("{base}/gatehouse/api/v1/auth/login"),
         &body,
     )?;
@@ -128,6 +217,7 @@ impl Session {
             access: String::new(),
             refresh: refresh_token.to_string(),
             expires_in: 0,
+            on_refresh: None,
         }
     }
 
@@ -143,6 +233,15 @@ impl Session {
         self.expires_in
     }
 
+    /// Calls `store` with every new refresh token, as soon as it is given - before the request that needed it is
+    /// answered. A refresh spends the old token, so one that is not kept (the request failed, the app was closed
+    /// meanwhile) leaves the next start with a token that no longer works, and the user signed out.
+    #[must_use]
+    pub fn keeping_tokens(mut self, store: impl Fn(&str) + Send + Sync + 'static) -> Self {
+        self.on_refresh = Some(std::sync::Arc::new(store));
+        self
+    }
+
     /// Gets a new access token (and a new refresh token: the old one is spent).
     ///
     /// # Errors
@@ -150,11 +249,16 @@ impl Session {
     pub fn refresh(&mut self) -> Result<(), NetError> {
         let body = json!({ "refresh_token": self.refresh });
         let (status, text) = post_json(
-            &Client::new(),
+            client(),
             &format!("{}/gatehouse/api/v1/auth/refresh", self.base),
             &body,
         )?;
+        let keep = self.on_refresh.take();
         *self = tokens(&self.base, status, &text)?;
+        self.on_refresh = keep;
+        if let Some(keep) = &self.on_refresh {
+            keep(&self.refresh);
+        }
         Ok(())
     }
 
@@ -172,12 +276,22 @@ impl Session {
             if self.access.is_empty() && attempt == 0 {
                 self.refresh()?;
             }
-            let response = Client::new()
+            // A file is allowed its time; everything else must answer.
+            let which = if path.contains("/download") {
+                transfer_client()
+            } else {
+                client()
+            };
+            let response = which
                 .get(format!("{}{path}", self.base))
                 .query(query)
                 .bearer_auth(&self.access)
                 .send()
-                .map_err(network)?;
+                .map_err(|e| {
+                    trace("GET", path, &format!("failed: {e}"));
+                    network(e)
+                })?;
+            trace("GET", path, &response.status().as_u16().to_string());
             if response.status().as_u16() == 401 && attempt == 0 {
                 self.refresh()?;
                 continue;
@@ -329,7 +443,7 @@ impl Session {
         {
             return Err(NetError::Network("the package name is not usable".into()));
         }
-        let response = Client::new()
+        let response = transfer_client()
             .get(&app.download_url)
             .send()
             .map_err(network)?;
@@ -372,7 +486,9 @@ fn public_answer(status: u16) -> Result<(), NetError> {
     match status {
         200 => Ok(()),
         404 => Err(NetError::PublicDisabled),
-        401 | 403 => Err(NetError::Unauthorized),
+        // The session is good (the registry took it): the public catalogue's own service says no. Signing the user
+        // out of everything for that would be wrong.
+        401 | 403 => Err(NetError::PublicRefused(status)),
         other => Err(NetError::Status(other)),
     }
 }

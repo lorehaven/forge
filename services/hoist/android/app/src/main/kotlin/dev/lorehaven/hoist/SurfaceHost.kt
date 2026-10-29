@@ -49,7 +49,15 @@ class SurfaceHost(private val context: Context, private val listener: Listener) 
             // (a session, a cache, a database) goes where the system looks after it.
             ProcessBuilder(file.absolutePath)
                 .directory(context.filesDir)
-                .apply { environment()["HOME"] = context.filesDir.absolutePath }
+                .apply {
+                    environment()["HOME"] = context.filesDir.absolutePath
+                    // Where frames spend their time, in the log once a second (debug builds only).
+                    if (BuildConfig.DEBUG) {
+                        environment()["QUENCH_FRAME_STATS"] = "1"
+                        // What the app asked of the network and what came back (paths and statuses only).
+                        environment()["HOIST_TRACE"] = "1"
+                    }
+                }
                 .start()
         } catch (e: IOException) {
             listener.onClosed("cannot start the surface program: ${e.message}")
@@ -75,6 +83,8 @@ class SurfaceHost(private val context: Context, private val listener: Listener) 
         return true
     }
 
+    private var frame = ByteArray(0)
+
     private fun readLoop(input: DataInputStream) {
         while (true) {
             val length = input.readInt()
@@ -84,9 +94,11 @@ class SurfaceHost(private val context: Context, private val listener: Listener) 
                 1 -> {
                     val width = input.readInt()
                     val height = input.readInt()
-                    val pixels = ByteArray(length - 9)
-                    input.readFully(pixels)
-                    listener.onFrame(width, height, pixels)
+                    // One buffer for every frame of this size: a new array of megabytes per frame is what makes the
+                    // garbage collector stutter on a phone.
+                    if (frame.size != length - 9) frame = ByteArray(length - 9)
+                    input.readFully(frame)
+                    listener.onFrame(width, height, frame)
                 }
                 2 -> listener.onKeyboard(input.readUnsignedByte() != 0)
                 3 -> {

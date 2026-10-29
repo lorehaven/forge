@@ -52,6 +52,8 @@ fn main() -> std::io::Result<()> {
             check_every_ms: 6 * 60 * 60 * 1000,
             auto_check: store.auto_check(),
             public: false,
+            toast_ms: 4000,
+            loader_min_ms: 500,
         },
     );
     let deliver = Rc::clone(&app.deliver);

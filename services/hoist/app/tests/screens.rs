@@ -282,6 +282,8 @@ fn setup(has_session: bool) -> Setup {
         check_every_ms: 1000,
         auto_check: true,
         public: false,
+        toast_ms: 0,
+        loader_min_ms: 0,
     }
 }
 
@@ -921,3 +923,40 @@ fn the_public_tab_suggests_by_category_opens_a_category_and_searches_everything(
 }
 
 quench_test::main!();
+
+#[quench_test::test]
+fn a_problem_is_told_apart_from_news_and_a_toast_shows_only_while_there_is_something_to_say() {
+    use hoist_app::toast::is_problem;
+    for problem in [
+        "Sign in again",
+        "Download failed",
+        "cannot reach the server",
+        "The public catalogue is not available (401)",
+    ] {
+        assert!(is_problem(problem), "{problem}");
+    }
+    for news in [
+        "Signed in",
+        "Downloading Mathom...",
+        "Checking",
+        "Downloaded Mathom to /tmp/x",
+    ] {
+        assert!(!is_problem(news), "{news}");
+    }
+}
+
+#[quench_test::test]
+fn the_password_is_hidden_until_the_eye_is_pressed_and_hidden_again_by_pressing_it_once_more() {
+    let (r, _asked, _deliver, _m) = live(false);
+    let password = find(&r, "input", ("id", "password"));
+    let eye = find(&r, "button", ("id", "show-password"));
+    assert_eq!(r.attr(password, "type").as_deref(), Some("password"));
+    r.fire(eye, &Event::Click);
+    assert_eq!(r.attr(password, "type").as_deref(), Some("text"), "shown");
+    r.fire(eye, &Event::Click);
+    assert_eq!(
+        r.attr(password, "type").as_deref(),
+        Some("password"),
+        "hidden"
+    );
+}
