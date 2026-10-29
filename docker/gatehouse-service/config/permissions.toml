@@ -86,6 +86,13 @@ home = true
 description = "Host metrics: CPU, memory, GPU, disks and network."
 actions = ["read"]
 
+# No page of its own: the app (on a phone or a desktop) reads the public app catalogue. A service that is not
+# listed here is in no token's audience, so it answers every request 401.
+[services.hoist]
+label = "Hoist"
+description = "The app catalogue behind the Hoist app's Public tab."
+actions = ["read"]
+
 # Gatehouse administers itself through the same catalog it hands to every
 # other service, which is what lets user administration be delegated below
 # full admin. Assigning the `admin` or `service` role is deliberately NOT one
@@ -112,6 +119,7 @@ workbench = ["read"]
 daybook = ["read"]
 gantry = ["read"]
 gauge = ["read"]
+hoist = ["read"]
 
 [templates.editor]
 sage = ["read", "write"]
@@ -123,6 +131,7 @@ daybook = ["read", "write"]
 # Reading only: what Gantry can do to the cluster is granted deliberately, never by a template.
 gantry = ["read"]
 gauge = ["read"]
+hoist = ["read"]
 
 # Everything short of assigning roles: create, edit, delete a user, and grant
 # them catalog permissions. What "avoid using admin day to day" runs on.
