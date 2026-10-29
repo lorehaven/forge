@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "anvil"
-version = "0.4.19"
+version = "0.4.20"
 dependencies = [
  "gatehouse-auth",
  "quench-args",
@@ -45,7 +45,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "conveyor-cli"
-version = "0.3.27"
+version = "0.3.28"
 dependencies = [
  "conveyor-pipeline",
  "quench-args",
@@ -69,7 +69,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.6.38"
+version = "0.6.39"
 dependencies = [
  "conveyor-pipeline",
  "forge-ui",
@@ -92,7 +92,7 @@ dependencies = [
 
 [[package]]
 name = "daybook-service"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "quench-auth",
  "quench-core",
@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "foundry-service"
-version = "0.2.32"
+version = "0.2.33"
 dependencies = [
  "quench-args",
  "quench-cli",
@@ -198,7 +198,7 @@ dependencies = [
 
 [[package]]
 name = "gantry-service"
-version = "0.1.21"
+version = "0.1.22"
 dependencies = [
  "forge-ui",
  "quench-auth",
@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-auth"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "quench-cli",
  "quench-client",
@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-service"
-version = "0.3.25"
+version = "0.3.26"
 dependencies = [
  "forge-ui",
  "quench-auth",
@@ -254,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "gauge-service"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "forge-ui",
  "quench-auth",
@@ -338,7 +338,7 @@ dependencies = [
 
 [[package]]
 name = "hoist-service"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "quench-auth",
  "quench-client",
@@ -1076,7 +1076,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-package"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "quench-archive",
  "quench-core",
@@ -1087,7 +1087,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "conveyor-pipeline",
  "gatehouse-auth",
@@ -1142,7 +1142,7 @@ dependencies = [
 
 [[package]]
 name = "sage-service"
-version = "0.5.34"
+version = "0.5.35"
 dependencies = [
  "forge-ui",
  "quench-auth",
@@ -1211,7 +1211,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "switchboard-service"
-version = "0.5.29"
+version = "0.5.30"
 dependencies = [
  "forge-ui",
  "quench-auth",
@@ -1283,7 +1283,7 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "warehouse-cli"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "quench-args",
  "quench-cli",
@@ -1296,7 +1296,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.7.14"
+version = "0.7.15"
 dependencies = [
  "forge-ui",
  "quench-archive",
@@ -1335,7 +1335,7 @@ dependencies = [
 
 [[package]]
 name = "welder"
-version = "0.2.15"
+version = "0.2.16"
 dependencies = [
  "quench-cli",
  "quench-client",
@@ -1437,7 +1437,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "workbench-service"
-version = "0.2.24"
+version = "0.2.25"
 dependencies = [
  "forge-ui",
  "quench-auth",

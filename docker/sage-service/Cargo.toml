@@ -1,6 +1,6 @@
 [package]
 name = "sage-service"
-version = "0.5.34"
+version = "0.5.35"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Sage - AI workspace service"
