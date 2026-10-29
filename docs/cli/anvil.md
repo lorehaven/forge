@@ -141,30 +141,30 @@ gatehouse_url = "https://host/gatehouse"
 
 ### Artifact releases
 
-`anvil artifact release <name> [--target <t>] [--dry-run] [--allow-dirty] [--skip-existing]` builds what `[artifacts.programs.<name>]` lists and sends each file to the warehouse, with the login `anvil login` keeps (a short-lived token is fetched once per release; mint the stored one with `--scope warehouse:write`). The tools that make the packages know nothing of the warehouse: for pedlar that is `quench build apk --release` and `quench build deb`.
+`anvil artifact release <name> [--target <t>] [--dry-run] [--allow-dirty] [--skip-existing]` builds what `[artifacts.programs.<name>]` lists and sends each file to the warehouse, with the login `anvil login` keeps (a short-lived token is fetched once per release; mint the stored one with `--scope warehouse:write`). The tools that make the packages know nothing of the warehouse: for hoist that is `quench build apk --release` and `quench build deb`.
 
 ```toml
 [artifacts]
 warehouse_url = "https://host/warehouse"          # with its base path
 
-[artifacts.programs.pedlar]
-program = "dev.lorehaven.pedlar"                  # what the warehouse files every platform's build under
-dir = "services/pedlar"                           # where the builds run and `file` is looked for (default: the root)
+[artifacts.programs.hoist]
+program = "dev.lorehaven.hoist"                  # what the warehouse files every platform's build under
+dir = "services/hoist"                           # where the builds run and `file` is looked for (default: the root)
 version_file = "Cargo.toml"                       # its [workspace.package] (else [package]) version is the release's
 
-[[artifacts.programs.pedlar.targets]]
+[[artifacts.programs.hoist.targets]]
 platform = "android"                              # android, linux, windows or macos
 format = "apk"                                    # required off Android: deb, tar.gz, AppImage, msi, ...
 build = ["quench", "build", "apk", "--release"]   # run in `dir`
-file = "dist/pedlar-${version_name}-${version_code}.apk"
+file = "dist/hoist-${version_name}-${version_code}.apk"
 
-[[artifacts.programs.pedlar.targets]]
+[[artifacts.programs.hoist.targets]]
 name = "linux"                                    # what --target calls it (default: the platform)
 platform = "linux"
 format = "deb"
 arch = "x86_64"                                   # optional: x86_64, aarch64 or universal
 build = ["quench", "build", "deb"]
-file = "dist/pedlar_${version_name}_amd64.deb"
+file = "dist/hoist_${version_name}_amd64.deb"
 ```
 
 - **One version.** `version_name` is the version of `version_file` and `version_code` is `major * 1_000_000 + minor * 1_000 + patch` (`0.1.3` is `1003`), the number `quench` derives for the APK too, so every platform's build of a release agrees. `${version_name}`, `${version_code}` and `${program}` are replaced in `build` and `file`; the first two are also in the build's environment as `ANVIL_VERSION_NAME` and `ANVIL_VERSION_CODE`.

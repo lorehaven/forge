@@ -1,0 +1,6 @@
+<resources>
+    <style name="AppTheme" parent="android:Theme.DeviceDefault.NoActionBar">
+        <!-- What shows before the first frame and wherever a frame has not been drawn: the page's colour, not the system's grey. -->
+        <item name="android:windowBackground">#0b0b0b</item>
+    </style>
+</resources>

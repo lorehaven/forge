@@ -13,7 +13,7 @@ fn temp(label: &str) -> PathBuf {
     dir
 }
 
-/// A project with a version and the two builds pedlar has: an APK and a `.deb`, each made by a tiny shell command.
+/// A project with a version and the two builds hoist has: an APK and a `.deb`, each made by a tiny shell command.
 fn project(label: &str, version: &str) -> (PathBuf, Config) {
     let dir = temp(label);
     std::fs::write(
@@ -26,24 +26,24 @@ fn project(label: &str, version: &str) -> (PathBuf, Config) {
 [artifacts]
 warehouse_url = "https://warehouse.example/warehouse/"
 
-[artifacts.programs.pedlar]
-program = "dev.lorehaven.pedlar"
+[artifacts.programs.hoist]
+program = "dev.lorehaven.hoist"
 version_file = "Cargo.toml"
 
-[[artifacts.programs.pedlar.targets]]
+[[artifacts.programs.hoist.targets]]
 platform = "android"
 format = "apk"
-build = ["sh", "-c", "mkdir -p dist && printf 'code=%s' $ANVIL_VERSION_CODE > dist/pedlar-${version_name}-${version_code}.apk"]
-file = "dist/pedlar-${version_name}-${version_code}.apk"
+build = ["sh", "-c", "mkdir -p dist && printf 'code=%s' $ANVIL_VERSION_CODE > dist/hoist-${version_name}-${version_code}.apk"]
+file = "dist/hoist-${version_name}-${version_code}.apk"
 
-[[artifacts.programs.pedlar.targets]]
+[[artifacts.programs.hoist.targets]]
 name = "linux-deb"
 platform = "linux"
 format = "deb"
 arch = "x86_64"
-label = "Pedlar App"
-build = ["sh", "-c", "mkdir -p dist && printf deb > dist/pedlar_${version_name}_amd64.deb"]
-file = "dist/pedlar_${version_name}_amd64.deb"
+label = "Hoist App"
+build = ["sh", "-c", "mkdir -p dist && printf deb > dist/hoist_${version_name}_amd64.deb"]
+file = "dist/hoist_${version_name}_amd64.deb"
 "#,
     )
     .unwrap();
@@ -64,7 +64,7 @@ fn run(
     let result = release_with(
         config,
         root,
-        "pedlar",
+        "hoist",
         options,
         &mut out,
         &|| {
@@ -123,7 +123,7 @@ fn the_version_is_the_workspaces_else_the_packages_and_a_missing_one_is_said() {
 #[quench_test::test]
 fn an_address_says_what_the_warehouse_cannot_read_from_the_file() {
     let (_, config) = project("url", "0.1.3");
-    let program = &config.artifacts.programs["pedlar"];
+    let program = &config.artifacts.programs["hoist"];
     // Android: the APK carries its own identity, so there is no format to say.
     let apk = upload_url(
         "https://w.example/warehouse/",
@@ -131,11 +131,11 @@ fn an_address_says_what_the_warehouse_cannot_read_from_the_file() {
         &program.targets[0],
         1_003,
         "0.1.3",
-        "pedlar.apk",
+        "hoist.apk",
     );
     assert_eq!(
         apk,
-        "https://w.example/warehouse/api/v1/artifacts/dev.lorehaven.pedlar/android/1003?format=apk&version_name=0.1.3&filename=pedlar.apk"
+        "https://w.example/warehouse/api/v1/artifacts/dev.lorehaven.hoist/android/1003?format=apk&version_name=0.1.3&filename=hoist.apk"
     );
     let deb = upload_url(
         "https://w.example/warehouse",
@@ -143,10 +143,10 @@ fn an_address_says_what_the_warehouse_cannot_read_from_the_file() {
         &program.targets[1],
         1_003,
         "0.1.3",
-        "pedlar_0.1.3_amd64.deb",
+        "hoist_0.1.3_amd64.deb",
     );
     assert!(
-        deb.contains("/linux/1003?format=deb&arch=x86_64&version_name=0.1.3&label=Pedlar%20App&filename=pedlar_0.1.3_amd64.deb"),
+        deb.contains("/linux/1003?format=deb&arch=x86_64&version_name=0.1.3&label=Hoist%20App&filename=hoist_0.1.3_amd64.deb"),
         "{deb}"
     );
     assert_eq!(
@@ -168,7 +168,7 @@ fn every_target_is_built_with_the_one_version_and_sent_with_a_short_lived_token(
     assert_eq!(asked, 1, "one token for the whole release");
     assert_eq!(sent.len(), 2);
     assert!(sent[0].url.starts_with(
-        "https://warehouse.example/warehouse/api/v1/artifacts/dev.lorehaven.pedlar/android/2005?"
+        "https://warehouse.example/warehouse/api/v1/artifacts/dev.lorehaven.hoist/android/2005?"
     ));
     assert_eq!(
         (sent[0].token.as_str(), sent[0].content_type.as_str()),
@@ -214,7 +214,7 @@ fn one_target_can_be_chosen_and_a_dry_run_builds_but_sends_nothing() {
         "{out}"
     );
     assert!(
-        dir.join("dist/pedlar-0.1.0-1000.apk").is_file(),
+        dir.join("dist/hoist-0.1.0-1000.apk").is_file(),
         "it did build"
     );
 
@@ -284,17 +284,16 @@ fn mistakes_in_the_setup_are_named_before_anything_is_sent() {
     };
     let why = result.unwrap_err();
     assert!(
-        why.contains("no artifact `nope`") && why.contains("known: pedlar"),
+        why.contains("no artifact `nope`") && why.contains("known: hoist"),
         "{why}"
     );
     // A build that fails, and one that leaves no file.
-    config.artifacts.programs.get_mut("pedlar").unwrap().targets[0].build = vec!["false".into()];
+    config.artifacts.programs.get_mut("hoist").unwrap().targets[0].build = vec!["false".into()];
     let (result, _, sent, _) = run(&config, &dir, &Options::default(), 201);
     assert!(result.unwrap_err().contains("failed"));
     assert!(sent.is_empty());
-    config.artifacts.programs.get_mut("pedlar").unwrap().targets[0].build = vec!["true".into()];
-    config.artifacts.programs.get_mut("pedlar").unwrap().targets[0].file =
-        "dist/missing.apk".into();
+    config.artifacts.programs.get_mut("hoist").unwrap().targets[0].build = vec!["true".into()];
+    config.artifacts.programs.get_mut("hoist").unwrap().targets[0].file = "dist/missing.apk".into();
     let (result, ..) = run(&config, &dir, &Options::default(), 201);
     assert!(result.unwrap_err().contains("the build left no file"));
     config.artifacts.warehouse_url = None;

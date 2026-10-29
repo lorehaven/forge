@@ -5,9 +5,9 @@
 #   scripts/image.sh rust-builder build
 #   scripts/image.sh gantry-runner publish
 #
-# `pedlar-service` is the catalogue service of services/pedlar (its own cargo workspace, so its own build context):
+# `hoist-service` is the catalogue service of services/hoist (its own cargo workspace, so its own build context):
 #
-#   scripts/image.sh pedlar-service publish
+#   scripts/image.sh hoist-service publish
 #
 # The registry's crate token is passed as a build argument when ENNOR_TOKEN is set; pushing needs
 # `docker login ossiriand.arda:8080` first.
@@ -15,7 +15,7 @@ set -euo pipefail
 
 registry="ossiriand.arda:8080/forge"
 root="$(cd "$(dirname "$0")/.." && pwd)"
-name="${1:?image name: rust-builder, gantry-runner or pedlar-service}"
+name="${1:?image name: rust-builder, gantry-runner or hoist-service}"
 action="${2:?build or publish}"
 
 case "$name" in
@@ -26,14 +26,14 @@ case "$name" in
     [ -n "$version" ] || { echo "cannot read gantry-service's version" >&2; exit 1; }
     tag="$registry/gantry/runner:$version"
     ;;
-  pedlar-service)
-    version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' "$root/services/pedlar/Cargo.toml" | head -1)"
-    [ -n "$version" ] || { echo "cannot read pedlar's version" >&2; exit 1; }
-    tag="$registry/pedlar/pedlar:$version"
-    dockerfile="$root/services/pedlar/service/Dockerfile"
-    context="$root/services/pedlar"
+  hoist-service)
+    version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' "$root/services/hoist/Cargo.toml" | head -1)"
+    [ -n "$version" ] || { echo "cannot read hoist's version" >&2; exit 1; }
+    tag="$registry/hoist/hoist:$version"
+    dockerfile="$root/services/hoist/service/Dockerfile"
+    context="$root/services/hoist"
     ;;
-  *) echo "unknown image '$name' (rust-builder, gantry-runner, pedlar-service)" >&2; exit 2 ;;
+  *) echo "unknown image '$name' (rust-builder, gantry-runner, hoist-service)" >&2; exit 2 ;;
 esac
 case "$action" in build | publish) ;; *) echo "unknown action '$action' (build, publish)" >&2; exit 2 ;; esac
 

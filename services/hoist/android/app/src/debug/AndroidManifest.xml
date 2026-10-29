@@ -1,0 +1,4 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- For the echo plugin's permission demo; a release build asks for what its plugins need. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+</manifest>

@@ -20,6 +20,9 @@ module = "gantry"
 module = "gatehouse"
 
 [[install]]
+module = "hoist"
+
+[[install]]
 module = "sage"
 
 [[install]]

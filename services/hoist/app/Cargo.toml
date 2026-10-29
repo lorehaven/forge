@@ -1,0 +1,23 @@
+[package]
+name = "hoist-app"
+autotests = false
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "hoist_app"
+path = "src/lib.rs"
+# `cdylib` is the module the browser loads; `rlib` is what the server renders pages from.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+hoist-core = { workspace = true }
+quench-ui = { workspace = true }
+quench-ui-web = { workspace = true }
+[[test]]
+name = "screens"
+path = "tests/screens.rs"
+harness = false
+
+[dev-dependencies]
+quench-test = { workspace = true }

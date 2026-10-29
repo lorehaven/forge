@@ -1,0 +1,50 @@
+[[migrations]]
+id = "0001-packages"
+author = "hoist-service"
+since = "0.1.0"
+
+# One row per package, rewritten as a whole on every refresh (one transaction), so readers never see a half-merged
+# catalogue.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.packages (
+    package_name   TEXT PRIMARY KEY,
+    label          TEXT NOT NULL,
+    summary        TEXT,
+    description    TEXT,
+    icon_url       TEXT,
+    category       TEXT,
+    version_code   BIGINT NOT NULL,
+    version_name   TEXT NOT NULL,
+    size_bytes     BIGINT NOT NULL,
+    download_url   TEXT NOT NULL,
+    sha256         TEXT,
+    md5            TEXT,
+    install_source TEXT NOT NULL,
+    rating_avg     DOUBLE PRECISION,
+    rating_count   BIGINT,
+    downloads      BIGINT,
+    malware_rank   TEXT,
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS packages_label_idx ON ${schema}.packages (LOWER(label));
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS packages_category_idx ON ${schema}.packages (category);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS packages_downloads_idx ON ${schema}.packages (downloads DESC NULLS LAST);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS packages_rating_idx ON ${schema}.packages (rating_avg DESC NULLS LAST);
+"""

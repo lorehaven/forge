@@ -11,5 +11,6 @@ docker/Dockerfile*
 **/*.sh
 /vllm/
 /images/
+/services/
 /docs/
 /plans/

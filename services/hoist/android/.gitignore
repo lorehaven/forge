@@ -1,0 +1,6 @@
+/.gradle
+/build
+/app/build
+/local.properties
+# Built by `quench build apk` (cargo, per ABI); far over GitHub's 100 MB limit in debug.
+/app/src/main/jniLibs/

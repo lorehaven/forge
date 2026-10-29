@@ -1,0 +1,2 @@
+[registries.ennor]
+index = "sparse+https://ennor.ddns.net/warehouse/index/"

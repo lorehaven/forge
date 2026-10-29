@@ -1,0 +1,8 @@
+# Read by the `quench` command. Packages are hoist-app, hoist-server and so on.
+name = "hoist"
+template = "web"
+[android]
+package = "dev.lorehaven.hoist"
+
+[linux]
+bin = "hoist"

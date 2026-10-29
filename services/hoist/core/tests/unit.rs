@@ -1,0 +1,188 @@
+use hoist_core::{Artifact, InstallState, Installed, build_entries, format_bytes, state_for, step};
+use quench_serde::json;
+use std::collections::BTreeMap;
+
+/// A row as warehouse returns it (`ArtifactView`), captured from the registry's shape.
+const ROW: &str = r#"{
+  "program": "dev.lorehaven.mathom", "platform": "android", "arch": null, "format": "apk",
+  "version_code": 7, "version_name": "0.1.0+7", "filename": "dev.lorehaven.mathom-7.apk",
+  "size_bytes": 41758291, "sha256": "9f2c0000000000000000000000000000000000000000000000000000000000aa",
+  "label": "Mathom", "min_sdk_version": 24, "target_sdk_version": 35,
+  "permissions": ["android.permission.INTERNET"], "uploaded_by": "losseheil",
+  "yanked": false, "created_at": "2026-08-26T14:54:15Z"
+}"#;
+
+fn artifact(program: &str, label: Option<&str>, code: i64) -> Artifact {
+    let mut a: Artifact = json::from_str(ROW).unwrap();
+    a.program = program.to_string();
+    a.label = label.map(str::to_string);
+    a.version_code = code;
+    a
+}
+
+fn have(program: &str, code: i64) -> (String, Installed) {
+    (
+        program.to_string(),
+        Installed {
+            program: program.to_string(),
+            version_code: code,
+            version_name: String::new(),
+        },
+    )
+}
+
+#[quench_test::test]
+fn a_registry_row_is_read_as_it_comes() {
+    let a: Artifact = json::from_str(ROW).unwrap();
+    assert_eq!(
+        (a.program.as_str(), a.platform.as_str(), a.format.as_str()),
+        ("dev.lorehaven.mathom", "android", "apk")
+    );
+    assert_eq!(
+        (a.version_code, a.version_name.as_str(), a.size_bytes),
+        (7, "0.1.0+7", 41_758_291)
+    );
+    assert_eq!(
+        (a.min_sdk_version, a.target_sdk_version, a.arch.clone()),
+        (Some(24), Some(35), None)
+    );
+    assert_eq!(a.permissions, ["android.permission.INTERNET"]);
+    assert_eq!(a.title(), "Mathom");
+    assert!(!a.yanked && a.sha256.len() == 64);
+}
+
+#[quench_test::test]
+fn missing_optional_fields_are_none_not_errors() {
+    let minimal = r#"{"program":"app","platform":"linux","format":"deb","version_code":1,"version_name":"1",
+        "filename":"app.deb","size_bytes":10,"sha256":"00","uploaded_by":"u","created_at":"2026-01-01T00:00:00Z"}"#;
+    let a: Artifact = json::from_str(minimal).unwrap();
+    assert_eq!(
+        (a.label.clone(), a.arch.clone(), a.min_sdk_version, a.yanked),
+        (None, None, None, false)
+    );
+    assert!(a.permissions.is_empty());
+    assert_eq!(a.title(), "app", "no label: the program names it");
+    let mut blank = a;
+    blank.label = Some(String::new());
+    assert_eq!(blank.title(), "app", "an empty label is no label");
+    assert!(
+        json::from_str::<Artifact>(r#"{"program":"x"}"#).is_err(),
+        "a row with no version is not a row"
+    );
+}
+
+#[quench_test::test]
+fn the_state_is_decided_by_version_codes_alone() {
+    assert_eq!(state_for(None, 5), InstallState::NotInstalled);
+    assert_eq!(state_for(Some(4), 5), InstallState::UpdateAvailable);
+    assert_eq!(state_for(Some(5), 5), InstallState::UpToDate);
+    assert_eq!(
+        state_for(Some(6), 5),
+        InstallState::UpToDate,
+        "a newer build than the registry's is not an update"
+    );
+    assert_eq!(state_for(Some(0), 1), InstallState::UpdateAvailable);
+}
+
+#[quench_test::test]
+fn entries_are_ordered_updates_then_current_then_not_installed() {
+    let catalog = vec![
+        artifact("c.new", Some("Zeta new"), 1),
+        artifact("a.old", Some("beta"), 3),
+        artifact("b.cur", Some("Alpha"), 2),
+        artifact("d.old", Some("Alpha"), 9),
+        artifact("e.new", None, 1),
+        artifact("f.cur", Some("charlie"), 4),
+    ];
+    let installed: BTreeMap<_, _> = [
+        have("a.old", 2),
+        have("b.cur", 2),
+        have("d.old", 8),
+        have("f.cur", 4),
+    ]
+    .into();
+    let order: Vec<_> = build_entries(&catalog, &installed, "none")
+        .iter()
+        .map(|e| (e.latest.program.clone(), e.state()))
+        .collect();
+    assert_eq!(
+        order,
+        [
+            ("d.old".to_string(), InstallState::UpdateAvailable), // "Alpha" before "beta" (case-blind)
+            ("a.old".to_string(), InstallState::UpdateAvailable),
+            ("b.cur".to_string(), InstallState::UpToDate),
+            ("f.cur".to_string(), InstallState::UpToDate),
+            ("e.new".to_string(), InstallState::NotInstalled), // no label: titled by program, "e.new" < "Zeta new"
+            ("c.new".to_string(), InstallState::NotInstalled),
+        ]
+    );
+}
+
+#[quench_test::test]
+fn the_running_app_is_marked_and_an_installed_program_outside_the_catalog_is_not_listed() {
+    let catalog = vec![
+        artifact("dev.lorehaven.hoist", Some("Hoist"), 3),
+        artifact("other", None, 1),
+    ];
+    let installed: BTreeMap<_, _> =
+        [have("dev.lorehaven.hoist", 2), have("unrelated.app", 9)].into();
+    let entries = build_entries(&catalog, &installed, "dev.lorehaven.hoist");
+    assert_eq!(
+        entries.len(),
+        2,
+        "unrelated.app is not in the registry, so it is not listed"
+    );
+    let me = entries.iter().find(|e| e.is_self).unwrap();
+    assert_eq!(
+        (me.latest.program.as_str(), me.state()),
+        ("dev.lorehaven.hoist", InstallState::UpdateAvailable)
+    );
+    assert!(entries.iter().filter(|e| e.is_self).count() == 1);
+}
+
+#[quench_test::test]
+fn one_row_per_program_the_highest_that_is_not_yanked() {
+    let mut yanked = artifact("app", None, 9);
+    yanked.yanked = true;
+    let catalog = vec![
+        artifact("app", None, 4),
+        yanked,
+        artifact("app", None, 6),
+        artifact("app", None, 5),
+    ];
+    let entries = build_entries(&catalog, &BTreeMap::new(), "x");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0].latest.version_code, 6,
+        "9 is yanked, so 6 is the latest"
+    );
+    assert!(build_entries(&[], &BTreeMap::new(), "x").is_empty());
+    let all_yanked = {
+        let mut a = artifact("gone", None, 1);
+        a.yanked = true;
+        vec![a]
+    };
+    assert!(
+        build_entries(&all_yanked, &BTreeMap::new(), "x").is_empty(),
+        "nothing offerable, nothing listed"
+    );
+}
+
+#[quench_test::test]
+fn sizes_are_shown_in_binary_units() {
+    assert_eq!(format_bytes(0), "0 B");
+    assert_eq!(format_bytes(-5), "0 B");
+    assert_eq!(format_bytes(1023), "1023 B");
+    assert_eq!(format_bytes(1024), "1.0 KiB");
+    assert_eq!(format_bytes(41_758_291), "39.8 MiB");
+    assert_eq!(format_bytes(5 * 1024 * 1024 * 1024), "5.0 GiB");
+    assert_eq!(format_bytes(i64::MAX), "8388608.0 TiB");
+}
+
+#[quench_test::test]
+fn the_scaffolds_counter_still_steps() {
+    assert_eq!(step(0, 1), 1);
+    assert_eq!(step(i64::MAX, 1), i64::MAX);
+}
+
+quench_test::main!();

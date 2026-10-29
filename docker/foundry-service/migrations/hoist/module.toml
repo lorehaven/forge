@@ -1,0 +1,5 @@
+name = "hoist"
+version = "0.1.0"
+description = "Hoist - the public catalogue: F-Droid, IzzyOnDroid and Aptoide merged into one row per package"
+default_schema = "hoist"
+requires = ["quench-core@^0.1"]

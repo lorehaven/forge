@@ -1,0 +1,20 @@
+[package]
+name = "hoist-core"
+version.workspace = true
+edition.workspace = true
+autotests = false
+
+[lib]
+name = "hoist_core"
+path = "src/lib.rs"
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dependencies]
+quench-serde = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }

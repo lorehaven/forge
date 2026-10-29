@@ -1,0 +1,40 @@
+[package]
+name = "hoist-desktop"
+autotests = false
+version.workspace = true
+edition.workspace = true
+
+# The desktop app: the same screens as everywhere, drawn by the native renderer in a Wayland window, talking to the
+# services itself (no WebView, no host plugins).
+[lib]
+name = "hoist_desktop"
+path = "src/lib.rs"
+
+# The window is a feature, so the Android program can use the worker and the store without the Wayland client.
+[features]
+default = ["window"]
+window = ["dep:quench-desktop-native", "dep:quench-style", "dep:quench-ui", "dep:quench-ui-native"]
+
+[[bin]]
+name = "hoist"
+path = "src/main.rs"
+required-features = ["window"]
+
+[dependencies]
+hoist-app = { workspace = true }
+hoist-core = { workspace = true }
+hoist-net = { workspace = true }
+quench-desktop-native = { workspace = true, optional = true }
+quench-style = { workspace = true, optional = true }
+quench-ui = { workspace = true, optional = true }
+quench-ui-native = { workspace = true, optional = true }
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dev-dependencies]
+quench-crypto = { workspace = true }
+quench-serde = { workspace = true }
+quench-test = { workspace = true }

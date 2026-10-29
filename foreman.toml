@@ -180,6 +180,8 @@ done = "database rebuilt; `foreman` starts the estate"
 #   foreman run publish-rust-builder     build it, then push it to the registry
 #   foreman run build-gantry-runner      likewise for the runner
 #   foreman run publish-gantry-runner
+#   foreman run build-hoist-service     the catalogue service of services/hoist (tagged with hoist's version)
+#   foreman run publish-hoist-service
 #
 # Pushing needs `docker login ossiriand.arda:8080` first. Both images compile this workspace, so the
 # registry's crate token is passed as a build argument when ENNOR_TOKEN is set in the environment (see
@@ -195,6 +197,16 @@ done = "rust-builder built"
 description = "building and pushing images/rust-builder"
 command = ["bash", "scripts/image.sh", "rust-builder", "publish"]
 done = "rust-builder pushed"
+
+[tasks.build-hoist-service]
+description = "building services/hoist/service"
+command = ["bash", "scripts/image.sh", "hoist-service", "build"]
+done = "hoist-service built"
+
+[tasks.publish-hoist-service]
+description = "building and pushing services/hoist/service"
+command = ["bash", "scripts/image.sh", "hoist-service", "publish"]
+done = "hoist-service pushed"
 
 [tasks.build-gantry-runner]
 description = "building images/gantry-runner"
@@ -396,6 +408,24 @@ port = 12443
 base_path = "/daybook"
 needs = ["gatehouse"]
 cert_from = "docker/warehouse-service"
+
+# Hoist's public catalogue (F-Droid, IzzyOnDroid and Aptoide merged). It lives in the hoist project, which is
+# its own cargo workspace (it also builds the app for Android and the desktop), so it is built from there. The
+# first refresh fetches the three upstream stores over the network; HOIST_APTOIDE_PAGES=5 keeps a local one short.
+[[services]]
+name = "hoist"
+package = "hoist-service"
+port = 14443
+base_path = "/hoist"
+needs = ["gatehouse"]
+workdir = "services/hoist/service"
+cert_from = "docker/warehouse-service"
+build = ["cargo", "build", "-q", "--manifest-path", "services/hoist/Cargo.toml", "--package", "hoist-service"]
+binary = "services/hoist/target/debug/hoist-service"
+
+[services.env]
+DB_SCHEMA = "hoist"
+HOIST_APTOIDE_PAGES = "5"
 
 # Gantry reads Warehouse and the cluster rather than depending on the services it manages, so the realm
 # is all it waits for.

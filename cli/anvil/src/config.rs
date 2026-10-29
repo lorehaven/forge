@@ -121,7 +121,7 @@ pub struct ArtifactsConfig {
 /// One program and the builds it ships as.
 #[derive(Debug, Default, Deserialize)]
 pub struct ArtifactProgram {
-    /// The application id the warehouse files every platform's build under (`dev.lorehaven.pedlar`).
+    /// The application id the warehouse files every platform's build under (`dev.lorehaven.hoist`).
     pub program: String,
     /// Where the builds run and `file` is looked for, from the workspace root (default: the root).
     #[serde(default)]

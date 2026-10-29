@@ -99,3 +99,29 @@ packages = [
     "warehouse-cli",
     "welder",
 ]
+
+# What `anvil artifact release <name>` builds and sends to the warehouse: apps and desktop packages, as `[install]`
+# and `[docker]` above are for tools and images. The tools that make the packages (`quench build ...`) know nothing
+# of the warehouse. One version drives every build: the Cargo version in `version_file`, and its version code
+# (`major * 1_000_000 + minor * 1_000 + patch`, the number quench puts in the APK too).
+[artifacts]
+warehouse_url = "https://ennor.ddns.net/warehouse"
+
+[artifacts.programs.hoist]
+program = "dev.lorehaven.hoist"
+dir = "services/hoist"
+version_file = "Cargo.toml"
+
+[[artifacts.programs.hoist.targets]]
+platform = "android"
+format = "apk"
+build = ["quench", "build", "apk", "--release"]
+file = "dist/hoist-${version_name}-${version_code}.apk"
+
+[[artifacts.programs.hoist.targets]]
+name = "linux"
+platform = "linux"
+format = "deb"
+arch = "x86_64"
+build = ["quench", "build", "deb"]
+file = "dist/hoist_${version_name}_amd64.deb"

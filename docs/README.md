@@ -48,6 +48,7 @@ Long-running quench-http services, each with its own Postgres schema, started lo
 - [Sage Service](./docker/sage-service.md) — AI chat/workspace app with RAG file upload, built on models Switchboard serves
 - [Workbench Service](./docker/workbench-service.md) — task management: projects, issues, comments and labels, behind the same realm auth
 - [Daybook Service](./docker/daybook-service.md) — backend-only personal task inbox and project lists
+- [Hoist Service](./docker/hoist-service.md) — the public app catalogue (F-Droid, IzzyOnDroid, Aptoide merged) behind hoist's Public tab
 - [Gauge Service](./docker/gauge-service.md) — host metrics dashboard: CPU, memory, GPU, disks and network from PCP and node_exporter, no database
 - [Gantry Service](./docker/gantry-service.md) — installs, upgrades, stops, starts and swaps what runs in the cluster, as `.rivet` packages applied by runner Jobs
 
@@ -170,6 +171,7 @@ services.
 │                  #           toolbox, warehouse-cli, welder
 ├── docker/        # services: conveyor, foundry, gantry, gatehouse, gauge,
 │                  #           sage, switchboard, warehouse, workbench (each its own image)
+├── services/      # quench fullstack services (same template each): hoist so far; docker/'s services join it
 ├── libs/          # shared crates: conveyor-pipeline, rivet-package
 ├── tests/         # forge-bdd, the cross-service Cucumber suite
 ├── images/        # CI-only images: rust-builder, and gantry-runner (what Gantry's Jobs run)

@@ -1,0 +1,24 @@
+[package]
+name = "hoist-net"
+version.workspace = true
+edition.workspace = true
+autotests = false
+
+[lib]
+name = "hoist_net"
+path = "src/lib.rs"
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dependencies]
+hoist-core = { workspace = true }
+quench-client = { workspace = true, features = ["blocking"] }
+quench-crypto = { workspace = true }
+quench-serde = { workspace = true }
+
+[dev-dependencies]
+quench-crypto = { workspace = true }
+quench-test = { workspace = true }
