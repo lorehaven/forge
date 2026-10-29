@@ -11,7 +11,7 @@ net/       the API over gatehouse-client; the saved session and settings (also b
 host/      the controller the hosts share (changes show at once and are undone if refused; reminders) over a `Platform`
 app/       the screens (a calendar and a time picker of their own)
 desktop/   the Linux window; reminders while it is open
-surface/   the Android program (`quench_surface`, and `--widget`, the refresh with no window)
+surface/   the Android program (`daybook_surface`, shipped as `libquench_surface.so`; `--widget` is the refresh with no window)
 android/   the Gradle project: reminders (notifications plugin), the home-screen widget, its refresh job
 web/       the browser build (wasm) over `fetch`; the service serves it from WEB_DIR
 ```

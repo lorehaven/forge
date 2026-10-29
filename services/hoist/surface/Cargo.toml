@@ -9,9 +9,10 @@ repository = { workspace = true }
 license = { workspace = true }
 
 # The program the Android host starts to draw the screen (`quench android build-native` copies it into the
-# app as libquench_surface.so). It reads touches and keys from stdin and writes frames to stdout.
+# app as libquench_surface.so; it is named for the project, as three projects in one workspace cannot all leave a
+# `quench_surface`). It reads touches and keys from stdin and writes frames to stdout.
 [[bin]]
-name = "quench_surface"
+name = "hoist_surface"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,4 +1,4 @@
-//! A backup with no screen: the program the Android host's job service runs (`quench_surface --backup`). It scans,
+//! A backup with no screen: the program the Android host's job service runs (`libquench_surface.so --backup`, the `forklift_surface` program). It scans,
 //! sends what is waiting, and ends when there is nothing left to do (or the host says stop).
 //!
 //! The host does the device's side and speaks JSON lines. To the program's standard output the program writes
