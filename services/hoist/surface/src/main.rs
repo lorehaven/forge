@@ -135,7 +135,29 @@ fn ask_device(bridge: &Bridge, deliver: &Deliver) {
     });
 }
 
+/// `--check`: the scheduled job's way in. Reads what the package manager says is installed from standard input (a JSON
+/// list), looks for updates with the session the app keeps, and prints one line of JSON for the job to turn into a
+/// notification. No window, no surface protocol.
+fn background_check() -> std::io::Result<()> {
+    use std::io::Read as _;
+    let mut input = String::new();
+    std::io::stdin().read_to_string(&mut input)?;
+    let device = hoist_desktop::check::parse_device(&input);
+    let found = hoist_desktop::check::check(
+        &Store::standard(),
+        &device,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        None,
+    );
+    println!("{}", hoist_desktop::check::report(&found));
+    Ok(())
+}
+
 fn main() -> std::io::Result<()> {
+    if std::env::args().any(|a| a == "--check") {
+        return background_check();
+    }
     let renderer = Rc::new(NativeRenderer::new());
     for (scheme, theme) in [("dark", Theme::DefaultDark), ("light", Theme::DefaultLight)] {
         let rules = Theme::theme(theme);

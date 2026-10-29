@@ -91,3 +91,43 @@ pub fn build_entries(
     });
     entries
 }
+
+/// A program with a newer build in the registry than the one that is installed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Update {
+    pub program: String,
+    /// What a person sees: the label, else the program.
+    pub title: String,
+    pub version_name: String,
+    pub version_code: i64,
+}
+
+/// What can be updated, by title. This app itself is included: it updates like any other.
+#[must_use]
+pub fn pending_updates(entries: &[Entry]) -> Vec<Update> {
+    let mut updates: Vec<Update> = entries
+        .iter()
+        .filter(|e| e.state() == InstallState::UpdateAvailable)
+        .map(|e| Update {
+            program: e.latest.program.clone(),
+            title: e.latest.title().to_string(),
+            version_name: e.latest.version_name.clone(),
+            version_code: e.latest.version_code,
+        })
+        .collect();
+    updates.sort_by_cached_key(|u| (u.title.to_lowercase(), u.program.clone()));
+    updates
+}
+
+/// Which updates there are, as one line: the same set gives the same line, a new version of any of them a different
+/// one. What was announced is remembered by it, so a notification is sent when something new is there and not again
+/// for what the user has already been told. Empty when there is nothing to update.
+#[must_use]
+pub fn announcement_key(updates: &[Update]) -> String {
+    let mut parts: Vec<String> = updates
+        .iter()
+        .map(|u| format!("{}@{}", u.program, u.version_code))
+        .collect();
+    parts.sort();
+    parts.join(",")
+}

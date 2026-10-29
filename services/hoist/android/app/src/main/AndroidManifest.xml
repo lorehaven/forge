@@ -2,6 +2,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- The look for updates while the app is closed: the notification, and the job that comes back after a restart. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- quench:permissions -->
 
     <application
@@ -34,6 +38,10 @@
                 <action android:name="dev.lorehaven.hoist.INSTALL_RESULT" />
             </intent-filter>
         </receiver>
+        <service
+            android:name=".UpdateCheckService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <!-- quench:components -->
     </application>
 </manifest>

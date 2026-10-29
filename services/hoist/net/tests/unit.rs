@@ -494,3 +494,78 @@ fn a_server_that_never_answers_is_given_up_on_so_the_worker_is_not_held_for_ever
         started.elapsed()
     );
 }
+
+#[quench_test::test]
+fn two_programs_of_one_user_share_the_session_without_signing_each_other_out() {
+    let (base, _state) = start();
+    login(&base, "ann", "hunter2").unwrap(); // the server now holds refresh-1
+    // What each program keeps in the shared store.
+    let store: Arc<Mutex<String>> = Arc::new(Mutex::new("refresh-1".into()));
+    let (writer, reader) = (Arc::clone(&store), Arc::clone(&store));
+    let mut app = Session::resume(&base, "refresh-1")
+        .keeping_tokens(move |t| *writer.lock().unwrap() = t.to_string());
+    let (writer, reader_b) = (Arc::clone(&store), Arc::clone(&store));
+    let mut check = Session::resume(&base, "refresh-1")
+        .keeping_tokens(move |t| *writer.lock().unwrap() = t.to_string())
+        .following(move || Some(reader_b.lock().unwrap().clone()));
+    // The app refreshes: refresh-1 is spent, refresh-2 is kept.
+    assert_eq!(app.catalog("linux").unwrap().len(), 1);
+    assert_eq!(*reader.lock().unwrap(), "refresh-2");
+    // The check still holds refresh-1; it finds the newer token in the store and uses it.
+    assert_eq!(check.catalog("linux").unwrap().len(), 1);
+    assert_eq!(
+        *reader.lock().unwrap(),
+        "refresh-3",
+        "and keeps the one it was given"
+    );
+}
+
+#[quench_test::test]
+fn a_token_spent_a_moment_ago_by_the_other_program_is_replaced_by_the_one_it_kept() {
+    let (base, state) = start();
+    login(&base, "ann", "hunter2").unwrap(); // refresh-1
+    // The other program refreshes between this one looking at the store and asking the server.
+    let calls = Arc::new(Mutex::new(0_u32));
+    let seen = Arc::clone(&calls);
+    let server = Arc::clone(&state);
+    let mut session = Session::resume(&base, "refresh-1").following(move || {
+        let mut n = seen.lock().unwrap();
+        *n += 1;
+        if *n == 1 {
+            // Before the refresh: nothing newer yet. The other program then spends refresh-1 ...
+            let mut s = server.lock().unwrap();
+            s.issued += 1;
+            s.access = format!("access-{}", s.issued);
+            s.refresh = format!("refresh-{}", s.issued);
+            None
+        } else {
+            // ... and when this one's is refused, what it kept is there.
+            Some(server.lock().unwrap().refresh.clone())
+        }
+    });
+    assert_eq!(session.catalog("linux").unwrap().len(), 1, "it recovered");
+    assert_eq!(*calls.lock().unwrap(), 2);
+}
+
+#[quench_test::test]
+fn a_refused_refresh_leaves_the_session_keeping_its_tokens() {
+    let (base, _state) = start();
+    login(&base, "ann", "hunter2").unwrap(); // the server holds refresh-1
+    let kept: Arc<Mutex<Vec<String>>> = Arc::default();
+    let sink = Arc::clone(&kept);
+    let calls = Arc::new(Mutex::new(0_u32));
+    let counted = Arc::clone(&calls);
+    let mut session = Session::resume(&base, "refresh-wrong")
+        .keeping_tokens(move |t| sink.lock().unwrap().push(t.to_string()))
+        .following(move || {
+            let mut n = counted.lock().unwrap();
+            *n += 1;
+            // Nothing newer for the first refresh (its check and its retry); the good token afterwards.
+            (*n > 2).then(|| "refresh-1".to_string())
+        });
+    assert_eq!(session.refresh().unwrap_err(), NetError::Unauthorized);
+    assert!(kept.lock().unwrap().is_empty());
+    // Both hooks survived the refusal: the session follows the store again and keeps what it is given.
+    session.refresh().unwrap();
+    assert_eq!(*kept.lock().unwrap(), ["refresh-2"]);
+}

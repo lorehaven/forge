@@ -477,7 +477,7 @@ pub fn settings(
         .child(setting(
             "auto-check",
             "Check for updates in the background",
-            "Every few hours, looks for updates while Hoist is open and says when apps can be updated. Never installs anything on its own.",
+            "Every few hours, looks for updates and sends a notification when apps can be updated (on a phone even when Hoist is closed). Never installs anything on its own.",
             Some(switch("", &settings.auto_check).attr("aria-label", "Check for updates in the background")),
         ))
         .child(

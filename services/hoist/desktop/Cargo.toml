@@ -1,7 +1,7 @@
 [package]
 name = "hoist-desktop"
 autotests = false
-version = "0.1.6"
+version = "0.1.7"
 edition.workspace = true
 publish = false
 authors = { workspace = true }
@@ -26,6 +26,7 @@ path = "src/main.rs"
 required-features = ["window"]
 
 [dependencies]
+quench-serde = { workspace = true }
 hoist-app = { workspace = true }
 hoist-core = { workspace = true }
 hoist-net = { workspace = true }
@@ -41,5 +42,4 @@ harness = false
 
 [dev-dependencies]
 quench-crypto = { workspace = true }
-quench-serde = { workspace = true }
 quench-test = { workspace = true }

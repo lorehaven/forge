@@ -1,6 +1,8 @@
 //! Hoist on the desktop, without the window: where it keeps its session and the worker that talks to gatehouse and
 //! warehouse for the screens (one thing at a time, answers as plain messages).
 
+pub mod check;
+
 use std::path::PathBuf;
 use std::sync::mpsc;
 
@@ -36,6 +38,19 @@ impl Store {
     #[must_use]
     pub const fn at(dir: PathBuf) -> Self {
         Self { dir, formats: None }
+    }
+
+    /// The package formats this system installs, best first: the ones asked for with
+    /// [`with_formats`](Self::with_formats), else by the distribution (`/etc/os-release`).
+    #[must_use]
+    pub fn installable_formats(&self) -> Vec<&'static str> {
+        self.formats.clone().unwrap_or_else(|| {
+            package_formats(
+                &std::fs::read_to_string("/etc/os-release")
+                    .or_else(|_| std::fs::read_to_string("/usr/lib/os-release"))
+                    .unwrap_or_default(),
+            )
+        })
     }
 
     /// Offers these package formats (best first) instead of the ones this system installs.
@@ -120,6 +135,25 @@ impl Store {
         let _ = std::fs::write(self.ledger(), text);
     }
 
+    fn announced_file(&self) -> PathBuf {
+        self.dir.join("announced")
+    }
+
+    /// The updates the user was last told about (see [`check::check`]); empty when there were none.
+    #[must_use]
+    pub fn announced(&self) -> String {
+        std::fs::read_to_string(self.announced_file())
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    }
+
+    /// Remembers which updates were announced.
+    pub fn set_announced(&self, key: &str) {
+        let _ = std::fs::create_dir_all(&self.dir);
+        let _ = std::fs::write(self.announced_file(), format!("{key}\n"));
+    }
+
     fn preferences_file(&self) -> PathBuf {
         self.dir.join("preferences")
     }
@@ -145,6 +179,33 @@ impl Store {
     pub fn downloads(&self) -> PathBuf {
         self.dir.join("downloads")
     }
+}
+
+/// This running program as an installed one: it is installed, at the version it is, whatever a ledger of installs made
+/// with it knows (a package manager may have put it there).
+#[must_use]
+pub fn this_app() -> Installed {
+    let version = env!("CARGO_PKG_VERSION");
+    Installed {
+        program: hoist_core::SELF_PROGRAM.to_string(),
+        version_code: hoist_core::version_code(version),
+        version_name: version.to_string(),
+    }
+}
+
+/// Tells the user on a desktop, with `notify-send` (libnotify): a notification of the desktop's own. Quietly nothing
+/// where that is not installed.
+pub fn notify_desktop(title: &str, body: &str) {
+    let _ = std::process::Command::new("notify-send")
+        .args([
+            "--app-name=Hoist",
+            "--icon=dev.lorehaven.hoist",
+            "--hint=string:desktop-entry:dev.lorehaven.hoist",
+        ])
+        .arg(title)
+        .arg(body)
+        .stdin(std::process::Stdio::null())
+        .status();
 }
 
 /// The package formats this Linux installs, best first, from the text of `/etc/os-release`: the registry holds a
@@ -184,8 +245,12 @@ pub fn package_formats(os_release: &str) -> Vec<&'static str> {
 /// so one that is only kept when the request after it succeeds is lost whenever that request fails or the app is
 /// closed meanwhile - and the next start is signed out.
 fn kept(session: Session, store: &Store, server: &str) -> Session {
-    let (store, server) = (store.clone(), server.to_string());
-    session.keeping_tokens(move |token| store.write(&server, token))
+    let (writes, reads, server) = (store.clone(), store.clone(), server.to_string());
+    session
+        .keeping_tokens(move |token| writes.write(&server, token))
+        // The look for updates that runs while the window is closed (or open, in the background) shares the session:
+        // whichever refreshed last kept the token to use.
+        .following(move || reads.read().map(|(_, token)| token))
 }
 
 /// How a downloaded package is installed on this desktop.
@@ -274,15 +339,7 @@ pub fn work_with(
     let mut session = stored.map(|(s, t)| kept(Session::resume(&s, &t), store, &s));
     let (os, arch) = (std::env::consts::OS, std::env::consts::ARCH);
     // On Linux a program is published once in each package format; the app shows the one this system installs.
-    let formats = (os == "linux").then(|| {
-        store.formats.clone().unwrap_or_else(|| {
-            package_formats(
-                &std::fs::read_to_string("/etc/os-release")
-                    .or_else(|_| std::fs::read_to_string("/usr/lib/os-release"))
-                    .unwrap_or_default(),
-            )
-        })
-    });
+    let formats = (os == "linux").then(|| store.installable_formats());
     let trace = std::env::var_os("HOIST_TRACE").is_some();
     while let Ok(request) = requests.recv() {
         let answer = match request {
@@ -307,20 +364,7 @@ pub fn work_with(
                 Some(Ok((rows, token))) => {
                     // The refresh token rotates: keep the new one before anything else is asked.
                     store.write(&server, &token);
-                    Msg::Catalog(
-                        rows.into_iter()
-                            .filter(|a| {
-                                a.arch
-                                    .as_deref()
-                                    .is_none_or(|x| x == arch || x == "universal")
-                            })
-                            .filter(|a| {
-                                formats
-                                    .as_ref()
-                                    .is_none_or(|f| f.contains(&a.format.as_str()))
-                            })
-                            .collect(),
-                    )
+                    Msg::Catalog(check::offered(rows, arch, formats.as_deref()))
                 }
                 Some(Err(e)) => Msg::CatalogFailed(e.to_string()),
             },

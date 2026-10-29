@@ -1,6 +1,6 @@
 use hoist_core::{
-    Artifact, InstallState, Installed, SELF_NAME, SELF_PROGRAM, build_entries, format_bytes,
-    state_for, step, version_code,
+    Artifact, InstallState, Installed, SELF_NAME, SELF_PROGRAM, announcement_key, build_entries,
+    format_bytes, pending_updates, state_for, step, version_code,
 };
 use quench_serde::json;
 use std::collections::BTreeMap;
@@ -228,4 +228,56 @@ fn a_version_is_one_number_the_same_way_quench_and_anvil_make_it() {
     ] {
         assert_eq!(version_code(version), code, "{version}");
     }
+}
+
+#[quench_test::test]
+fn the_updates_are_what_is_older_than_the_registry_and_the_same_set_is_announced_once() {
+    let mut installed = BTreeMap::new();
+    for (program, code) in [
+        ("dev.example.a", 1),
+        ("dev.example.b", 9),
+        ("dev.example.c", 3),
+    ] {
+        installed.insert(
+            program.to_string(),
+            Installed {
+                program: program.to_string(),
+                version_code: code,
+                version_name: format!("{code}.0"),
+            },
+        );
+    }
+    // a: older than the registry's 2; b: newer than its 5; c: current; d: not installed (not an update).
+    let rows = [
+        artifact("dev.example.a", Some("Zed"), 2),
+        artifact("dev.example.b", Some("Bee"), 5),
+        artifact("dev.example.c", Some("Cee"), 3),
+        artifact("dev.example.d", Some("Dee"), 4),
+    ];
+    let entries = build_entries(&rows, &installed, SELF_PROGRAM);
+    let updates = pending_updates(&entries);
+    assert_eq!(
+        updates.iter().map(|u| u.title.as_str()).collect::<Vec<_>>(),
+        ["Zed"],
+        "only what is installed and older"
+    );
+    let key = announcement_key(&updates);
+    assert_eq!(key, "dev.example.a@2");
+    // The same set again is the same key; a newer build of it, or one more program, is not.
+    assert_eq!(announcement_key(&pending_updates(&entries)), key);
+    installed.insert(
+        "dev.example.d".into(),
+        Installed {
+            program: "dev.example.d".into(),
+            version_code: 1,
+            version_name: "1.0".into(),
+        },
+    );
+    let more = pending_updates(&build_entries(&rows, &installed, SELF_PROGRAM));
+    assert_ne!(announcement_key(&more), key);
+    assert_eq!(
+        announcement_key(&[]),
+        "",
+        "nothing to announce is the empty key"
+    );
 }

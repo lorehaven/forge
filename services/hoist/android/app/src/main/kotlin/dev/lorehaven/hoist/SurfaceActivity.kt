@@ -2,6 +2,9 @@ package dev.lorehaven.hoist
 
 import android.app.Activity
 import android.content.res.Configuration
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 
 /**
@@ -23,6 +26,21 @@ class SurfaceActivity : Activity() {
         setContentView(surface)
         surface.setDark(isDark())
         surface.start()
+        // The look for updates that goes on while the app is closed (the setting in the app decides whether it says anything).
+        UpdateCheck.schedule(this)
+        askToNotify()
+    }
+
+    /** From Android 13 a notification needs the user's yes: asked once, when the app starts. */
+    private fun askToNotify() {
+        val asked = getPreferences(MODE_PRIVATE)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+            !asked.getBoolean("asked_to_notify", false)
+        ) {
+            asked.edit().putBoolean("asked_to_notify", true).apply()
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATIONS)
+        }
     }
 
     private fun isDark(): Boolean =
@@ -57,7 +75,13 @@ class SurfaceActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == NOTIFICATIONS) return
         bridge.onPermissionResult(requestCode, grantResults)
+    }
+
+    private companion object {
+        /** The permission request this activity makes itself; the bridge's plugins use their own codes. */
+        const val NOTIFICATIONS = 4101
     }
 
     override fun onNewIntent(intent: android.content.Intent) {

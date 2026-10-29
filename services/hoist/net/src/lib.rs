@@ -126,6 +126,9 @@ fn transfer_client() -> &'static Client {
 /// What is told the new refresh token, the moment a refresh gives one.
 type OnRefresh = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
 
+/// Where the newest refresh token kept for this session is, whoever kept it.
+type LatestToken = std::sync::Arc<dyn Fn() -> Option<String> + Send + Sync>;
+
 /// A signed-in session against one server.
 #[derive(Clone)]
 pub struct Session {
@@ -134,6 +137,7 @@ pub struct Session {
     refresh: String,
     expires_in: i64,
     on_refresh: Option<OnRefresh>,
+    latest: Option<LatestToken>,
 }
 
 impl fmt::Debug for Session {
@@ -179,6 +183,7 @@ fn tokens(base: &str, status: u16, text: &str) -> Result<Session, NetError> {
                 refresh: t.refresh_token,
                 expires_in: t.expires_in,
                 on_refresh: None,
+                latest: None,
             })
         }
         401 | 403 if text.contains("mfa_required") => Err(NetError::MfaRequired),
@@ -218,6 +223,7 @@ impl Session {
             refresh: refresh_token.to_string(),
             expires_in: 0,
             on_refresh: None,
+            latest: None,
         }
     }
 
@@ -242,20 +248,62 @@ impl Session {
         self
     }
 
+    /// Asks `latest` for the newest refresh token kept by anyone before a refresh, and again when a refresh is
+    /// refused. Two programs of one user (the app, and the check that runs in the background) share one session: a
+    /// refresh by either spends the token the other holds, and without this the second would find its token refused
+    /// and the user would be signed out.
+    #[must_use]
+    pub fn following(
+        mut self,
+        latest: impl Fn() -> Option<String> + Send + Sync + 'static,
+    ) -> Self {
+        self.latest = Some(std::sync::Arc::new(latest));
+        self
+    }
+
+    /// A refresh token someone kept that is not the one this session holds.
+    fn newer_token(&self) -> Option<String> {
+        self.latest
+            .as_ref()
+            .and_then(|latest| latest())
+            .filter(|token| !token.is_empty() && *token != self.refresh)
+    }
+
     /// Gets a new access token (and a new refresh token: the old one is spent).
     ///
     /// # Errors
     /// [`NetError::Unauthorized`] when the refresh token is no good: sign in again.
     pub fn refresh(&mut self) -> Result<(), NetError> {
+        if let Some(newer) = self.newer_token() {
+            self.refresh = newer;
+        }
+        match self.exchange() {
+            Err(NetError::Unauthorized) => {
+                // Spent a moment ago by the other program? Then the one it kept is the one to use.
+                if let Some(newer) = self.newer_token() {
+                    self.refresh = newer;
+                    self.exchange()
+                } else {
+                    Err(NetError::Unauthorized)
+                }
+            }
+            other => other,
+        }
+    }
+
+    fn exchange(&mut self) -> Result<(), NetError> {
         let body = json!({ "refresh_token": self.refresh });
         let (status, text) = post_json(
             client(),
             &format!("{}/gatehouse/api/v1/auth/refresh", self.base),
             &body,
         )?;
-        let keep = self.on_refresh.take();
-        *self = tokens(&self.base, status, &text)?;
+        // A refusal leaves the session as it was, hooks and all.
+        let fresh = tokens(&self.base, status, &text)?;
+        let (keep, latest) = (self.on_refresh.take(), self.latest.take());
+        *self = fresh;
         self.on_refresh = keep;
+        self.latest = latest;
         if let Some(keep) = &self.on_refresh {
             keep(&self.refresh);
         }

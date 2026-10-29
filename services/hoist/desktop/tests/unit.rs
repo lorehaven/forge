@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use hoist_app::live::{Msg, Request};
+use hoist_core::Installed;
+use hoist_desktop::check::{Outcome, check, parse_device, report, words};
 use hoist_desktop::{Install, Store, install_kind, package_formats, work, work_with};
 
 /// What the stand-in services remember.
@@ -505,4 +507,132 @@ fn an_arch_package_is_installed_by_pacman_and_the_other_kinds_are_opened_by_the_
     ] {
         assert_eq!(install_kind(std::path::Path::new(name)), want, "{name}");
     }
+}
+
+fn installed(program: &str, code: i64) -> Installed {
+    Installed {
+        program: program.to_string(),
+        version_code: code,
+        version_name: format!("{code}.0"),
+    }
+}
+
+/// A store in a directory of its own with a session on the stand-in server (what the app leaves behind).
+fn signed_in(label: &str, base: &str) -> Store {
+    let dir = std::env::temp_dir().join(format!("hoist-check-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let store = Store::at(dir);
+    let session = hoist_net::login(base, "ann", "hunter2").unwrap();
+    store.write(base, session.refresh_token());
+    store
+}
+
+#[quench_test::test]
+fn the_background_check_finds_an_update_once_and_stays_quiet_until_there_is_news() {
+    let (base, _state) = start();
+    let store = signed_in("once", &base);
+    let formats: &[&str] = &["deb"];
+    let device = [installed("mathom", 11)];
+    // Mathom 12 is in the registry, 11 is installed: an update, and the first time it is news.
+    let first = check(&store, &device, "linux", "x86_64", Some(formats)).unwrap();
+    let Outcome::Updates { updates, notify } = first else {
+        panic!("updates")
+    };
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].title, "Mathom");
+    assert!(notify, "news");
+    // The same look again: still an update, no longer news.
+    let Outcome::Updates { updates, notify } =
+        check(&store, &device, "linux", "x86_64", Some(formats)).unwrap()
+    else {
+        panic!("updates")
+    };
+    assert_eq!((updates.len(), notify), (1, false));
+    // Installed up to date: nothing to say, and what was announced is forgotten ...
+    let current = [installed("mathom", 12)];
+    let Outcome::Updates { updates, notify } =
+        check(&store, &current, "linux", "x86_64", Some(formats)).unwrap()
+    else {
+        panic!("updates")
+    };
+    assert_eq!((updates.len(), notify), (0, false));
+    assert_eq!(store.announced(), "");
+    // ... so the same update coming back is news again.
+    let Outcome::Updates { notify, .. } =
+        check(&store, &device, "linux", "x86_64", Some(formats)).unwrap()
+    else {
+        panic!("updates")
+    };
+    assert!(notify);
+    // The session was kept as it rotated, for the app and the next look.
+    assert!(store.read().is_some());
+}
+
+#[quench_test::test]
+fn the_background_check_does_nothing_when_it_is_off_or_nobody_is_signed_in_or_the_format_is_not_ours()
+ {
+    let (base, _state) = start();
+    let store = signed_in("off", &base);
+    store.save_preferences(false);
+    assert_eq!(
+        check(&store, &[installed("mathom", 11)], "linux", "x86_64", None).unwrap(),
+        Outcome::Off
+    );
+    store.save_preferences(true);
+    // A build in a format this system does not install is not offered, so not an update.
+    let Outcome::Updates { updates, .. } = check(
+        &store,
+        &[installed("mathom", 11)],
+        "linux",
+        "x86_64",
+        Some(&["rpm"]),
+    )
+    .unwrap() else {
+        panic!("updates")
+    };
+    assert!(updates.is_empty());
+    store.clear();
+    assert_eq!(
+        check(&store, &[], "linux", "x86_64", None).unwrap(),
+        Outcome::SignedOut
+    );
+}
+
+#[quench_test::test]
+fn what_the_host_is_told_is_a_line_of_json_and_what_it_sends_is_read_back() {
+    let (base, _state) = start();
+    let store = signed_in("report", &base);
+    let found = check(&store, &[installed("mathom", 11)], "linux", "x86_64", None);
+    let line = report(&found);
+    assert!(
+        line.contains("\"status\":\"updates\"")
+            && line.contains("\"notify\":true")
+            && line.contains("1 update available")
+            && line.contains("Mathom 1.2.0"),
+        "{line}"
+    );
+    assert!(report(&Ok(Outcome::Off)).contains("\"status\":\"off\""));
+    assert!(report(&Err("no network".into())).contains("\"error\":\"no network\""));
+    let apps = parse_device(
+        r#"[{"package":"a.b","version_code":3,"version_name":"0.3"},{"package":"c.d","version_code":9},{"nope":1}]"#,
+    );
+    assert_eq!(
+        apps.iter()
+            .map(|a| (a.program.as_str(), a.version_code))
+            .collect::<Vec<_>>(),
+        [("a.b", 3), ("c.d", 9)]
+    );
+    assert!(parse_device("not json").is_empty());
+    // Many updates are counted and a few named.
+    let many: Vec<_> = (0..5)
+        .map(|i| hoist_core::Update {
+            program: format!("p{i}"),
+            title: format!("App {i}"),
+            version_name: "1.0".into(),
+            version_code: 1,
+        })
+        .collect();
+    let (title, body) = words(&many);
+    assert_eq!(title, "5 updates available");
+    assert_eq!(body, "App 0 1.0, App 1 1.0, App 2 1.0, and 2 more");
 }
