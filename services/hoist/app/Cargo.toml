@@ -1,8 +1,9 @@
 [package]
 name = "hoist-app"
 autotests = false
-version.workspace = true
+version = "0.1.0"
 edition.workspace = true
+publish = false
 
 [lib]
 name = "hoist_app"

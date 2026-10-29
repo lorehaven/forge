@@ -328,3 +328,40 @@ file = "dist/x.deb"
         assert!(all.contains(want), "{want} in:\n{all}");
     }
 }
+
+#[quench_test::test]
+fn a_program_may_be_only_a_service_image() {
+    let ok = r#"
+[artifacts.programs.svc]
+program = "dev.example.svc"
+version_file = "Cargo.toml"
+
+[artifacts.programs.svc.image]
+dockerfile = "Dockerfile"
+module = "svc"
+name = "svc"
+registries = ["r.example/forge"]
+"#;
+    assert_eq!(validate(ok).expect("parses"), Vec::new());
+    let bad = r#"
+[artifacts.programs.svc]
+program = "dev.example.svc"
+version_file = "Cargo.toml"
+
+[artifacts.programs.svc.image]
+dockerfile = "Dockerfile"
+tag = "x"
+"#;
+    let all: String = validate(bad)
+        .expect("parses")
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        all.contains("artifacts.programs.svc.image")
+            && all.contains("`module`")
+            && all.contains("tag"),
+        "{all}"
+    );
+}

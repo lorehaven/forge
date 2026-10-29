@@ -165,7 +165,18 @@ format = "deb"
 arch = "x86_64"                                   # optional: x86_64, aarch64 or universal
 build = ["quench", "build", "deb"]
 file = "dist/hoist_${version_name}_amd64.deb"
+
+# optional: the program's service image, when its project is not a member of this workspace (so `anvil release`
+# cannot see it). Built, tagged <registry>/<module>/<name>:<version_name> and pushed, with the same version.
+[artifacts.programs.hoist.image]
+dockerfile = "service/Dockerfile"                 # from `dir`
+context = "."                                     # from `dir` (default)
+module = "hoist"
+name = "hoist"
+registries = ["ossiriand.arda:8080/forge"]        # default: [docker].registry
 ```
+
+`--target image` releases only the image; a named target leaves it alone; with no `--target` everything goes, the image last.
 
 - **One version.** `version_name` is the version of `version_file` and `version_code` is `major * 1_000_000 + minor * 1_000 + patch` (`0.1.3` is `1003`), the number `quench` derives for the APK too, so every platform's build of a release agrees. `${version_name}`, `${version_code}` and `${program}` are replaced in `build` and `file`; the first two are also in the build's environment as `ANVIL_VERSION_NAME` and `ANVIL_VERSION_CODE`.
 - **The protocol** is the warehouse's: `PUT {warehouse_url}/api/v1/artifacts/{program}/{platform}/{version_code}` with the file as the body (for an APK the warehouse reads the id and version out of the manifest; elsewhere `?format=`, `arch`, `version_name`, `label` and `filename` say them). `201` is published; `409` means that version exists (versions are immutable: raise the version, or `--skip-existing` to leave that one and go on, which finishes a release that stopped half way); `401`/`403` say to `anvil login --scope warehouse:write`.

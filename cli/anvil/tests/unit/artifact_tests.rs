@@ -394,3 +394,57 @@ fn a_file_goes_over_the_wire_as_one_put_with_a_bearer_token() {
             .contains("could not be reached")
     );
 }
+
+#[quench_test::test]
+fn a_service_image_is_released_with_the_same_version_or_alone() {
+    let (dir, mut config) = project("artifact-image", "0.2.0");
+    std::fs::write(dir.join("Dockerfile"), "FROM scratch\n").unwrap();
+    config.artifacts.programs.get_mut("hoist").unwrap().image =
+        Some(anvil::config::ArtifactImage {
+            dockerfile: "Dockerfile".into(),
+            module: "hoist".into(),
+            name: "hoist".into(),
+            registries: vec!["a.example/forge".into(), "b.example/forge".into()],
+            ..Default::default()
+        });
+    let dry = Options {
+        dry_run: true,
+        ..Options::default()
+    };
+    let (result, out, ..) = run(&config, &dir, &dry, 201);
+    result.unwrap();
+    assert!(
+        out.contains("would publish")
+            && out.contains("[image] would build")
+            && out.contains("a.example/forge/hoist/hoist:0.2.0, b.example/forge/hoist/hoist:0.2.0"),
+        "{out}"
+    );
+
+    let alone = Options {
+        dry_run: true,
+        target: Some("image".into()),
+        ..Options::default()
+    };
+    let (result, out, ..) = run(&config, &dir, &alone, 201);
+    result.unwrap();
+    assert!(
+        !out.contains("would publish") && out.contains("[image]"),
+        "{out}"
+    );
+
+    let (result, out, ..) = run(
+        &config,
+        &dir,
+        &Options {
+            dry_run: true,
+            target: Some("linux-deb".into()),
+            ..Options::default()
+        },
+        201,
+    );
+    result.unwrap();
+    assert!(
+        !out.contains("[image]"),
+        "a named target leaves the image alone: {out}"
+    );
+}

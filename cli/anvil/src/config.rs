@@ -130,6 +130,29 @@ pub struct ArtifactProgram {
     pub version_file: String,
     #[serde(default)]
     pub targets: Vec<ArtifactTarget>,
+    /// The program's service image, for a project that is not a member of this workspace (so `anvil release` cannot
+    /// see it). Built, tagged and pushed with the same version; `--target image` releases only it.
+    #[serde(default)]
+    pub image: Option<ArtifactImage>,
+}
+
+/// A docker image released with a program.
+#[derive(Debug, Default, Deserialize)]
+pub struct ArtifactImage {
+    /// The Dockerfile, from the program's `dir`.
+    pub dockerfile: String,
+    /// The build context, from `dir` (default: `dir` itself).
+    #[serde(default)]
+    pub context: Option<String>,
+    /// The tag's middle part: `<registry>/<module>/<name>:<version>`.
+    pub module: String,
+    pub name: String,
+    /// Where it is pushed; `[docker].registry` when empty.
+    #[serde(default)]
+    pub registries: Vec<String>,
+    /// Extra `--build-arg` values.
+    #[serde(default)]
+    pub build_args: BTreeMap<String, String>,
 }
 
 /// One build of the program for one platform.

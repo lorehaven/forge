@@ -1,8 +1,9 @@
 [package]
 name = "hoist-desktop"
 autotests = false
-version.workspace = true
+version = "0.1.0"
 edition.workspace = true
+publish = false
 
 # The desktop app: the same screens as everywhere, drawn by the native renderer in a Wayland window, talking to the
 # services itself (no WebView, no host plugins).

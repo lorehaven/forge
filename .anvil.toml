@@ -15,6 +15,7 @@ packages = [
     "gantry-service",
     "daybook-service",
     "gauge-service",
+    "hoist-service",
 ]
 
 [docker.modules.docker.conveyor-service]
@@ -65,6 +66,13 @@ module_name = "daybook"
 image_name = "daybook"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 
+[docker.modules.docker.hoist-service]
+module_name = "hoist"
+image_name = "hoist"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+# The service has no translations of its own; the image still wants a directory beside `config`.
+build_args = { RESOURCE_DIR = "config" }
+
 [docker.modules.docker.workbench-service]
 module_name = "workbench"
 image_name = "workbench"
@@ -110,7 +118,7 @@ warehouse_url = "https://ennor.ddns.net/warehouse"
 [artifacts.programs.hoist]
 program = "dev.lorehaven.hoist"
 dir = "services/hoist"
-version_file = "Cargo.toml"
+version_file = "desktop/Cargo.toml"
 
 [[artifacts.programs.hoist.targets]]
 platform = "android"

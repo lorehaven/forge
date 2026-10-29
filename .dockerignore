@@ -11,6 +11,6 @@ docker/Dockerfile*
 **/*.sh
 /vllm/
 /images/
-/services/
+/services/hoist/android/
 /docs/
 /plans/

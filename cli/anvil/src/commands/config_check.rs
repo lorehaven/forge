@@ -34,7 +34,15 @@ impl fmt::Display for ConfigIssue {
 
 const TOP_FIELDS: &[&str] = &["docker", "install", "release", "artifacts"];
 const ARTIFACTS_FIELDS: &[&str] = &["warehouse_url", "programs"];
-const PROGRAM_FIELDS: &[&str] = &["program", "dir", "version_file", "targets"];
+const PROGRAM_FIELDS: &[&str] = &["program", "dir", "version_file", "targets", "image"];
+const IMAGE_FIELDS: &[&str] = &[
+    "dockerfile",
+    "context",
+    "module",
+    "name",
+    "registries",
+    "build_args",
+];
 const TARGET_FIELDS: &[&str] = &[
     "name", "platform", "format", "arch", "label", "build", "file",
 ];
@@ -219,6 +227,24 @@ pub fn validate(content: &str) -> Result<Vec<ConfigIssue>, quench_serde::Error> 
     Ok(issues)
 }
 
+fn check_image(image: &Value, path: &str, issues: &mut Vec<ConfigIssue>) {
+    let Some(table) = expect_table(image, path, issues) else {
+        return;
+    };
+    unknown_fields(table, IMAGE_FIELDS, path, issues);
+    for field in ["dockerfile", "module", "name"] {
+        if let Some(v) = require(table, field, path, issues) {
+            expect_string(v, &format!("{path}.{field}"), issues);
+        }
+    }
+    if let Some(v) = table.get("context") {
+        expect_string(v, &format!("{path}.context"), issues);
+    }
+    if let Some(v) = table.get("registries") {
+        expect_string_array(v, &format!("{path}.registries"), issues);
+    }
+}
+
 fn check_artifacts(artifacts: &Value, issues: &mut Vec<ConfigIssue>) {
     let Some(table) = expect_table(artifacts, "artifacts", issues) else {
         return;
@@ -247,7 +273,16 @@ fn check_artifacts(artifacts: &Value, issues: &mut Vec<ConfigIssue>) {
         if let Some(dir) = program.get("dir") {
             expect_string(dir, &format!("{path}.dir"), issues);
         }
-        let Some(targets) = require(program, "targets", &path, issues) else {
+        if let Some(image) = program.get("image") {
+            check_image(image, &format!("{path}.image"), issues);
+        }
+        // A program that is only a service image has no builds to list.
+        let targets = if program.get("image").is_some() {
+            program.get("targets")
+        } else {
+            require(program, "targets", &path, issues)
+        };
+        let Some(targets) = targets else {
             continue;
         };
         let Some(list) = targets.as_array() else {

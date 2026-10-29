@@ -20,18 +20,21 @@ RUN mkdir -p /usr/local/cargo && \
 
 WORKDIR /usr/src/app
 
+# The windowed desktop host, the Android surface and the browser server of services/ are apps, not services: the
+# images do not build them.
 # Copy workspace structure and manifests (minimal layer to trigger on manifest changes)
 COPY Cargo.toml Cargo.lock ./
 COPY cli ./cli
 COPY docker ./docker
 COPY libs ./libs
+COPY services ./services
 COPY tests ./tests
 
 # Build all dependencies (cached separately from source changes)
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --target x86_64-unknown-linux-musl --workspace --offline 2>/dev/null || \
-    cargo build --release --target x86_64-unknown-linux-musl --workspace
+    cargo build --release --target x86_64-unknown-linux-musl --workspace --exclude hoist-desktop --exclude hoist-surface --exclude hoist-server --offline 2>/dev/null || \
+    cargo build --release --target x86_64-unknown-linux-musl --workspace --exclude hoist-desktop --exclude hoist-surface --exclude hoist-server
 
 # ---------- Build stage ----------
 FROM deps-builder AS builder
@@ -42,7 +45,7 @@ COPY . .
 # Build with pre-cached dependencies
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --target x86_64-unknown-linux-musl --workspace
+    cargo build --release --target x86_64-unknown-linux-musl --workspace --exclude hoist-desktop --exclude hoist-surface --exclude hoist-server
 
 # No strip step here on purpose. `[profile.release] strip = "debuginfo"` in the
 # workspace manifest already does it, for local builds as well as this one, so a

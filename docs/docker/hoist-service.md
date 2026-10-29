@@ -2,7 +2,7 @@
 
 The public catalogue behind hoist's Public tab: the apps of **F-Droid**, **IzzyOnDroid** and **Aptoide** merged into one row per package, kept in Postgres, refreshed every hour and served to signed-in users. It replaces the standalone Entmoot service (same merge rules, same data; the API moved to `/hoist/v1` and the store from SQLite to Postgres).
 
-It lives in the hoist project, `services/hoist/service` (crate `hoist-service`), which is its own cargo workspace because the project also builds the app for Android and the desktop. The schema belongs to foundry's `hoist` module (`docker/foundry-service/migrations/hoist`).
+It lives in the hoist project, `services/hoist/service` (crate `hoist-service`), which is a member of forge's cargo workspace like every service, beside the app's crates (the project also builds the app for Android and the desktop; `anvil release` sees the service as a docker package, and the windowed desktop host, the Android surface and the browser server are left out of the images). The schema belongs to foundry's `hoist` module (`docker/foundry-service/migrations/hoist`).
 
 ## API
 
@@ -39,5 +39,5 @@ An item carries `package_name`, `label`, `summary`, `description`, `icon_url`, `
 ## Running, testing and shipping
 
 - `foreman start hoist` runs it locally on `https://localhost:14443/hoist` (a short Aptoide crawl, `HOIST_APTOIDE_PAGES=5`); `foreman db` installs its schema.
-- Tests: `cd services/hoist && cargo test -p hoist-service`. The store, refresh and API tests need Postgres: set `HOIST_TEST_DATABASE_URL` to a throwaway database with the `hoist` module installed (`foreman db` makes one: `postgres://postgres:postgres@localhost:5432/postgres`); without it they pass without checking anything. `HOIST_LIVE_SOURCES=1` also fetches the real stores once.
-- `foreman run build-hoist-service` / `publish-hoist-service` build and push `ossiriand.arda:8080/forge/hoist/hoist:<hoist's version>` (see [foreman](../cli/foreman.md)); the deployment is `homecloud/overlays/forge/hoist`.
+- Tests: `cargo test -p hoist-service`. The store, refresh and API tests need Postgres: set `HOIST_TEST_DATABASE_URL` to a throwaway database with the `hoist` module installed (`foreman db` makes one: `postgres://postgres:postgres@localhost:5432/postgres`); without it they pass without checking anything. `HOIST_LIVE_SOURCES=1` also fetches the real stores once.
+- `anvil release` builds and pushes `ossiriand.arda:8080/forge/hoist/hoist:<version>` like the other services (it is a docker package in `.anvil.toml`; its `config/` is empty because the image wants one); the deployment is `homecloud/overlays/forge/hoist`.

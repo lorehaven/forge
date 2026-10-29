@@ -196,6 +196,73 @@ pub fn full_tags_for_package(config: &config::Config, package: &str) -> Result<V
         .collect())
 }
 
+/// `--build-arg` pairs that give the Dockerfile the private cargo registry `.anvil.toml` names, if any.
+///
+/// A private cargo registry the Dockerfile needs to see is entirely a workspace concern - anvil only forwards it
+/// if `.anvil.toml` names one.
+#[must_use]
+pub fn registry_build_args(config: &config::Config) -> Vec<String> {
+    let mut args = Vec::new();
+    let Some(registry_name) = config
+        .docker
+        .cargo_registry
+        .as_ref()
+        .filter(|s| !s.trim().is_empty())
+    else {
+        return args;
+    };
+    if let Some(index) = cargo_registry_index(config, registry_name) {
+        args.push("--build-arg".to_string());
+        args.push(format!(
+            "{}={index}",
+            env_var_name_for_registry(registry_name, "INDEX")
+        ));
+    }
+    if let Some(token) = cargo_registry_token(registry_name) {
+        args.push("--build-arg".to_string());
+        args.push(format!(
+            "{}={token}",
+            env_var_name_for_registry(registry_name, "TOKEN")
+        ));
+    }
+    args
+}
+
+/// Builds `dockerfile` over `context` once, tags it `tags`, and pushes each tag: an image whose project is not a
+/// member of this workspace (see `[artifacts.programs.<name>.image]`).
+///
+/// # Errors
+/// A failed `docker` command.
+pub fn release_image(
+    config: &config::Config,
+    dockerfile: &std::path::Path,
+    context: &std::path::Path,
+    build_args: &BTreeMap<String, String>,
+    tags: &[String],
+) -> Result<()> {
+    let mut cmd = Command::new("docker");
+    cmd.arg("build")
+        .arg("--network=host")
+        .arg("--progress=plain")
+        .args(registry_build_args(config));
+    for (name, value) in build_args {
+        cmd.arg("--build-arg").arg(format!("{name}={value}"));
+    }
+    for tag in tags {
+        cmd.arg("-t").arg(tag);
+    }
+    cmd.arg("-f").arg(dockerfile).arg(context);
+    cmd.env("DOCKER_BUILDKIT", "1");
+    run_command(cmd, "docker build")?;
+    for tag in tags {
+        println!("Pushing image: {tag}");
+        let mut push = Command::new("docker");
+        push.arg("push").arg(tag);
+        run_command(push, &format!("docker push {tag}"))?;
+    }
+    Ok(())
+}
+
 pub fn build(config: &config::Config, package: &str) -> Result<()> {
     let dockerfile = get_dockerfile_for_package(config, package)?;
     let image_name = get_image_name_for_package(config, package)?;
@@ -248,27 +315,7 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
         .arg("--build-arg")
         .arg(format!("RESOURCES_PATH={resources_path}"));
 
-    // A private cargo registry the Dockerfile needs to see is entirely a
-    // workspace concern - anvil only forwards it if `.anvil.toml` names one.
-    if let Some(registry_name) = config
-        .docker
-        .cargo_registry
-        .as_ref()
-        .filter(|s| !s.trim().is_empty())
-    {
-        if let Some(index) = cargo_registry_index(config, registry_name) {
-            cmd.arg("--build-arg").arg(format!(
-                "{}={index}",
-                env_var_name_for_registry(registry_name, "INDEX")
-            ));
-        }
-        if let Some(token) = cargo_registry_token(registry_name) {
-            cmd.arg("--build-arg").arg(format!(
-                "{}={token}",
-                env_var_name_for_registry(registry_name, "TOKEN")
-            ));
-        }
-    }
+    cmd.args(registry_build_args(config));
 
     // After the ones anvil derives, so a package that genuinely needs a
     // different `RESOURCES_PATH` can say so - docker takes the last value for a

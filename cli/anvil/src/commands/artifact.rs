@@ -19,7 +19,7 @@ use std::process::Command;
 use quench_core::{Context, Result, bail};
 use quench_serde::Value;
 
-use crate::config::{ArtifactProgram, ArtifactTarget, Config};
+use crate::config::{ArtifactImage, ArtifactProgram, ArtifactTarget, Config};
 
 /// What a request to the warehouse carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -289,7 +289,13 @@ pub fn release_with(
     let dir: PathBuf = root.join(program.dir.as_deref().unwrap_or("."));
     let version_name = read_version(&dir.join(&program.version_file))?;
     let code = version_code(&version_name);
-    let targets = select(program, options.target.as_deref())?;
+    let only_image = options.target.as_deref() == Some("image") && program.image.is_some();
+    let targets = if only_image || (program.targets.is_empty() && program.image.is_some()) {
+        Vec::new()
+    } else {
+        select(program, options.target.as_deref())?
+    };
+    let release_image = program.image.is_some() && (only_image || options.target.is_none());
     let commit = commit(&dir, options.allow_dirty)?;
     writeln!(
         out,
@@ -355,6 +361,59 @@ pub fn release_with(
             _ => bail!("[{label}] publish failed: HTTP {status} {}", reply.trim()),
         }
     }
+    if release_image && let Some(image) = &program.image {
+        release_service_image(config, &dir, image, &version_name, options.dry_run, out)?;
+    }
+    Ok(())
+}
+
+/// Builds and pushes the program's service image, tagged with the release's version.
+fn release_service_image(
+    config: &Config,
+    dir: &Path,
+    image: &ArtifactImage,
+    version_name: &str,
+    dry_run: bool,
+    out: &mut dyn Write,
+) -> Result<()> {
+    let registries: Vec<&str> = if image.registries.is_empty() {
+        vec![config.docker.registry.as_str()]
+    } else {
+        image.registries.iter().map(String::as_str).collect()
+    };
+    let tags: Vec<String> = registries
+        .iter()
+        .filter(|r| !r.trim().is_empty())
+        .map(|r| format!("{r}/{}/{}:{version_name}", image.module, image.name))
+        .collect();
+    if tags.is_empty() {
+        bail!(
+            "[image] no registry: set `registries` on the image or `registry` under [docker] in .anvil.toml"
+        );
+    }
+    let dockerfile = dir.join(&image.dockerfile);
+    let context = dir.join(image.context.as_deref().unwrap_or("."));
+    if !dockerfile.is_file() {
+        bail!("[image] no Dockerfile at {}", dockerfile.display());
+    }
+    if dry_run {
+        writeln!(
+            out,
+            "[image] would build {} and push {}",
+            dockerfile.display(),
+            tags.join(", ")
+        )?;
+        return Ok(());
+    }
+    writeln!(out, "[image] building and pushing {}", tags.join(", "))?;
+    crate::commands::docker::release_image(
+        config,
+        &dockerfile,
+        &context,
+        &image.build_args,
+        &tags,
+    )?;
+    writeln!(out, "[image] pushed")?;
     Ok(())
 }
 
@@ -419,6 +478,9 @@ pub fn list(config: &Config, out: &mut dyn Write) -> Result<()> {
                 t.format.as_deref().unwrap_or("-"),
                 t.arch.as_deref().unwrap_or("-")
             )?;
+        }
+        if let Some(image) = &program.image {
+            writeln!(out, "  {:<10} {}/{}", "image", image.module, image.name)?;
         }
     }
     Ok(())
