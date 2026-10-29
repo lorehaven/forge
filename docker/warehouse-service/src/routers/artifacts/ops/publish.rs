@@ -163,13 +163,13 @@ pub async fn publish(
         Err(response) => return response,
     };
 
-    let id = ArtifactVersion::id_for(&program, platform, version_code);
+    let id = ArtifactVersion::id_for(&program, platform, &format, version_code);
     let repo = db.repository::<ArtifactVersion>();
     match repo.read(&id).await {
         Ok(Some(_)) => {
             return error(
                 StatusCode::CONFLICT,
-                "this program version has already been published for this platform",
+                "this program version has already been published for this platform in this format",
             );
         }
         Ok(None) => {}

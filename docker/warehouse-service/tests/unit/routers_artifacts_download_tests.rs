@@ -33,7 +33,7 @@ mod macos {
 
     fn dmg(program: &str, version_code: i64, filename: &str) -> ArtifactVersion {
         ArtifactVersion {
-            id: ArtifactVersion::id_for(program, Platform::Macos, version_code),
+            id: ArtifactVersion::id_for(program, Platform::Macos, "dmg", version_code),
             program: program.to_string(),
             platform: "macos".to_string(),
             arch: Some("aarch64".to_string()),

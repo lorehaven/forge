@@ -76,7 +76,7 @@ Both sit behind `Auth` (bearer token or realm cookie, verified against gatehouse
 
 Everything is under `{BASE_PATH}/api/v1/artifacts` and behind the realm's auth, the same `Auth` + `RequireWrite` pair the files API uses — a valid realm identity to read, the blanket `warehouse:write` grant (or a wildcard role) to publish or yank. Turned on with `FEATURE_ARTIFACTS_ENABLED` (the older `FEATURE_APK_ENABLED` is still honoured).
 
-An artifact is addressed by `{program}/{platform}/{version_code}` — never a caller-chosen name. `program` is a reverse-DNS application id shared across platforms (`dev.lorehaven.pedlar` for the Android APK, the Linux build and the Windows build alike); `platform` is one of `android` / `linux` / `windows` / `macos`. macOS is a first-class desktop platform: like Linux and Windows its identity comes from the publish URL and `?format=` is required (`dmg`, `pkg`, `zip`, `tar.gz`, …; `arch` is `x86_64` / `aarch64` / `universal`). A `dmg` is downloaded as `application/x-apple-diskimage`, every other non-APK format as `application/octet-stream`.
+An artifact is addressed by `{program}/{platform}/{version_code}` and its `format` — never a caller-chosen name. One version can be published in several formats (a Linux build as `deb`, `rpm`, `pkg.tar.zst` and a `tar.gz` of the sources); the format is part of its identity, so the same version in a second format is a new build and the same format twice is a `409`. Routes that name one build (`GET`, `.../download`, `.../latest`) take an optional `?format=`: a version with a single build needs none, one with several answers `409` and lists them. Yank/unyank take it too, and without it withdraw every format of the version. `program` is a reverse-DNS application id shared across platforms (`dev.lorehaven.pedlar` for the Android APK, the Linux build and the Windows build alike); `platform` is one of `android` / `linux` / `windows` / `macos`. macOS is a first-class desktop platform: like Linux and Windows its identity comes from the publish URL and `?format=` is required (`dmg`, `pkg`, `zip`, `tar.gz`, …; `arch` is `x86_64` / `aarch64` / `universal`). A `dmg` is downloaded as `application/x-apple-diskimage`, every other non-APK format as `application/octet-stream`.
 
 Identity is checked one of two ways:
 
@@ -92,7 +92,7 @@ Either way `size_bytes` and `sha256` are computed from the stream, and a `(progr
 | `GET` | `/api/v1/artifacts/{program}/{platform}/{version_code}/download` | fetch the bytes |
 | `GET` | `/api/v1/artifacts/{program}/{platform}` | every version for one program+platform, newest first |
 | `GET` | `/api/v1/artifacts/{program}` | every platform+version for one program |
-| `GET` | `/api/v1/artifacts?platform=<tag>` | catalog: latest non-yanked per `(program, platform)`, optionally filtered |
+| `GET` | `/api/v1/artifacts?platform=<tag>&format=<f>` | catalog: latest non-yanked per `(program, platform, format)`, optionally filtered |
 | `GET` | `/api/v1/artifacts/{program}/{platform}/latest` / `.../latest/download` | highest non-yanked `version_code` |
 | `DELETE` | `/api/v1/artifacts/{program}/{platform}/{version_code}/yank` | hide from `latest`/the catalog, keep the file |
 | `PUT` | `/api/v1/artifacts/{program}/{platform}/{version_code}/unyank` | undo a yank |

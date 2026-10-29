@@ -11,10 +11,15 @@ pub async fn resolve_latest(
     db: &Db,
     program: &str,
     platform_raw: &str,
+    format: Option<&str>,
 ) -> Result<Option<ArtifactVersion>, Response> {
     let Some(platform) = Platform::parse(platform_raw) else {
         return Ok(None);
     };
-    let versions = find_program_platform(db, program, platform).await?;
+    let versions: Vec<ArtifactVersion> = find_program_platform(db, program, platform)
+        .await?
+        .into_iter()
+        .filter(|row| format.is_none_or(|f| row.format == f))
+        .collect();
     Ok(latest_of(&versions).cloned())
 }

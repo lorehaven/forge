@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use hoist_app::live::{Msg, Request};
-use hoist_desktop::{Store, work, work_with};
+use hoist_desktop::{Store, package_formats, work, work_with};
 
 /// What the stand-in services remember.
 #[derive(Default)]
@@ -94,10 +94,10 @@ fn serve(state: &Arc<Mutex<State>>, mut stream: TcpStream) {
                 respond(&mut stream, "401 Unauthorized", b"{}");
             }
         }
-        ("GET", p) if p.starts_with("/warehouse/api/v1/artifacts?") || p.ends_with("/download") => {
+        ("GET", p) if p.starts_with("/warehouse/api/v1/artifacts?") || p.contains("/download") => {
             if auth != format!("Bearer {}", s.access) {
                 respond(&mut stream, "401 Unauthorized", b"{}");
-            } else if p.ends_with("/download") {
+            } else if p.contains("/download") {
                 let file = s.file.clone();
                 respond(&mut stream, "200 OK", &file);
             } else if s.catalog_status == 404 {
@@ -167,7 +167,7 @@ fn the_worker_signs_in_keeps_the_rotating_token_lists_downloads_and_signs_out() 
     let (base, state) = start();
     let dir = std::env::temp_dir().join(format!("hoist-desktop-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let store = Store::at(dir.clone());
+    let store = Store::at(dir.clone()).with_formats(vec!["deb"]);
     let (requests, requests_rx) = channel();
     let (answers, answers_rx) = channel();
     let worker = {
@@ -266,7 +266,7 @@ fn installing_downloads_hands_the_file_to_the_system_and_keeps_a_ledger() {
     let (base, state) = start();
     let dir = std::env::temp_dir().join(format!("hoist-install-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let store = Store::at(dir.clone());
+    let store = Store::at(dir.clone()).with_formats(vec!["deb"]);
     assert!(store.installed().is_empty());
     store.write(&base, "refresh-0");
     // The stand-in accepts the stored token once, as the first refresh.
@@ -362,7 +362,7 @@ fn the_worker_reads_the_public_catalogue_and_refuses_what_it_should_not_fetch() 
     let (base, _state) = start();
     let dir = std::env::temp_dir().join(format!("hoist-public-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let store = Store::at(dir.clone());
+    let store = Store::at(dir.clone()).with_formats(vec!["deb"]);
     store.write(&base, "refresh-0");
     let (requests, requests_rx) = channel();
     let (answers, answers_rx) = channel();
@@ -421,7 +421,7 @@ fn preferences_are_kept_and_a_new_server_address_carries_the_session() {
     let (base, _state) = start();
     let dir = std::env::temp_dir().join(format!("hoist-prefs-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let store = Store::at(dir.clone());
+    let store = Store::at(dir.clone()).with_formats(vec!["deb"]);
     assert!(store.auto_check(), "on until it is switched off");
     store.write(&base, "refresh-0");
     let (requests, requests_rx) = channel();
@@ -472,3 +472,20 @@ fn preferences_are_kept_and_a_new_server_address_carries_the_session() {
 }
 
 quench_test::main!();
+
+#[quench_test::test]
+fn the_package_format_follows_the_distribution() {
+    for (os_release, want) in [
+        ("NAME=\"Arch Linux\"\nID=arch\n", "pkg.tar.zst"),
+        ("ID=endeavouros\nID_LIKE=arch\n", "pkg.tar.zst"),
+        ("ID=ubuntu\nID_LIKE=debian\n", "deb"),
+        ("ID=debian\n", "deb"),
+        ("ID=fedora\n", "rpm"),
+        ("ID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\n", "rpm"),
+        ("ID=opensuse-tumbleweed\nID_LIKE=\"opensuse suse\"\n", "rpm"),
+        ("ID=nixos\n", "tar.gz"),
+        ("", "tar.gz"),
+    ] {
+        assert_eq!(package_formats(os_release), [want], "{os_release:?}");
+    }
+}

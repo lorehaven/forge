@@ -225,8 +225,8 @@ impl Session {
         mut progress: impl FnMut(u64, u64),
     ) -> Result<PathBuf, NetError> {
         let path = format!(
-            "/warehouse/api/v1/artifacts/{}/{}/{}/download",
-            artifact.program, artifact.platform, artifact.version_code
+            "/warehouse/api/v1/artifacts/{}/{}/{}/download?format={}",
+            artifact.program, artifact.platform, artifact.version_code, artifact.format
         );
         let response = self.get(&path)?;
         match response.status().as_u16() {

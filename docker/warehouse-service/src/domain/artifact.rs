@@ -1,4 +1,6 @@
-//! The artifact catalog: one row per published build, keyed by `<program>/<platform>@<version_code>`.
+//! The artifact catalog: one row per published build, keyed by `<program>/<platform>/<format>@<version_code>`.
+//!
+//! One version of a program on one platform can ship in several formats (a `.deb`, an `.rpm`, an Arch package).
 //! Immutable once published (yanking just flips a flag), so plain `Crud` suffices.
 
 use quench_core::time::Time;
@@ -87,8 +89,8 @@ pub struct ArtifactVersion {
 impl ArtifactVersion {
     /// The catalog key a caller addresses a version by.
     #[must_use]
-    pub fn id_for(program: &str, platform: Platform, version_code: i64) -> String {
-        format!("{program}/{}@{version_code}", platform.as_str())
+    pub fn id_for(program: &str, platform: Platform, format: &str, version_code: i64) -> String {
+        format!("{program}/{}/{format}@{version_code}", platform.as_str())
     }
 }
 

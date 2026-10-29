@@ -2,14 +2,19 @@ use quench_db::prelude::Model;
 use warehouse_service::domain::artifact::{ArtifactVersion, Platform};
 
 #[quench_test::test]
-fn id_for_joins_program_platform_and_version_code() {
+fn id_for_joins_program_platform_format_and_version_code() {
     assert_eq!(
-        ArtifactVersion::id_for("com.example.app", Platform::Android, 42),
-        "com.example.app/android@42"
+        ArtifactVersion::id_for("com.example.app", Platform::Android, "apk", 42),
+        "com.example.app/android/apk@42"
     );
     assert_eq!(
-        ArtifactVersion::id_for("com.example.app", Platform::Linux, 7),
-        "com.example.app/linux@7"
+        ArtifactVersion::id_for("com.example.app", Platform::Linux, "deb", 7),
+        "com.example.app/linux/deb@7"
+    );
+    assert_ne!(
+        ArtifactVersion::id_for("com.example.app", Platform::Linux, "deb", 7),
+        ArtifactVersion::id_for("com.example.app", Platform::Linux, "rpm", 7),
+        "the same version in two formats is two rows"
     );
 }
 

@@ -2,22 +2,27 @@
 
 use crate::domain::artifact::{ArtifactVersion, Platform};
 use crate::routers::artifacts::artifact_file_path;
-use crate::routers::artifacts::ops::{disabled, error, latest, not_found};
-use quench_db::prelude::{Crud, Db};
-use quench_http::prelude::{Inject, Path, Response, get, http::StatusCode};
+use crate::routers::artifacts::ops::{
+    FormatQuery, disabled, error, latest, not_found, resolve_one,
+};
+use quench_db::prelude::Db;
+use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode};
 
 #[get("/api/v1/artifacts/{program}/{platform}/{version_code}/download")]
 #[quench_log::instrument]
 pub async fn handle(
     Inject(db): Inject<Db>,
     Path((program, platform_raw, version_code_raw)): Path<(String, String, String)>,
+    Query(query): Query<FormatQuery>,
 ) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
     }
 
     if version_code_raw == "latest" {
-        return match latest::resolve_latest(&db, &program, &platform_raw).await {
+        return match latest::resolve_latest(&db, &program, &platform_raw, query.wanted().as_deref())
+            .await
+        {
             Ok(Some(version)) => serve(&version).await,
             Ok(None) => not_found("program has no offerable version for this platform"),
             Err(response) => response,
@@ -30,13 +35,19 @@ pub async fn handle(
     let Some(platform) = Platform::parse(&platform_raw) else {
         return not_found("program or version not found");
     };
-    let id = ArtifactVersion::id_for(&program, platform, version_code);
 
-    let Ok(Some(version)) = db.repository::<ArtifactVersion>().read(&id).await else {
-        return not_found("program or version not found");
-    };
-
-    serve(&version).await
+    match resolve_one(
+        &db,
+        &program,
+        platform,
+        version_code,
+        query.wanted().as_deref(),
+    )
+    .await
+    {
+        Ok(version) => serve(&version).await,
+        Err(response) => response,
+    }
 }
 
 /// Shared by `handle` and the `/api/v1/apk` alias once each resolves the version.
@@ -82,5 +93,5 @@ pub fn content_type_for(format: &str) -> &'static str {
 }
 
 pub fn register_routes() {
-    let _ = handle as fn(_, _) -> _;
+    let _ = handle as fn(_, _, _) -> _;
 }

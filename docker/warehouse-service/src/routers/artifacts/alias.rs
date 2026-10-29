@@ -131,7 +131,7 @@ pub async fn metadata(
     }
 
     if version_code_raw == "latest" {
-        return match latest::resolve_latest(&db, &program, ANDROID).await {
+        return match latest::resolve_latest(&db, &program, ANDROID, None).await {
             Ok(Some(version)) => json_ok(&ArtifactView::from(&version)),
             Ok(None) => not_found("package has no offerable version"),
             Err(response) => response,
@@ -141,7 +141,7 @@ pub async fn metadata(
     let Ok(version_code) = version_code_raw.parse::<i64>() else {
         return not_found("package or version not found");
     };
-    let id = ArtifactVersion::id_for(&program, Platform::Android, version_code);
+    let id = ArtifactVersion::id_for(&program, Platform::Android, "apk", version_code);
     match db.repository::<ArtifactVersion>().read(&id).await {
         Ok(Some(version)) => json_ok(&ArtifactView::from(&version)),
         _ => not_found("package or version not found"),
@@ -159,7 +159,7 @@ pub async fn download(
     }
 
     if version_code_raw == "latest" {
-        return match latest::resolve_latest(&db, &program, ANDROID).await {
+        return match latest::resolve_latest(&db, &program, ANDROID, None).await {
             Ok(Some(version)) => super::ops::download::serve(&version).await,
             Ok(None) => not_found("package has no offerable version"),
             Err(response) => response,
@@ -169,7 +169,7 @@ pub async fn download(
     let Ok(version_code) = version_code_raw.parse::<i64>() else {
         return not_found("package or version not found");
     };
-    let id = ArtifactVersion::id_for(&program, Platform::Android, version_code);
+    let id = ArtifactVersion::id_for(&program, Platform::Android, "apk", version_code);
     match db.repository::<ArtifactVersion>().read(&id).await {
         Ok(Some(version)) => super::ops::download::serve(&version).await,
         _ => not_found("package or version not found"),
@@ -236,7 +236,7 @@ pub async fn yank(
     if !crate::routers::artifacts_enabled() {
         return disabled();
     }
-    set_yanked(&db, &program, ANDROID, version_code, true).await
+    set_yanked(&db, &program, ANDROID, version_code, None, true).await
 }
 
 #[put("/api/v1/apk/{package}/{version_code}/unyank")]
@@ -248,7 +248,7 @@ pub async fn unyank(
     if !crate::routers::artifacts_enabled() {
         return disabled();
     }
-    set_yanked(&db, &program, ANDROID, version_code, false).await
+    set_yanked(&db, &program, ANDROID, version_code, None, false).await
 }
 
 pub fn register_routes() {

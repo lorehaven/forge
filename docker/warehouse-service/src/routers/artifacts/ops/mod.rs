@@ -7,8 +7,8 @@ use quench_core::async_trait;
 use quench_core::time::Time;
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{FromRequest, HttpError, Request, Response, http::StatusCode};
-use quench_serde::Serialize;
 use quench_serde::json;
+use quench_serde::{Deserialize, Serialize};
 
 pub mod download;
 pub mod latest;
@@ -63,6 +63,24 @@ impl From<&ArtifactVersion> for ArtifactView {
     }
 }
 
+/// `?format=` on the routes that address one build: the package format a version is asked for in
+/// (`deb`, `rpm`, `pkg.tar.zst`...). Optional while a version has a single format.
+#[derive(Debug, Default, Deserialize)]
+pub struct FormatQuery {
+    pub format: Option<String>,
+}
+
+impl FormatQuery {
+    /// The format, trimmed and lowercased as `publish` stores it; `None` when absent or blank.
+    #[must_use]
+    pub fn wanted(&self) -> Option<String> {
+        self.format
+            .as_deref()
+            .map(|f| f.trim().to_ascii_lowercase())
+            .filter(|f| !f.is_empty())
+    }
+}
+
 /// The highest non-yanked `version_code`, or `None` if every version is yanked.
 #[must_use]
 pub fn latest_of(versions: &[ArtifactVersion]) -> Option<&ArtifactVersion> {
@@ -70,6 +88,48 @@ pub fn latest_of(versions: &[ArtifactVersion]) -> Option<&ArtifactVersion> {
         .iter()
         .filter(|version| !version.yanked)
         .max_by_key(|version| version.version_code)
+}
+
+/// Every build of one `version_code` (all formats), or only those of `format`.
+pub async fn find_versions(
+    db: &Db,
+    program: &str,
+    platform: Platform,
+    version_code: i64,
+    format: Option<&str>,
+) -> Result<Vec<ArtifactVersion>, Response> {
+    Ok(find_program_platform(db, program, platform)
+        .await?
+        .into_iter()
+        .filter(|row| row.version_code == version_code)
+        .filter(|row| format.is_none_or(|f| row.format == f))
+        .collect())
+}
+
+/// The one build a request names: the version's only build, or the one in `format`. A version in several
+/// formats asked for without one is a `409` that lists them, so a client never gets a surprise file.
+pub async fn resolve_one(
+    db: &Db,
+    program: &str,
+    platform: Platform,
+    version_code: i64,
+    format: Option<&str>,
+) -> Result<ArtifactVersion, Response> {
+    let mut found = find_versions(db, program, platform, version_code, format).await?;
+    match found.len() {
+        0 => Err(not_found("program or version not found")),
+        1 => Ok(found.remove(0)),
+        _ => {
+            let formats: Vec<&str> = found.iter().map(|v| v.format.as_str()).collect();
+            Err(error(
+                StatusCode::CONFLICT,
+                &format!(
+                    "this version has several formats ({}): pass ?format=",
+                    formats.join(", ")
+                ),
+            ))
+        }
+    }
 }
 
 /// Every row for one program+platform; `Crud::find_by` is equality-only, so platform is post-filtered.

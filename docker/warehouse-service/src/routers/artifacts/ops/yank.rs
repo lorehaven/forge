@@ -2,9 +2,9 @@
 //! so an exact-version fetch (a device mid-download) still works. Mirrors `crates::ops::yank`.
 
 use crate::domain::artifact::{ArtifactVersion, Platform};
-use crate::routers::artifacts::ops::{disabled, error, not_found};
+use crate::routers::artifacts::ops::{FormatQuery, disabled, error, find_versions, not_found};
 use quench_db::prelude::{Crud, Db};
-use quench_http::prelude::{Inject, Path, Response, delete, http::StatusCode};
+use quench_http::prelude::{Inject, Path, Query, Response, delete, http::StatusCode};
 use quench_serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -17,44 +17,56 @@ pub struct OkResponse {
 pub async fn handle(
     Inject(db): Inject<Db>,
     Path((program, platform_raw, version_code)): Path<(String, String, i64)>,
+    Query(query): Query<FormatQuery>,
 ) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
     }
 
-    set_yanked(&db, &program, &platform_raw, version_code, true).await
+    set_yanked(
+        &db,
+        &program,
+        &platform_raw,
+        version_code,
+        query.wanted().as_deref(),
+        true,
+    )
+    .await
 }
 
-/// Shared by `yank::handle`, `unyank::handle` and the `/api/v1/apk` alias.
+/// Shared by `yank::handle`, `unyank::handle`, the `/api/v1/apk` alias and the catalog page: every format of the
+/// version, or only `format`. A release is withdrawn as a whole unless a format is named.
 pub async fn set_yanked(
     db: &Db,
     program: &str,
     platform_raw: &str,
     version_code: i64,
+    format: Option<&str>,
     value: bool,
 ) -> Response {
     let Some(platform) = Platform::parse(platform_raw) else {
         return not_found("program or version not found");
     };
-    let id = ArtifactVersion::id_for(program, platform, version_code);
     let repo = db.repository::<ArtifactVersion>();
 
-    let Some(mut version) = (match repo.read(&id).await {
-        Ok(version) => version,
-        Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
-    }) else {
-        return not_found("program or version not found");
+    let found = match find_versions(db, program, platform, version_code, format).await {
+        Ok(found) => found,
+        Err(response) => return response,
     };
-
-    version.yanked = value;
-
-    match repo.update(&version).await {
-        Ok(_) => Response::json(StatusCode::OK, &OkResponse { ok: true })
-            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
-        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    if found.is_empty() {
+        return not_found("program or version not found");
     }
+
+    for mut version in found {
+        version.yanked = value;
+        if let Err(e) = repo.update(&version).await {
+            return error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
+        }
+    }
+    Response::json(StatusCode::OK, &OkResponse { ok: true })
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 pub fn register_routes() {
-    let _ = handle as fn(_, _) -> _;
+    let _ = handle as fn(_, _, _) -> _;
 }

@@ -96,10 +96,10 @@ fn serve(state: &Arc<Mutex<State>>, mut stream: TcpStream) {
                 respond(&mut stream, "401 Unauthorized", b"{}");
             }
         }
-        ("GET", p) if p.starts_with("/warehouse/api/v1/artifacts?") || p.ends_with("/download") => {
+        ("GET", p) if p.starts_with("/warehouse/api/v1/artifacts?") || p.contains("/download") => {
             if auth != format!("Bearer {}", s.access) {
                 respond(&mut stream, "401 Unauthorized", b"{}");
-            } else if p.ends_with("/download") {
+            } else if p.contains("/download") {
                 let file = s.file.clone();
                 respond(&mut stream, "200 OK", &file);
             } else if s.catalog_status == 404 {

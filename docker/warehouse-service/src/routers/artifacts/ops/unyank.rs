@@ -1,23 +1,32 @@
 //! `PUT /api/v1/artifacts/{program}/{platform}/{version_code}/unyank` - undo a
 //! yank.
 
-use crate::routers::artifacts::ops::disabled;
+use crate::routers::artifacts::ops::{FormatQuery, disabled};
 use quench_db::prelude::Db;
-use quench_http::prelude::{Inject, Path, Response, put};
+use quench_http::prelude::{Inject, Path, Query, Response, put};
 
 #[put("/api/v1/artifacts/{program}/{platform}/{version_code}/unyank")]
 #[quench_log::instrument]
 pub async fn handle(
     Inject(db): Inject<Db>,
     Path((program, platform_raw, version_code)): Path<(String, String, i64)>,
+    Query(query): Query<FormatQuery>,
 ) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
     }
 
-    super::yank::set_yanked(&db, &program, &platform_raw, version_code, false).await
+    super::yank::set_yanked(
+        &db,
+        &program,
+        &platform_raw,
+        version_code,
+        query.wanted().as_deref(),
+        false,
+    )
+    .await
 }
 
 pub fn register_routes() {
-    let _ = handle as fn(_, _) -> _;
+    let _ = handle as fn(_, _, _) -> _;
 }

@@ -7,4 +7,10 @@ key_alias = "release"
 package = "dev.lorehaven.hoist"
 
 [linux]
+id = "dev.lorehaven.hoist"
+title = "Hoist"
+wm_class = "dev.lorehaven.hoist"
+icon = "icon.png"
 bin = "hoist"
+# A native app: nothing but libc (the default is a web host's WebKit and GTK).
+depends = ""

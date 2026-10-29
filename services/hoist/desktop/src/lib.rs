@@ -15,6 +15,8 @@ pub const DEFAULT_SERVER: &str = "https://ennor.ddns.net";
 #[derive(Debug, Clone)]
 pub struct Store {
     dir: PathBuf,
+    /// The package formats to offer on Linux; the system's own (from `/etc/os-release`) when `None`.
+    formats: Option<Vec<&'static str>>,
 }
 
 impl Store {
@@ -27,12 +29,20 @@ impl Store {
             .unwrap_or_else(std::env::temp_dir);
         Self {
             dir: base.join("hoist"),
+            formats: None,
         }
     }
 
     #[must_use]
     pub const fn at(dir: PathBuf) -> Self {
-        Self { dir }
+        Self { dir, formats: None }
+    }
+
+    /// Offers these package formats (best first) instead of the ones this system installs.
+    #[must_use]
+    pub fn with_formats(mut self, formats: Vec<&'static str>) -> Self {
+        self.formats = Some(formats);
+        self
     }
 
     fn file(&self) -> PathBuf {
@@ -137,6 +147,39 @@ impl Store {
     }
 }
 
+/// The package formats this Linux installs, best first, from the text of `/etc/os-release`: the registry holds a
+/// build of each (`deb`, `rpm`, `pkg.tar.zst`), and the app offers the one the system's package manager takes. A
+/// distribution it does not know gets the source tarball.
+#[must_use]
+pub fn package_formats(os_release: &str) -> Vec<&'static str> {
+    let field = |name: &str| {
+        os_release
+            .lines()
+            .find_map(|l| l.strip_prefix(name)?.strip_prefix('='))
+            .map(|v| v.trim_matches('"').to_ascii_lowercase())
+            .unwrap_or_default()
+    };
+    let family = format!("{} {}", field("ID"), field("ID_LIKE"));
+    let is = |names: &[&str]| family.split_whitespace().any(|f| names.contains(&f));
+    if is(&["arch", "manjaro", "endeavouros", "cachyos"]) {
+        vec!["pkg.tar.zst"]
+    } else if is(&["debian", "ubuntu", "linuxmint", "pop", "raspbian"]) {
+        vec!["deb"]
+    } else if is(&[
+        "fedora",
+        "rhel",
+        "centos",
+        "rocky",
+        "almalinux",
+        "suse",
+        "opensuse",
+    ]) {
+        vec!["rpm"]
+    } else {
+        vec!["tar.gz"]
+    }
+}
+
 /// Hands a downloaded file to the desktop (`xdg-open`: the installer or package manager that handles its type).
 ///
 /// # Errors
@@ -170,6 +213,16 @@ pub fn work_with(
         .map_or_else(|| DEFAULT_SERVER.to_string(), |s| s.0.clone());
     let mut session = stored.map(|(s, t)| Session::resume(&s, &t));
     let (os, arch) = (std::env::consts::OS, std::env::consts::ARCH);
+    // On Linux a program is published once in each package format; the app shows the one this system installs.
+    let formats = (os == "linux").then(|| {
+        store.formats.clone().unwrap_or_else(|| {
+            package_formats(
+                &std::fs::read_to_string("/etc/os-release")
+                    .or_else(|_| std::fs::read_to_string("/usr/lib/os-release"))
+                    .unwrap_or_default(),
+            )
+        })
+    });
     while let Ok(request) = requests.recv() {
         let answer = match request {
             Request::Login {
@@ -199,6 +252,11 @@ pub fn work_with(
                                 a.arch
                                     .as_deref()
                                     .is_none_or(|x| x == arch || x == "universal")
+                            })
+                            .filter(|a| {
+                                formats
+                                    .as_ref()
+                                    .is_none_or(|f| f.contains(&a.format.as_str()))
                             })
                             .collect(),
                     )

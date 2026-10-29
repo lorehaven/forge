@@ -1,0 +1,29 @@
+[[migrations]]
+id = "0006-artifact-format-key"
+author = "warehouse-service"
+since = "0.5.0"
+
+# One version of a program on one platform can ship in several formats - a Linux build as a `.deb`, an `.rpm`, an
+# Arch package and a source tarball - so the format joins the identity: `(program, platform, format, version_code)`.
+#
+# The old `UNIQUE (program, platform, version_code)` (named by Postgres when the table was made) goes, a unique index
+# on the new tuple takes its place, and every id gains the format segment: `<program>/<platform>/<format>@<code>`,
+# which is what the service now computes. Existing rows are one format each, so nothing collides.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.artifact_versions
+    DROP CONSTRAINT IF EXISTS artifact_versions_program_platform_version_code_key;
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS artifact_versions_program_platform_format_version_key
+    ON ${schema}.artifact_versions (program, platform, format, version_code);
+"""
+
+[[migrations.changes]]
+sql = """
+UPDATE ${schema}.artifact_versions
+SET id = program || '/' || platform || '/' || format || '@' || version_code
+WHERE id <> program || '/' || platform || '/' || format || '@' || version_code;
+"""

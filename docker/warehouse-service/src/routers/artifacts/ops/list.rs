@@ -1,5 +1,5 @@
 //! Per-program version listing, per-program-all-platforms listing, and the catalog (latest
-//! offerable version per program+platform) a client's index page hits.
+//! offerable version per program+platform+format) a client's index page hits.
 
 use crate::domain::artifact::{ArtifactVersion, Platform};
 use crate::routers::artifacts::ops::{
@@ -15,6 +15,8 @@ use std::collections::HashMap;
 pub struct CatalogQuery {
     /// An unknown tag yields an empty catalog rather than an error.
     pub platform: Option<String>,
+    /// Only builds in this package format (`deb`, `rpm`, `pkg.tar.zst`...).
+    pub format: Option<String>,
 }
 
 #[get("/api/v1/artifacts/{program}/{platform}")]
@@ -93,16 +95,30 @@ pub async fn catalog(Inject(db): Inject<Db>, Query(query): Query<CatalogQuery>) 
         Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     };
 
-    // (program, platform) -> its rows.
-    let mut by_key: HashMap<(&str, &str), Vec<&ArtifactVersion>> = HashMap::new();
+    let format_filter = query
+        .format
+        .as_deref()
+        .map(|f| f.trim().to_ascii_lowercase())
+        .filter(|f| !f.is_empty());
+
+    // (program, platform, format) -> its rows: a program ships in several formats on one platform, and the
+    // newest of each is what a client picks from.
+    let mut by_key: HashMap<(&str, &str, &str), Vec<&ArtifactVersion>> = HashMap::new();
     for version in &all {
         if let Some(p) = platform_filter
             && version.platform != p.as_str()
         {
             continue;
         }
+        if format_filter.as_ref().is_some_and(|f| version.format != *f) {
+            continue;
+        }
         by_key
-            .entry((version.program.as_str(), version.platform.as_str()))
+            .entry((
+                version.program.as_str(),
+                version.platform.as_str(),
+                version.format.as_str(),
+            ))
             .or_default()
             .push(version);
     }
@@ -116,7 +132,12 @@ pub async fn catalog(Inject(db): Inject<Db>, Query(query): Query<CatalogQuery>) 
         })
         .map(|version| ArtifactView::from(*version))
         .collect();
-    catalog.sort_by(|a, b| a.program.cmp(&b.program).then(a.platform.cmp(&b.platform)));
+    catalog.sort_by(|a, b| {
+        a.program
+            .cmp(&b.program)
+            .then(a.platform.cmp(&b.platform))
+            .then(a.format.cmp(&b.format))
+    });
 
     json_ok(&catalog)
 }

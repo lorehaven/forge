@@ -141,7 +141,7 @@ gatehouse_url = "https://host/gatehouse"
 
 ### Artifact releases
 
-`anvil artifact release <name> [--target <t>] [--dry-run] [--allow-dirty] [--skip-existing]` builds what `[artifacts.programs.<name>]` lists and sends each file to the warehouse, with the login `anvil login` keeps (a short-lived token is fetched once per release; mint the stored one with `--scope warehouse:write`). The tools that make the packages know nothing of the warehouse: for hoist that is `quench build apk --release` and `quench build deb`.
+`anvil artifact release <name> [--target <t>] [--dry-run] [--allow-dirty] [--skip-existing]` builds what `[artifacts.programs.<name>]` lists and sends each file to the warehouse, with the login `anvil login` keeps (a short-lived token is fetched once per release; mint the stored one with `--scope warehouse:write`). The tools that make the packages know nothing of the warehouse: for hoist that is `quench build apk --release` and `quench build deb|rpm|arch|source`.
 
 ```toml
 [artifacts]
@@ -159,12 +159,14 @@ build = ["quench", "build", "apk", "--release"]   # run in `dir`
 file = "dist/hoist-${version_name}-${version_code}.apk"
 
 [[artifacts.programs.hoist.targets]]
-name = "linux"                                    # what --target calls it (default: the platform)
+name = "linux-deb"                                # what --target calls it (default: the platform)
 platform = "linux"
 format = "deb"
 arch = "x86_64"                                   # optional: x86_64, aarch64 or universal
 build = ["quench", "build", "deb"]
 file = "dist/hoist_${version_name}_amd64.deb"
+# ... and the same for rpm (`quench build rpm`), pkg.tar.zst (`quench build arch`) and tar.gz (`quench build source`):
+# the warehouse keeps one build per format of a version, so a Linux release is four targets.
 
 # optional: the program's service image, when its project is not a member of this workspace (so `anvil release`
 # cannot see it). Built, tagged <registry>/<module>/<name>:<version_name> and pushed, with the same version.

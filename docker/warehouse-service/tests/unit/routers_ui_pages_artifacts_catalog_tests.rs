@@ -11,7 +11,16 @@ use warehouse_service::routers::ui::pages::artifacts::catalog::render_artifacts_
 
 fn version(program: &str, platform: Platform, code: i64, yanked: bool) -> ArtifactVersion {
     ArtifactVersion {
-        id: ArtifactVersion::id_for(program, platform, code),
+        id: ArtifactVersion::id_for(
+            program,
+            platform,
+            if platform == Platform::Android {
+                "apk"
+            } else {
+                "tar.gz"
+            },
+            code,
+        ),
         program: program.to_string(),
         platform: platform.as_str().to_string(),
         arch: None,

@@ -106,7 +106,15 @@ async fn set_yank_state(
         return Response::text(StatusCode::NOT_FOUND, "api_error_artifacts_disabled");
     }
 
-    let outcome = set_yanked(db, &form.program, &form.platform, form.version_code, yanked).await;
+    let outcome = set_yanked(
+        db,
+        &form.program,
+        &form.platform,
+        form.version_code,
+        None,
+        yanked,
+    )
+    .await;
     if !outcome.status().is_success() {
         return outcome;
     }

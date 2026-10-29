@@ -126,10 +126,36 @@ format = "apk"
 build = ["quench", "build", "apk", "--release"]
 file = "dist/hoist-${version_name}-${version_code}.apk"
 
+# Linux ships in the formats the distributions install, plus the sources: the warehouse keeps one build per format of
+# a version, and Hoist offers the one its system's package manager takes.
 [[artifacts.programs.hoist.targets]]
-name = "linux"
+name = "linux-deb"
 platform = "linux"
 format = "deb"
 arch = "x86_64"
 build = ["quench", "build", "deb"]
 file = "dist/hoist_${version_name}_amd64.deb"
+
+[[artifacts.programs.hoist.targets]]
+name = "linux-rpm"
+platform = "linux"
+format = "rpm"
+arch = "x86_64"
+build = ["quench", "build", "rpm"]
+file = "dist/hoist-${version_name}-1.x86_64.rpm"
+
+[[artifacts.programs.hoist.targets]]
+name = "linux-arch"
+platform = "linux"
+format = "pkg.tar.zst"
+arch = "x86_64"
+build = ["quench", "build", "arch"]
+file = "dist/hoist-${version_name}-1-x86_64.pkg.tar.zst"
+
+[[artifacts.programs.hoist.targets]]
+name = "linux-source"
+platform = "linux"
+format = "tar.gz"
+arch = "universal"
+build = ["quench", "build", "source"]
+file = "dist/hoist-${version_name}.tar.gz"
