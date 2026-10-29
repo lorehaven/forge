@@ -1,4 +1,4 @@
-use anvil::commands::config_check::validate;
+use anvil::commands::config_check::{validate, validate_value};
 
 use crate::support;
 use support::stable_cwd_lock;
@@ -276,9 +276,10 @@ fn the_estates_own_anvil_toml_has_no_issues() {
     let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../.anvil.toml");
-    let content = std::fs::read_to_string(path).expect("the estate's .anvil.toml");
-    assert_eq!(validate(&content).expect("parses"), Vec::new());
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let merged = anvil::config::merge(&root).expect("the estate's configuration");
+    assert!(!merged.files.is_empty());
+    assert_eq!(validate_value(&merged.value), Vec::new());
 }
 
 #[quench_test::test]

@@ -147,13 +147,13 @@ pub fn env_var_name_for_registry(name: &str, suffix: &str) -> String {
 }
 
 /// The private cargo registry's index URL, if `[docker].cargo_registry` names
-/// one in `.anvil.toml`.
+/// one in the anvil configuration.
 ///
 /// Resolution order: the matching env var (an explicit
-/// override, e.g. from CI) > `.anvil.toml`'s own `cargo_registry_index` > the
+/// override, e.g. from CI) > the configuration's own `cargo_registry_index` > the
 /// host's `~/.cargo/config.toml`. Anvil itself has no opinion on what
 /// registry a workspace uses or where it lives - that's entirely the
-/// workspace's own `.anvil.toml` and cargo config to say.
+/// workspace's own anvil configuration and cargo config to say.
 pub fn cargo_registry_index(config: &config::Config, name: &str) -> Option<String> {
     if let Ok(index) = std::env::var(env_var_name_for_registry(name, "INDEX")) {
         return Some(index);
@@ -196,10 +196,10 @@ pub fn full_tags_for_package(config: &config::Config, package: &str) -> Result<V
         .collect())
 }
 
-/// `--build-arg` pairs that give the Dockerfile the private cargo registry `.anvil.toml` names, if any.
+/// `--build-arg` pairs that give the Dockerfile the private cargo registry the configuration names, if any.
 ///
 /// A private cargo registry the Dockerfile needs to see is entirely a workspace concern - anvil only forwards it
-/// if `.anvil.toml` names one.
+/// if the configuration names one.
 #[must_use]
 pub fn registry_build_args(config: &config::Config) -> Vec<String> {
     let mut args = Vec::new();

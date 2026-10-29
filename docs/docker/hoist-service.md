@@ -40,4 +40,4 @@ An item carries `package_name`, `label`, `summary`, `description`, `icon_url`, `
 
 - `foreman start hoist` runs it locally on `https://localhost:14443/hoist` (a short Aptoide crawl, `HOIST_APTOIDE_PAGES=5`); `foreman db` installs its schema.
 - Tests: `cargo test -p hoist-service`. The store, refresh and API tests need Postgres: set `HOIST_TEST_DATABASE_URL` to a throwaway database with the `hoist` module installed (`foreman db` makes one: `postgres://postgres:postgres@localhost:5432/postgres`); without it they pass without checking anything. `HOIST_LIVE_SOURCES=1` also fetches the real stores once.
-- `anvil release` builds and pushes `ossiriand.arda:8080/forge/hoist/hoist:<version>` like the other services (it is a docker package in `.anvil.toml`; its `config/` is empty because the image wants one); the deployment is `homecloud/overlays/forge/hoist`.
+- `anvil release` builds and pushes `ossiriand.arda:8080/forge/hoist/hoist:<version>` like the other services (it is a docker package in `.anvil/docker.toml`; its `config/` is empty because the image wants one); the deployment is `homecloud/overlays/forge/hoist`.

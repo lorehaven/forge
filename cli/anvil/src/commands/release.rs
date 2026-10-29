@@ -192,7 +192,7 @@ pub fn resolve_release_targets(
 
         if targets.is_empty() {
             quench_core::bail!(
-                "No release packages configured. Set [release].packages and/or [docker.modules.*].packages in .anvil.toml"
+                "No release packages configured. Set [release].packages and/or [docker.modules.*].packages in .anvil.toml or .anvil/"
             );
         }
 

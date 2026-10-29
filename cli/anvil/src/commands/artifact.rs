@@ -272,7 +272,7 @@ pub fn release_with(
             .map(String::as_str)
             .collect();
         format!(
-            "no artifact `{name}` in .anvil.toml ({})",
+            "no artifact `{name}` in the anvil configuration ({})",
             if known.is_empty() {
                 "none are configured: add [artifacts.programs.<name>]".to_string()
             } else {
@@ -285,7 +285,7 @@ pub fn release_with(
         .warehouse_url
         .as_deref()
         .filter(|u| !u.is_empty())
-        .context("no warehouse: set `warehouse_url` under [artifacts] in .anvil.toml")?;
+        .context("no warehouse: set `warehouse_url` under [artifacts] in .anvil.toml or .anvil/")?;
     let dir: PathBuf = root.join(program.dir.as_deref().unwrap_or("."));
     let version_name = read_version(&dir.join(&program.version_file))?;
     let code = version_code(&version_name);
@@ -388,7 +388,7 @@ fn release_service_image(
         .collect();
     if tags.is_empty() {
         bail!(
-            "[image] no registry: set `registries` on the image or `registry` under [docker] in .anvil.toml"
+            "[image] no registry: set `registries` on the image or `registry` under [docker] in .anvil.toml or .anvil/"
         );
     }
     let dockerfile = dir.join(&image.dockerfile);
@@ -464,7 +464,7 @@ pub fn list(config: &Config, out: &mut dyn Write) -> Result<()> {
     if config.artifacts.programs.is_empty() {
         writeln!(
             out,
-            "no artifacts: add [artifacts.programs.<name>] to .anvil.toml"
+            "no artifacts: add [artifacts.programs.<name>] to .anvil.toml or a file in .anvil/"
         )?;
         return Ok(());
     }

@@ -1,8 +1,10 @@
 use quench_cli::prelude::{Tone, print_status};
 use quench_core::Result;
-use quench_serde::Deserialize;
+use quench_core::{Context, bail};
+use quench_serde::{Deserialize, Map, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Config {
@@ -180,6 +182,127 @@ pub struct ArtifactTarget {
     pub file: String,
 }
 
+/// The configuration file at the workspace root.
+pub const FILE: &str = ".anvil.toml";
+
+/// The directory that may hold the configuration instead, or besides: every `*.toml` in it is a part of it.
+pub const DIR: &str = ".anvil";
+
+/// What a tool's credentials are called inside [`DIR`]. Never read as configuration (it holds a token, and its keys are
+/// not anvil's).
+pub const SECRET: &str = "secret.toml";
+
+/// The files the configuration is made of, in the order they are read: `.anvil.toml`, then `.anvil/*.toml` by name
+/// (not [`SECRET`], and not what is in a directory below).
+#[must_use]
+pub fn files(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let single = root.join(FILE);
+    if single.is_file() {
+        found.push(single);
+    }
+    if let Ok(entries) = fs::read_dir(root.join(DIR)) {
+        let mut parts: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "toml"))
+            .filter(|p| p.file_name().is_some_and(|n| n != SECRET))
+            .collect();
+        parts.sort();
+        found.extend(parts);
+    }
+    found
+}
+
+/// The configuration as one table, and the files it came from.
+#[derive(Debug)]
+pub struct Merged {
+    pub value: Value,
+    pub files: Vec<PathBuf>,
+}
+
+/// Reads every file of the configuration under `root` and merges them.
+///
+/// A table in two files is one table with the keys of both; any other value (a string, a number, an array) set in two
+/// files is an error naming both, because which should win is nobody's guess.
+///
+/// # Errors
+/// There is no configuration file, one cannot be read or is not TOML, or two files set the same value.
+pub fn merge(root: &Path) -> quench_core::Result<Merged> {
+    let files = files(root);
+    if files.is_empty() {
+        bail!("no {FILE} and no {DIR}/*.toml in {}", root.display());
+    }
+    let mut table = Map::new();
+    let mut owners: BTreeMap<String, PathBuf> = BTreeMap::new();
+    for file in &files {
+        let text =
+            fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+        let Value::Object(part) = quench_serde::toml::parse(&text)
+            .with_context(|| format!("{} is not valid TOML", file.display()))?
+        else {
+            bail!("{} is not a TOML table", file.display());
+        };
+        merge_table(&mut table, &part, "", file, &mut owners)?;
+    }
+    Ok(Merged {
+        value: Value::Object(table),
+        files,
+    })
+}
+
+/// Notes `file` as where `path` and every key below it came from.
+fn record(owners: &mut BTreeMap<String, PathBuf>, path: &str, value: &Value, file: &Path) {
+    owners.insert(path.to_string(), file.to_path_buf());
+    if let Value::Object(table) = value {
+        for (key, inner) in table.iter() {
+            record(owners, &format!("{path}.{key}"), inner, file);
+        }
+    }
+}
+
+fn merge_table(
+    into: &mut Map,
+    from: &Map,
+    path: &str,
+    file: &Path,
+    owners: &mut BTreeMap<String, PathBuf>,
+) -> quench_core::Result<()> {
+    for (key, value) in from.iter() {
+        let here = if path.is_empty() {
+            key.clone()
+        } else {
+            format!("{path}.{key}")
+        };
+        match (into.get_mut(key), value) {
+            (None, _) => {
+                into.insert(key.clone(), value.clone());
+                record(owners, &here, value, file);
+            }
+            (Some(Value::Object(existing)), Value::Object(more)) => {
+                merge_table(existing, more, &here, file, owners)?;
+            }
+            (Some(_), _) => {
+                let first = owners.get(&here).map_or_else(
+                    || "an earlier file".to_string(),
+                    |p| p.display().to_string(),
+                );
+                bail!("`{here}` is set in both {first} and {}", file.display());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The configuration under `root`, strictly: anything wrong is an error (what `anvil config check` and the tests use).
+///
+/// # Errors
+/// As [`merge`], or the merged tables do not fit anvil's configuration.
+pub fn load_from(root: &Path) -> quench_core::Result<Config> {
+    let merged = merge(root)?;
+    quench_serde::from_value(&merged.value).context("the configuration is not valid")
+}
+
 /// `quiet` suppresses the fallback warnings below.
 ///
 /// Set it for a `--json` command, whose stdout is meant to be piped straight
@@ -192,20 +315,18 @@ pub fn load_config(quiet: bool) -> Result<Config> {
         }
     };
 
-    let config = fs::read_to_string(".anvil.toml").map_or_else(
-        |_| {
-            warn("failed to read .anvil.toml, defaulting to empty config");
+    let config = match merge(Path::new(".")) {
+        Err(err) => {
+            warn(&format!("{err}, defaulting to empty config"));
             Config::default()
-        },
-        |content| {
-            quench_serde::toml::from_str(&content).unwrap_or_else(|err| {
-                warn(&format!(
-                    "failed to parse .anvil.toml ({err}), defaulting to empty config"
-                ));
-                Config::default()
-            })
-        },
-    );
+        }
+        Ok(merged) => quench_serde::from_value(&merged.value).unwrap_or_else(|err| {
+            warn(&format!(
+                "failed to read the configuration ({err}), defaulting to empty config"
+            ));
+            Config::default()
+        }),
+    };
 
     Ok(config)
 }

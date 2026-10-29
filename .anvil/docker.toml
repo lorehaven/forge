@@ -1,0 +1,79 @@
+[docker]
+registry = "ennor.ddns.net/forge"
+cargo_registry = "ennor"
+
+[docker.modules.docker]
+dockerfile = "docker/Dockerfile.alpine"
+packages = [
+    "warehouse-service",
+    "switchboard-service",
+    "sage-service",
+    "foundry-service",
+    "gatehouse-service",
+    "conveyor-service",
+    "workbench-service",
+    "gantry-service",
+    "daybook-service",
+    "gauge-service",
+    "hoist-service",
+]
+
+[docker.modules.docker.conveyor-service]
+module_name = "conveyor"
+image_name = "conveyor"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+build_args = { RUNTIME_PACKAGES = "git" }
+
+[docker.modules.docker.gatehouse-service]
+module_name = "gatehouse"
+image_name = "gatehouse"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[docker.modules.docker.foundry-service]
+module_name = "foundry"
+image_name = "foundry"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+build_args = { RESOURCE_DIR = "migrations", RUN_AS = "999:999" }
+
+[docker.modules.docker.sage-service]
+module_name = "sage"
+image_name = "sage"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[docker.modules.docker.switchboard-service]
+dockerfile = "docker/Dockerfile.ubuntu.rocm"
+module_name = "switchboard"
+image_name = "switchboard"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[docker.modules.docker.warehouse-service]
+module_name = "warehouse"
+image_name = "warehouse"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[docker.modules.docker.gantry-service]
+module_name = "gantry"
+image_name = "gantry"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[docker.modules.docker.gauge-service]
+module_name = "gauge"
+image_name = "gauge"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[docker.modules.docker.daybook-service]
+module_name = "daybook"
+image_name = "daybook"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[docker.modules.docker.hoist-service]
+module_name = "hoist"
+image_name = "hoist"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+# The service has no translations of its own; the image still wants a directory beside `config`.
+build_args = { RESOURCE_DIR = "config" }
+
+[docker.modules.docker.workbench-service]
+module_name = "workbench"
+image_name = "workbench"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]

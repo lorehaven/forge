@@ -1,4 +1,4 @@
-//! `anvil config check`: validates `.anvil.toml` against anvil's own schema
+//! `anvil config check`: validates the configuration (`.anvil.toml` and `.anvil/*.toml`, merged) against anvil's own schema
 //! (see `crate::config::Config` and its nested structs).
 //!
 //! Reports every problem found in one pass, rather than the
@@ -12,12 +12,12 @@
 //! deserialization stops at the first error, which is exactly what this
 //! command exists to not do.
 
+use crate::config;
 use quench_cli::prelude::{Tone, print_status};
-use quench_core::{Context, Result};
+use quench_core::Result;
 use quench_serde::Value;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::fs;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigIssue {
@@ -183,10 +183,16 @@ fn expect_string_array(value: &Value, path: &str, issues: &mut Vec<ConfigIssue>)
 /// at all - nothing else can be checked without a value tree to walk.
 pub fn validate(content: &str) -> Result<Vec<ConfigIssue>, quench_serde::Error> {
     let root: Value = quench_serde::toml::from_str(content)?;
+    Ok(validate_value(&root))
+}
+
+/// Validates a configuration that is already a value tree (the merge of every file), collecting every issue found.
+#[must_use]
+pub fn validate_value(root: &Value) -> Vec<ConfigIssue> {
     let mut issues = Vec::new();
 
-    let Some(table) = expect_table(&root, "", &mut issues) else {
-        return Ok(issues);
+    let Some(table) = expect_table(root, "", &mut issues) else {
+        return issues;
     };
     unknown_fields(table, TOP_FIELDS, "", &mut issues);
 
@@ -224,7 +230,7 @@ pub fn validate(content: &str) -> Result<Vec<ConfigIssue>, quench_serde::Error> 
     }
 
     issues.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(issues)
+    issues
 }
 
 fn check_image(image: &Value, path: &str, issues: &mut Vec<ConfigIssue>) {
@@ -457,26 +463,31 @@ fn check_package_override(
 
 /// `anvil config check`'s entry point.
 ///
-/// Reads `.anvil.toml` from the current directory (deliberately not
-/// `config::load_config`, which tolerates a missing/invalid file by
-/// defaulting - the whole point here is to fail loudly instead).
+/// Reads `.anvil.toml` and `.anvil/*.toml` from the current directory and checks them as one configuration (deliberately
+/// not `config::load_config`, which tolerates a missing/invalid file by defaulting - the whole point here is to fail
+/// loudly instead).
 pub fn check() -> Result<()> {
-    let content = fs::read_to_string(".anvil.toml").context("Failed to read .anvil.toml")?;
-
-    let issues = match validate(&content) {
-        Ok(issues) => issues,
+    let merged = match config::merge(std::path::Path::new(".")) {
+        Ok(merged) => merged,
         Err(err) => {
-            print_status(
-                Tone::Error,
-                "anvil",
-                &format!(".anvil.toml is not valid TOML: {err}"),
-            );
+            print_status(Tone::Error, "anvil", &format!("{err:#}"));
             quench_core::bail!("config check failed");
         }
     };
+    let list = merged
+        .files
+        .iter()
+        .map(|f| f.strip_prefix(".").unwrap_or(f).display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let issues = validate_value(&merged.value);
 
     if issues.is_empty() {
-        print_status(Tone::Success, "anvil", ".anvil.toml is valid");
+        print_status(
+            Tone::Success,
+            "anvil",
+            &format!("the configuration is valid ({list})"),
+        );
         return Ok(());
     }
 
@@ -484,7 +495,7 @@ pub fn check() -> Result<()> {
         Tone::Error,
         "anvil",
         &format!(
-            "{} error{} in .anvil.toml:",
+            "{} error{} in the configuration ({list}):",
             issues.len(),
             if issues.len() == 1 { "" } else { "s" }
         ),
@@ -492,5 +503,5 @@ pub fn check() -> Result<()> {
     for issue in &issues {
         println!("  {issue}");
     }
-    quench_core::bail!("{} error(s) in .anvil.toml", issues.len());
+    quench_core::bail!("{} error(s) in the configuration", issues.len());
 }

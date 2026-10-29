@@ -24,3 +24,4 @@ plans/
 
 # Per-tool application tokens (anvil login, riveter login)
 .*.secret.toml
+.*/secret.toml

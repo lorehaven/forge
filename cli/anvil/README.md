@@ -1,6 +1,6 @@
 # Anvil
 
-Anvil is the workspace build tool for the Forge Cargo workspace — it wraps `cargo build`/`test`/`clippy`/`fmt` with workspace-aware defaults, drives Docker image builds for the workspace's services, and automates the release flow for packages configured in `.anvil.toml`.
+Anvil is the workspace build tool for the Forge Cargo workspace — it wraps `cargo build`/`test`/`clippy`/`fmt` with workspace-aware defaults, drives Docker image builds for the workspace's services, and automates the release flow for packages configured in `.anvil.toml` or the files of a `.anvil/` directory (merged; see `docs/cli/anvil.md`).
 
 See [docs/cli/anvil.md](../../docs/cli/anvil.md) for full documentation.
 

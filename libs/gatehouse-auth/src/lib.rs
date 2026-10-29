@@ -1,7 +1,7 @@
 //! Application-token credentials for the command-line tools.
 //!
-//! A tool keeps `gatehouse_url` and a long-lived `app_token` in a git-ignored
-//! `.<tool>.secret.toml`. [`access_token`] exchanges it for a short-lived
+//! A tool keeps `gatehouse_url` and a long-lived `app_token` in a git-ignored secret file: `.<tool>/secret.toml`
+//! when the tool has a `.<tool>/` directory (where its configuration lives, too), else `.<tool>.secret.toml`. [`access_token`] exchanges it for a short-lived
 //! bearer token on every run; [`login`] mints the app token in the first place.
 
 use quench_core::{Context, Result, bail};
@@ -19,19 +19,26 @@ pub struct Credentials {
     pub app_token: String,
 }
 
-/// The secret file name for a tool, e.g. `.anvil.secret.toml`.
+/// The secret file name for a tool when it has no directory of its own, e.g. `.anvil.secret.toml`.
 #[must_use]
 pub fn secret_file_name(tool: &str) -> String {
     format!(".{tool}.secret.toml")
 }
 
-/// Looks for the tool's secret file in `start` and each parent directory.
+/// The secret file's path under the tool's directory, relative to the project: `.anvil/secret.toml`.
+#[must_use]
+pub fn secret_dir_file(tool: &str) -> String {
+    format!(".{tool}/secret.toml")
+}
+
+/// Looks for the tool's secret file in `start` and each parent directory: in each, `.<tool>/secret.toml` first, then
+/// `.<tool>.secret.toml`.
 #[must_use]
 pub fn find_secret_file(tool: &str, start: &Path) -> Option<PathBuf> {
-    let name = secret_file_name(tool);
+    let (inside, beside) = (secret_dir_file(tool), secret_file_name(tool));
     start
         .ancestors()
-        .map(|dir| dir.join(&name))
+        .flat_map(|dir| [dir.join(&inside), dir.join(&beside)])
         .find(|candidate| candidate.is_file())
 }
 
@@ -46,13 +53,26 @@ pub fn load(tool: &str, start: &Path) -> Result<Option<Credentials>> {
     Ok(Some(credentials))
 }
 
-/// Writes the tool's secret file into `dir`, readable by its owner only, and
-/// makes sure git ignores it. Returns the file's path.
+/// Writes the tool's secret file into `dir`, readable by its owner only, and makes sure git ignores it.
+///
+/// Returns the file's path: `.<tool>/secret.toml` when `dir` has the tool's directory, else `.<tool>.secret.toml`. A
+/// secret file of the other kind that this replaces is removed, so one login leaves one token behind.
 pub fn save(tool: &str, dir: &Path, credentials: &Credentials) -> Result<PathBuf> {
-    let path = dir.join(secret_file_name(tool));
     let text = quench_serde::toml::to_string(credentials).context("serialising credentials")?;
+    let (inside, beside) = (
+        dir.join(secret_dir_file(tool)),
+        dir.join(secret_file_name(tool)),
+    );
+    let (path, ignored, old) = if dir.join(format!(".{tool}")).is_dir() {
+        (inside, secret_dir_file(tool), beside)
+    } else {
+        (beside, secret_file_name(tool), inside)
+    };
     write_private(&path, &text)?;
-    ensure_ignored(dir, &secret_file_name(tool))?;
+    ensure_ignored(dir, &ignored)?;
+    if old.is_file() {
+        fs::remove_file(&old).with_context(|| format!("removing the old {}", old.display()))?;
+    }
     Ok(path)
 }
 
@@ -81,7 +101,7 @@ fn ensure_ignored(dir: &Path, pattern: &str) -> Result<()> {
     let existing = fs::read_to_string(&path).unwrap_or_default();
     if existing
         .lines()
-        .any(|line| matches!(line.trim(), l if l == pattern || l == ".*.secret.toml"))
+        .any(|line| matches!(line.trim(), l if l == pattern || l == ".*.secret.toml" || l == ".*/secret.toml"))
     {
         return Ok(());
     }

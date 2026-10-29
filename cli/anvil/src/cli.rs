@@ -192,7 +192,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: DockerCommands,
     },
-    /// Inspect or validate `.anvil.toml`
+    /// Inspect or validate the configuration (`.anvil.toml` and `.anvil/*.toml`)
     Config {
         #[command(subcommand)]
         command: ConfigCommands,
@@ -204,7 +204,7 @@ pub enum Commands {
     },
     /// Print a registry bearer token, for Cargo's `credential-provider = [\"cargo:token-from-stdout\", \"anvil\", \"registry-token\"]`
     RegistryToken,
-    /// Mint an application token and store it in the git-ignored `.anvil.secret.toml`
+    /// Mint an application token and store it in the git-ignored `.anvil/secret.toml` (`.anvil.secret.toml` when there is no `.anvil/`)
     Login {
         /// Gatehouse including its base path (defaults to the one already stored)
         #[arg(long)]
@@ -228,7 +228,7 @@ pub enum Commands {
 pub enum ArtifactCommands {
     /// Build every target of a program (or one with --target) and publish it to the warehouse
     Release {
-        /// The program, as named under [artifacts.programs] in `.anvil.toml`
+        /// The program, as named under [artifacts.programs] in the configuration
         name: String,
         /// Only this target (`android`, `linux`, ...)
         #[arg(long)]
@@ -249,7 +249,7 @@ pub enum ArtifactCommands {
 
 #[derive(Subcommand, Debug)]
 pub enum ConfigCommands {
-    /// Validate `.anvil.toml` against anvil's schema, reporting every error at once
+    /// Validate the configuration (every file, merged) against anvil's schema, reporting every error at once
     Check,
 }
 

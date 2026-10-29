@@ -418,10 +418,7 @@ fn every_image_the_estate_builds_has_the_directories_its_dockerfile_copies() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let root = root.canonicalize().expect("the workspace root");
-    let config: Config = quench_serde::toml::from_str(
-        &std::fs::read_to_string(root.join(".anvil.toml")).expect("the estate's .anvil.toml"),
-    )
-    .expect("a valid .anvil.toml");
+    let config: Config = anvil::config::load_from(&root).expect("the estate's configuration");
 
     let metadata = anvil::cargo_meta::cargo_metadata().expect("cargo metadata");
     let packages = anvil::cargo_meta::workspace_packages(&metadata).expect("workspace packages");

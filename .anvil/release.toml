@@ -1,0 +1,16 @@
+[release]
+registry = "ennor"
+gatehouse_url = "https://ennor.ddns.net/gatehouse"
+packages = [
+    "anvil",
+    "conveyor-cli",
+    "conveyor-pipeline",
+    "foreman",
+    "forge-toolbox",
+    "gatehouse-auth",
+    "pulley",
+    "rivet-package",
+    "riveter",
+    "warehouse-cli",
+    "welder",
+]

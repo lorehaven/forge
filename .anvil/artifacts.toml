@@ -1,0 +1,6 @@
+# What `anvil artifact release <name>` builds and sends to the warehouse: apps and desktop packages, as `[install]`
+# (install.toml) and `[docker]` (docker.toml) are for tools and images. The tools that make the packages (`quench build ...`) know nothing
+# of the warehouse. One version drives every build: the Cargo version in `version_file`, and its version code
+# (`major * 1_000_000 + minor * 1_000 + patch`, the number quench puts in the APK too).
+[artifacts]
+warehouse_url = "https://ennor.ddns.net/warehouse"

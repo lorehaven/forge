@@ -1,6 +1,6 @@
 # Anvil
 
-Anvil is the workspace build tool for the Forge Cargo workspace. It wraps `cargo build`/`test`/`clippy`/`fmt` with workspace-aware defaults, drives Docker image builds for the workspace's services, and automates the release flow (version bump, commit, `cargo publish`/`cargo install`, or Docker build+tag+push) for packages configured in `.anvil.toml`. It exists so that every crate and service in the workspace is built, linted, and released the same way instead of each one growing its own scripts.
+Anvil is the workspace build tool for the Forge Cargo workspace. It wraps `cargo build`/`test`/`clippy`/`fmt` with workspace-aware defaults, drives Docker image builds for the workspace's services, and automates the release flow (version bump, commit, `cargo publish`/`cargo install`, or Docker build+tag+push) for packages configured in `.anvil.toml` or `.anvil/`. It exists so that every crate and service in the workspace is built, linted, and released the same way instead of each one growing its own scripts.
 
 ## Features
 
@@ -11,11 +11,11 @@ Anvil is the workspace build tool for the Forge Cargo workspace. It wraps `cargo
 - **Workspace introspection**: `list [--format names|json]` enumerates workspace packages.
 - **Dependency maintenance**: `upgrade [--incompatible]`, `audit` (RustSec advisories via `cargo-audit`), `machete` (unused-dependency detection via `cargo-machete`), `deny` (licenses, banned/duplicate crates, and registry sources via `cargo-deny`, configured in `deny.toml`).
 - **Machine-readable output**: `--json` on `lint`, `test`/`nextest`, `audit`, `deny`, and `machete` emits each tool's own structured report (or, for `machete`/`deny`, anvil's own JSON of their parsed output) on stdout instead of streaming human-readable text — see [Machine-readable output](#machine-readable-output).
-- **Config validation**: `config check` validates `.anvil.toml` against anvil's own schema and reports every problem found in one pass (unknown fields, missing `packages`/`dockerfile`, a package override that doesn't match its module's `packages`, ...), rather than the one-error-at-a-time story a plain TOML parse gives.
+- **Config validation**: `config check` validates the configuration (every file, merged) against anvil's own schema and reports every problem found in one pass (unknown fields, missing `packages`/`dockerfile`, a package override that doesn't match its module's `packages`, ...), rather than the one-error-at-a-time story a plain TOML parse gives.
 - **API stability**: `semver-check -p <name> [--baseline-rev <rev>]` diffs a library crate's public API with `cargo-semver-checks` against a git revision (default: the commit before its last `Cargo.toml` version bump) rather than a registry version, since the crates this workspace publishes live on the private `ennor` registry that `cargo-semver-checks` can't query directly. A package on its first release - no earlier commit to diff against - compares against a synthetic empty API instead of erroring, so nothing reads as a breaking change.
 - **Run/serve mode**: `run` builds and runs a package binary; with `--serve` it watches for file changes and rebuilds/restarts, with interactive hotkeys.
 - **Artifact releases**: `artifact release <name>` builds a program's apps and desktop packages and publishes them to the warehouse's artifact registry (`anvil artifact list` shows what is configured); see [Artifact releases](#artifact-releases).
-- **Docker integration**: builds, tags, pushes, and releases Docker images for packages declared under `[docker.modules.*]` in `.anvil.toml`, including multi-registry pushes and per-package `build_args`.
+- **Docker integration**: builds, tags, pushes, and releases Docker images for packages declared under `[docker.modules.*]` in the configuration, including multi-registry pushes and per-package `build_args`.
 - **Release automation**: `release` bumps a package's patch version, commits, and then either runs the Docker release flow or `cargo publish` (+ `cargo install` when the package is also listed under `[install].packages`). `--dry-run` shows the full dependency-ordered plan across every configured release/Docker package - not just the ones that happen to have changed - so it also works as a plain "what would a full release touch" report. The version-bump commit message is configurable via `[release].commit_message_template`.
 
 ## Requirements
@@ -26,7 +26,7 @@ Anvil is the workspace build tool for the Forge Cargo workspace. It wraps `cargo
 - `cargo-nextest` on `PATH` for `anvil nextest`.
 - `cargo-semver-checks` on `PATH` for `anvil semver-check`.
 - `docker` on `PATH` for any `anvil docker ...` subcommand.
-- A `.anvil.toml` file at the workspace root for Docker/install/release package configuration (Anvil falls back to an empty config with a warning if it's missing or fails to parse).
+- A `.anvil.toml` file or a `.anvil/` directory at the workspace root for Docker/install/release package configuration (see Configuration below; Anvil falls back to an empty config with a warning if it's missing or fails to parse).
 
 ## Installation
 
@@ -97,7 +97,7 @@ anvil release [--all | -p|--package <name>] [--dry-run]
 anvil login [--gatehouse-url <url>] [--username <name>] [--scope <service:action>]... [--days <n>]
 ```
 
-Signs in to Gatehouse once (the password is asked for and never stored), mints a long-lived, revocable application token and keeps it in the git-ignored `.anvil.secret.toml`. `anvil release` then trades it for a short-lived token on every run and hands it to `cargo publish` as `CARGO_REGISTRIES_<REGISTRY>_TOKEN`, so no token is copied by hand. A `CARGO_REGISTRIES_<REGISTRY>_TOKEN` already in your environment wins. `--scope warehouse:write` limits the token to what publishing needs.
+Signs in to Gatehouse once (the password is asked for and never stored), mints a long-lived, revocable application token and keeps it in the git-ignored `.anvil/secret.toml` (`.anvil.secret.toml` when the workspace has no `.anvil/` directory; a login into the directory takes the old file away). `anvil release` then trades it for a short-lived token on every run and hands it to `cargo publish` as `CARGO_REGISTRIES_<REGISTRY>_TOKEN`, so no token is copied by hand. A `CARGO_REGISTRIES_<REGISTRY>_TOKEN` already in your environment wins. `--scope warehouse:write` limits the token to what publishing needs.
 
 ### Docker
 
@@ -112,7 +112,25 @@ anvil docker release-all
 
 ## Configuration
 
-Anvil reads `.anvil.toml` from the workspace root:
+Anvil reads its configuration from the workspace root, from `.anvil.toml`, from the files of a `.anvil/` directory, or from both. The file layout is yours: a long configuration is easier to keep as one file per concern, for example
+
+```text
+.anvil/docker.toml       [docker] and its modules
+.anvil/install.toml      [install]
+.anvil/release.toml      [release]
+.anvil/artifacts.toml    [artifacts] (the warehouse)
+.anvil/hoist.toml        [artifacts.programs.hoist]
+.anvil/secret.toml       the credentials `anvil login` keeps (not configuration)
+```
+
+The files are read in the order `.anvil.toml`, then `.anvil/*.toml` by name (`secret.toml` is never read as configuration, and
+neither is anything in a directory below `.anvil/`), and merged: a table that is in two files is one table with the keys of both
+(so `[docker.modules.docker]` can be in one file and `[docker.modules.docker.hoist-service]` in another), while a value that is
+set in two files (a string, a number, a list) is an error that names both files, because which should win is nobody's guess.
+`anvil config check` lists the files it read. Add `.anvil/` to `.dockerignore` so that it stays out of an image's build context;
+the secret file is ignored by git with `.anvil/secret.toml` (or `.*/secret.toml`).
+
+The example below is one file, in the form it had before it was split:
 
 ```toml
 [docker]
@@ -195,12 +213,12 @@ Prints `Bearer <short-lived access token>` for the private registry, exchanging 
 credential-provider = ["cargo:token-from-stdout", "anvil", "registry-token"]
 ```
 
-The secret file is looked up from the working directory upwards, so one `.anvil.secret.toml` in a parent of your checkouts serves them all.
+The secret file is looked up from the working directory upwards (in each directory `.anvil/secret.toml` first, then `.anvil.secret.toml`), so one in a parent of your checkouts serves them all.
 
-`[release].gatehouse_url` is optional: the Gatehouse (with its base path) that `anvil login` uses when `--gatehouse-url` is not given. It is not a secret, so it belongs here rather than in `.anvil.secret.toml`.
+`[release].gatehouse_url` is optional: the Gatehouse (with its base path) that `anvil login` uses when `--gatehouse-url` is not given. It is not a secret, so it belongs here rather than in the secret file.
 
 `[release].commit_message_template` is optional; the line above is what an unset one already defaults to. It supports three placeholders, substituted against whichever packages a real run actually version-bumped: `{summary}` (the default's comma-joined `pkg vX.Y.Z, pkg2 vX.Y.Z`), `{changelog}` (the same packages as one `- pkg vX.Y.Z` bullet per line, for a multi-line commit body), and `{count}` (how many packages were bumped).
 
-Run `anvil config check` after editing `.anvil.toml` to catch typos and structural mistakes (an unknown field, a missing `packages`/`dockerfile`, a package override that isn't in its module's `packages` list, ...) before they silently no-op in whichever subcommand would have used them.
+Run `anvil config check` after editing the configuration to catch typos and structural mistakes (an unknown field, a missing `packages`/`dockerfile`, a package override that isn't in its module's `packages` list, ...) before they silently no-op in whichever subcommand would have used them.
 
 [Home](../README.md)

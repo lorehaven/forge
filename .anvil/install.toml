@@ -1,0 +1,12 @@
+[install]
+packages = [
+    "anvil",
+    "conveyor-cli",
+    "foreman",
+    "forge-toolbox",
+    "pulley",
+    "riveter",
+    "switchboard-cli",
+    "warehouse-cli",
+    "welder",
+]

@@ -125,6 +125,59 @@ fn config_check_rejects_a_malformed_anvil_toml_and_lists_every_problem() {
         .stdout(predicate::str::contains("docker.modules.core"));
 }
 
+#[quench_test::test]
+fn the_configuration_may_be_split_over_the_files_of_an_anvil_directory() {
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
+    let parts = dir.path().join(".anvil");
+    std::fs::create_dir_all(&parts).expect("the directory");
+    std::fs::write(parts.join("release.toml"), "[release]\nregistry = \"r\"\n").expect("write");
+    std::fs::write(
+        parts.join("install.toml"),
+        "[install]\npackages = [\"p\"]\n",
+    )
+    .expect("write");
+    // The credentials live in the directory too, and are not configuration: their keys are not anvil's.
+    std::fs::write(
+        parts.join("secret.toml"),
+        "gatehouse_url = \"https://g\"\napp_token = \"t\"\n",
+    )
+    .expect("write");
+
+    anvil()
+        .current_dir(dir.path())
+        .args(["config", "check"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("valid"))
+        .stdout(predicate::str::contains(".anvil/install.toml"))
+        .stdout(predicate::str::contains("secret.toml").not());
+}
+
+#[quench_test::test]
+fn config_check_names_the_files_that_set_the_same_value() {
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
+    let parts = dir.path().join(".anvil");
+    std::fs::create_dir_all(&parts).expect("the directory");
+    std::fs::write(
+        dir.path().join(".anvil.toml"),
+        "[release]\nregistry = \"one\"\n",
+    )
+    .expect("write");
+    std::fs::write(
+        parts.join("release.toml"),
+        "[release]\nregistry = \"two\"\n",
+    )
+    .expect("write");
+
+    anvil()
+        .current_dir(dir.path())
+        .args(["config", "check"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("release.registry"))
+        .stdout(predicate::str::contains("release.toml"));
+}
+
 #[path = "cli/command_flow_tests.rs"]
 mod command_flow_tests;
 #[path = "cli/flow_support.rs"]

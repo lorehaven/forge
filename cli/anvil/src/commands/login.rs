@@ -6,7 +6,7 @@ use std::path::Path;
 
 const TOOL: &str = "anvil";
 
-/// Mints an application token for this machine and stores it in `.anvil.secret.toml`.
+/// Mints an application token for this machine and stores it in `.anvil/secret.toml` (or `.anvil.secret.toml` when there is no `.anvil/`).
 pub fn login(
     config: &Config,
     gatehouse_url: Option<String>,
@@ -21,7 +21,7 @@ pub fn login(
         .or_else(|| config.release.gatehouse_url.clone())
         .or(stored)
         .context(
-            "no Gatehouse URL: pass --gatehouse-url, or set `gatehouse_url` under [release] in .anvil.toml",
+            "no Gatehouse URL: pass --gatehouse-url, or set `gatehouse_url` under [release] in .anvil.toml or .anvil/",
         )?;
     let username = match username {
         Some(username) => username,

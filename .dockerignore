@@ -1,4 +1,5 @@
 .anvil.toml
+.anvil/
 .cargo/
 .dockerignore
 .gitignore
