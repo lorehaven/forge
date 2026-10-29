@@ -108,6 +108,14 @@ fn is_release_relevant_file_accepts_assets_that_are_compiled_in() {
 }
 
 #[quench_test::test]
+fn is_release_relevant_file_accepts_templates_a_tool_embeds() {
+    assert!(is_release_relevant_file(
+        "templates/android/plugins/surface/kotlin/SurfaceHost.kt.tpl"
+    ));
+    assert!(is_release_relevant_file("templates/Cargo.toml.tpl"));
+}
+
+#[quench_test::test]
 fn is_release_relevant_file_rejects_docs_and_extensionless_files() {
     assert!(!is_release_relevant_file("README.md"));
     assert!(!is_release_relevant_file("LICENSE"));

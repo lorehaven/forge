@@ -20,10 +20,11 @@ pub enum ReleaseKind {
 /// A file diff restricted to this allowlist ignores docs, licenses, and
 /// other metadata-only edits, so a README-only commit doesn't trigger a
 /// release. Stylesheets, scripts, pages and icons count: services compile them in with `include_str!`,
-/// so a CSS-only change still changes the binary.
+/// so a CSS-only change still changes the binary. So do templates (`*.tpl`): `quench-tool` embeds the files it writes
+/// into a new project, and a template-only edit is a new tool.
 const RELEASE_RELEVANT_EXTENSIONS: &[&str] = &[
     "rs", "toml", "j2", "feature", "ftl", "yaml", "yml", "sh", "py", "sql", "json", "proto", "css",
-    "js", "html", "svg",
+    "js", "html", "svg", "tpl",
 ];
 
 #[must_use]
