@@ -188,19 +188,71 @@ fn kept(session: Session, store: &Store, server: &str) -> Session {
     session.keeping_tokens(move |token| store.write(&server, token))
 }
 
-/// Hands a downloaded file to the desktop (`xdg-open`: the installer or package manager that handles its type).
+/// How a downloaded package is installed on this desktop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Install {
+    /// Handed to whatever the desktop opens that type of file with (`xdg-open`): a software centre for a `.deb` or
+    /// an `.rpm`. The install is the user's from there.
+    Open,
+    /// An Arch package: the desktop opens those with an archive manager, which only offers to unpack it, so the
+    /// package manager is run (`pkexec pacman -U`, which asks for the password in the desktop's own dialog).
+    Pacman,
+}
+
+/// What to do with `path`, by the kind of file it is.
+#[must_use]
+pub fn install_kind(path: &std::path::Path) -> Install {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    if [".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar.gz"]
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
+    {
+        Install::Pacman
+    } else {
+        Install::Open
+    }
+}
+
+/// Installs a downloaded package the way this kind of file is installed (see [`Install`]).
 ///
 /// # Errors
-/// `xdg-open` is not there or could not start.
+/// The program that installs it is not there, was refused, or failed: the message says what to run by hand.
 pub fn open_with_desktop(path: &std::path::Path) -> Result<(), String> {
-    std::process::Command::new("xdg-open")
-        .arg(path)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("could not open the file: {e}"))
+    match install_kind(path) {
+        Install::Open => std::process::Command::new("xdg-open")
+            .arg(path)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("could not open the file: {e}")),
+        Install::Pacman => {
+            let by_hand = format!("sudo pacman -U {}", path.display());
+            let output = std::process::Command::new("pkexec")
+                .args(["pacman", "-U", "--noconfirm"])
+                .arg(path)
+                .stdin(std::process::Stdio::null())
+                .output()
+                .map_err(|e| format!("could not ask for permission ({e}): run `{by_hand}`"))?;
+            if output.status.success() {
+                return Ok(());
+            }
+            // The last thing it said is usually the reason; a cancelled password prompt says nothing.
+            let said = String::from_utf8_lossy(&output.stderr);
+            let reason = said
+                .lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("it was refused or cancelled");
+            Err(format!(
+                "pacman did not install it ({reason}): run `{by_hand}`"
+            ))
+        }
+    }
 }
 
 /// Does what the app asks, one thing at a time, and says what came of it; returns when the app is gone.

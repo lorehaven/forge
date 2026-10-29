@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use hoist_app::live::{Msg, Request};
-use hoist_desktop::{Store, package_formats, work, work_with};
+use hoist_desktop::{Install, Store, install_kind, package_formats, work, work_with};
 
 /// What the stand-in services remember.
 #[derive(Default)]
@@ -487,5 +487,22 @@ fn the_package_format_follows_the_distribution() {
         ("", "tar.gz"),
     ] {
         assert_eq!(package_formats(os_release), [want], "{os_release:?}");
+    }
+}
+
+#[quench_test::test]
+fn an_arch_package_is_installed_by_pacman_and_the_other_kinds_are_opened_by_the_desktop() {
+    for (name, want) in [
+        ("hoist-0.1.5-1-x86_64.pkg.tar.zst", Install::Pacman),
+        (
+            "/home/a/.local/share/hoist/downloads/Hoist-0.1.5-1-x86_64.PKG.TAR.ZST",
+            Install::Pacman,
+        ),
+        ("hoist-0.1.5-1.x86_64.rpm", Install::Open),
+        ("hoist_0.1.5_amd64.deb", Install::Open),
+        ("hoist-0.1.5.tar.gz", Install::Open),
+        ("something.pkg", Install::Open),
+    ] {
+        assert_eq!(install_kind(std::path::Path::new(name)), want, "{name}");
     }
 }
