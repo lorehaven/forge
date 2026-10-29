@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "foundry-service"
-version = "0.2.31"
+version = "0.2.32"
 dependencies = [
  "quench-args",
  "quench-cli",
