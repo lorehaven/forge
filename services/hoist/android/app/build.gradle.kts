@@ -10,7 +10,7 @@ android {
         applicationId = "dev.lorehaven.hoist"
         minSdk = 26
         targetSdk = 36
-        // `quench build apk` passes the version from quench.toml.
+        // `quench build apk` passes the version from .quench.toml.
         versionCode = (project.findProperty("quench.versionCode") as String?)?.toInt() ?: 1
         versionName = (project.findProperty("quench.versionName") as String?) ?: "0.1.0"
     }
@@ -34,7 +34,7 @@ android {
     }
 
     // The release key comes from the environment (`quench` sets the keystore and alias from
-    // quench.toml; the passwords are only ever in the environment, never in a file).
+    // .quench.toml; the passwords are only ever in the environment, never in a file).
     signingConfigs {
         create("release") {
             val keystore = System.getenv("QUENCH_KEYSTORE")
