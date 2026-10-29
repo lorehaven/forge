@@ -81,7 +81,13 @@ object UpdateCheck {
             .apply { environment()["HOME"] = context.filesDir.absolutePath }
             .start()
         process.outputStream.use { it.write(installed(context).toByteArray()) }
-        val errors = Thread { process.errorStream.bufferedReader().forEachLine { Log.w(TAG, it) } }.apply { start() }
+        val errors = Thread {
+            try {
+                process.errorStream.bufferedReader().forEachLine { Log.w(TAG, it) }
+            } catch (_: java.io.IOException) {
+                // The program was stopped while this was reading: that is the end of its messages, not a failure.
+            }
+        }.apply { start() }
         val line = process.inputStream.bufferedReader().readText().trim()
         if (!process.waitFor(60, TimeUnit.SECONDS)) process.destroy()
         errors.join(1000)

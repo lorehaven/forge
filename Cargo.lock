@@ -183,6 +183,73 @@ dependencies = [
 ]
 
 [[package]]
+name = "forklift-app"
+version = "0.1.0"
+dependencies = [
+ "forklift-core",
+ "quench-test",
+ "quench-ui",
+]
+
+[[package]]
+name = "forklift-core"
+version = "0.1.0"
+dependencies = [
+ "quench-test",
+]
+
+[[package]]
+name = "forklift-desktop"
+version = "0.1.0"
+dependencies = [
+ "forklift-app",
+ "forklift-core",
+ "forklift-host",
+ "forklift-net",
+ "quench-desktop-native",
+ "quench-style",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-native",
+]
+
+[[package]]
+name = "forklift-host"
+version = "0.1.0"
+dependencies = [
+ "forklift-app",
+ "forklift-core",
+ "forklift-net",
+ "quench-test",
+]
+
+[[package]]
+name = "forklift-net"
+version = "0.1.0"
+dependencies = [
+ "forklift-core",
+ "gatehouse-client",
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "forklift-surface"
+version = "0.1.0"
+dependencies = [
+ "forklift-app",
+ "forklift-core",
+ "forklift-host",
+ "forklift-net",
+ "quench-android-surface",
+ "quench-serde",
+ "quench-style",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-native",
+]
+
+[[package]]
 name = "foundry-service"
 version = "0.2.33"
 dependencies = [
@@ -224,6 +291,15 @@ dependencies = [
  "quench-cli",
  "quench-client",
  "quench-core",
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "gatehouse-client"
+version = "0.1.0"
+dependencies = [
+ "quench-client",
  "quench-serde",
  "quench-test",
 ]
@@ -329,8 +405,8 @@ dependencies = [
 name = "hoist-net"
 version = "0.1.0"
 dependencies = [
+ "gatehouse-client",
  "hoist-core",
- "quench-client",
  "quench-crypto",
  "quench-serde",
  "quench-test",

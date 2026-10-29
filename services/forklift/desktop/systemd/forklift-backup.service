@@ -1,0 +1,7 @@
+[Unit]
+Description=Forklift: back up the chosen folders
+
+[Service]
+Type=oneshot
+# Does nothing while the window is open (it has the backup then), or while no folder, server or storage is set up.
+ExecStart=/usr/bin/forklift --backup

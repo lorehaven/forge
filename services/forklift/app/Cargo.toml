@@ -1,0 +1,26 @@
+[package]
+name = "forklift-app"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+
+[lib]
+name = "forklift_app"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+forklift-core = { workspace = true }
+quench-ui = { workspace = true }
+[[test]]
+name = "screens"
+path = "tests/screens.rs"
+harness = false
+
+[dev-dependencies]
+quench-test = { workspace = true }

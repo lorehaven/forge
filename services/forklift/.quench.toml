@@ -1,0 +1,15 @@
+# Read by the `quench` command. Packages are forklift-app, forklift-core and so on.
+name = "forklift"
+template = "web"
+[android]
+keystore = "release.keystore"
+key_alias = "release"
+package = "dev.lorehaven.forklift"
+
+[linux]
+id = "dev.lorehaven.forklift"
+title = "Forklift"
+wm_class = "dev.lorehaven.forklift"
+icon = "icon.png"
+bin = "forklift"
+depends = ""

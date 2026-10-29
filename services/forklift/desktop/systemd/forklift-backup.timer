@@ -1,0 +1,11 @@
+[Unit]
+Description=Forklift: back up the chosen folders every quarter of an hour
+
+[Timer]
+# A few minutes after the session starts, then every 15 minutes (and once if the computer was asleep through one).
+OnStartupSec=3min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

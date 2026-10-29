@@ -1,0 +1,39 @@
+[package]
+name = "forklift-surface"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+autotests = false
+
+[lib]
+name = "forklift_surface"
+path = "src/lib.rs"
+
+# The program the Android host starts to draw the screen (`quench android build-native` copies it into the
+# app as libquench_surface.so). It reads touches and keys from stdin and writes frames to stdout.
+[[bin]]
+name = "quench_surface"
+path = "src/main.rs"
+
+[[test]]
+name = "headless"
+path = "tests/headless.rs"
+harness = false
+
+[dependencies]
+forklift-app = { workspace = true }
+forklift-core = { workspace = true }
+forklift-host = { workspace = true }
+forklift-net = { workspace = true }
+quench-android-surface = { workspace = true }
+quench-serde = { workspace = true }
+quench-style = { workspace = true }
+quench-ui = { workspace = true }
+quench-ui-native = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }

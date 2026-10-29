@@ -1,0 +1,45 @@
+[package]
+name = "forklift-desktop"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+
+# The desktop app: the same screens as on the phone, drawn by the native renderer in a Wayland window, backing up the
+# folders the person chose (a computer has no media library). `forklift --backup` does the same with no window, for a
+# systemd timer.
+[lib]
+name = "forklift_desktop"
+path = "src/lib.rs"
+
+# The window is a feature, so the library (the platform, the background run) builds and tests without a display.
+[features]
+default = ["window"]
+window = ["dep:quench-desktop-native", "dep:quench-style", "dep:quench-ui", "dep:quench-ui-native"]
+
+[[bin]]
+name = "forklift"
+path = "src/main.rs"
+required-features = ["window"]
+
+[dependencies]
+forklift-app = { workspace = true }
+forklift-core = { workspace = true }
+forklift-host = { workspace = true }
+forklift-net = { workspace = true }
+quench-desktop-native = { workspace = true, optional = true }
+quench-style = { workspace = true, optional = true }
+quench-ui = { workspace = true, optional = true }
+quench-ui-native = { workspace = true, optional = true }
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dev-dependencies]
+quench-test = { workspace = true }

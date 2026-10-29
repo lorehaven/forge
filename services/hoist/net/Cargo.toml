@@ -19,8 +19,8 @@ path = "tests/unit.rs"
 harness = false
 
 [dependencies]
+gatehouse-client = { workspace = true }
 hoist-core = { workspace = true }
-quench-client = { workspace = true, features = ["blocking"] }
 quench-crypto = { workspace = true }
 quench-serde = { workspace = true }
 

@@ -1,0 +1,5 @@
+/target
+/dist
+# Signing keys: never commit; back them up elsewhere.
+*.keystore
+*.jks

@@ -1,0 +1,24 @@
+[package]
+name = "forklift-core"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+autotests = false
+
+[lib]
+name = "forklift_core"
+path = "src/lib.rs"
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dependencies]
+
+[dev-dependencies]
+quench-test = { workspace = true }

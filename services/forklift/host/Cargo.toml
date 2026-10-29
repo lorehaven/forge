@@ -1,0 +1,30 @@
+[package]
+name = "forklift-host"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+autotests = false
+
+# The backup's brain, with no screen and no device in it: the controller that scans, sends, restores and tells the app,
+# the `Platform` it asks for everything of the device, and the worker thread that talks to the servers. The hosts
+# (Android, Linux) give it a platform.
+[lib]
+name = "forklift_host"
+path = "src/lib.rs"
+
+[[test]]
+name = "controller"
+path = "tests/controller.rs"
+harness = false
+
+[dependencies]
+forklift-app = { workspace = true }
+forklift-core = { workspace = true }
+forklift-net = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }

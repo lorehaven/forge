@@ -1,19 +1,19 @@
-//! Hoist's talk to the services: gatehouse for the session, warehouse for the registry. Plain blocking calls
-//! (run them on a worker thread); no interface and no host: the native renderer's apps are Rust programs and call
-//! the services themselves, so the page's security policy and the services' lack of CORS do not come into it.
+//! Hoist's talk to the services: gatehouse for the session (the shared `gatehouse-client`), warehouse for the
+//! registry. Plain blocking calls (run them on a worker thread); no interface and no host: the native renderer's apps
+//! are Rust programs and call the services themselves, so the page's security policy and the services' lack of CORS
+//! do not come into it.
 //!
 //! Tokens: the password is used once, by [`login`]; [`Session`] keeps the access token in memory and the refresh
 //! token for the caller to store (the refresh rotates: store the new one **before** the next request, which
-//! [`Session::refresh_token`] hands back after every refresh).
+//! [`Session::keeping_tokens`] does).
 
 use std::fmt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use std::time::Duration;
 
+use gatehouse_client::transfer_client;
 use hoist_core::{Artifact, Category, PublicApp, PublicPage, PublicQuery};
-use quench_client::blocking::Client;
 use quench_serde::{Deserialize, Value, json};
 
 /// What went wrong, in the terms a screen shows.
@@ -77,124 +77,25 @@ fn network(e: impl fmt::Display) -> NetError {
     NetError::Network(e.to_string())
 }
 
-/// The tokens gatehouse gives.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-struct Tokens {
-    access_token: String,
-    refresh_token: String,
-    #[serde(default)]
-    expires_in: i64,
-}
-
-/// How long a call to a service may take (the whole call), and how long a file may take to arrive.
-///
-/// A call that never answers would hold the worker thread for ever, and with it everything waiting behind it: the
-/// loader spins and nothing else is asked.
-static TIMEOUTS: OnceLock<(Duration, Duration)> = OnceLock::new();
-
-/// Sets the timeouts, once and before the first call (the first call fixes them). A test uses short ones.
-pub fn set_timeouts(call: Duration, transfer: Duration) {
-    let _ = TIMEOUTS.set((call, transfer));
-}
-
-fn timeouts() -> (Duration, Duration) {
-    *TIMEOUTS.get_or_init(|| (Duration::from_secs(20), Duration::from_secs(15 * 60)))
-}
-
-/// The client for calls: made once, because a client owns the threads its requests run on.
-fn client() -> &'static Client {
-    static CLIENT: OnceLock<Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        Client::builder()
-            .timeout(timeouts().0)
-            .build()
-            .expect("the default client configuration is valid")
-    })
-}
-
-/// The client for files, which are allowed their time.
-fn transfer_client() -> &'static Client {
-    static CLIENT: OnceLock<Client> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        Client::builder()
-            .timeout(timeouts().1)
-            .build()
-            .expect("the default client configuration is valid")
-    })
-}
-
-/// What is told the new refresh token, the moment a refresh gives one.
-type OnRefresh = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
-
-/// Where the newest refresh token kept for this session is, whoever kept it.
-type LatestToken = std::sync::Arc<dyn Fn() -> Option<String> + Send + Sync>;
-
-/// A signed-in session against one server.
-#[derive(Clone)]
-pub struct Session {
-    base: String,
-    access: String,
-    refresh: String,
-    expires_in: i64,
-    on_refresh: Option<OnRefresh>,
-    latest: Option<LatestToken>,
-}
-
-impl fmt::Debug for Session {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // The tokens stay out of any log.
-        f.debug_struct("Session")
-            .field("base", &self.base)
-            .field("expires_in", &self.expires_in)
-            .finish_non_exhaustive()
-    }
-}
-
-fn base_of(url: &str) -> String {
-    url.trim().trim_end_matches('/').to_string()
-}
-
-/// With `HOIST_TRACE` set (a debug build sets it), says what was asked and what came back - the method, the path
-/// without its query, the status - on stderr. Never a token, a password or a body.
-fn trace(method: &str, url: &str, outcome: &str) {
-    if std::env::var_os("HOIST_TRACE").is_some() {
-        let path = url.split('?').next().unwrap_or(url);
-        eprintln!("hoist-net: {method} {path} -> {outcome}");
-    }
-}
-
-fn post_json(client: &Client, url: &str, body: &Value) -> Result<(u16, String), NetError> {
-    let response = client.post(url).json(body).send().map_err(|e| {
-        trace("POST", url, &format!("failed: {e}"));
-        network(e)
-    })?;
-    let status = response.status().as_u16();
-    trace("POST", url, &status.to_string());
-    Ok((status, response.text().map_err(network)?))
-}
-
-fn tokens(base: &str, status: u16, text: &str) -> Result<Session, NetError> {
-    match status {
-        200 => {
-            let t: Tokens = json::from_str(text).map_err(network)?;
-            Ok(Session {
-                base: base.to_string(),
-                access: t.access_token,
-                refresh: t.refresh_token,
-                expires_in: t.expires_in,
-                on_refresh: None,
-                latest: None,
-            })
+impl From<gatehouse_client::Error> for NetError {
+    fn from(e: gatehouse_client::Error) -> Self {
+        use gatehouse_client::Error as E;
+        match e {
+            E::Network(why) => Self::Network(why),
+            E::Unauthorized => Self::Unauthorized,
+            E::MfaRequired => Self::MfaRequired,
+            E::Status(code) => Self::Status(code),
+            E::AccountLocked => Self::AccountLocked,
+            E::AccountDisabled => Self::AccountDisabled,
+            E::EmailUnverified => Self::EmailUnverified,
         }
-        401 | 403 if text.contains("mfa_required") => Err(NetError::MfaRequired),
-        400..=403 if text.contains("mfa_required") => Err(NetError::MfaRequired),
-        // Gatehouse says why in the body (`{"error": "account_locked"}`): a locked account is not a wrong password.
-        400 | 401 | 403 if text.contains("account_locked") => Err(NetError::AccountLocked),
-        400 | 401 | 403 if text.contains("account_disabled") => Err(NetError::AccountDisabled),
-        400 | 401 | 403 if text.contains("email_unverified") => Err(NetError::EmailUnverified),
-        400 | 401 | 403 => Err(NetError::Unauthorized),
-        other => Err(NetError::Status(other)),
     }
+}
+
+/// How long a call to a service may take (the whole call), and how long a file may take to arrive. Set once and
+/// before the first call (the first call fixes them). A test uses short ones.
+pub fn set_timeouts(call: Duration, transfer: Duration) {
+    gatehouse_client::set_timeouts(call, transfer);
 }
 
 /// Signs in. The password is not kept.
@@ -202,71 +103,47 @@ fn tokens(base: &str, status: u16, text: &str) -> Result<Session, NetError> {
 /// # Errors
 /// [`NetError`].
 pub fn login(base: &str, username: &str, password: &str) -> Result<Session, NetError> {
-    let base = base_of(base);
-    let body = json!({ "username": username, "password": password });
-    let (status, text) = post_json(
-        client(),
-        &format!("{base}/gatehouse/api/v1/auth/login"),
-        &body,
-    )?;
-    tokens(&base, status, &text)
+    gatehouse_client::trace_var("HOIST_TRACE");
+    Ok(Session(gatehouse_client::login(base, username, password)?))
 }
+
+/// A signed-in session against one server.
+#[derive(Clone, Debug)]
+pub struct Session(gatehouse_client::Session);
 
 impl Session {
     /// A session from a refresh token kept from an earlier one (use [`refresh`](Self::refresh) before the first
     /// request).
     #[must_use]
     pub fn resume(base: &str, refresh_token: &str) -> Self {
-        Self {
-            base: base_of(base),
-            access: String::new(),
-            refresh: refresh_token.to_string(),
-            expires_in: 0,
-            on_refresh: None,
-            latest: None,
-        }
+        gatehouse_client::trace_var("HOIST_TRACE");
+        Self(gatehouse_client::Session::resume(base, refresh_token))
     }
 
     /// The token to store: the new one after every refresh.
     #[must_use]
     pub fn refresh_token(&self) -> &str {
-        &self.refresh
+        self.0.refresh_token()
     }
 
     /// Seconds the access token lives (refresh at about 80% of it).
     #[must_use]
     pub const fn expires_in(&self) -> i64 {
-        self.expires_in
+        self.0.expires_in()
     }
 
-    /// Calls `store` with every new refresh token, as soon as it is given - before the request that needed it is
-    /// answered. A refresh spends the old token, so one that is not kept (the request failed, the app was closed
-    /// meanwhile) leaves the next start with a token that no longer works, and the user signed out.
+    /// Calls `store` with every new refresh token, as soon as it is given. See
+    /// [`gatehouse_client::Session::keeping_tokens`].
     #[must_use]
-    pub fn keeping_tokens(mut self, store: impl Fn(&str) + Send + Sync + 'static) -> Self {
-        self.on_refresh = Some(std::sync::Arc::new(store));
-        self
+    pub fn keeping_tokens(self, store: impl Fn(&str) + Send + Sync + 'static) -> Self {
+        Self(self.0.keeping_tokens(store))
     }
 
-    /// Asks `latest` for the newest refresh token kept by anyone before a refresh, and again when a refresh is
-    /// refused. Two programs of one user (the app, and the check that runs in the background) share one session: a
-    /// refresh by either spends the token the other holds, and without this the second would find its token refused
-    /// and the user would be signed out.
+    /// Asks `latest` for the newest refresh token kept by anyone before a refresh. See
+    /// [`gatehouse_client::Session::following`].
     #[must_use]
-    pub fn following(
-        mut self,
-        latest: impl Fn() -> Option<String> + Send + Sync + 'static,
-    ) -> Self {
-        self.latest = Some(std::sync::Arc::new(latest));
-        self
-    }
-
-    /// A refresh token someone kept that is not the one this session holds.
-    fn newer_token(&self) -> Option<String> {
-        self.latest
-            .as_ref()
-            .and_then(|latest| latest())
-            .filter(|token| !token.is_empty() && *token != self.refresh)
+    pub fn following(self, latest: impl Fn() -> Option<String> + Send + Sync + 'static) -> Self {
+        Self(self.0.following(latest))
     }
 
     /// Gets a new access token (and a new refresh token: the old one is spent).
@@ -274,44 +151,10 @@ impl Session {
     /// # Errors
     /// [`NetError::Unauthorized`] when the refresh token is no good: sign in again.
     pub fn refresh(&mut self) -> Result<(), NetError> {
-        if let Some(newer) = self.newer_token() {
-            self.refresh = newer;
-        }
-        match self.exchange() {
-            Err(NetError::Unauthorized) => {
-                // Spent a moment ago by the other program? Then the one it kept is the one to use.
-                if let Some(newer) = self.newer_token() {
-                    self.refresh = newer;
-                    self.exchange()
-                } else {
-                    Err(NetError::Unauthorized)
-                }
-            }
-            other => other,
-        }
+        Ok(self.0.refresh()?)
     }
 
-    fn exchange(&mut self) -> Result<(), NetError> {
-        let body = json!({ "refresh_token": self.refresh });
-        let (status, text) = post_json(
-            client(),
-            &format!("{}/gatehouse/api/v1/auth/refresh", self.base),
-            &body,
-        )?;
-        // A refusal leaves the session as it was, hooks and all.
-        let fresh = tokens(&self.base, status, &text)?;
-        let (keep, latest) = (self.on_refresh.take(), self.latest.take());
-        *self = fresh;
-        self.on_refresh = keep;
-        self.latest = latest;
-        if let Some(keep) = &self.on_refresh {
-            keep(&self.refresh);
-        }
-        Ok(())
-    }
-
-    /// A `GET` with the bearer token; on a `401` the token is refreshed and the request made once more.
-    fn get(&mut self, path: &str) -> Result<quench_client::blocking::Response, NetError> {
+    fn get(&mut self, path: &str) -> Result<gatehouse_client::Response, NetError> {
         self.get_with(path, &[])
     }
 
@@ -319,34 +162,9 @@ impl Session {
         &mut self,
         path: &str,
         query: &[(&str, String)],
-    ) -> Result<quench_client::blocking::Response, NetError> {
-        for attempt in 0..2 {
-            if self.access.is_empty() && attempt == 0 {
-                self.refresh()?;
-            }
-            // A file is allowed its time; everything else must answer.
-            let which = if path.contains("/download") {
-                transfer_client()
-            } else {
-                client()
-            };
-            let response = which
-                .get(format!("{}{path}", self.base))
-                .query(query)
-                .bearer_auth(&self.access)
-                .send()
-                .map_err(|e| {
-                    trace("GET", path, &format!("failed: {e}"));
-                    network(e)
-                })?;
-            trace("GET", path, &response.status().as_u16().to_string());
-            if response.status().as_u16() == 401 && attempt == 0 {
-                self.refresh()?;
-                continue;
-            }
-            return Ok(response);
-        }
-        Err(NetError::Unauthorized)
+    ) -> Result<gatehouse_client::Response, NetError> {
+        // A file is allowed its time; everything else must answer.
+        Ok(self.0.get(path, query, path.contains("/download"))?)
     }
 
     /// The registry's latest builds for `platform` (`android`, `linux`...).

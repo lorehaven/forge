@@ -3,6 +3,12 @@ members = [
   "cli/*",
   "docker/*",
   "libs/*",
+  "services/forklift/app",
+  "services/forklift/core",
+  "services/forklift/desktop",
+  "services/forklift/host",
+  "services/forklift/net",
+  "services/forklift/surface",
   "services/hoist/app",
   "services/hoist/core",
   "services/hoist/desktop",
@@ -22,7 +28,9 @@ license = "MIT"
 readme = "README.md"
 
 [workspace.dependencies]
+quench-android = { registry = "ennor", version = "0.1.0" }
 conveyor-pipeline = { path = "libs/conveyor-pipeline", registry = "ennor", version = "0.2.0" }
+gatehouse-client = { path = "libs/gatehouse-client" }
 gatehouse-auth = { path = "libs/gatehouse-auth", registry = "ennor", version = "0.1.0" }
 forge-ui = { path = "libs/forge-ui", version = "0.1.0" }
 libc = { version = "0.2" }
@@ -63,6 +71,10 @@ quench-template = { registry = "ennor", version = "0.1.2" }
 quench-tz = { registry = "ennor", version = "0.1.2" }
 quench-web = { registry = "ennor", version = "0.1.23" }
 quench-web-components = { registry = "ennor", version = "0.1.18" }
+forklift-app = { path = "services/forklift/app" }
+forklift-core = { path = "services/forklift/core" }
+forklift-host = { path = "services/forklift/host" }
+forklift-net = { path = "services/forklift/net" }
 hoist-app = { path = "services/hoist/app" }
 hoist-core = { path = "services/hoist/core" }
 hoist-desktop = { path = "services/hoist/desktop" }
@@ -98,6 +110,10 @@ fn_params_excessive_bools = "allow"
 # and nothing else in the workspace uses them. The assertions and overflow checks of a debug build cost them a good part
 # of their speed again, so they are off.
 [profile.dev.package.hoist-app]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+[profile.dev.package.forklift-app]
 opt-level = 3
 debug-assertions = false
 overflow-checks = false

@@ -1,0 +1,27 @@
+[package]
+name = "gatehouse-client"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "A blocking client session for gatehouse: login, rotating refresh token, bearer requests with one renewal"
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+publish = false
+autotests = false
+
+[lib]
+name = "gatehouse_client"
+path = "src/lib.rs"
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dependencies]
+quench-client = { workspace = true, features = ["blocking"] }
+quench-serde = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
