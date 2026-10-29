@@ -337,16 +337,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hoist-server"
-version = "0.1.0"
-dependencies = [
- "hoist-app",
- "quench-fullstack",
- "quench-http",
- "tokio",
-]
-
-[[package]]
 name = "hoist-service"
 version = "0.1.0"
 dependencies = [
@@ -653,36 +643,6 @@ checksum = "de0cb7ffda196bf2d759593f6b84aeeade943efc444137d1413e3b6ceb75cba8"
 dependencies = [
  "libc",
  "quench-raster",
-]
-
-[[package]]
-name = "quench-fullstack"
-version = "0.1.6"
-source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "7fadfc5570a7408a35bb4d083bf54c7dfd73fb800006e4743a56a566d5ce6c23"
-dependencies = [
- "quench-archive",
- "quench-auth",
- "quench-core",
- "quench-crypto",
- "quench-fullstack-macros",
- "quench-http",
- "quench-log",
- "quench-serde",
- "quench-ui",
- "quench-ui-web",
- "tokio",
-]
-
-[[package]]
-name = "quench-fullstack-macros"
-version = "0.1.0"
-source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "be8ae93656ec5da6e946ff080e6d4bea102d8fd503bcc56459ff2d51edbcb753"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

@@ -33,7 +33,7 @@ RUN mkdir -p /usr/local/cargo && \
 
 WORKDIR /usr/src/app
 
-# The windowed desktop host, the Android surface and the browser server of services/ are apps, not services: the
+# The windowed desktop host and the Android surface of services/ are apps, not services: the
 # images do not build them.
 # Copy workspace structure and manifests (minimal layer to trigger on manifest changes)
 COPY Cargo.toml Cargo.lock ./
@@ -48,10 +48,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo build --release \
       --target x86_64-unknown-linux-musl \
-      --workspace --exclude hoist-desktop --exclude hoist-surface --exclude hoist-server --offline 2>/dev/null || \
+      --workspace --exclude hoist-desktop --exclude hoist-surface --offline 2>/dev/null || \
     cargo build --release \
       --target x86_64-unknown-linux-musl \
-      --workspace --exclude hoist-desktop --exclude hoist-surface --exclude hoist-server
+      --workspace --exclude hoist-desktop --exclude hoist-surface
 
 # ---------- Build stage ----------
 FROM deps-builder AS builder
@@ -64,7 +64,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo build --release \
       --target x86_64-unknown-linux-musl \
-      --workspace --exclude hoist-desktop --exclude hoist-surface --exclude hoist-server
+      --workspace --exclude hoist-desktop --exclude hoist-surface
 
 # ---------- Runtime stage ----------
 FROM ubuntu:24.04

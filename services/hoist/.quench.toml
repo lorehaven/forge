@@ -1,4 +1,4 @@
-# Read by the `quench` command. Packages are hoist-app, hoist-server and so on.
+# Read by the `quench` command. Packages are hoist-app, hoist-core and so on.
 name = "hoist"
 template = "web"
 [android]

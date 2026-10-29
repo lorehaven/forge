@@ -4,6 +4,10 @@ autotests = false
 version = "0.1.0"
 edition.workspace = true
 publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
 
 # The desktop app: the same screens as everywhere, drawn by the native renderer in a Wayland window, talking to the
 # services itself (no WebView, no host plugins).

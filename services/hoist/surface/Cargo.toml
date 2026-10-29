@@ -3,6 +3,10 @@ name = "hoist-surface"
 version = "0.1.0"
 edition.workspace = true
 publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
 
 # The program the Android host starts to draw the screen (`quench android build-native` copies it into the
 # app as libquench_surface.so). It reads touches and keys from stdin and writes frames to stdout.
