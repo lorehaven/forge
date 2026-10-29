@@ -99,6 +99,8 @@ ui_home_no_services = No services are currently enabled.
 
 ui_service_conveyor_title = Conveyor
 ui_service_conveyor_desc = Pipelines, builds and deployments.
+ui_service_daybook_title = Daybook
+ui_service_daybook_desc = Tasks, lists, labels and reminders.
 ui_service_sage_title = Sage
 ui_service_sage_desc = AI workspace: conversations, projects and files.
 ui_service_switchboard_title = Switchboard

@@ -99,6 +99,8 @@ ui_home_no_services = Aucun service n'est actuellement activé.
 
 ui_service_conveyor_title = Conveyor
 ui_service_conveyor_desc = Pipelines, builds et déploiements.
+ui_service_daybook_title = Daybook
+ui_service_daybook_desc = Tâches, listes, étiquettes et rappels.
 ui_service_sage_title = Sage
 ui_service_sage_desc = Espace de travail IA : conversations, projets et fichiers.
 ui_service_switchboard_title = Switchboard

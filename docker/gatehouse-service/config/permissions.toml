@@ -65,6 +65,7 @@ resource_types = ["project"]
 
 [services.daybook]
 label = "Daybook"
+home = true
 description = "Personal tasks, inbox and lists."
 actions = ["read", "write"]
 

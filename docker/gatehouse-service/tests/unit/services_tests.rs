@@ -189,6 +189,7 @@ fn the_shipped_catalog_offers_every_estate_service_but_not_gatehouse() {
         names,
         [
             "conveyor",
+            "daybook",
             "gantry",
             "gauge",
             "sage",

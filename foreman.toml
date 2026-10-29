@@ -296,6 +296,7 @@ WAREHOUSE_UI_URL = "https://localhost:6443/warehouse/ui/home"
 WORKBENCH_UI_URL = "https://localhost:10443/workbench/ui/home"
 GANTRY_UI_URL = "https://localhost:11443/gantry/ui/home"
 GAUGE_UI_URL = "https://localhost:13443/gauge/ui/home"
+DAYBOOK_UI_URL = "https://localhost:12443/daybook/ui"
 
 [[services]]
 name = "warehouse"
