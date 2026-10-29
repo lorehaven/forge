@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "anvil"
-version = "0.4.21"
+version = "0.4.22"
 dependencies = [
  "gatehouse-auth",
  "quench-args",
@@ -91,12 +91,77 @@ dependencies = [
 ]
 
 [[package]]
+name = "daybook-app"
+version = "0.1.0"
+dependencies = [
+ "daybook-core",
+ "quench-core",
+ "quench-test",
+ "quench-tz",
+ "quench-ui",
+]
+
+[[package]]
+name = "daybook-core"
+version = "0.1.0"
+dependencies = [
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+ "quench-tz",
+]
+
+[[package]]
+name = "daybook-desktop"
+version = "0.1.0"
+dependencies = [
+ "daybook-app",
+ "daybook-core",
+ "daybook-host",
+ "daybook-net",
+ "quench-core",
+ "quench-desktop-native",
+ "quench-image",
+ "quench-layout",
+ "quench-raster",
+ "quench-style",
+ "quench-test",
+ "quench-tz",
+ "quench-ui",
+ "quench-ui-native",
+]
+
+[[package]]
+name = "daybook-host"
+version = "0.1.0"
+dependencies = [
+ "daybook-core",
+ "daybook-net",
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+ "quench-tz",
+]
+
+[[package]]
+name = "daybook-net"
+version = "0.1.0"
+dependencies = [
+ "daybook-core",
+ "gatehouse-client",
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
 name = "daybook-service"
 version = "0.2.8"
 dependencies = [
+ "daybook-web",
  "quench-auth",
  "quench-core",
  "quench-db",
+ "quench-fullstack",
  "quench-http",
  "quench-log",
  "quench-pg",
@@ -104,7 +169,44 @@ dependencies = [
  "quench-starter",
  "quench-test",
  "quench-tz",
+ "quench-ui",
+ "quench-ui-web",
  "tokio",
+]
+
+[[package]]
+name = "daybook-surface"
+version = "0.1.0"
+dependencies = [
+ "daybook-app",
+ "daybook-core",
+ "daybook-host",
+ "daybook-net",
+ "quench-android-surface",
+ "quench-core",
+ "quench-serde",
+ "quench-style",
+ "quench-test",
+ "quench-tz",
+ "quench-ui",
+ "quench-ui-native",
+]
+
+[[package]]
+name = "daybook-web"
+version = "0.1.0"
+dependencies = [
+ "daybook-app",
+ "daybook-core",
+ "daybook-host",
+ "daybook-net",
+ "quench-core",
+ "quench-serde",
+ "quench-style",
+ "quench-test",
+ "quench-tz",
+ "quench-ui",
+ "quench-ui-web",
 ]
 
 [[package]]
@@ -722,6 +824,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "quench-fullstack"
+version = "0.1.7"
+source = "sparse+https://ennor.ddns.net/warehouse/index/"
+checksum = "2080538f482e637887e85db387721fa25770122006727612b788b610350655c1"
+dependencies = [
+ "quench-archive",
+ "quench-auth",
+ "quench-core",
+ "quench-crypto",
+ "quench-fullstack-macros",
+ "quench-http",
+ "quench-log",
+ "quench-serde",
+ "quench-ui",
+ "quench-ui-web",
+ "tokio",
+]
+
+[[package]]
+name = "quench-fullstack-macros"
+version = "0.1.0"
+source = "sparse+https://ennor.ddns.net/warehouse/index/"
+checksum = "be8ae93656ec5da6e946ff080e6d4bea102d8fd503bcc56459ff2d51edbcb753"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "quench-html"
 version = "0.1.1"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
@@ -1073,9 +1205,9 @@ dependencies = [
 
 [[package]]
 name = "quench-ui-web"
-version = "0.1.6"
+version = "0.1.7"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "9b26869c7ab6e6f47090b4819a0a97e92ae9f9ef245f8e407e4f8e2432a8bebf"
+checksum = "99d91bc9e5336668af2419c5fdb27bd0c5ba11332843d0b7810ccfa2a86e847d"
 dependencies = [
  "quench-serde",
  "quench-ui",
