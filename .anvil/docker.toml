@@ -41,10 +41,11 @@ image_name = "sage"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 
 [docker.modules.docker.switchboard-service]
-dockerfile = "docker/Dockerfile.ubuntu.rocm"
 module_name = "switchboard"
 image_name = "switchboard"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+# Ran as 999:999 in the image it had before; GPU memory is read from /sys, so nothing GPU-specific is in the image.
+build_args = { RUN_AS = "999:999" }
 
 [docker.modules.docker.warehouse-service]
 module_name = "warehouse"

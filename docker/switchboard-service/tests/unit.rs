@@ -44,6 +44,8 @@ mod routers_vllm_launch_tests;
 #[path = "unit/routers_vllm_sse_tests.rs"]
 mod routers_vllm_sse_tests;
 
+#[path = "unit/routers_gpu_monitor_tests.rs"]
+mod routers_gpu_monitor_tests;
 #[path = "unit/routers_gpu_tests.rs"]
 mod routers_gpu_tests;
 

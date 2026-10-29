@@ -18,7 +18,7 @@ Switchboard is Forge's model-serving gateway and dashboard: it discovers local m
   - **Mock** — for tests/local dev without real GPUs.
   - A background **restorer** (`reaper.rs`, `VllmEngine::restore_next`) brings back pods a machine reboot left `completed` (phase `Succeeded`) or `interrupted` (`Failed` with reason `Shutdown`/`Terminated`/`UnexpectedAdmissionError`). Every 30s it restarts at most one, and only when no other managed pod is still loading (GPU memory is not shared safely by concurrent loads; a pod loading over 20 min no longer blocks). The pod and its service are recreated from the old pod's spec; a `vllm-restarts` annotation caps consecutive restarts at 5 (reset after a 10-minute run), after which the pod stays visible as `completed`. Only the Kubernetes engine implements it.
   - A background **reaper** (`reaper.rs`) removes instances stuck in `Failed` state every 30s, since Kubernetes pods with `restartPolicy: Never` never self-heal and would otherwise block relaunching the same model.
-- **GPU status** — polls `rocm-smi --showmeminfo vram --json` once a second, broadcasts an HTML fragment over SSE (`/api/v1/gpu/status/sse`) for the dashboard's live VRAM gauge, and serves it as JSON at `/api/v1/gpu/status`.
+- **GPU status** — reads the video memory counters the `amdgpu` driver publishes in `/sys/class/drm/card*/device/mem_info_vram_{total,used}` once a second (the card with the most memory, so an integrated GPU is passed over), broadcasts an HTML fragment over SSE (`/api/v1/gpu/status/sse`) for the dashboard's live VRAM gauge, and serves it as JSON at `/api/v1/gpu/status`.
 - **Fine-grained permissions** — write actions are gated per-action (`launch`, `stop`, `delete-model`) via Gatehouse's permission catalog rather than a single coarse "write" grant, checked directly in each handler (`mod_impl::can`) rather than through blanket middleware, because a plain `RequireWrite` grant can't express "may launch but not delete."
 - **Feature flags** — `FEATURE_MODELS_DASHBOARD_ENABLED` and `FEATURE_VLLM_MANAGEMENT_ENABLED` gate the corresponding UI sections independently of the underlying API.
 
@@ -44,7 +44,7 @@ Base path `/switchboard` in local dev; all API routes wrapped in `Auth` (JWT), w
 - **PostgreSQL** — `switchboard.users`/`switchboard.sessions` (auth), `switchboard.model_cache` (discovered-model cache, keyed by path), `switchboard.vllm_architectures` (vLLM-support allow-list).
 - **Gatehouse** — JWT/session auth and SSO delegation; `switchboard` is its own OAuth client and the target of Sage's client-credentials grant.
 - **`vllm`** on `PATH` (Native mode) or a reachable Kubernetes cluster (Kubernetes mode) to actually serve models.
-- **`rocm-smi`** on `PATH` for GPU status — the code shells out to it directly, so this service currently assumes an AMD ROCm GPU host; if it's missing, GPU status silently defaults to zeroed values.
+- **`/sys/class/drm`** (the `amdgpu` driver's video memory files) for GPU status, so this service assumes an AMD GPU host; with no such card, or `/sys` not visible in the container, GPU status silently defaults to zeroed values. Nothing needs installing: the image is the ordinary Alpine one (`docker/Dockerfile.alpine`), and the pod must see the host's `/sys` (a privileged pod does).
 - **Local filesystem access** to the HF/GGUF model directories being scanned (or the equivalent mounted paths in a container/pod).
 
 ## Configuration
