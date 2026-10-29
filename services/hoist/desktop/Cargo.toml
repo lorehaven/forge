@@ -1,7 +1,7 @@
 [package]
 name = "hoist-desktop"
 autotests = false
-version = "0.1.2"
+version = "0.1.3"
 edition.workspace = true
 publish = false
 authors = { workspace = true }
