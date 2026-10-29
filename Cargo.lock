@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "anvil"
-version = "0.4.20"
+version = "0.4.21"
 dependencies = [
  "gatehouse-auth",
  "quench-args",
@@ -286,7 +286,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-auth"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "quench-cli",
  "quench-client",
