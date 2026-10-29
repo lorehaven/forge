@@ -1,0 +1,11 @@
+[Unit]
+Description=Hoist: look for updates every few hours
+
+[Timer]
+# A few minutes after the session starts, then every six hours (and once if the computer was asleep through one).
+OnStartupSec=5min
+OnUnitActiveSec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

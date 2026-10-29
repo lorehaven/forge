@@ -1,0 +1,8 @@
+[Unit]
+Description=Hoist: look for updates and say if there are any
+# Needs a desktop session: the notification goes to it.
+ConditionEnvironment=WAYLAND_DISPLAY
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hoist --check
