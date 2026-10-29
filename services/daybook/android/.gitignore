@@ -2,3 +2,5 @@
 /build
 /app/build
 /local.properties
+# Built by `quench android build-native` (debug builds are ~90 MB each): never committed.
+/app/src/main/jniLibs
