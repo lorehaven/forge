@@ -89,3 +89,11 @@ client_id = "gantry-warehouse"
 allowed_scopes = ["warehouse"]
 secret_env = "CLIENT_SECRET_GANTRY_WAREHOUSE"
 
+# Lectern's machine identity toward warehouse - it reads the documentation books from a files storage and
+# serves them to anyone, without a login of its own. client_credentials only. `allowed_scopes` is the
+# audience, warehouse alone: a token minted for this client cannot be presented to any other service.
+[[client]]
+client_id = "lectern-warehouse"
+allowed_scopes = ["warehouse"]
+secret_env = "CLIENT_SECRET_LECTERN_WAREHOUSE"
+

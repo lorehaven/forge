@@ -64,6 +64,7 @@ client_secret_warehouse = { env_file = "services/warehouse/service/.env", key = 
 client_secret_conveyor = { env_file = "services/conveyor/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-conveyor" }
 client_secret_gantry = { env_file = "services/gantry/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-gantry" }
 client_secret_gantry_warehouse = { env_file = "services/gantry/service/.env", key = "CLIENT_SECRET_GANTRY_WAREHOUSE", default = "forge-local-dev-secret-gantry-warehouse" }
+client_secret_lectern_warehouse = { env_file = "services/lectern/service/.env", key = "WAREHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-lectern-warehouse" }
 client_secret_gauge = { env_file = "services/gauge/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-gauge" }
 client_secret_workbench = { env_file = "services/workbench/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-workbench" }
 client_secret_sage_switchboard = { env_file = "services/sage/service/.env", key = "CLIENT_SECRET_SAGE_SWITCHBOARD", default = "forge-local-dev-secret-sage-switchboard" }
@@ -289,6 +290,7 @@ CLIENT_SECRET_WORKBENCH = "${client_secret_workbench}"
 CLIENT_SECRET_GANTRY = "${client_secret_gantry}"
 CLIENT_SECRET_GAUGE = "${client_secret_gauge}"
 CLIENT_SECRET_GANTRY_WAREHOUSE = "${client_secret_gantry_warehouse}"
+CLIENT_SECRET_LECTERN_WAREHOUSE = "${client_secret_lectern_warehouse}"
 CLIENT_SECRET_SAGE_SWITCHBOARD = "${client_secret_sage_switchboard}"
 # Not SERVICE_AUDIENCES: gatehouse derives the realm's audience list from its
 # permission catalog now (services/gatehouse/service/config/permissions.toml),
@@ -316,6 +318,8 @@ needs = ["gatehouse"]
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_warehouse}"
 DOCKER_TOKEN_SECRET = "${docker_token_secret}"
+# `docs` is where `anvil docs release` puts the books Lectern serves; with the `artifacts` of Conveyor's runs.
+FILE_STORAGES = "artifacts=${project_root}/target/estate/artifacts;docs=${project_root}/target/estate/docs"
 
 [[services]]
 name = "switchboard"
@@ -457,6 +461,26 @@ cert_from = "services/warehouse/service"
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_gauge}"
 SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:13080"
+
+# Lectern serves the documentation books `anvil docs release` puts in Warehouse's `docs` files storage, to anyone:
+# no login, no redirect to Gatehouse. It signs in to Warehouse as the `lectern-warehouse` client. Start Warehouse with
+# `FILE_STORAGES=docs=<dir>` to have somewhere to release to.
+[[services]]
+name = "lectern"
+package = "lectern-service"
+port = 15443
+base_path = "/lectern"
+needs = ["gatehouse", "warehouse"]
+# No database: nothing of its own in the schema catalogue to apply.
+schema = false
+cert_from = "services/warehouse/service"
+
+[services.env]
+WAREHOUSE_URL = "https://localhost:6443/warehouse"
+WAREHOUSE_CLIENT_ID = "lectern-warehouse"
+WAREHOUSE_CLIENT_SECRET = "${client_secret_lectern_warehouse}"
+WAREHOUSE_TLS_VERIFY = "false"
+SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:15080"
 
 # ---------------------------------------------------------------------------
 # After a start

@@ -1,0 +1,17 @@
+locale_label = Idioma
+ui_home_button = Inicio
+ui_theme_toggle = Cambiar tema
+ui_theme_mode = Modo
+ui_theme_light = Claro
+ui_theme_dark = Oscuro
+ui_theme_palette = Color
+ui_palette_green = Verde
+ui_palette_teal = Turquesa
+ui_palette_blue = Azul
+ui_palette_purple = Morado
+ui_palette_rose = Rosa
+ui_palette_orange = Naranja
+ui_title = Documentación
+ui_subtitle = Los libros del entorno, tal como se publicaron
+ui_book_meta = Versión { $version } · { $files } páginas
+ui_no_books = Todavía no se ha publicado documentación.

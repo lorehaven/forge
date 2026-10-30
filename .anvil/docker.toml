@@ -16,6 +16,7 @@ packages = [
     "daybook-service",
     "gauge-service",
     "hoist-service",
+    "lectern-service",
 ]
 
 [docker.modules.docker.conveyor-service]
@@ -94,3 +95,10 @@ image_name = "workbench"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The browser client: the image builds `workbench-web` and ships it in `web/` (the service serves it at /ui).
 build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "workbench-web" }
+
+[docker.modules.docker.lectern-service]
+module_name = "lectern"
+image_name = "lectern"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+# No translations and no browser client: the books are the pages. The image still wants a directory beside `config`.
+build_args = { RESOURCE_DIR = "config" }

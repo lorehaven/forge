@@ -128,6 +128,7 @@ Read by [`anvil docs`](commands-docs.md).
 | `jekyll` | string | `jekyll` | The command that runs Jekyll, split on spaces (`bundle exec jekyll`). |
 | `warehouse_url` | string | `[artifacts].warehouse_url` | Warehouse including base path. Required by `docs release` (here or under `[artifacts]`). |
 | `storage` | string | none | The warehouse files storage the books are kept in. Required by `docs release`. |
+| `theme` | string | `forge` | The look of the books: `forge` is the forge services' own (their design tokens, the light and dark modes and six colour palettes chosen by the same cookies, a theme menu), `none` leaves the `just-the-docs` theme as it comes. A file the book has itself (`_sass/custom/custom.scss`, `_includes/head_custom.html`, `header_custom.html`, `title.html`, `nav_footer_custom.html`) is kept. |
 | `books` | table | empty | `[docs.books.<name>]`. |
 
 ### [docs.books.\<name\>]

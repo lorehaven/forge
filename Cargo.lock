@@ -698,6 +698,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "lectern-service"
+version = "0.1.0"
+dependencies = [
+ "forge-shell",
+ "quench-archive",
+ "quench-client",
+ "quench-core",
+ "quench-crypto",
+ "quench-http",
+ "quench-log",
+ "quench-serde",
+ "quench-starter",
+ "quench-test",
+ "tokio",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"

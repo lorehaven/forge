@@ -835,6 +835,55 @@ fn stage_book(dir: &Path, stage: &Path) -> Result<()> {
     copy_staged(dir, stage)
 }
 
+/// The forge look for a just-the-docs book, as the files it adds to the site's source.
+const THEME_TOKENS: &str = include_str!("../../assets/docs-theme/forge-tokens.css");
+const THEME_RULES: &str = include_str!("../../assets/docs-theme/forge.scss");
+const THEME_HEAD: &str = include_str!("../../assets/docs-theme/head_custom.html");
+const THEME_HEADER: &str = include_str!("../../assets/docs-theme/header_custom.html");
+const THEME_TITLE: &str = include_str!("../../assets/docs-theme/title.html");
+const THEME_NAV_FOOTER: &str = include_str!("../../assets/docs-theme/nav_footer_custom.html");
+
+/// The files of the `forge` theme: `(path in the site, content)`.
+#[must_use]
+pub fn forge_theme_files() -> Vec<(&'static str, String)> {
+    vec![
+        (
+            "_sass/custom/custom.scss",
+            format!("{THEME_TOKENS}\n{THEME_RULES}"),
+        ),
+        ("_includes/head_custom.html", THEME_HEAD.to_string()),
+        ("_includes/header_custom.html", THEME_HEADER.to_string()),
+        ("_includes/title.html", THEME_TITLE.to_string()),
+        (
+            "_includes/nav_footer_custom.html",
+            THEME_NAV_FOOTER.to_string(),
+        ),
+    ]
+}
+
+/// Puts the configured theme's files in the staged site, leaving any file the book has itself.
+fn stage_theme(stage: &Path, theme: Option<&str>) -> Result<()> {
+    match theme.unwrap_or("forge") {
+        "none" => Ok(()),
+        "forge" => {
+            for (path, content) in forge_theme_files() {
+                let target = stage.join(path);
+                if target.exists() {
+                    continue;
+                }
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent)
+                        .with_context(|| format!("creating {}", parent.display()))?;
+                }
+                std::fs::write(&target, content)
+                    .with_context(|| format!("writing {}", target.display()))?;
+            }
+            Ok(())
+        }
+        other => bail!("`[docs].theme` is `{other}`: use `forge` or `none`"),
+    }
+}
+
 /// What Jekyll says when a gem is missing, as advice.
 fn missing_gem_hint(stderr: &str) -> Option<String> {
     let marker = "cannot load such file -- ";
@@ -968,6 +1017,7 @@ pub fn build_book(
     let baseurl = options.baseurl.as_deref().or(book.baseurl.as_deref());
     let stage = out_dir.join("src");
     stage_book(&dir, &stage)?;
+    stage_theme(&stage, config.docs.theme.as_deref())?;
     run_jekyll(config, &stage, &site, &out_dir, options, baseurl, log)?;
 
     let files = site_files(&site)?;

@@ -1,0 +1,205 @@
+openapi: 3.1.0
+info:
+  title: Lectern
+  version: 0.1.0
+  description: >
+    Public, read-only access to the documentation books held in a Warehouse files storage. No
+    authentication; only GET and HEAD are answered.
+servers:
+  - url: "{base}"
+    variables:
+      base:
+        default: /lectern
+        description: The path the service is mounted at (BASE_PATH).
+paths:
+  /:
+    get:
+      tags: [books]
+      operationId: bookList
+      summary: The list of books
+      description: >
+        Rendered in forge's frame. The language, light or dark mode and palette follow the `qlocale`, `qtheme`
+        and `fui_palette` cookies, else the `Accept-Language` header.
+      responses:
+        '200':
+          description: An HTML page.
+          content:
+            text/html:
+              schema: {type: string}
+  /ui/assets/style.css:
+    get:
+      tags: [assets]
+      operationId: style
+      summary: The front page's stylesheet
+      responses:
+        '200':
+          description: forge's tokens, components and top bar, then Lectern's rules.
+          content:
+            text/css:
+              schema: {type: string}
+  /ui/assets/shell.js:
+    get:
+      tags: [assets]
+      operationId: shellScript
+      summary: forge's shell script
+      description: Theme, palette and language cookies, dropdowns.
+      responses:
+        '200':
+          description: JavaScript.
+          content:
+            text/javascript:
+              schema: {type: string}
+  /ui/assets/lectern.js:
+    get:
+      tags: [assets]
+      operationId: script
+      summary: Lectern's own script
+      description: Reloads the page when the language is changed.
+      responses:
+        '200':
+          description: JavaScript.
+          content:
+            text/javascript:
+              schema: {type: string}
+  /ui/assets/favicon.png:
+    get:
+      tags: [assets]
+      operationId: icon
+      summary: The service's icon
+      responses:
+        '200':
+          description: A PNG.
+          content:
+            image/png:
+              schema: {type: string, format: binary}
+  /api/v1/books:
+    get:
+      tags: [books]
+      operationId: books
+      summary: The books being served
+      responses:
+        '200':
+          description: One entry per book, ordered by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Book'}
+  /{book}:
+    get:
+      tags: [pages]
+      operationId: bookRoot
+      summary: A book without its trailing slash
+      parameters:
+        - {$ref: '#/components/parameters/book'}
+      responses:
+        '301':
+          description: To `/{book}/`.
+        '404':
+          description: No such book.
+  /{book}/{path}:
+    get:
+      tags: [pages]
+      operationId: page
+      summary: A file of the newest release of a book
+      description: >
+        `path` may be empty or end in `/`, which is the directory's `index.html`. A directory asked for
+        without its trailing slash is a 301 to the slash. An HTML page asked for by a navigation
+        (`Sec-Fetch-Dest: document`) is answered with Lectern's frame: the top bar and the page in an iframe at the
+        same address; the iframe, and anything that is not a navigation, gets the page itself. The weak ETag is the
+        release version (with `-framed` for the frame); a matching `If-None-Match` is a 304. Answers for HTML
+        carry `Vary: Sec-Fetch-Dest`.
+      parameters:
+        - {$ref: '#/components/parameters/book'}
+        - name: path
+          in: path
+          required: true
+          schema: {type: string}
+          description: The file below the book, with slashes.
+        - name: Sec-Fetch-Dest
+          in: header
+          required: false
+          schema: {type: string}
+          description: "`document` for a navigation (the frame is answered), anything else for the page itself."
+        - name: If-None-Match
+          in: header
+          required: false
+          schema: {type: string}
+      responses:
+        '200':
+          description: The file, with a content type from its extension.
+          headers:
+            ETag: {schema: {type: string}}
+            Cache-Control: {schema: {type: string}}
+        '301':
+          description: To the same path with a trailing slash.
+        '304':
+          description: The client's copy is current.
+        '404':
+          description: No such book or file. The book's own 404.html is the body when it has one.
+  /ui/assets/frame.js:
+    get:
+      tags: [assets]
+      operationId: frameScript
+      summary: The script of the frame page
+      description: Keeps the address bar and the tab title on the page the frame shows.
+      responses:
+        '200':
+          description: JavaScript.
+          content:
+            text/javascript:
+              schema: {type: string}
+  /health:
+    get:
+      tags: [health]
+      operationId: health
+      summary: The process is up
+      responses:
+        '200': {description: OK}
+  /health/live:
+    get:
+      tags: [health]
+      operationId: healthLive
+      summary: The process is up
+      responses:
+        '200': {description: OK}
+  /health/ready:
+    get:
+      tags: [health]
+      operationId: healthReady
+      summary: The storage has been listed at least once
+      responses:
+        '200':
+          description: Ready.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Status'}
+        '503':
+          description: Not ready.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Status'}
+components:
+  parameters:
+    book:
+      name: book
+      in: path
+      required: true
+      schema: {type: string}
+      description: The book's name, the directory it is in in the storage.
+  schemas:
+    Book:
+      type: object
+      required: [name, title, version, built, files, url]
+      properties:
+        name: {type: string}
+        title: {type: string}
+        version: {type: string, description: The release being served.}
+        built: {type: string, description: When the release was built (RFC 3339), or empty.}
+        files: {type: integer, description: Files in the release.}
+        url: {type: string, description: Where the book is served, with the base path.}
+    Status:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, enum: [ready, not_ready]}

@@ -1,0 +1,44 @@
+[package]
+name = "lectern-service"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Lectern - public preview of the documentation books held in a Warehouse files storage"
+keywords = ["documentation", "tools"]
+categories = ["development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+autotests = false
+
+[lib]
+name = "lectern_service"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "lectern-service"
+path = "src/main.rs"
+
+[dependencies]
+forge-shell = { workspace = true }
+quench-archive = { workspace = true }
+quench-client = { workspace = true }
+quench-core = { workspace = true }
+quench-crypto = { workspace = true }
+quench-http = { workspace = true }
+quench-log = { workspace = true }
+quench-serde = { workspace = true }
+quench-starter = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false

@@ -60,8 +60,9 @@ All services run with `workdir = services/<name>/service` (their `.env`, certifi
 | daybook | `daybook-service` | 12443 | 12080 | `/daybook` | gatehouse |
 | gauge | `gauge-service` | 13443 | 13080 | `/gauge` | gatehouse |
 | hoist | `hoist-service` | 14443 | 14080 | `/hoist` | gatehouse |
+| lectern | `lectern-service` | 15443 | 15080 | `/lectern` | gatehouse, warehouse |
 
-Services without `SERVER_HTTP_REDIRECT_ADDR` in their block use the starter default `0.0.0.0:80`; the ones that set it avoid sharing one redirect port. Gatehouse, switchboard, conveyor, workbench, daybook, gantry, gauge and hoist borrow the certificate of `services/warehouse/service` (`cert_from`); Gatehouse ships none of its own, and Switchboard is pointed at the shared one with `SERVER_CERT_PATH`/`SERVER_KEY_PATH`.
+Services without `SERVER_HTTP_REDIRECT_ADDR` in their block use the starter default `0.0.0.0:80`; the ones that set it avoid sharing one redirect port. Gatehouse, switchboard, conveyor, workbench, daybook, gantry, gauge, hoist and lectern borrow the certificate of `services/warehouse/service` (`cert_from`); Gatehouse ships none of its own, and Switchboard is pointed at the shared one with `SERVER_CERT_PATH`/`SERVER_KEY_PATH`.
 
 Sign in at `https://localhost:5443/gatehouse/ui/login` with the admin account (see below).
 
@@ -91,6 +92,7 @@ Gatehouse unsets `GATEHOUSE_URL` and `GATEHOUSE_CLIENT_ID` (it is the destinatio
 * **sage**: `GATEHOUSE_CLIENT_SECRET`, `CLIENT_SECRET_SAGE_SWITCHBOARD`. With `FORGE_SKIP_MODELS` set in foreman's environment, `SAGE_DEFAULT_MODELS=[]` (the GPU stays idle and the "initializing" screen does not appear).
 * **conveyor, workbench, gantry, gauge**: `GATEHOUSE_CLIENT_SECRET`. gantry and gauge also set a redirect address.
 * **daybook**: only `SERVER_HTTP_REDIRECT_ADDR=0.0.0.0:12080` (no client secret: it has no OAuth client).
+* **lectern**: `WAREHOUSE_URL=https://localhost:6443/warehouse`, `WAREHOUSE_CLIENT_ID=lectern-warehouse`, `WAREHOUSE_CLIENT_SECRET`, `WAREHOUSE_TLS_VERIFY=false`. It serves what `anvil docs release` put in Warehouse's `docs` storage.
 * **hoist**: `DB_SCHEMA=hoist`, `HOIST_APTOIDE_PAGES=5` (keeps the first catalogue refresh short; the refresh fetches three upstream stores over the network).
 
 ### Values

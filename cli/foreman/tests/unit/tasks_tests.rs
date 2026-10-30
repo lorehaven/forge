@@ -219,3 +219,55 @@ fn run_errors_for_an_unknown_container() {
     let error = run(&estate, "bad-container", &task, &[]).unwrap_err();
     assert!(error.to_string().contains("no-such-container"));
 }
+
+#[quench_test::test]
+fn a_service_without_a_schema_is_left_out_of_the_per_service_arguments() {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let estate = estate_in(
+        dir.path(),
+        r#"
+                [[services]]
+                name = "web"
+                package = "web-svc"
+                port = 8080
+
+                [[services]]
+                name = "plain"
+                package = "plain-svc"
+                port = 8081
+                schema = false
+            "#,
+    );
+    let out = dir.path().join("args.txt");
+    let task = Task {
+        role: Role::Manual,
+        description: None,
+        containers: Vec::new(),
+        build: Vec::new(),
+        command: vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            format!("printf '%s ' \"$@\" > {}", out.display()),
+            "sh".to_string(),
+            SELECTION_PLACEHOLDER.to_string(),
+        ],
+        env: Default::default(),
+        workdir: None,
+        each_selected: vec!["--install".to_string(), "${service}".to_string()],
+        selection: SelectionMode::Always,
+        stop_services: false,
+        warn: None,
+        done: None,
+    };
+    run(
+        &estate,
+        "scoped",
+        &task,
+        &["web".to_string(), "plain".to_string()],
+    )
+    .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(out).unwrap().trim(),
+        "--install web"
+    );
+}

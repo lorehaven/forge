@@ -39,6 +39,7 @@ members = [
   "services/hoist/net",
   "services/hoist/service",
   "services/hoist/surface",
+  "services/lectern/service",
   "services/sage/app",
   "services/sage/core",
   "services/sage/service",

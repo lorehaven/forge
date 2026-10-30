@@ -3,7 +3,7 @@ title: Warehouse
 parent: Services
 has_children: true
 permalink: /services/warehouse/
-nav_order: 11
+nav_order: 12
 ---
 
 Warehouse is the Forge estate's storage service. One address serves a Cargo registry (JSON API and sparse index), a Docker Registry HTTP API v2, named file storages (operator-configured directories and database-backed owned storages), a multi-platform artifact registry (Android, Linux, Windows, macOS builds) and a registry of `.rivet` packages. It also hosts a browser client for browsing and managing them. Conveyor publishes build artifacts and release images to it, Gantry and `riveter` fetch rivet packages from it, and Cargo and Docker clients use it as their registry.

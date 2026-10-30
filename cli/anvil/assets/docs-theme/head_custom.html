@@ -1,0 +1,36 @@
+<script>
+  /* Mode and colour follow the cookies of the forge services (qtheme, fui_palette); dark and green without them. */
+  (function () {
+    var root = document.documentElement;
+    var palettes = ['green', 'teal', 'blue', 'purple', 'rose', 'orange'];
+    function cookie(name) {
+      var m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+    function apply() {
+      var theme = cookie('qtheme');
+      var palette = cookie('fui_palette');
+      root.setAttribute('data-fui-theme', theme && theme.indexOf('light') !== -1 ? 'light' : 'dark');
+      root.setAttribute('data-fui-palette', palettes.indexOf(palette) !== -1 ? palette : 'green');
+    }
+    function put(name, value) {
+      document.cookie = name + '=' + encodeURIComponent(value) + '; max-age=31536000; path=/; SameSite=Lax';
+    }
+    apply();
+    /* Inside a frame (Lectern's) the bar around the book has the theme menu; the book's own is left out. */
+    try { if (window.self !== window.top) root.classList.add('fui-embedded'); } catch (e) { root.classList.add('fui-embedded'); }
+    document.addEventListener('click', function (e) {
+      var t = e.target.closest ? e.target : e.target.parentNode;
+      var mode = t.closest('[data-fui-mode]');
+      if (mode) { put('qtheme', 'default-' + mode.getAttribute('data-fui-mode')); apply(); }
+      var colour = t.closest('[data-fui-palette]');
+      if (colour) { put('fui_palette', colour.getAttribute('data-fui-palette')); apply(); }
+      var keep = t.closest('details.fui-dropdown');
+      document.querySelectorAll('details.fui-dropdown[open]').forEach(function (d) { if (d !== keep) d.removeAttribute('open'); });
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') document.querySelectorAll('details.fui-dropdown[open]').forEach(function (d) { d.removeAttribute('open'); });
+    });
+    setInterval(apply, 1000);
+  })();
+</script>

@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use anvil::commands::artifact::Upload;
 use anvil::commands::docs::{
-    Options, check_book, destinations, links, normalise_route, openapi_problems, release_with,
-    rewrite_links, source_routes, split_front_matter,
+    Options, check_book, destinations, forge_theme_files, links, normalise_route, openapi_problems,
+    release_with, rewrite_links, source_routes, split_front_matter,
 };
 use anvil::config::Config;
 
@@ -459,4 +459,85 @@ fn a_missing_gem_is_named_in_the_error() {
             .unwrap_err()
             .to_string();
     assert!(err.contains("gem install jekyll-remote-theme"), "{err}");
+}
+
+#[quench_test::test]
+fn the_forge_theme_is_made_of_the_forge_tokens_and_scripts_that_survive_minification() {
+    let files = forge_theme_files();
+    let paths: Vec<&str> = files.iter().map(|(path, _)| *path).collect();
+    assert_eq!(
+        paths,
+        [
+            "_sass/custom/custom.scss",
+            "_includes/head_custom.html",
+            "_includes/header_custom.html",
+            "_includes/title.html",
+            "_includes/nav_footer_custom.html",
+        ]
+    );
+    let scss = &files[0].1;
+    assert!(
+        scss.contains("--fui-brand-500") && scss.contains(".nav-list"),
+        "tokens, then rules"
+    );
+    // Jekyll collapses a page's whitespace: a `//` comment would swallow the rest of the script.
+    let head = &files[1].1;
+    for line in head.lines() {
+        assert!(
+            !line.trim_start().starts_with("//"),
+            "line comment in the head script: {line}"
+        );
+    }
+}
+
+#[quench_test::test]
+fn the_tokens_are_the_ones_of_the_forge_services() {
+    let shell =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libs/forge-shell/assets/tokens.css");
+    // Only inside the forge repository: a published copy of anvil has no forge-shell beside it.
+    if let Ok(original) = std::fs::read_to_string(shell) {
+        assert_eq!(
+            forge_theme_files()[0]
+                .1
+                .split_once('\n')
+                .map(|(first, _)| first),
+            original.lines().next()
+        );
+        assert!(
+            forge_theme_files()[0].1.contains(&original),
+            "assets/docs-theme/forge-tokens.css differs from libs/forge-shell/assets/tokens.css: copy it again"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[quench_test::test]
+fn a_build_stages_the_forge_theme_unless_the_book_has_its_own_or_asks_for_none() {
+    let (root, config) = demo("theme");
+    write(&root, "docs/_includes/title.html", "my own title");
+    let mut log = Vec::new();
+    anvil::commands::docs::build(&config, &root, Some("demo"), &Options::default(), &mut log)
+        .unwrap();
+    let stage = root.join("target/docs/demo/src");
+    assert!(
+        std::fs::read_to_string(stage.join("_sass/custom/custom.scss"))
+            .unwrap()
+            .contains("--fui-bg")
+    );
+    assert!(stage.join("_includes/head_custom.html").is_file());
+    assert_eq!(
+        std::fs::read_to_string(stage.join("_includes/title.html")).unwrap(),
+        "my own title"
+    );
+
+    let none = Config {
+        docs: anvil::config::DocsConfig {
+            theme: Some("none".to_string()),
+            ..config.docs
+        },
+        ..config
+    };
+    anvil::commands::docs::build(&none, &root, Some("demo"), &Options::default(), &mut log)
+        .unwrap();
+    assert!(!root.join("target/docs/demo/src/_sass").exists());
 }

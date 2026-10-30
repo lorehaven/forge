@@ -1,0 +1,17 @@
+locale_label = Language
+ui_home_button = Home
+ui_theme_toggle = Toggle theme
+ui_theme_mode = Mode
+ui_theme_light = Light
+ui_theme_dark = Dark
+ui_theme_palette = Colour
+ui_palette_green = Green
+ui_palette_teal = Teal
+ui_palette_blue = Blue
+ui_palette_purple = Purple
+ui_palette_rose = Rose
+ui_palette_orange = Orange
+ui_title = Documentation
+ui_subtitle = The books of the estate, as released
+ui_book_meta = Release { $version } · { $files } pages
+ui_no_books = No documentation has been published yet.

@@ -97,7 +97,7 @@ Edges: `daybook-host -> daybook-core, daybook-net`; `forklift-host -> forklift-a
 
 ## The estate
 
-Eleven server crates exist: `conveyor`, `daybook`, `foundry`, `gantry`, `gatehouse`, `gauge`, `hoist`, `sage`, `switchboard`, `warehouse`, `workbench` (each `services/<name>/service`). They are quench-http servers started by `quench-starter`; most own a Postgres schema installed by Foundry.
+Twelve server crates exist: `conveyor`, `daybook`, `foundry`, `gantry`, `gatehouse`, `gauge`, `hoist`, `lectern`, `sage`, `switchboard`, `warehouse`, `workbench` (each `services/<name>/service`). They are quench-http servers started by `quench-starter`; most own a Postgres schema installed by Foundry.
 
 ```text
                     Gatehouse (identity, tokens, JWKS)
@@ -114,6 +114,7 @@ Eleven server crates exist: `conveyor`, `daybook`, `foundry`, `gantry`, `gatehou
 * **Warehouse** serves a Cargo registry, a Docker registry (v2), plain file storage and `.rivet` packages.
 * **Gantry** deploys `.rivet` packages with runner Jobs.
 * **Gauge** shows host metrics; no database.
+* **Lectern** serves the documentation books held in a Warehouse files storage to anyone: no login, no database, no schema. See [Lectern](../services/lectern/index.md).
 * **Daybook**, **Hoist** and **Forklift** are the apps; Daybook and Hoist have servers, Forklift talks to Warehouse.
 
 Per-service facts (ports, env, schemas) are on each service's page.

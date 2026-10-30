@@ -34,7 +34,14 @@ impl fmt::Display for ConfigIssue {
 
 const TOP_FIELDS: &[&str] = &["docker", "install", "release", "artifacts", "docs"];
 const ARTIFACTS_FIELDS: &[&str] = &["warehouse_url", "programs"];
-const DOCS_FIELDS: &[&str] = &["out", "jekyll", "warehouse_url", "storage", "books"];
+const DOCS_FIELDS: &[&str] = &[
+    "out",
+    "jekyll",
+    "warehouse_url",
+    "storage",
+    "theme",
+    "books",
+];
 const BOOK_FIELDS: &[&str] = &[
     "dir",
     "title",
@@ -269,10 +276,18 @@ fn check_docs(docs: &Value, issues: &mut Vec<ConfigIssue>) {
         return;
     };
     unknown_fields(table, DOCS_FIELDS, "docs", issues);
-    for field in ["out", "jekyll", "warehouse_url", "storage"] {
+    for field in ["out", "jekyll", "warehouse_url", "storage", "theme"] {
         if let Some(v) = table.get(field) {
             expect_string(v, &format!("docs.{field}"), issues);
         }
+    }
+    if let Some(theme) = table.get("theme").and_then(Value::as_str)
+        && !matches!(theme, "forge" | "none")
+    {
+        issues.push(ConfigIssue {
+            path: "docs.theme".to_string(),
+            message: format!("`{theme}` is not a theme: use `forge` or `none`"),
+        });
     }
     let Some(books) = table.get("books") else {
         return;

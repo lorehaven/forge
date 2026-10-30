@@ -39,6 +39,10 @@ pub struct DocsConfig {
     /// The warehouse files storage the books are kept in (`docs`): required to release.
     #[serde(default)]
     pub storage: Option<String>,
+    /// The look of the books: `forge` (default), the forge services' own, or `none` for the theme as it comes.
+    /// A file the book has itself (`_sass/custom/custom.scss`, `_includes/head_custom.html`...) is kept.
+    #[serde(default)]
+    pub theme: Option<String>,
     /// The books, by name: `[docs.books.<name>]`.
     #[serde(default)]
     pub books: BTreeMap<String, DocsBook>,

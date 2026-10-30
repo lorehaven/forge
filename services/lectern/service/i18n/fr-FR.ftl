@@ -1,0 +1,17 @@
+locale_label = Langue
+ui_home_button = Accueil
+ui_theme_toggle = Changer de thème
+ui_theme_mode = Mode
+ui_theme_light = Clair
+ui_theme_dark = Sombre
+ui_theme_palette = Couleur
+ui_palette_green = Vert
+ui_palette_teal = Sarcelle
+ui_palette_blue = Bleu
+ui_palette_purple = Violet
+ui_palette_rose = Rose
+ui_palette_orange = Orange
+ui_title = Documentation
+ui_subtitle = Les livres de l'environnement, tels que publiés
+ui_book_meta = Version { $version } · { $files } pages
+ui_no_books = Aucune documentation n'a encore été publiée.

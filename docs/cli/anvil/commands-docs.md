@@ -69,8 +69,10 @@ What a build leaves under `<out>/<book>/`:
 | `site/` | The Jekyll output; cleared at the start of every build. |
 | `<book>-<version>.tar.gz` | Every file of `site/` (paths relative to it), as a gzip-compressed tar. The archive is **reproducible**: entries are sorted, owner is root, modification time is 0, so the same site gives the same bytes. |
 | `manifest.json` | `book`, `title`, `version`, `built` (UTC, RFC 3339), `archive` (file name), `archive_bytes`, `archive_sha256`, `files`, `site_bytes`, and `baseurl` when there is one. |
-| `src/` | The staged copy of the book that Jekyll reads: relative links to `.md` pages are rewritten to `.html` (what the `jekyll-relative-links` plugin does, so that plugin is not needed). The book itself is not changed. |
+| `src/` | The staged copy of the book that Jekyll reads: relative links to `.md` pages are rewritten to `.html` (what the `jekyll-relative-links` plugin does, so that plugin is not needed), and the files of the `forge` theme are added (below). The book itself is not changed. |
 | `jekyll-override.yml` | The theme and plugin override passed to Jekyll. |
+
+The **forge theme** (`[docs].theme`, on unless it is `none`) is a layer on `just-the-docs`, staged into `src/` so that every book gets it without carrying it: `_sass/custom/custom.scss` (forge's design tokens, then rules that map the theme's pages onto them), `_includes/head_custom.html` (applies the mode and colour from the cookies `qtheme` and `fui_palette`, the ones the forge services share, so a choice made in one place holds in all), `_includes/header_custom.html` (the theme menu), `_includes/title.html` (the brand mark in the sidebar) and `_includes/nav_footer_custom.html`. Inside a frame (see [Lectern](../../services/lectern/index.md)) the book hides its own theme menu, since the bar around it has one. The tokens are a copy of `libs/forge-shell/assets/tokens.css`; a test fails when the two differ.
 
 The **version** of a book is, in this order: `version` from the configuration; the version of its `version_file` (a `Cargo.toml`, `[workspace.package]` else `[package]`); today's date (`2026-10-30`).
 

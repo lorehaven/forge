@@ -254,6 +254,15 @@ pub struct Service {
     /// children the service owns rather than we do.
     #[serde(default)]
     pub pre_stop: Vec<Hook>,
+
+    /// Whether the service has a module in the schema catalogue. `false` keeps it out of the
+    /// per-service arguments of tasks that apply the catalogue (`each_selected`).
+    #[serde(default = "yes")]
+    pub schema: bool,
+}
+
+const fn yes() -> bool {
+    true
 }
 
 /// Environment applied only when the condition holds.

@@ -90,6 +90,9 @@ pub fn run(estate: &Estate, name: &str, task: &Task, selection: &[String]) -> Re
     let mut selection_args = Vec::new();
     if scoped {
         for service in selection {
+            if !estate.service(service)?.schema {
+                continue;
+            }
             let service_scope = estate
                 .scope()
                 .with("service", service)
