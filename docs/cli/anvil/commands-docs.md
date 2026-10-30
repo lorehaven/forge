@@ -97,7 +97,7 @@ An upload to an existing path replaces it, so releasing a version again replaces
 | `--dry-run` | Build and check everything, then print `would send <storage>/<path> (<bytes> bytes)` for each file; asks for no token and sends nothing. |
 | `--offline`, `--no-check`, `--baseurl` | As for `build`. |
 
-Refusals: `401`/`403` say to run `anvil login --scope warehouse:write` (and that the storage needs a write grant); `404` says the files storage does not exist (create it first, see the Warehouse's `POST /api/v1/files`); any other status prints the status and the body. `warehouse_url` comes from `[docs]`, else `[artifacts]`; `storage` is required.
+Refusals: `401`/`403` say to run `anvil login --scope warehouse:write` (and that the storage needs a write grant); `404` says the files storage does not exist (in the cluster it is a static storage, `docs=/docs` in `FILE_STORAGES` of the Warehouse deployment in homecloud; a dynamic storage can be created with the Warehouse's `POST /api/v1/files`); any other status prints the status and the body. `warehouse_url` comes from `[docs]`, else `[artifacts]`; `storage` is required.
 
 ```text
 $ anvil docs release forge --offline --dry-run

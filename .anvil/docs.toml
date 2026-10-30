@@ -1,8 +1,10 @@
 # `anvil docs check|build|release`: the documentation books (Jekyll sites of Markdown files).
 [docs]
 out = "target/docs"
-# The warehouse files storage the books are kept in: <book>/<version>/ and <book>/latest.json
+# The warehouse files storage the books are kept in: <book>/<version>/ and <book>/latest.json. It is a static
+# storage declared in homecloud (`FILE_STORAGES` of the warehouse deployment: `docs=/docs`); writing needs `warehouse:write`.
 storage = "docs"
+warehouse_url = "https://ennor.ddns.net/warehouse"
 
 [docs.books.forge]
 dir = "docs"
@@ -11,8 +13,3 @@ title = "Forge"
 [docs.books.forge.openapi]
 specs = "services"
 sources = ["services/{name}/service/src"]
-
-# The framework's book lives in the sibling repository; building it from here keeps one command for both.
-[docs.books.quench]
-dir = "../quench/docs"
-title = "Quench"
