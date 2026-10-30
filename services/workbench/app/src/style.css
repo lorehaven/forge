@@ -57,4 +57,4 @@ h3{margin:0;font-size:1rem}
 
 @media (min-width:1024px){.wb-board-page{flex:1}.wb-board-page .wb-board{flex:1;align-items:stretch;grid-template-columns:repeat(5,minmax(0,1fr))}.wb-board .wb-column-body{flex:1}}
 /* text people copy */
-.wb-ticket-title,.wb-comment-body,.wb-key,.wb-meta,.wb-error{user-select:text}
+.wb-comment-body{user-select:text}

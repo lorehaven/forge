@@ -16,14 +16,15 @@ body { margin: 0; font-family: var(--fui-font); font-size: 0.875rem; line-height
 .fui-app h2 { font-size: 1.5rem; line-height: 2rem; }
 .fui-app h3 { font-size: 1.125rem; line-height: 1.75rem; font-weight: 600; }
 .fui-app h4 { font-size: 1rem; line-height: 1.5rem; }
-.fui-app p { margin: 0; }
+/* :where keeps this reset below any class a service gives a paragraph (a margin on `.cv-hint` must win) */
+:where(.fui-app) p { margin: 0; }
 .fui-app a { color: var(--fui-link); text-decoration: none; }
-.fui-app a:hover { text-decoration: underline; }
-/* links that are cards, tiles, buttons, tabs, nav items or chips never underline (one rule for all services; .fui-plain opts in) */
-.fui-app a:is([class*="card"], [class*="tile"], [class*="btn"], [class*="button"], [class*="chip"], [class*="tab"], [class*="nav"], [class*="menu"], [class*="-item"], .fui-plain, .wh-link, .wh-tag, .wh-back):hover { text-decoration: none; }
+/* no link underlines on hover anywhere (cards, titles, rows, tabs, nav): the hover shows in the colour; .fui-underline opts in */
+.fui-app a:hover { text-decoration: none; }
+.fui-app a.fui-underline:hover { text-decoration: underline; }
 
 /* text is not selected by accident while tapping or dragging; what people copy opts back in with .fui-selectable (inputs, code, logs, errors are selectable by default) */
-.fui-app, .fui-auth { -webkit-user-select: none; user-select: none; }
+:where(html, body, .fui-app, .fui-auth) { -webkit-user-select: none; user-select: none; }
 .fui-app input, .fui-app textarea, .fui-app [contenteditable], .fui-app [contenteditable] *, .fui-app pre, .fui-app code, .fui-app samp, .fui-app kbd,
 .fui-app .fui-selectable, .fui-app .fui-selectable *, .fui-app .fui-code-block, .fui-app .fui-alert, .fui-app .fui-notice, .fui-app .fui-field-error,
 .fui-auth input, .fui-auth textarea { -webkit-user-select: text; user-select: text; }

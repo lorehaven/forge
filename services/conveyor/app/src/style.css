@@ -151,4 +151,4 @@ h3{margin:0;font-size:1rem}
 @media (max-width:639.98px){.cv-table th,.cv-table td{padding-left:.75rem;padding-right:.75rem}.cv-row{padding:.75rem 1rem}.cv-edit{margin-left:0}.cv-form{padding:1rem}.cv-main{padding:1rem}}
 .cv-scan-card:hover{box-shadow:var(--fui-shadow-md)}
 /* text people copy */
-.cv-log,.cv-log-line,.cv-mono,.cv-report,.cv-finding,.cv-project-path,.cv-subtitle,.cv-run-meta,.cv-artifact,.cv-scan-headline{user-select:text}
+.cv-log,.cv-log-line,.cv-mono,.cv-report,.cv-finding{user-select:text}

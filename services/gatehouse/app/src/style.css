@@ -87,4 +87,4 @@ a.gh-hint{display:block}
 .home-card{min-width:0}
 .fui-app .gh-form .gh-notice{margin:0;font-size:.875rem}
 /* text people copy */
-.gh-mono,.gh-username,.gh-qr,.gh-hint{user-select:text}
+.gh-mono,.gh-qr{user-select:text}

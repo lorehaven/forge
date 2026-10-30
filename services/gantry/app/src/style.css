@@ -111,4 +111,4 @@ details.gt-details > summary { cursor: pointer; color: var(--fui-text-tertiary);
 .gt-table tbody tr:hover td { background: var(--fui-surface-hover); }
 .gt-table td a { color: var(--fui-text); font-weight: 500; }
 /* text people copy */
-.gt-log,.gt-yaml,.gt-app-version,.gt-dep,.gt-meta,.gt-error,.gt-desc{user-select:text}
+.gt-log,.gt-yaml{user-select:text}

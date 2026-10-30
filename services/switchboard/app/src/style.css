@@ -67,4 +67,4 @@ button.card-fit{cursor:pointer}
 .estimate-grid{display:flex;flex-direction:column;gap:.5rem}
 .estimate-grid .fit-line{display:flex;flex-wrap:wrap;gap:.25rem 1.5rem}
 /* text people copy */
-.instance-id,.instance-endpoint,.instance-log-path,.card-path,.card-meta,.sb-error{user-select:text}
+.instance-endpoint,.instance-log-path,.card-path{user-select:text}
