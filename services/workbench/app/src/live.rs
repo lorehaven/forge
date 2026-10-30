@@ -323,12 +323,12 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         View::dynamic(move || match (problem.get(), notice.get()) {
             (Some(Problem::Failed(why)), _) => p()
                 .attr("id", "problem")
-                .class("wb-notice")
+                .class("fui-notice fui-notice-error")
                 .text(why)
                 .into_view(),
             (Some(Problem::SignedOut), _) => p()
                 .attr("id", "problem")
-                .class("wb-notice")
+                .class("fui-notice fui-notice-error")
                 .child(span().text("Your session ended. "))
                 .child(
                     a().attr("id", "sign-in")
@@ -338,7 +338,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                 .into_view(),
             (_, Some(why)) => p()
                 .attr("id", "notice")
-                .class("wb-notice")
+                .class("fui-notice fui-notice-error")
                 .text(why)
                 .into_view(),
             _ => View::Empty,

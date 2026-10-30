@@ -25,6 +25,8 @@ pub struct Snapshot {
     pub checked_ms: Option<i64>,
     /// `(used, quota)` in bytes of the storage, when the server says.
     pub quota: Option<(u64, u64)>,
+    /// How many files a scan under way has looked at so far (0 when none is).
+    pub looked_at: usize,
 }
 
 impl Snapshot {
@@ -36,11 +38,12 @@ impl Snapshot {
         working: bool,
         checked_ms: Option<i64>,
     ) -> Self {
+        let mut by = engine.manifest.totals_by_category();
         let rows = settings
             .categories()
             .into_iter()
             .map(|c| Row {
-                totals: engine.manifest.totals(Some(&c.key)),
+                totals: by.remove(&c.key).unwrap_or_default(),
                 key: c.key,
                 label: c.label,
             })
@@ -71,7 +74,93 @@ impl Snapshot {
             working,
             checked_ms,
             quota: None,
+            looked_at: 0,
         }
+    }
+
+    /// The snapshot as text, for the screen to show at once at the next start (before the manifest is read and the
+    /// files are looked at again). Plain lines; [`from_text`](Self::from_text) reads them back.
+    #[must_use]
+    pub fn to_text(&self) -> String {
+        let mut out = String::from("forklift-snapshot 1\n");
+        let totals = |t: &Totals| {
+            format!(
+                "{} {} {} {} {} {} {}",
+                t.pending,
+                t.uploading,
+                t.done,
+                t.failed,
+                t.too_large,
+                t.done_bytes,
+                t.waiting_bytes
+            )
+        };
+        out.push_str(&format!("total {}\n", totals(&self.totals)));
+        for r in &self.rows {
+            out.push_str(&format!(
+                "row {}\t{}\t{}\n",
+                crate::manifest::escape(&r.key),
+                crate::manifest::escape(&r.label),
+                totals(&r.totals)
+            ));
+        }
+        if let Some(at) = self.checked_ms {
+            out.push_str(&format!("checked {at}\n"));
+        }
+        if let Some((used, quota)) = self.quota {
+            out.push_str(&format!("quota {used} {quota}\n"));
+        }
+        out
+    }
+
+    /// Reads what [`to_text`](Self::to_text) wrote; anything that does not parse gives the empty snapshot.
+    #[must_use]
+    pub fn from_text(text: &str) -> Self {
+        fn totals(words: &str) -> Option<Totals> {
+            let mut n = words.split(' ');
+            Some(Totals {
+                pending: n.next()?.parse().ok()?,
+                uploading: n.next()?.parse().ok()?,
+                done: n.next()?.parse().ok()?,
+                failed: n.next()?.parse().ok()?,
+                too_large: n.next()?.parse().ok()?,
+                done_bytes: n.next()?.parse().ok()?,
+                waiting_bytes: n.next()?.parse().ok()?,
+            })
+        }
+        let mut shot = Self::default();
+        let mut lines = text.lines();
+        if lines.next() != Some("forklift-snapshot 1") {
+            return shot;
+        }
+        for line in lines {
+            if let Some(rest) = line.strip_prefix("total ") {
+                let Some(t) = totals(rest) else {
+                    return Self::default();
+                };
+                shot.totals = t;
+            } else if let Some(rest) = line.strip_prefix("row ") {
+                let f: Vec<&str> = rest.split('\t').collect();
+                let (Some(&key), Some(&label), Some(t)) =
+                    (f.first(), f.get(1), f.get(2).and_then(|w| totals(w)))
+                else {
+                    return Self::default();
+                };
+                shot.rows.push(Row {
+                    key: crate::manifest::unescape(key),
+                    label: crate::manifest::unescape(label),
+                    totals: t,
+                });
+            } else if let Some(rest) = line.strip_prefix("checked ") {
+                shot.checked_ms = rest.parse().ok();
+            } else if let Some(rest) = line.strip_prefix("quota ") {
+                let mut n = rest.split(' ').filter_map(|w| w.parse().ok());
+                if let (Some(used), Some(quota)) = (n.next(), n.next()) {
+                    shot.quota = Some((used, quota));
+                }
+            }
+        }
+        shot
     }
 
     /// Files that count: backed up or still to be (those too large for the server are not a task).

@@ -51,7 +51,7 @@ pub fn reason(t: &I18n, text: &str) -> String {
 
 fn waiting(env: &Env) -> View {
     p().attr("id", "waiting")
-        .class("sb-empty")
+        .class("fui-empty")
         .text(env.t.t("ui_loading"))
         .into_view()
 }
@@ -64,7 +64,7 @@ pub fn not_found(env: &Env) -> View {
             .class("sb-page")
             .child(
                 p().attr("id", "not-found")
-                    .class("sb-empty")
+                    .class("fui-empty")
                     .text(env.t.t("ui_not_found")),
             )
             .child(link(&env.path("/home")).text(env.t.t("ui_home_button")))
@@ -112,9 +112,18 @@ pub(crate) fn sidebar(env: &Env, state: &State, router: &Router) -> View {
 fn tile(env: &Env, id: &str, rest: &str, title: &str, desc: &str) -> Element {
     link(&env.path(rest))
         .attr("id", id.to_string())
-        .class("sb-tile")
-        .child(div().class("sb-tile-title").text(env.t.t(title)))
-        .child(div().class("sb-muted").text(env.t.t(desc)))
+        .class("fui-link-card")
+        .child(
+            div()
+                .class("fui-link-card-body")
+                .child(div().class("fui-link-card-title").text(env.t.t(title)))
+                .child(div().class("fui-link-card-desc").text(env.t.t(desc))),
+        )
+        .child(
+            div()
+                .class("fui-link-card-arrow")
+                .child(forge_shell::icon("arrow-right")),
+        )
 }
 
 /// A card for each screen that is switched on.
@@ -137,11 +146,11 @@ pub(crate) fn home(env: &Env, state: &State) -> View {
                 if !caps.models_dashboard && !caps.vllm_management {
                     return p()
                         .attr("id", "no-services")
-                        .class("sb-empty")
+                        .class("fui-empty")
                         .text(env.t.t("ui_home_no_services"))
                         .into_view();
                 }
-                let mut cards = div().class("sb-grid sb-tiles");
+                let mut cards = div().class("fui-card-grid");
                 if caps.models_dashboard {
                     cards = cards.child(tile(
                         &env,
@@ -779,7 +788,7 @@ pub(crate) fn models(env: &Env, state: &State) -> View {
                 if count == 0 {
                     return p()
                         .attr("id", "no-models")
-                        .class("sb-empty")
+                        .class("fui-empty")
                         .text(env.t.t("ui_models_empty"))
                         .into_view();
                 }
@@ -1534,7 +1543,7 @@ pub(crate) fn vllm(env: &Env, state: &State) -> View {
                         .class("vllm-instances-grid sb-grid")
                         .child(
                             p().attr("id", "no-instances")
-                                .class("sb-empty")
+                                .class("fui-empty")
                                 .text(env.t.t("ui_vllm_no_instances")),
                         )
                         .into_view();

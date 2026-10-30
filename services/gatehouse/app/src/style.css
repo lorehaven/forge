@@ -3,15 +3,10 @@
 .gh-top{display:contents}
 .gh-public #dashboard,.gh-public #home{display:none}
 .gh-page{display:flex;flex-direction:column;gap:1.25rem;width:100%}
-.gh-empty{margin:3rem 0;text-align:center;color:var(--fui-text-tertiary)}
 .gh-current{background:var(--fui-surface-2);color:var(--fui-text);font-weight:600}
 .gh-hint{color:var(--fui-text-tertiary);font-size:.875rem;margin:.25rem 0}
 a.gh-hint{display:block}
 .gh-mono{font-family:var(--fui-mono);font-size:.8125rem;word-break:break-all;background:var(--fui-bg-sunken);border:1px solid var(--fui-border);padding:.625rem .875rem;border-radius:var(--fui-radius-md);margin:0}
-.gh-notice{padding:.75rem 1rem;border-radius:var(--fui-radius-lg);margin:0 0 1rem;border:1px solid var(--fui-gray-soft-border);background:var(--fui-gray-soft-bg)}
-.gh-notice.ok{background:var(--fui-success-soft-bg);border-color:var(--fui-success-soft-border);color:var(--fui-success-soft-text)}
-.gh-notice.error{background:var(--fui-error-soft-bg);border-color:var(--fui-error-soft-border);color:var(--fui-error-soft-text)}
-.gh-form .gh-notice{margin:0;font-size:.875rem}
 
 /* the dashboard */
 .home-container{display:flex;flex-direction:column;gap:1.25rem;width:100%}
@@ -22,16 +17,6 @@ a.gh-hint{display:block}
 .home-section-title{margin:0;font-size:.8125rem;font-weight:600;color:var(--fui-text-tertiary)}
 .home-subtitle{margin:0;color:var(--fui-text-tertiary)}
 .home-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,20rem),1fr));gap:1.25rem}
-.home-card{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1.25rem 1.5rem;background:var(--fui-surface);border:1px solid var(--fui-border);border-radius:var(--fui-radius-xl);box-shadow:var(--fui-shadow-xs);color:inherit !important;text-decoration:none !important;transition:border-color .15s,box-shadow .15s;min-width:0}
-.home-card:hover{border-color:var(--fui-brand-400);box-shadow:var(--fui-shadow-md)}
-.home-card-body{display:flex;flex-direction:column;gap:.25rem;min-width:0}
-.home-card-title{font-size:1rem;font-weight:600;color:var(--fui-text);overflow-wrap:anywhere}
-.home-card-desc{font-size:.875rem;color:var(--fui-text-tertiary)}
-.home-card-arrow{display:flex;color:var(--fui-text-tertiary);flex-shrink:0}
-.home-card-arrow .fui-ico{width:1.75rem;height:1.75rem}
-.home-card:hover .home-card-arrow{color:var(--fui-brand-soft-text)}
-.home-card-icon{width:2.75rem;height:2.75rem;border-radius:.625rem;flex:0 0 auto;display:block}
-.home-card-body{flex:1 1 auto}
 
 /* panels and forms */
 .admin-container{display:flex;flex-direction:column;gap:1.25rem;max-width:56rem;width:100%;margin:0 auto}
@@ -99,3 +84,7 @@ a.gh-hint{display:block}
   .gh-matrix-row{grid-template-columns:1fr;gap:.25rem}
   .gh-edit{margin-left:0}
 }
+.home-card{min-width:0}
+.fui-app .gh-form .gh-notice{margin:0;font-size:.875rem}
+/* text people copy */
+.gh-mono,.gh-username,.gh-qr,.gh-hint{user-select:text}

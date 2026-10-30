@@ -4,7 +4,7 @@
 
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body { background: var(--fui-bg); height: 100%; }
-body { margin: 0; font-family: var(--fui-font); font-size: 0.875rem; line-height: 1.43; color: var(--fui-text); -webkit-font-smoothing: antialiased; user-select: auto; }
+body { margin: 0; font-family: var(--fui-font); font-size: 0.875rem; line-height: 1.43; color: var(--fui-text); -webkit-font-smoothing: antialiased; }
 
 /* quench paints every element with its shell colour and font; take text colour back to inherit */
 .fui-app *, .fui-auth * { font-family: inherit; color: inherit; }
@@ -19,6 +19,14 @@ body { margin: 0; font-family: var(--fui-font); font-size: 0.875rem; line-height
 .fui-app p { margin: 0; }
 .fui-app a { color: var(--fui-link); text-decoration: none; }
 .fui-app a:hover { text-decoration: underline; }
+/* links that are cards, tiles, buttons, tabs, nav items or chips never underline (one rule for all services; .fui-plain opts in) */
+.fui-app a:is([class*="card"], [class*="tile"], [class*="btn"], [class*="button"], [class*="chip"], [class*="tab"], [class*="nav"], [class*="menu"], [class*="-item"], .fui-plain, .wh-link, .wh-tag, .wh-back):hover { text-decoration: none; }
+
+/* text is not selected by accident while tapping or dragging; what people copy opts back in with .fui-selectable (inputs, code, logs, errors are selectable by default) */
+.fui-app, .fui-auth { -webkit-user-select: none; user-select: none; }
+.fui-app input, .fui-app textarea, .fui-app [contenteditable], .fui-app [contenteditable] *, .fui-app pre, .fui-app code, .fui-app samp, .fui-app kbd,
+.fui-app .fui-selectable, .fui-app .fui-selectable *, .fui-app .fui-code-block, .fui-app .fui-alert, .fui-app .fui-notice, .fui-app .fui-field-error,
+.fui-auth input, .fui-auth textarea { -webkit-user-select: text; user-select: text; }
 .fui-app code, .fui-app pre, .fui-mono { font-family: var(--fui-mono); font-size: 0.8125rem; }
 .fui-app hr { border: 0; border-top: 1px solid var(--fui-border); margin: 1rem 0; width: 100%; }
 

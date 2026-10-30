@@ -33,7 +33,7 @@ impl Env {
 
 fn waiting(env: &Env) -> View {
     p().attr("id", "waiting")
-        .class("gt-empty")
+        .class("fui-empty")
         .text(env.t.t("ui_loading"))
         .into_view()
 }
@@ -44,7 +44,7 @@ pub fn not_found(env: &Env) -> View {
         .class("gt-page")
         .child(
             p().attr("id", "not-found")
-                .class("gt-empty")
+                .class("fui-empty")
                 .text(env.t.t("ui_not_found")),
         )
         .child(link(&env.path("/home")).text(env.t.t("ui_nav_targets")))
@@ -95,12 +95,12 @@ pub(crate) fn banner(env: &Env, state: &State, login_url: &str) -> View {
         let problem_view = match problem.get() {
             Some(Problem::Failed(why)) => p()
                 .attr("id", "problem")
-                .class("gt-notice gt-notice-error")
+                .class("fui-notice fui-notice-error")
                 .text(why)
                 .into_view(),
             Some(Problem::SignedOut) => p()
                 .attr("id", "problem")
-                .class("gt-notice gt-notice-error")
+                .class("fui-notice fui-notice-error")
                 .child(span().text(format!("{} ", env.t.t("ui_session_ended"))))
                 .child(
                     a().attr("id", "sign-in")
@@ -113,9 +113,9 @@ pub(crate) fn banner(env: &Env, state: &State, login_url: &str) -> View {
         let notice_view = notice.get().map_or(View::Empty, |Notice { ok, text }| {
             p().attr("id", "notice")
                 .class(if ok {
-                    "gt-notice gt-notice-ok"
+                    "fui-notice fui-notice-ok"
                 } else {
-                    "gt-notice gt-notice-error"
+                    "fui-notice fui-notice-error"
                 })
                 .text(text)
                 .into_view()
@@ -127,7 +127,7 @@ pub(crate) fn banner(env: &Env, state: &State, login_url: &str) -> View {
                 let no_pending = pending.clone();
                 div()
                     .attr("id", "confirm")
-                    .class("gt-notice gt-notice-info gt-confirm")
+                    .class("fui-notice fui-notice-info gt-confirm")
                     .child(span().attr("id", "confirm-question").text(question))
                     .child(
                         button()
@@ -306,7 +306,7 @@ pub(crate) fn home(env: &Env, state: &State) -> View {
         View::dynamic(move || {
             busy.get().map_or(View::Empty, |op| {
                 p().attr("id", "busy")
-                    .class("gt-notice gt-notice-info")
+                    .class("fui-notice fui-notice-info")
                     .child(
                         link(&env.path(&format!("/operations/{}", op.id)))
                             .text(format!("{} …", op.title)),
@@ -359,7 +359,7 @@ pub(crate) fn home(env: &Env, state: &State) -> View {
             if total == 0 {
                 return p()
                     .attr("id", "no-packages")
-                    .class("gt-empty")
+                    .class("fui-empty")
                     .text(env.t.t("ui_home_no_targets"))
                     .into_view();
             }
@@ -1101,7 +1101,7 @@ pub(crate) fn operations(env: &Env, state: &State) -> View {
                 None => waiting(&env),
                 Some(0) => p()
                     .attr("id", "no-operations")
-                    .class("gt-empty")
+                    .class("fui-empty")
                     .text(env.t.t("ui_ops_none"))
                     .into_view(),
                 Some(_) => View::Empty,
@@ -1146,7 +1146,7 @@ pub(crate) fn operation(env: &Env, state: &State, id: String) -> View {
             )))
             .child(op.error.clone().map(|error| {
                 p().attr("id", "operation-error")
-                    .class("gt-notice gt-notice-error")
+                    .class("fui-notice fui-notice-error")
                     .text(error)
             }))
             .child(

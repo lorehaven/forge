@@ -58,7 +58,7 @@ impl Env {
 
 pub(crate) fn waiting(env: &Env) -> View {
     p().attr("id", "waiting")
-        .class("cv-empty")
+        .class("fui-empty")
         .text(env.t.t("ui_loading"))
         .into_view()
 }
@@ -66,7 +66,7 @@ pub(crate) fn waiting(env: &Env) -> View {
 /// A line that says there is nothing here.
 pub(crate) fn nothing(env: &Env, key: &str, id: &str) -> Element {
     p().attr("id", id.to_string())
-        .class("cv-empty")
+        .class("fui-empty")
         .text(env.t.t(key))
 }
 

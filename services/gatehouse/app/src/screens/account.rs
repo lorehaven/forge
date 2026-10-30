@@ -431,7 +431,7 @@ pub(crate) fn mfa_enroll(env: &Env, state: &State, _ctx: &RouteContext) -> View 
                 }
                 .map_or(View::Empty, |key| {
                     p().attr("id", "mfa-error")
-                        .class("gh-notice error")
+                        .class("fui-notice fui-notice-error gh-notice")
                         .attr("role", "alert")
                         .text(env.t.t(&key))
                         .into_view()

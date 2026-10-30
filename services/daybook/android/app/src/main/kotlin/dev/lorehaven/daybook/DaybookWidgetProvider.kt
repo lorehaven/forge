@@ -9,6 +9,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.widget.RemoteViews
 
 /**
@@ -38,8 +39,38 @@ class DaybookWidgetProvider : AppWidgetProvider() {
 
     override fun onDisabled(context: Context) = WidgetRefresh.cancel(context)
 
+    /** A receiver that throws takes the whole process down; the widget must never do that, whatever the system sends. */
+    override fun onReceive(context: Context, intent: Intent) {
+        runCatching { super.onReceive(context, intent) }.onFailure { Log.w(TAG, "widget broadcast ${intent.action} failed: $it") }
+    }
+
     companion object {
+        private const val TAG = "daybook-widget"
+
+        /**
+         * Draws one widget. If building the full widget fails for any reason (an unreadable snapshot, a resource the
+         * launcher cannot apply), a plain "open Daybook" tile is shown instead: the launcher's own answer to a widget
+         * that cannot be applied is "Problem loading widget", which says nothing and cannot be tapped.
+         */
         fun update(context: Context, manager: AppWidgetManager, widgetId: Int) {
+            val views = runCatching { build(context, widgetId) }
+                .onFailure { Log.w(TAG, "widget $widgetId could not be built: $it") }
+                .getOrNull()
+            if (views != null && runCatching { manager.updateAppWidget(widgetId, views) }.isSuccess) {
+                runCatching { manager.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_list) }
+                return
+            }
+            runCatching { manager.updateAppWidget(widgetId, fallback(context, widgetId)) }
+                .onFailure { Log.w(TAG, "widget $widgetId fallback failed: $it") }
+        }
+
+        private fun fallback(context: Context, widgetId: Int): RemoteViews {
+            val views = RemoteViews(context.packageName, R.layout.daybook_widget_fallback)
+            views.setOnClickPendingIntent(R.id.widget_fallback, launch(context, widgetId * 2 + 1, "daybook://open?list=inbox"))
+            return views
+        }
+
+        private fun build(context: Context, widgetId: Int): RemoteViews {
             val snapshot = WidgetData.snapshot(context)
             val selected = WidgetData.effectiveSelection(snapshot, WidgetData.selection(context, widgetId))
 
@@ -71,9 +102,7 @@ class DaybookWidgetProvider : AppWidgetProvider() {
 
             // A task: open the app on it. The row supplies the URI; this is the shared template.
             views.setPendingIntentTemplate(R.id.widget_list, template(context))
-
-            manager.updateAppWidget(widgetId, views)
-            manager.notifyAppWidgetViewDataChanged(widgetId, R.id.widget_list)
+            return views
         }
 
         private fun launch(context: Context, code: Int, link: String): PendingIntent =

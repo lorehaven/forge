@@ -29,7 +29,7 @@ impl Env {
 
 fn waiting(env: &Env) -> View {
     p().attr("id", "waiting")
-        .class("wb-empty")
+        .class("fui-empty")
         .text(env.t.t("ui_loading"))
         .into_view()
 }
@@ -40,7 +40,7 @@ pub fn not_found(env: &Env) -> View {
         .class("wb-page")
         .child(
             p().attr("id", "not-found")
-                .class("wb-empty")
+                .class("fui-empty")
                 .text(env.t.t("ui_not_found")),
         )
         .child(link(&env.path("/home")).text(env.t.t("ui_nav_projects")))
@@ -247,7 +247,7 @@ pub(crate) fn home(env: &Env, state: &State) -> View {
             if projects.is_empty() {
                 return p()
                     .attr("id", "no-projects")
-                    .class("wb-empty")
+                    .class("fui-empty")
                     .text(env.t.t("ui_home_no_projects"))
                     .into_view();
             }

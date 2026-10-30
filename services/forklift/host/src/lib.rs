@@ -35,7 +35,7 @@ type Then<T> = Box<dyn FnOnce(T)>;
 
 /// The device's side of the backup.
 pub trait Platform {
-    /// A page (up to 500) of the media library from `offset`: `images` or `video`.
+    /// A page (up to [`MEDIA_PAGE`]) of the media library from `offset`: `images` or `video`.
     fn media(&self, kind: &'static str, offset: u32, then: Then<Result<Vec<Found>, String>>);
     /// What is directly in a picked folder.
     fn folder(&self, uri: &str, then: Then<Result<Vec<Node>, String>>);
@@ -102,6 +102,13 @@ struct State {
     scan_ok: bool,
     /// Whether the timer that looks for new files is already running.
     rescan_scheduled: bool,
+    /// The ids of the files the running scan has met in the category it is reading (what it did not meet is gone).
+    seen: Vec<String>,
+    /// How many files the running scan has looked at.
+    looked_at: usize,
+    /// When the app was last told the numbers, and whether a telling is already set for later.
+    published_ms: i64,
+    publish_set: bool,
 }
 
 /// The controller.
@@ -112,6 +119,10 @@ pub struct Controller {
     state: RefCell<State>,
 }
 
+/// How many files of the media library are asked for at a time.
+pub const MEDIA_PAGE: u32 = 2000;
+/// The most often the app is told the numbers while files come in or go out (a burst of events is one picture).
+pub const PUBLISH_EVERY_MS: i64 = 250;
 /// How often the manifest is written while uploads go on.
 const SAVE_EVERY_MS: i64 = 3000;
 /// How often a running app looks for new files by itself.
@@ -120,8 +131,21 @@ const RESCAN_MS: u64 = 10 * 60 * 1000;
 impl Controller {
     #[must_use]
     pub fn new(platform: Rc<dyn Platform>, store: Store, emit: Rc<dyn Fn(Msg)>) -> Rc<Self> {
+        let manifest = store.manifest();
+        Self::with_manifest(platform, store, emit, manifest)
+    }
+
+    /// [`new`](Self::new) with a manifest that was read already (a host reads it off its main thread, which the screen
+    /// must not wait for).
+    #[must_use]
+    pub fn with_manifest(
+        platform: Rc<dyn Platform>,
+        store: Store,
+        emit: Rc<dyn Fn(Msg)>,
+        manifest: forklift_core::Manifest,
+    ) -> Rc<Self> {
         let settings = store.settings();
-        let engine = Engine::new(store.manifest(), settings.concurrency);
+        let engine = Engine::new(manifest, settings.concurrency);
         Rc::new(Self {
             platform,
             store,
@@ -139,6 +163,10 @@ impl Controller {
                 listing: None,
                 scan_ok: true,
                 rescan_scheduled: false,
+                seen: Vec::new(),
+                looked_at: 0,
+                published_ms: i64::MIN / 2,
+                publish_set: false,
             }),
         })
     }
@@ -153,17 +181,62 @@ impl Controller {
         let working = st.scanning || st.engine.running() > 0;
         let mut shot = Snapshot::of(&st.engine, &st.settings, working, self.store.checked_ms());
         shot.quota = st.quota;
+        shot.looked_at = if st.scanning { st.looked_at } else { 0 };
         shot
     }
 
     fn publish(&self) {
+        self.state.borrow_mut().published_ms = self.platform.now_ms();
         (self.emit)(Msg::Snapshot(Box::new(self.snapshot())));
+    }
+
+    /// [`publish`](Self::publish) for what comes in bursts (a page of files, an upload that ended): at most once per
+    /// [`PUBLISH_EVERY_MS`], and the last word always comes.
+    fn publish_soon(self: &Rc<Self>) {
+        let wait = {
+            let mut st = self.state.borrow_mut();
+            if st.publish_set {
+                return;
+            }
+            let since = self.platform.now_ms() - st.published_ms;
+            if since >= PUBLISH_EVERY_MS {
+                None
+            } else {
+                st.publish_set = true;
+                Some(PUBLISH_EVERY_MS - since)
+            }
+        };
+        match wait {
+            None => self.publish(),
+            Some(ms) => {
+                let this = Rc::clone(self);
+                self.platform.later(
+                    u64::try_from(ms).unwrap_or(0),
+                    Box::new(move || {
+                        this.state.borrow_mut().publish_set = false;
+                        this.publish();
+                    }),
+                );
+            }
+        }
     }
 
     fn save(&self) {
         let mut st = self.state.borrow_mut();
         st.saved_ms = self.platform.now_ms();
         self.store.set_manifest(&st.engine.manifest);
+        drop(st);
+        self.store.set_snapshot(&self.snapshot());
+    }
+
+    /// A save the controller does not wait for (the file is written by another thread): for the periodic one while
+    /// uploads go on.
+    fn save_in_background(&self) {
+        let mut st = self.state.borrow_mut();
+        st.saved_ms = self.platform.now_ms();
+        self.store.set_manifest_in_background(&st.engine.manifest);
+        drop(st);
+        self.store.set_snapshot(&self.snapshot());
     }
 
     fn notice(&self, text: &str) {
@@ -243,6 +316,7 @@ impl Controller {
             }
             st.scanning = true;
             st.scan_ok = true;
+            st.looked_at = 0;
             if manual {
                 st.engine.resume();
             }
@@ -257,17 +331,26 @@ impl Controller {
             self.finish_scan();
             return;
         };
+        {
+            let mut st = self.state.borrow_mut();
+            st.seen.clear();
+        }
         let this = Rc::clone(self);
         let key = category.key.clone();
-        let done: Then<Vec<Found>> = Box::new(move |found| {
+        // What was read of the category is already in the manifest (each page was taken as it came); this is the end of
+        // it: only a scan that read everything may say what has gone.
+        let done: Then<()> = Box::new(move |()| {
             {
                 let mut st = this.state.borrow_mut();
-                st.engine.manifest.scan(&key, &found, manual);
-                // Only a scan that read everything may say what has gone.
                 if st.scan_ok {
-                    st.engine.manifest.mark_missing(&key, &found);
+                    let seen = std::mem::take(&mut st.seen);
+                    let ids: std::collections::BTreeSet<&str> =
+                        seen.iter().map(String::as_str).collect();
+                    st.engine.manifest.mark_missing_ids(&key, &ids);
                 }
+                st.seen.clear();
             }
+            this.publish_soon();
             this.scan_category(categories, at + 1, manual);
         });
         match category.folder {
@@ -277,18 +360,28 @@ impl Controller {
                 } else {
                     "images"
                 };
-                self.collect_media(kind, 0, Vec::new(), done);
+                self.collect_media(category.key, kind, 0, manual, done);
             }
-            Some(uri) => self.collect_folder(vec![uri], Vec::new(), done),
+            Some(uri) => self.collect_folder(category.key, vec![uri], manual, done),
         }
+    }
+
+    /// Takes files a source just listed: they are in the manifest at once, so the numbers on the screen grow while the
+    /// scan goes on, and nothing is held until its end but the ids.
+    fn take(&self, category: &str, found: &[Found], manual: bool) {
+        let mut st = self.state.borrow_mut();
+        st.engine.manifest.scan(category, found, manual);
+        st.seen.extend(found.iter().map(|f| f.local_id.clone()));
+        st.looked_at += found.len();
     }
 
     fn collect_media(
         self: &Rc<Self>,
+        category: String,
         kind: &'static str,
         offset: u32,
-        mut found: Vec<Found>,
-        done: Then<Vec<Found>>,
+        manual: bool,
+        done: Then<()>,
     ) {
         let this = Rc::clone(self);
         self.platform.media(
@@ -296,18 +389,19 @@ impl Controller {
             offset,
             Box::new(move |page| match page {
                 Ok(page) => {
-                    let full = page.len() >= 500;
-                    found.extend(page);
+                    let full = page.len() >= MEDIA_PAGE as usize;
+                    this.take(&category, &page, manual);
+                    this.publish_soon();
                     if full {
-                        this.collect_media(kind, offset + 500, found, done);
+                        this.collect_media(category, kind, offset + MEDIA_PAGE, manual, done);
                     } else {
-                        done(found);
+                        done(());
                     }
                 }
                 Err(why) => {
                     this.state.borrow_mut().scan_ok = false;
                     this.notice(&format!("Could not read the media library: {why}"));
-                    done(found);
+                    done(());
                 }
             }),
         );
@@ -315,12 +409,13 @@ impl Controller {
 
     fn collect_folder(
         self: &Rc<Self>,
+        category: String,
         mut queue: Vec<String>,
-        mut found: Vec<Found>,
-        done: Then<Vec<Found>>,
+        manual: bool,
+        done: Then<()>,
     ) {
         let Some(uri) = queue.pop() else {
-            done(found);
+            done(());
             return;
         };
         let this = Rc::clone(self);
@@ -329,6 +424,7 @@ impl Controller {
             Box::new(move |nodes| {
                 match nodes {
                     Ok(nodes) => {
+                        let mut found = Vec::new();
                         for node in nodes {
                             match node {
                                 Node::Dir(child) => queue.push(child),
@@ -339,13 +435,15 @@ impl Controller {
                                 }
                             }
                         }
+                        this.take(&category, &found, manual);
+                        this.publish_soon();
                     }
                     Err(why) => {
                         this.state.borrow_mut().scan_ok = false;
                         this.notice(&format!("Could not read a folder: {why}"));
                     }
                 }
-                this.collect_folder(queue, found, done);
+                this.collect_folder(category, queue, manual, done);
             }),
         );
     }
@@ -417,6 +515,7 @@ impl Controller {
             Box::new(move |quota| {
                 this.state.borrow_mut().quota = quota;
                 this.publish();
+                this.store.set_snapshot(&this.snapshot());
             }),
         );
     }
@@ -455,7 +554,7 @@ impl Controller {
             self.schedule_retry();
             return;
         }
-        self.publish();
+        self.publish_soon();
         let (this, base, storage) = {
             let st = self.state.borrow();
             (
@@ -530,10 +629,16 @@ impl Controller {
         if idle && matches!(verdict, Verdict::Done) {
             self.refresh_quota();
         }
-        if idle || now - self.state.borrow().saved_ms >= SAVE_EVERY_MS {
+        if idle {
             self.save();
+        } else if now - self.state.borrow().saved_ms >= SAVE_EVERY_MS {
+            self.save_in_background();
         }
-        self.publish();
+        if idle {
+            self.publish();
+        } else {
+            self.publish_soon();
+        }
         match verdict {
             Verdict::Done | Verdict::Retry => self.pump(),
             Verdict::Reauthenticate => {
@@ -841,5 +946,6 @@ impl Controller {
         self.state.borrow_mut().engine.stop();
         self.save();
         self.store.clear_token();
+        self.store.clear_snapshot();
     }
 }

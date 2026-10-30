@@ -52,7 +52,7 @@ pub(crate) fn initializing(env: &Env, state: &State) -> View {
             // No answer from switchboard: the rows cannot say more than "connecting".
             if models.with(|m| m.as_ref().is_some_and(|m| !m.switchboard_ok)) {
                 p().attr("id", "init-waiting")
-                    .class("sg-notice sg-error")
+                    .class("fui-notice fui-notice-error")
                     .text(env.t.t("ui_init_waiting"))
                     .into_view()
             } else {

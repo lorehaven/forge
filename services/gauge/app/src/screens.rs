@@ -103,7 +103,7 @@ fn card(t: &I18n, card: &HostCard, base: &str, now: f64) -> Element {
                 .child(state(t, host.up)),
         )
         .child(p().class("gg-sub").text(sub))
-        .child(outage(host, now).map(|e| p().class("gg-notice").text(e)))
+        .child(outage(host, now).map(|e| p().class("fui-notice fui-notice-error").text(e)))
         .child(meter(t, "ui_cpu", view.and_then(|v| v.cpu_pct)))
         .child(meter(t, "ui_memory", view.and_then(Metrics::mem_pct)))
         .child(
@@ -139,14 +139,14 @@ pub fn hosts(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: f64) -> View
     let Some(hosts) = hosts else {
         return p()
             .attr("id", "waiting")
-            .class("gg-empty")
+            .class("fui-empty")
             .text(t.t("ui_waiting"))
             .into_view();
     };
     if hosts.is_empty() {
         return p()
             .attr("id", "no-hosts")
-            .class("gg-empty")
+            .class("fui-empty")
             .text(t.t("ui_hosts_none"))
             .into_view();
     }
@@ -500,12 +500,12 @@ pub fn host(t: &I18n, detail: &HostDetail, base: &str, now: f64) -> View {
                 )
                 .child(state(t, summary.up)),
         )
-        .child(outage(summary, now).map(|e| p().class("gg-notice").text(e)));
+        .child(outage(summary, now).map(|e| p().class("fui-notice fui-notice-error").text(e)));
     let Some(view) = summary.view.as_ref() else {
         return page
             .child(
                 p().attr("id", "waiting")
-                    .class("gg-empty")
+                    .class("fui-empty")
                     .text(t.t("ui_waiting")),
             )
             .into_view();
@@ -537,7 +537,7 @@ pub fn not_found(t: &I18n, base: &str) -> View {
         )
         .child(
             p().attr("id", "not-found")
-                .class("gg-empty")
+                .class("fui-empty")
                 .text(t.t("ui_host_not_found")),
         )
         .into_view()

@@ -71,7 +71,7 @@ class FilesPlugin(private val activity: Activity) : Plugin("files") {
         call.permissions(needed) { granted ->
             if (!granted) return@permissions call.reject("permission_denied", "the media library is not allowed")
             val query = Bundle().apply {
-                putInt(ContentResolver.QUERY_ARG_LIMIT, args.optInt("limit", 50).coerceIn(1, 500))
+                putInt(ContentResolver.QUERY_ARG_LIMIT, args.optInt("limit", 50).coerceIn(1, 5000))
                 putInt(ContentResolver.QUERY_ARG_OFFSET, args.optInt("offset", 0))
                 putStringArray(ContentResolver.QUERY_ARG_SORT_COLUMNS, arrayOf(MediaStore.MediaColumns.DATE_MODIFIED))
                 putInt(ContentResolver.QUERY_ARG_SORT_DIRECTION, ContentResolver.QUERY_SORT_DIRECTION_DESCENDING)

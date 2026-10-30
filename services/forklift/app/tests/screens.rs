@@ -36,6 +36,7 @@ fn setup(has_session: bool, confirmed: bool) -> Setup {
             ..Settings::default()
         },
         has_session,
+        initial: Snapshot::default(),
         phone: true,
         offset_minutes: 0,
         toast_ms: 0,
@@ -589,3 +590,34 @@ fn a_computer_has_no_media_library_or_battery_to_set() {
 }
 
 quench_test::main!();
+
+#[quench_test::test]
+fn the_dashboard_has_last_times_numbers_at_the_first_frame_before_the_host_says_anything() {
+    let fresh = Rc::new(quench_ui::platform::ManualPlatform::new());
+    quench_ui::platform::install(fresh);
+    let mut setup = setup(true, true);
+    setup.initial = shot(40, 40);
+    let Forklift { view, .. } = forklift(Rc::new(|_| {}), setup);
+    let r = Rc::new(TestRenderer::new());
+    let _m = mount(&r, &r.root(), view);
+    assert!(
+        r.text().contains("All 40 files are backed up"),
+        "{}",
+        r.text()
+    );
+    assert!(!r.text().contains("Nothing to back up yet"), "{}", r.text());
+}
+
+#[quench_test::test]
+fn a_scan_under_way_says_how_many_files_it_has_looked_at() {
+    let (r, _asked, deliver, _m) = live(true);
+    let mut s = shot(5, 2);
+    s.working = true;
+    s.looked_at = 1234;
+    deliver(Msg::Snapshot(Box::new(s)));
+    assert!(
+        r.text().contains("Looking at your files \u{b7} 1234"),
+        "{}",
+        r.text()
+    );
+}

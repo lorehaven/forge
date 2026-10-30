@@ -270,6 +270,11 @@ pub fn group(
                     .iter()
                     .find(|r| key(&r.kind, &r.name, r.namespace.as_deref()) == k);
                 seen.insert(k);
+                // A Job runs once and is cleaned up after (a TTL, or the next version's own Job: `foundry-0-2-17`):
+                // gone is what finished looks like, and applying it again would only run it again.
+                if found.is_none() && item.kind.eq_ignore_ascii_case("job") {
+                    continue;
+                }
                 let state = match found {
                     _ if is_secret(&item.kind) => State::Hidden,
                     Some(r) if r.edited => State::Edited,

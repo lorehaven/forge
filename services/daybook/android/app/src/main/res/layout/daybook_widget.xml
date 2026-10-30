@@ -39,7 +39,7 @@
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:text="Inbox"
-                android:textColor="#FFFFFFFF"
+                android:textColor="#FFF4F4F5"
                 android:textSize="17sp"
                 android:textStyle="bold" />
 
@@ -48,7 +48,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
                 android:text="▾"
-                android:textColor="#FFA3A3A3"
+                android:textColor="#FF94969C"
                 android:textSize="15sp" />
         </LinearLayout>
 
@@ -72,7 +72,7 @@
             android:id="@+id/widget_list"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:divider="#22FFFFFF"
+            android:divider="#FF232528"
             android:dividerHeight="1dp" />
 
         <TextView
@@ -81,7 +81,7 @@
             android:layout_height="match_parent"
             android:gravity="center"
             android:text="@string/widget_empty_tasks"
-            android:textColor="#FFA3A3A3"
+            android:textColor="#FF94969C"
             android:textSize="14sp" />
     </FrameLayout>
 </LinearLayout>

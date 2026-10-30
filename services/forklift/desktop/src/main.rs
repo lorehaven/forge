@@ -260,6 +260,7 @@ fn main() -> std::io::Result<()> {
         })
     };
 
+    let store_for_snapshot = store.clone();
     let Forklift { view, deliver } = forklift(
         requests,
         Setup {
@@ -273,6 +274,11 @@ fn main() -> std::io::Result<()> {
                 ..settings.clone()
             },
             has_session,
+            initial: if has_session {
+                store_for_snapshot.snapshot()
+            } else {
+                forklift_core::Snapshot::default()
+            },
             phone: false,
             offset_minutes: offset_minutes(),
             toast_ms: 4000,

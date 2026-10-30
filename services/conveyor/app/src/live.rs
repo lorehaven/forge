@@ -678,12 +678,12 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         View::dynamic(move || match (problem.get(), notice.get()) {
             (Some(Problem::Failed(why)), _) => p()
                 .attr("id", "problem")
-                .class("cv-notice cv-error")
+                .class("fui-notice fui-notice-error")
                 .text(why)
                 .into_view(),
             (Some(Problem::SignedOut), _) => p()
                 .attr("id", "problem")
-                .class("cv-notice cv-error")
+                .class("fui-notice fui-notice-error")
                 .child(span().text(format!("{} ", t.t("ui_session_ended"))))
                 .child(
                     a().attr("id", "sign-in")
@@ -693,17 +693,17 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                 .into_view(),
             (_, Some(Notice::Ok(key))) => p()
                 .attr("id", "notice")
-                .class("cv-notice cv-ok")
+                .class("fui-notice fui-notice-ok")
                 .text(t.t(&key))
                 .into_view(),
             (_, Some(Notice::ErrKey(key))) => p()
                 .attr("id", "notice")
-                .class("cv-notice cv-error")
+                .class("fui-notice fui-notice-error")
                 .text(t.t(&key))
                 .into_view(),
             (_, Some(Notice::Err(why))) => p()
                 .attr("id", "notice")
-                .class("cv-notice cv-error")
+                .class("fui-notice fui-notice-error")
                 .text(why)
                 .into_view(),
             _ => View::Empty,

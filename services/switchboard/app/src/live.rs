@@ -365,12 +365,12 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         View::dynamic(move || match (problem.get(), notice.get()) {
             (Some(Problem::Failed(why)), _) => p()
                 .attr("id", "problem")
-                .class("sb-notice")
+                .class("fui-notice fui-notice-error")
                 .text(why)
                 .into_view(),
             (Some(Problem::SignedOut), _) => p()
                 .attr("id", "problem")
-                .class("sb-notice")
+                .class("fui-notice fui-notice-error")
                 .child(span().text(format!("{} ", i18n.t("ui_session_ended"))))
                 .child(
                     a().attr("id", "sign-in")
@@ -380,7 +380,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                 .into_view(),
             (_, Some(why)) => p()
                 .attr("id", "notice")
-                .class("sb-notice")
+                .class("fui-notice fui-notice-error")
                 .text(screens::reason(&i18n, &why))
                 .into_view(),
             _ => View::Empty,

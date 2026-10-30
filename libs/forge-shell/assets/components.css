@@ -49,12 +49,18 @@
 
 .fui-link-card { display: flex; align-items: center; gap: 1rem; padding: 1.25rem 1.5rem; background: var(--fui-surface); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-xl); box-shadow: var(--fui-shadow-xs); color: inherit !important; text-decoration: none !important; transition: border-color .15s, box-shadow .15s, background-color .15s; min-width: 0; }
 .fui-link-card:hover { border-color: var(--fui-brand-400); box-shadow: var(--fui-shadow-md); }
-.fui-link-card-icon { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 2.75rem; height: 2.75rem; border-radius: var(--fui-radius-lg); background: var(--fui-brand-soft-bg); color: var(--fui-brand-soft-text); font-size: 1.1rem; }
+.fui-link-card-stack { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+.fui-link-card-icon { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 2.75rem; height: 2.75rem; border-radius: var(--fui-radius-lg); background: var(--fui-brand-soft-bg); color: var(--fui-brand-soft-text); font-size: 1.125rem; }
 .fui-link-card-icon i { color: inherit !important; }
-.fui-link-card-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0.125rem; }
+.fui-link-card-img { flex: 0 0 auto; display: block; width: 2.75rem; height: 2.75rem; border-radius: 0.625rem; }
+.fui-link-card-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
 .fui-link-card-title { font-weight: 600; font-size: 1rem; color: var(--fui-text); overflow-wrap: anywhere; }
 .fui-link-card-desc { color: var(--fui-text-tertiary); font-size: 0.875rem; overflow-wrap: anywhere; }
-.fui-link-card-arrow { flex: 0 0 auto; color: var(--fui-text-tertiary) !important; }
+.fui-link-card-arrow { flex: 0 0 auto; display: flex; color: var(--fui-text-tertiary) !important; }
+.fui-link-card-arrow .fui-ico { width: 1.75rem; height: 1.75rem; }
+.fui-link-card:hover .fui-link-card-arrow { color: var(--fui-brand-soft-text) !important; }
+/* the grid every card page uses */
+.fui-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); gap: 1.25rem; }
 
 .fui-stat { display: flex; flex-direction: column; gap: 0.5rem; padding: 1.25rem 1.5rem; background: var(--fui-surface); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-xl); box-shadow: var(--fui-shadow-xs); }
 .fui-stat-label { color: var(--fui-text-tertiary); font-size: 0.875rem; font-weight: 500; }
@@ -125,7 +131,16 @@
 .fui-alert-info { background: var(--fui-blue-soft-bg); border-color: var(--fui-blue-soft-border); color: var(--fui-blue-soft-text); }
 .fui-alert * { color: inherit; }
 
-.fui-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.75rem; padding: 3rem 1.5rem; color: var(--fui-text-tertiary); }
+.fui-app .fui-empty, .fui-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.75rem; padding: 3rem 1.5rem; color: var(--fui-text-tertiary); }
+/* a line that says there is nothing (here), a loading line, a "not found": padded, never flush against its neighbours (use on a p or div) */
+.fui-app .fui-empty { margin: 0; color: var(--fui-text-tertiary); }
+.fui-app .fui-empty-sm { padding: 1.25rem 1rem; }
+/* a banner above the content: .fui-notice-error / -ok / -info (default neutral) */
+.fui-app .fui-notice { display: block; margin: 0 0 1rem; padding: 0.75rem 1rem; border-radius: var(--fui-radius-lg); border: 1px solid var(--fui-gray-soft-border); background: var(--fui-gray-soft-bg); font-size: 0.875rem; overflow-wrap: anywhere; }
+.fui-app .fui-notice-error { background: var(--fui-error-soft-bg); border-color: var(--fui-error-soft-border); color: var(--fui-error-soft-text); }
+.fui-app .fui-notice-ok { background: var(--fui-success-soft-bg); border-color: var(--fui-success-soft-border); color: var(--fui-success-soft-text); }
+.fui-app .fui-notice-info { background: var(--fui-blue-soft-bg); border-color: var(--fui-blue-soft-border); color: var(--fui-blue-soft-text); }
+.fui-app .fui-notice a { text-decoration: underline; }
 .fui-empty-icon { display: inline-flex; align-items: center; justify-content: center; width: 3rem; height: 3rem; border-radius: 50%; background: var(--fui-surface-2); border: 1px solid var(--fui-border); font-size: 1.25rem; }
 .fui-empty-title { color: var(--fui-text); font-weight: 600; font-size: 1rem; }
 

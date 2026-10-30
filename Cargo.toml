@@ -190,6 +190,18 @@ overflow-checks = false
 opt-level = 3
 debug-assertions = false
 overflow-checks = false
+[profile.dev.package.forklift-core]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+[profile.dev.package.forklift-host]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+[profile.dev.package.forklift-net]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
 [profile.dev.package.daybook-app]
 opt-level = 3
 debug-assertions = false

@@ -9,6 +9,8 @@ use crate::catalog::PermissionCatalog;
 
 #[derive(Debug)]
 pub struct ServiceLink {
+    /// The catalog's name (`workbench`): what a person's grants are keyed by.
+    pub name: String,
     pub url: String,
     /// `ui_service_<name>_title` / `_desc`: translations, when a locale has them.
     pub title_key: String,
@@ -34,6 +36,7 @@ pub fn enabled_services(catalog: &PermissionCatalog) -> Vec<ServiceLink> {
             let prefix = env_prefix(service.name);
             let url = service_url(&prefix)?;
             feature_enabled(&format!("FEATURE_{prefix}_ENABLED"), true).then(|| ServiceLink {
+                name: service.name.to_string(),
                 url,
                 title_key: format!("ui_service_{}_title", service.name),
                 desc_key: format!("ui_service_{}_desc", service.name),

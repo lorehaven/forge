@@ -108,6 +108,7 @@ async fn rig_with(settings: Settings) -> Rig {
                     item("Secret", "sage-secret", Some("ml")),
                     item("ClusterRole", "sage-role", None),
                     item("Deployment", "trainer", Some("ml")),
+                    item("Job", "sage-0-1-0", Some("ml")),
                 ],
             },
         )
@@ -163,6 +164,10 @@ async fn resources_are_grouped_by_package_with_what_is_missing_and_what_is_hidde
         state("Secret", "sage-secret"),
         State::Hidden,
         "a Secret is never looked at"
+    );
+    assert!(
+        !ml.rows.iter().any(|r| r.kind == "Job"),
+        "a finished Job that was cleaned up is not missing"
     );
 
     // Workloads come first, then by kind.

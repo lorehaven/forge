@@ -1,10 +1,7 @@
 :root{--sg-bg:var(--fui-bg);--sg-surface:var(--fui-surface);--sg-surface-2:var(--fui-surface-2);--sg-hover:var(--fui-surface-hover);--sg-border:var(--fui-border);--sg-text:var(--fui-text);--sg-text-2:var(--fui-text-secondary);--sg-text-3:var(--fui-text-tertiary);--sg-brand:var(--fui-brand-500)}
 .sg-glyph{display:inline-block;line-height:1;text-align:center}
 .sg-muted{color:var(--sg-text-3)}
-.sg-empty{margin:2rem 0;text-align:center;color:var(--sg-text-3)}
 .sg-page{display:flex;flex-direction:column;gap:1.25rem;width:100%;padding:1.5rem;overflow:auto}
-.sg-notice{margin:.5rem 1rem 0;padding:.6rem 1rem;border-radius:.75rem;border:1px solid var(--fui-gray-soft-border);background:var(--fui-gray-soft-bg)}
-.sg-error{background:var(--fui-error-soft-bg);border-color:var(--fui-error-soft-border);color:var(--fui-error-soft-text)}
 .sg-main{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;height:calc(100vh - var(--fui-topbar-h));overflow:hidden}
 .sg-btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;font:inherit;font-size:.8125rem;padding:.3rem .7rem;color:var(--sg-text-2);background:var(--sg-surface);border:1px solid var(--fui-border-strong,var(--sg-border));border-radius:.5rem;cursor:pointer;text-decoration:none;white-space:nowrap}
 .sg-btn:hover:not(:disabled){background:var(--sg-hover);color:var(--sg-text)}
@@ -121,7 +118,7 @@
 .sg-dialog-name{font-weight:600;overflow-wrap:anywhere}
 .sg-field-error{color:var(--fui-error-soft-text);font-size:.85rem;margin:.4rem 0 0}
 /* initializing */
-.sg-init-card{max-width:32rem;margin:2rem auto;padding:2rem;border:1px solid var(--sg-border);border-radius:1rem;background:var(--sg-surface);display:flex;flex-direction:column;gap:1rem}
+.sg-init-card{max-width:32rem;margin:2rem auto;padding:2rem;border:1px solid var(--sg-border);border-radius:var(--fui-radius-xl);background:var(--sg-surface);display:flex;flex-direction:column;gap:1rem;box-shadow:var(--fui-shadow-xs)}
 .sg-init-title{margin:0}
 .sg-init-subtitle{color:var(--sg-text-3)}
 .sg-model-rows{display:flex;flex-direction:column;gap:.5rem}
@@ -131,3 +128,5 @@
 .sg-model-status-starting{color:var(--fui-warning-soft-text)}
 .sg-model-status-failed{color:var(--fui-error-soft-text)}
 @media (max-width:48rem){.sg-main{height:auto;min-height:70vh}.sg-nav{display:none}}
+/* text people copy */
+.sg-content,.sg-tool-name,.sg-tool-body,.sg-code,.sg-inline-code,.sg-message pre{user-select:text}

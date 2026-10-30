@@ -10,10 +10,8 @@ h3{margin:0;font-size:1rem}
 .wb-page{display:flex;flex-direction:column;gap:1.25rem;width:100%}
 .wb-head{display:flex;align-items:center;justify-content:space-between;gap:1rem}
 .wb-muted{color:var(--wb-text-3);margin:0}
-.wb-empty{margin:3rem 0;text-align:center;color:var(--wb-text-3)}
-.wb-notice{margin:0 0 1rem;padding:.75rem 1rem;border-radius:.75rem;background:var(--wb-notice-bg);color:var(--wb-notice-text);border:1px solid var(--wb-notice-border)}
 .wb-error{margin:0;font-size:.875rem;color:var(--wb-red)}
-.wb-card{display:flex;flex-direction:column;gap:.75rem;padding:1.25rem;min-width:0;background:var(--wb-surface);border:1px solid var(--wb-border);border-radius:1rem}
+.wb-card{display:flex;flex-direction:column;gap:.75rem;padding:1.25rem;min-width:0;background:var(--wb-surface);border:1px solid var(--wb-border);border-radius:var(--fui-radius-xl);box-shadow:var(--fui-shadow-xs)}
 .wb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,18rem),1fr));gap:1.25rem}
 .wb-project:hover{border-color:var(--wb-brand)}
 .wb-btn{font:inherit;font-size:.875rem;padding:.5rem 1rem;color:var(--wb-text);background:var(--wb-surface);border:1px solid var(--wb-border);border-radius:.5rem;cursor:pointer}
@@ -58,3 +56,5 @@ h3{margin:0;font-size:1rem}
 .fui-app .wb-project:hover,.fui-app .wb-ticket-title:hover,.fui-app .wb-link-title:hover{text-decoration:none;color:var(--fui-brand-soft-text)}
 
 @media (min-width:1024px){.wb-board-page{flex:1}.wb-board-page .wb-board{flex:1;align-items:stretch;grid-template-columns:repeat(5,minmax(0,1fr))}.wb-board .wb-column-body{flex:1}}
+/* text people copy */
+.wb-ticket-title,.wb-comment-body,.wb-key,.wb-meta,.wb-error{user-select:text}

@@ -37,6 +37,10 @@ pub fn dashboard(shot: &Signal<Snapshot>, offset_minutes: i32, back_up: Rc<dyn F
                 // names are (a line with nothing to say holds its place with a no-break space).
                 .child(sub_line("sending-line", &sub, move |s| {
                     match s.sending.first() {
+                        // A scan under way says how far it is, in place of a file's name.
+                        None if s.looked_at > 0 => {
+                            format!("Looking at your files \u{b7} {}", s.looked_at)
+                        }
                         None => String::new(),
                         Some(name) => {
                             let more = s.totals.uploading.saturating_sub(1);

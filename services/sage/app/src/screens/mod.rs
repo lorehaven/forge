@@ -49,7 +49,7 @@ pub fn not_found(env: &Env) -> View {
         .class("sg-page")
         .child(
             p().attr("id", "not-found")
-                .class("sg-empty")
+                .class("fui-empty")
                 .text(env.t.t("ui_not_found")),
         )
         .child(link(&env.path("/home")).text(env.t.t("ui_home_button")))
@@ -68,12 +68,12 @@ pub(crate) fn banner(env: &Env, state: &State) -> View {
     View::dynamic(move || match (problem.get(), notice.get()) {
         (Some(Problem::Failed(why)), _) => p()
             .attr("id", "problem")
-            .class("sg-notice sg-error")
+            .class("fui-notice fui-notice-error")
             .text(why)
             .into_view(),
         (Some(Problem::SignedOut), _) => p()
             .attr("id", "problem")
-            .class("sg-notice sg-error")
+            .class("fui-notice fui-notice-error")
             .child(span().text(format!("{} ", t.t("ui_session_ended"))))
             .child(
                 a().attr("id", "sign-in")
@@ -83,12 +83,12 @@ pub(crate) fn banner(env: &Env, state: &State) -> View {
             .into_view(),
         (_, Some(Notice::ErrKey(key))) => p()
             .attr("id", "notice")
-            .class("sg-notice sg-error")
+            .class("fui-notice fui-notice-error")
             .text(t.t(&key))
             .into_view(),
         (_, Some(Notice::Err(why))) => p()
             .attr("id", "notice")
-            .class("sg-notice sg-error")
+            .class("fui-notice fui-notice-error")
             .text(env.words(&why))
             .into_view(),
         _ => View::Empty,

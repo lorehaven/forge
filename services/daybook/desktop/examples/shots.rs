@@ -187,6 +187,13 @@ fn page(width: usize, height: usize, has_session: bool) -> Drawn {
     }
     renderer.add_stylesheet(daybook_app::STYLE);
     renderer.set_viewport(width as f32, height as f32);
+    // `SHOTS_LIGHT=1` draws under a light system scheme (what a phone set to light gives the renderer).
+    if std::env::var_os("SHOTS_LIGHT").is_some() {
+        renderer.set_media(quench_ui_native::MediaEnv {
+            color_scheme: quench_ui_native::ColorScheme::Light,
+            ..quench_ui_native::MediaEnv::default()
+        });
+    }
     let zone = Zone::named("Europe/Warsaw").unwrap();
     let Daybook { view, deliver } = daybook(
         Rc::new(|_| {}),

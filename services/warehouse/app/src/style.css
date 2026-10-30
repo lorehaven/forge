@@ -6,24 +6,15 @@ h3{margin:0;font-size:1rem}
 .wh-current{background:var(--wh-surface-2);color:var(--wh-text);font-weight:600}
 .wh-page{display:flex;flex-direction:column;gap:1.25rem;width:100%}
 .wh-section{display:flex;flex-direction:column;gap:.75rem}
-.wh-empty{margin:2rem 0;text-align:center;color:var(--wh-text-3)}
 .wh-faint{color:var(--wh-text-3);font-size:.85rem}
 .wh-mono{font-family:var(--fui-mono);font-size:.8125rem}
-.wh-notice{margin:0 0 1rem;padding:.75rem 1rem;border-radius:.75rem;background:var(--wh-notice-bg);color:var(--wh-notice-text);border:1px solid var(--wh-notice-border)}
 .wh-error{margin:0;font-size:.875rem;color:var(--wh-red)}
 
 /* home */
-.wh-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,18rem),1fr));gap:1.25rem}
-.wh-card{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1.25rem;min-width:0;background:var(--wh-surface);border:1px solid var(--wh-border);border-radius:1rem;text-decoration:none}
-.wh-card:hover{border-color:var(--wh-brand)}
-.fui-app .wh-card,.fui-app .wh-card:hover{color:var(--fui-text)}
-.wh-card-title{font-weight:600}
-.wh-card-desc{margin-top:.25rem;font-size:.875rem;color:var(--wh-text-3)}
-.wh-card-arrow{color:var(--wh-text-3)}
 
 /* master/detail: a list on the left, details on the right */
 .wh-split{display:grid;grid-template-columns:minmax(14rem,22rem) minmax(0,1fr);gap:1.25rem;align-items:stretch;min-height:0;flex:1}
-.wh-panel{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--wh-surface);border:1px solid var(--wh-border);border-radius:1rem;overflow:hidden}
+.wh-panel{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--wh-surface);border:1px solid var(--wh-border);border-radius:var(--fui-radius-xl);overflow:hidden;box-shadow:var(--fui-shadow-xs)}
 .wh-pane,.wh-detail{display:flex;flex-direction:column;min-height:0;min-width:0;flex:1}
 .wh-panel-title{padding:.875rem 1.25rem;font-size:.8125rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--wh-text-3);border-bottom:1px solid var(--wh-border);overflow-wrap:anywhere}
 .wh-scroll{flex:1 1 auto;min-height:12rem;overflow:auto;padding:.75rem}
@@ -118,3 +109,5 @@ details>summary.wh-folder{cursor:pointer}
 .wh-modal-body p{text-align:center;margin:0 0 1rem}
 .wh-confirm-target{font-family:var(--fui-mono);font-weight:600;color:var(--fui-warning-soft-text);margin-bottom:1.5rem;word-break:break-all;text-align:center}
 @media (max-width:39.99rem){.wh-modal{align-items:flex-end;padding:0}.wh-modal-content{margin:0;width:100%;border-radius:1rem 1rem 0 0}}
+/* text people copy */
+.wh-meta-value,.wh-mono,.wh-preview,.wh-dep,.wh-confirm-target,.wh-crumbs,.wh-file-name,.wh-error{user-select:text}

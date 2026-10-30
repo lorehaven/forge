@@ -26,11 +26,13 @@ fn page(env: &Env, dashboard: &Dashboard) -> View {
     if dashboard.services.is_empty() {
         sections = sections.child(
             p().attr("id", "no-services")
-                .class("gh-empty")
+                .class("fui-empty")
                 .text(env.t.t("ui_home_no_services")),
         );
     } else {
-        let mut cards = div().class("home-grid").attr("id", "services");
+        let mut cards = div()
+            .class("fui-card-grid home-grid")
+            .attr("id", "services");
         for service in &dashboard.services {
             cards = cards.child(service_card(env, service));
         }
@@ -48,20 +50,20 @@ fn page(env: &Env, dashboard: &Dashboard) -> View {
     // The realm itself, not a service: its own section.
     if dashboard.admin {
         let card = link(&env.path("/admin/users"))
-            .class("home-card home-card-gatehouse")
+            .class("fui-link-card home-card home-card-gatehouse")
             .attr("id", "realm-users")
             .child(card_icon(&env.path("/assets/icons/id-card.png")))
             .child(
                 div()
-                    .class("home-card-body")
+                    .class("fui-link-card-body home-card-body")
                     .child(
                         div()
-                            .class("home-card-title")
+                            .class("fui-link-card-title home-card-title")
                             .text(env.t.t("ui_admin_users_title")),
                     )
                     .child(
                         div()
-                            .class("home-card-desc")
+                            .class("fui-link-card-desc home-card-desc")
                             .text(env.t.t("ui_admin_users_desc")),
                     ),
             )
@@ -73,7 +75,7 @@ fn page(env: &Env, dashboard: &Dashboard) -> View {
                     h3().class("home-section-title")
                         .text(env.t.t("ui_home_group_realm")),
                 )
-                .child(div().class("home-grid").child(card)),
+                .child(div().class("fui-card-grid home-grid").child(card)),
         );
     }
 
@@ -94,7 +96,7 @@ fn page(env: &Env, dashboard: &Dashboard) -> View {
 fn service_card(env: &Env, service: &ServiceCard) -> Element {
     a().attr("href", service.url.clone())
         .attr("data-service", service.label.clone())
-        .class(format!("home-card {}", service.card_class))
+        .class(format!("fui-link-card home-card {}", service.card_class))
         .child(
             gatehouse_core::model::ICONS
                 .contains(&service.slug())
@@ -102,16 +104,20 @@ fn service_card(env: &Env, service: &ServiceCard) -> Element {
         )
         .child(
             div()
-                .class("home-card-body")
+                .class("fui-link-card-body home-card-body")
                 .child(
                     div()
-                        .class("home-card-title")
+                        .class("fui-link-card-title home-card-title")
                         .text(env.tr_or(&service.title_key, &service.label)),
                 )
-                .child(div().class("home-card-desc").text(env.tr_or(
-                    &service.desc_key,
-                    service.description.as_deref().unwrap_or_default(),
-                ))),
+                .child(
+                    div()
+                        .class("fui-link-card-desc home-card-desc")
+                        .text(env.tr_or(
+                            &service.desc_key,
+                            service.description.as_deref().unwrap_or_default(),
+                        )),
+                ),
         )
         .child(arrow())
 }
@@ -119,7 +125,7 @@ fn service_card(env: &Env, service: &ServiceCard) -> Element {
 /// The service's picture on its card.
 fn card_icon(src: &str) -> Element {
     img()
-        .class("home-card-icon")
+        .class("fui-link-card-img home-card-icon")
         .attr("src", src.to_string())
         .attr("alt", "")
 }
@@ -127,6 +133,6 @@ fn card_icon(src: &str) -> Element {
 /// The arrow at the end of a card.
 fn arrow() -> Element {
     div()
-        .class("home-card-arrow")
+        .class("fui-link-card-arrow home-card-arrow")
         .child(forge_shell::icon("arrow-right"))
 }

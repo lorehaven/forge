@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use forklift_app::live::{Msg, Request, Setup, forklift};
-use forklift_core::{DEFAULT_SERVER, Found, Remote, Settings, storage_name};
+use forklift_core::{DEFAULT_SERVER, Found, Manifest, Remote, Settings, storage_name};
 use forklift_net::{Change, NetError, RunLock, Storage, Store, login};
 use forklift_surface::worker::{
     Answer as WorkerAnswer, Shared, Worker, session_for, stored_session,
@@ -20,6 +20,8 @@ use quench_ui::mount;
 use quench_ui_native::NativeRenderer;
 
 type Then<T> = Box<dyn FnOnce(T)>;
+/// Builds the controller from the manifest once that is read.
+type Maker = Rc<RefCell<Option<Rc<dyn Fn(Manifest)>>>>;
 /// Where the app's `deliver` goes once the app exists.
 type Inbox = Rc<RefCell<Option<Rc<dyn Fn(Msg)>>>>;
 
@@ -89,6 +91,8 @@ fn folder_name(uri: &str) -> String {
 enum Answer {
     Token(u64, WorkerAnswer),
     Login(Result<(), String>),
+    /// The manifest, read on another thread.
+    Manifest(Box<Manifest>),
 }
 
 struct Android {
@@ -105,7 +109,10 @@ impl Platform for Android {
             "media",
             object(&[
                 ("kind", Value::String(kind.into())),
-                ("limit", Value::from(500_i64)),
+                (
+                    "limit",
+                    Value::from(i64::from(forklift_surface::MEDIA_PAGE)),
+                ),
                 ("offset", Value::from(i64::from(offset))),
             ]),
             move |answer| {
@@ -369,15 +376,10 @@ fn main() -> std::io::Result<()> {
 
     // The app's files are its home (the Kotlin host sets `HOME`): the session, the settings and the manifest are kept there.
     let store = Store::standard();
-    // The window has the backup to itself; a background run that is going is asked to stop by the host, so wait a
-    // moment for it, and never longer: the screen must come up.
-    let lock: Rc<RefCell<Option<RunLock>>> = Rc::new(RefCell::new((0..20).find_map(|_| {
-        let lock = store.try_lock_run();
-        if lock.is_none() {
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
-        lock
-    })));
+    // The window has the backup to itself; a background run that is going is asked to stop by the host. The screen
+    // does not wait for it: without the lock the window shows what it knows and the watcher below takes the backup
+    // the moment the other lets go.
+    let lock: Rc<RefCell<Option<RunLock>>> = Rc::new(RefCell::new(store.try_lock_run()));
     // Without the lock the window waits (the watcher below takes over when the other lets go).
     let paused = Rc::new(Cell::new(lock.borrow().is_none()));
     let mut settings: Settings = store.settings();
@@ -392,19 +394,28 @@ fn main() -> std::io::Result<()> {
     let worker_late: Rc<RefCell<Option<Rc<Worker>>>> = Rc::default();
     let controller: Rc<RefCell<Option<Rc<Controller>>>> = Rc::default();
     let app_deliver: Inbox = Rc::default();
+    // Builds the controller once the manifest is read (on another thread: the first frame does not wait for it).
+    let make_controller: Maker = Rc::default();
 
     // The worker thread's answers come back to the views' thread.
     let answers = {
-        let (worker_late, controller, app_deliver) = (
+        let (worker_late, controller, app_deliver, make_controller) = (
             Rc::clone(&worker_late),
             Rc::clone(&controller),
             Rc::clone(&app_deliver),
+            Rc::clone(&make_controller),
         );
         renderer.channel(move |answer: Answer| match answer {
             Answer::Token(id, result) => {
                 let worker = worker_late.borrow().clone();
                 if let Some(worker) = worker {
                     worker.complete(id, result);
+                }
+            }
+            Answer::Manifest(manifest) => {
+                let make = make_controller.borrow().clone();
+                if let Some(make) = make {
+                    make(*manifest);
                 }
             }
             Answer::Login(result) => {
@@ -445,6 +456,7 @@ fn main() -> std::io::Result<()> {
         controller: Rc::clone(&controller),
     });
 
+    let answers_for_manifest = Mutex::new(answers.clone());
     let requests: Rc<dyn Fn(Request)> = {
         let (controller, session, store, answers, app_deliver) = (
             Rc::clone(&controller),
@@ -540,6 +552,12 @@ fn main() -> std::io::Result<()> {
                 ..settings.clone()
             },
             has_session,
+            // What the dashboard showed last time is there at the first frame.
+            initial: if has_session {
+                store.snapshot()
+            } else {
+                forklift_core::Snapshot::default()
+            },
             phone: true,
             offset_minutes: offset_minutes(),
             toast_ms: 4000,
@@ -548,39 +566,67 @@ fn main() -> std::io::Result<()> {
     );
     *app_deliver.borrow_mut() = Some(Rc::clone(&app.deliver));
     let deliver = Rc::clone(&app.deliver);
-    let c = Controller::new(platform, store.clone(), Rc::new(move |m| deliver(m)));
-    *controller.borrow_mut() = Some(Rc::clone(&c));
-
-    // What the host reports of the uploads it streams.
-    let (done, failed) = (Rc::clone(&c), Rc::clone(&c));
-    bridge.on("files", "done", move |e| {
-        let status = e
-            .get("status")
-            .and_then(Value::as_u64)
-            .and_then(|s| u16::try_from(s).ok())
-            .unwrap_or(0);
-        done.upload_event(&UploadEvent::Done {
-            id: text(e, "id"),
-            status,
+    // The manifest is read (it can be megabytes) on another thread, and the controller is made when it is here; the
+    // screen is up long before.
+    {
+        let (controller, session, paused, lock, bridge, reading) = (
+            Rc::clone(&controller),
+            Arc::clone(&session),
+            Rc::clone(&paused),
+            Rc::clone(&lock),
+            bridge.clone(),
+            store.clone(),
+        );
+        let store = reading.clone();
+        let make: Rc<dyn Fn(Manifest)> = Rc::new(move |manifest| {
+            let deliver = Rc::clone(&deliver);
+            let c = Controller::with_manifest(
+                Rc::clone(&platform) as Rc<dyn Platform>,
+                store.clone(),
+                Rc::new(move |m| deliver(m)),
+                manifest,
+            );
+            *controller.borrow_mut() = Some(Rc::clone(&c));
+            // What the host reports of the uploads it streams.
+            let (done, failed) = (Rc::clone(&c), Rc::clone(&c));
+            bridge.on("files", "done", move |e| {
+                let status = e
+                    .get("status")
+                    .and_then(Value::as_u64)
+                    .and_then(|s| u16::try_from(s).ok())
+                    .unwrap_or(0);
+                done.upload_event(&UploadEvent::Done {
+                    id: text(e, "id"),
+                    status,
+                });
+            });
+            let (saved, not_saved) = (Rc::clone(&c), Rc::clone(&c));
+            bridge.on("restore", "done", move |e| {
+                saved.download_event(&text(e, "id"), true);
+            });
+            bridge.on("restore", "failed", move |e| {
+                not_saved.download_event(&text(e, "id"), false);
+            });
+            bridge.on("files", "failed", move |e| {
+                failed.upload_event(&UploadEvent::Failed {
+                    id: text(e, "id"),
+                    message: text(e, "message"),
+                });
+            });
+            if session.lock().unwrap().is_some() && !paused.get() {
+                c.start();
+            }
+            watch_background(store.clone(), c, Rc::clone(&lock), Rc::clone(&paused));
         });
-    });
-    let (saved, not_saved) = (Rc::clone(&c), Rc::clone(&c));
-    bridge.on("restore", "done", move |e| {
-        saved.download_event(&text(e, "id"), true)
-    });
-    bridge.on("restore", "failed", move |e| {
-        not_saved.download_event(&text(e, "id"), false)
-    });
-    bridge.on("files", "failed", move |e| {
-        failed.upload_event(&UploadEvent::Failed {
-            id: text(e, "id"),
-            message: text(e, "message"),
+        *make_controller.borrow_mut() = Some(make);
+        std::thread::spawn(move || {
+            let manifest = reading.manifest();
+            let _ = answers_for_manifest
+                .lock()
+                .unwrap()
+                .send(Answer::Manifest(Box::new(manifest)));
         });
-    });
-    if has_session && !paused.get() {
-        c.start();
     }
-    watch_background(store, Rc::clone(&c), lock, paused);
     let _mounted = mount(&renderer, &renderer.root(), app.view);
     run_with(&renderer, &bridge)
 }

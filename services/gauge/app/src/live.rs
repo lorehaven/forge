@@ -202,7 +202,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     Some(d) if d.host.name == name => screens::host(&i18n, &d, &base, now()),
                     _ => p()
                         .attr("id", "waiting")
-                        .class("gg-empty")
+                        .class("fui-empty")
                         .text(i18n.t("ui_waiting"))
                         .into_view(),
                 }
@@ -249,12 +249,12 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         View::dynamic(move || match problem.get() {
             Some(Problem::Failed(why)) => p()
                 .attr("id", "problem")
-                .class("gg-notice")
+                .class("fui-notice fui-notice-error")
                 .text(why)
                 .into_view(),
             Some(Problem::SignedOut) => p()
                 .attr("id", "problem")
-                .class("gg-notice")
+                .class("fui-notice fui-notice-error")
                 .child(span().text("Your session ended. "))
                 .child(
                     a().attr("id", "sign-in")

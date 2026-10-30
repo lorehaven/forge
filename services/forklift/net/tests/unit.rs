@@ -391,6 +391,50 @@ fn the_store_round_trips_the_settings_and_the_manifest_and_recovers_sending_file
 }
 
 #[quench_test::test]
+fn a_background_write_never_puts_an_old_manifest_over_a_newer_one() {
+    let dir = temp("order");
+    let store = forklift_net::Store::new(&dir);
+    let with = |n: usize| {
+        let mut m = forklift_core::Manifest::new();
+        let files: Vec<forklift_core::Found> = (0..n)
+            .map(|i| forklift_core::Found {
+                local_id: i.to_string(),
+                name: "a.jpg".into(),
+                uri: "u".into(),
+                size: 1,
+                modified_ms: 2,
+            })
+            .collect();
+        m.scan("photos", &files, false);
+        m
+    };
+    // The background write is asked for first, the plain one second: whatever order the threads run in, the plain
+    // one is what is on the disk in the end.
+    for _ in 0..20 {
+        store.set_manifest_in_background(&with(1));
+        store.set_manifest(&with(2));
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert_eq!(store.manifest().len(), 2);
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[quench_test::test]
+fn what_the_dashboard_showed_comes_back_from_the_store() {
+    let dir = temp("snapshot");
+    let store = forklift_net::Store::new(&dir);
+    assert_eq!(store.snapshot(), forklift_core::Snapshot::default());
+    let mut shot = forklift_core::Snapshot::default();
+    shot.totals.done = 7;
+    shot.checked_ms = Some(5);
+    store.set_snapshot(&shot);
+    assert_eq!(store.snapshot().totals.done, 7);
+    store.clear_snapshot();
+    assert_eq!(store.snapshot(), forklift_core::Snapshot::default());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[quench_test::test]
 fn only_one_program_may_run_the_backup() {
     let dir = temp("lock");
     let store = forklift_net::Store::new(&dir);

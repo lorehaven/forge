@@ -103,8 +103,18 @@ fn not_found() -> Response {
 /// The cards, in the catalog's order, and whether the realm's own section is offered.
 #[get("/api/v1/ui/dashboard")]
 async fn dashboard(subject: PageClaims, Inject(catalog): Inject<PermissionCatalog>) -> Response {
+    // Only the services this person may use: some grant on the service (a blanket one, or one scoped to a project...)
+    // or a role that grants everything. A service they cannot read would only lead them to a refusal.
+    let claims = &subject.0;
+    let held = claims.permissions();
     let services = enabled_services(&catalog)
         .into_iter()
+        .filter(|service| {
+            claims.can(&service.name, "read")
+                || held
+                    .get(&service.name)
+                    .is_some_and(|actions| !actions.is_empty())
+        })
         .map(|service| ServiceCard {
             url: service.url,
             title_key: service.title_key,

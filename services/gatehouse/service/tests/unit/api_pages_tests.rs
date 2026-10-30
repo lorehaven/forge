@@ -213,7 +213,7 @@ async fn the_dashboard_has_a_card_for_each_service_that_is_switched_on() {
     // `hidden` has no URL, so it has no card.
     let world = world().await;
     person(&world, "alice", Role::User).await;
-    let token = bearer(&world, "alice", "user").await;
+    let token = bearer(&world, "alice", "pagesdemo:read").await;
 
     let dashboard: Dashboard = read(&world, "/api/v1/ui/dashboard", Some(&token)).await;
     assert!(!dashboard.admin);
@@ -232,6 +232,50 @@ async fn the_dashboard_has_a_card_for_each_service_that_is_switched_on() {
     let admin = bearer(&world, "root", "admin").await;
     let dashboard: Dashboard = read(&world, "/api/v1/ui/dashboard", Some(&admin)).await;
     assert!(dashboard.admin);
+}
+
+#[quench_test::test]
+async fn the_dashboard_offers_only_the_services_the_person_may_use() {
+    let _guard = auth_enabled().await;
+    quench_core::env::set("PAGESDEMO_UI_URL", "https://demo.example.test/pagesdemo/");
+    quench_core::env::set("HIDDEN_UI_URL", "https://demo.example.test/hidden/");
+    let world = world().await;
+    person(&world, "alice", Role::User).await;
+    let labels = |dashboard: &Dashboard| {
+        dashboard
+            .services
+            .iter()
+            .map(|c| c.label.clone())
+            .collect::<Vec<_>>()
+    };
+
+    // No grant on any service: no card.
+    let nothing = bearer(&world, "alice", "gatehouse:read-users").await;
+    let dashboard: Dashboard = read(&world, "/api/v1/ui/dashboard", Some(&nothing)).await;
+    assert!(
+        !labels(&dashboard).contains(&"Pages demo".to_string()),
+        "{:?}",
+        labels(&dashboard)
+    );
+    assert!(!labels(&dashboard).contains(&"Hidden".to_string()));
+
+    // A read grant on one: that card only.
+    let one = bearer(&world, "alice", "pagesdemo:read").await;
+    let dashboard: Dashboard = read(&world, "/api/v1/ui/dashboard", Some(&one)).await;
+    assert!(labels(&dashboard).contains(&"Pages demo".to_string()));
+    assert!(!labels(&dashboard).contains(&"Hidden".to_string()));
+
+    // A grant scoped to a part of the service still gets its card in.
+    let scoped = bearer(&world, "alice", "hidden:project:p1:read").await;
+    let dashboard: Dashboard = read(&world, "/api/v1/ui/dashboard", Some(&scoped)).await;
+    assert!(labels(&dashboard).contains(&"Hidden".to_string()));
+    assert!(!labels(&dashboard).contains(&"Pages demo".to_string()));
+
+    // A role that grants everything sees them all.
+    let admin = bearer(&world, "root", "admin").await;
+    let dashboard: Dashboard = read(&world, "/api/v1/ui/dashboard", Some(&admin)).await;
+    assert!(labels(&dashboard).contains(&"Pages demo".to_string()));
+    assert!(labels(&dashboard).contains(&"Hidden".to_string()));
 }
 
 #[quench_test::test]

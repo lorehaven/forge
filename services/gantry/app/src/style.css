@@ -39,11 +39,6 @@
 .gt-inline + .gt-inline { margin-left: .5rem; }
 
 /* notices */
-.gt-notice { display: block; padding: .75rem 1rem; border-radius: var(--fui-radius-lg); border: 1px solid var(--fui-gray-soft-border); background: var(--fui-gray-soft-bg); margin: 0; font-size: .875rem; overflow-wrap: anywhere; }
-.gt-notice-error { background: var(--fui-error-soft-bg); border-color: var(--fui-error-soft-border); color: var(--fui-error-soft-text); }
-.gt-notice-ok { background: var(--fui-success-soft-bg); border-color: var(--fui-success-soft-border); color: var(--fui-success-soft-text); }
-.gt-notice-info { background: var(--fui-blue-soft-bg); border-color: var(--fui-blue-soft-border); color: var(--fui-blue-soft-text); }
-.gt-notice * { color: inherit; }
 
 .gt-card { border: 1px solid var(--fui-border); border-radius: var(--fui-radius-xl); background: var(--fui-surface); padding: 1rem 1.25rem; box-shadow: var(--fui-shadow-xs); }
 .gt-card ul { margin: 0; padding-left: 1.1rem; line-height: 1.7; }
@@ -105,7 +100,6 @@ details.gt-details > summary { cursor: pointer; color: var(--fui-text-tertiary);
 .gt-main { display: flex; flex-direction: column; gap: 1rem; width: 100%; flex: 1; min-width: 0; padding: 1.5rem; overflow: auto; }
 .gt-page, .gt-part { display: flex; flex-direction: column; gap: 1rem; width: 100%; }
 .gt-current { background: var(--fui-surface-2); color: var(--fui-text); font-weight: 600; }
-.gt-empty { margin: 3rem 0; text-align: center; color: var(--fui-text-tertiary); }
 .gt-error { margin: 0; font-size: .875rem; color: var(--fui-error-soft-text); }
 .gt-input { font: inherit; font-size: .875rem; box-sizing: border-box; padding: .5rem .625rem; color: var(--fui-text); background: var(--fui-surface); border: 1px solid var(--fui-border-strong); border-radius: var(--fui-radius-md); }
 .gt-input:focus { outline: 2px solid var(--fui-blue-500); outline-offset: -1px; }
@@ -116,3 +110,5 @@ details.gt-details > summary { cursor: pointer; color: var(--fui-text-tertiary);
 .gt-gap { margin-left: .5rem; }
 .gt-table tbody tr:hover td { background: var(--fui-surface-hover); }
 .gt-table td a { color: var(--fui-text); font-weight: 500; }
+/* text people copy */
+.gt-log,.gt-yaml,.gt-app-version,.gt-dep,.gt-meta,.gt-error,.gt-desc{user-select:text}

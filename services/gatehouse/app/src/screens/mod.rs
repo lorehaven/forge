@@ -54,7 +54,7 @@ pub(crate) fn query(ctx: &RouteContext) -> Query {
 
 pub(crate) fn waiting(env: &Env) -> View {
     p().attr("id", "waiting")
-        .class("gh-empty")
+        .class("fui-empty")
         .text(env.t.t("ui_loading"))
         .into_view()
 }
@@ -66,7 +66,7 @@ pub fn not_found(env: &Env) -> View {
         .class("gh-page")
         .child(
             p().attr("id", "not-found")
-                .class("gh-empty")
+                .class("fui-empty")
                 .text(env.t.t("ui_not_found")),
         )
         .child(link(&env.path("/home")).text(env.t.t("ui_home_title")))
@@ -78,8 +78,8 @@ pub(crate) fn notice(env: &Env, notice: Option<Notice>) -> Option<Element> {
     notice.map(|n| {
         p().attr("id", "notice")
             .class(match n.tone {
-                Tone::Ok => "gh-notice ok",
-                Tone::Error => "gh-notice error",
+                Tone::Ok => "fui-notice fui-notice-ok gh-notice",
+                Tone::Error => "fui-notice fui-notice-error gh-notice",
             })
             .attr(
                 "role",
@@ -98,13 +98,13 @@ pub(crate) fn banner(env: &Env, problem: Option<Problem>) -> View {
     match problem {
         Some(Problem::Failed(why)) => p()
             .attr("id", "problem")
-            .class("gh-notice error")
+            .class("fui-notice fui-notice-error gh-notice")
             .text(why)
             .into_view(),
         Some(Problem::SignedOut) => {
             let path = quench_ui::router::use_router().location().path;
             p().attr("id", "problem")
-                .class("gh-notice error")
+                .class("fui-notice fui-notice-error gh-notice")
                 .child(span().text(format!("{} ", env.t.t("ui_session_ended"))))
                 .child(
                     a().attr("id", "sign-in")

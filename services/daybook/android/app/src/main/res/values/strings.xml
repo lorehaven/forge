@@ -4,4 +4,5 @@
     <string name="widget_pick_list">Show list</string>
     <string name="widget_empty_tasks">No tasks</string>
     <string name="widget_empty_signed_out">Open Daybook to sign in</string>
+    <string name="widget_fallback">Tap to open Daybook</string>
 </resources>

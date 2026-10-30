@@ -116,6 +116,31 @@ pub struct Totals {
 }
 
 impl Totals {
+    fn merge(&mut self, o: &Self) {
+        self.pending += o.pending;
+        self.uploading += o.uploading;
+        self.done += o.done;
+        self.failed += o.failed;
+        self.too_large += o.too_large;
+        self.done_bytes += o.done_bytes;
+        self.waiting_bytes += o.waiting_bytes;
+    }
+
+    fn add(&mut self, i: &Item) {
+        match i.status {
+            Status::Pending => self.pending += 1,
+            Status::Uploading => self.uploading += 1,
+            Status::Done => self.done += 1,
+            Status::Failed => self.failed += 1,
+            Status::TooLarge => self.too_large += 1,
+        }
+        match i.status {
+            Status::Done => self.done_bytes += i.size,
+            Status::Pending | Status::Uploading | Status::Failed => self.waiting_bytes += i.size,
+            Status::TooLarge => {}
+        }
+    }
+
     /// Files not yet safe: waiting, being sent, or failed.
     #[must_use]
     pub const fn waiting(&self) -> usize {
@@ -227,6 +252,12 @@ impl Manifest {
     /// kept, as the record of what the storage holds.
     pub fn mark_missing(&mut self, category: &str, found: &[Found]) {
         let seen: BTreeSet<&str> = found.iter().map(|f| f.local_id.as_str()).collect();
+        self.mark_missing_ids(category, &seen);
+    }
+
+    /// [`mark_missing`](Self::mark_missing) for a scan that handed its files over page by page and kept only their
+    /// ids.
+    pub fn mark_missing_ids(&mut self, category: &str, seen: &BTreeSet<&str>) {
         self.items.retain(|_, i| {
             i.category != category || seen.contains(i.local_id.as_str()) || i.status == Status::Done
         });
@@ -267,8 +298,17 @@ impl Manifest {
             .filter(|i| charging || !i.is_large())
             .filter(|i| allowed(&i.category))
             .collect();
-        due.sort_by(|a, b| (b.modified_ms, &b.local_id).cmp(&(a.modified_ms, &a.local_id)));
-        due.truncate(n);
+        // Only the first `n` are wanted: they are picked out of the waiting ones without ordering all of them (a
+        // library of tens of thousands waits at the first scan, and this runs after every upload).
+        let newest =
+            |a: &&Item, b: &&Item| (b.modified_ms, &b.local_id).cmp(&(a.modified_ms, &a.local_id));
+        if n == 0 {
+            due.clear();
+        } else if due.len() > n {
+            due.select_nth_unstable_by(n - 1, newest);
+            due.truncate(n);
+        }
+        due.sort_by(newest);
         due
     }
 
@@ -359,20 +399,36 @@ impl Manifest {
             .values()
             .filter(|i| category.is_none_or(|c| c == i.category))
         {
-            match i.status {
-                Status::Pending => t.pending += 1,
-                Status::Uploading => t.uploading += 1,
-                Status::Done => t.done += 1,
-                Status::Failed => t.failed += 1,
-                Status::TooLarge => t.too_large += 1,
-            }
-            match i.status {
-                Status::Done => t.done_bytes += i.size,
-                Status::Pending | Status::Uploading | Status::Failed => t.waiting_bytes += i.size,
-                Status::TooLarge => {}
-            }
+            t.add(i);
         }
         t
+    }
+
+    /// The counts of every category in one walk over the records (a screen with several rows asks for all of them:
+    /// one pass instead of one per row).
+    #[must_use]
+    pub fn totals_by_category(&self) -> BTreeMap<String, Totals> {
+        let mut by: BTreeMap<String, Totals> = BTreeMap::new();
+        let mut last: Option<(&str, Totals)> = None;
+        // The records are ordered by category, so the running total of the current one is kept out of the map (and
+        // merged in, should a category come back).
+        for i in self.items.values() {
+            match last.as_mut() {
+                Some((c, t)) if *c == i.category => t.add(i),
+                _ => {
+                    if let Some((c, t)) = last.take() {
+                        by.entry(c.to_string()).or_default().merge(&t);
+                    }
+                    let mut t = Totals::default();
+                    t.add(i);
+                    last = Some((&i.category, t));
+                }
+            }
+        }
+        if let Some((c, t)) = last {
+            by.entry(c.to_string()).or_default().merge(&t);
+        }
+        by
     }
 
     /// The records as text, one line each.

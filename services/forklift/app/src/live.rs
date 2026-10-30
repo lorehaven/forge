@@ -84,6 +84,8 @@ pub struct Setup {
     pub offset_minutes: i32,
     /// How long a message stays, in milliseconds; 0 keeps it until the next one.
     pub toast_ms: u32,
+    /// What the dashboard showed when the app was last used: on the screen at once, until the host has looked again.
+    pub initial: Snapshot,
     /// How long the loader stays once it has come up (see `toast::lingering`).
     pub loader_min_ms: u32,
 }
@@ -102,7 +104,7 @@ pub fn forklift(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Forklift {
     });
     let view = View::lazy(move || {
         let signed_in = create_signal(setup.has_session);
-        let shot = create_signal(Snapshot::default());
+        let shot = create_signal(setup.initial.clone());
         let message = create_signal(String::new());
         let busy = create_signal(false);
         let screen = create_signal(0_usize);

@@ -15,7 +15,7 @@
         android:layout_height="wrap_content"
         android:ellipsize="end"
         android:maxLines="2"
-        android:textColor="#FFE5E5E5"
+        android:textColor="#FFF4F4F5"
         android:textSize="14sp" />
 
     <TextView

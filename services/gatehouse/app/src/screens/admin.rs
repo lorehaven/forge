@@ -56,7 +56,7 @@ fn list(env: &Env, users: &AdminUsers, flash: Option<gatehouse_core::Notice>) ->
     if users.users.is_empty() {
         rows = rows.child(
             p().attr("id", "no-users")
-                .class("gh-empty")
+                .class("fui-empty")
                 .text(env.t.t("ui_admin_no_users")),
         );
     }

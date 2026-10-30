@@ -77,14 +77,14 @@ pub(crate) fn nav(env: &Env, href: &str) -> Element {
 
 pub(crate) fn waiting(env: &Env) -> View {
     p().attr("id", "waiting")
-        .class("wh-empty")
+        .class("fui-empty")
         .text(env.t.t("ui_loading"))
         .into_view()
 }
 
 /// A line that says there is nothing (here).
 pub(crate) fn empty(text: String) -> Element {
-    p().class("wh-empty").text(text)
+    p().class("fui-empty").text(text)
 }
 
 #[must_use]
@@ -93,7 +93,7 @@ pub fn not_found(env: &Env) -> View {
         .class("wh-page")
         .child(
             p().attr("id", "not-found")
-                .class("wh-empty")
+                .class("fui-empty")
                 .text(env.t.t("ui_not_found")),
         )
         .child(link(&env.path("/home")).text(env.t.t("ui_home_button")))
@@ -178,7 +178,7 @@ pub(crate) fn home(env: &Env, state: &State) -> View {
                 return waiting(&env);
             };
             let f = overview.features;
-            let mut cards = div().class("wh-cards");
+            let mut cards = div().class("fui-card-grid");
             let mut any = false;
             for (on, path, title, desc, id) in [
                 (
@@ -223,21 +223,25 @@ pub(crate) fn home(env: &Env, state: &State) -> View {
                 any = true;
                 cards = cards.child(
                     link(&env.path(path))
-                        .class("wh-card")
+                        .class("fui-link-card")
                         .attr("data-service", id)
                         .child(
                             div()
-                                .class("wh-card-body")
-                                .child(div().class("wh-card-title").text(env.t.t(title)))
-                                .child(div().class("wh-card-desc").text(env.t.t(desc))),
+                                .class("fui-link-card-body")
+                                .child(div().class("fui-link-card-title").text(env.t.t(title)))
+                                .child(div().class("fui-link-card-desc").text(env.t.t(desc))),
                         )
-                        .child(div().class("wh-card-arrow").text("→")),
+                        .child(
+                            div()
+                                .class("fui-link-card-arrow")
+                                .child(forge_shell::icon("arrow-right")),
+                        ),
                 );
             }
             if !any {
                 return p()
                     .attr("id", "no-services")
-                    .class("wh-empty")
+                    .class("fui-empty")
                     .text(env.t.t("ui_home_no_services"))
                     .into_view();
             }

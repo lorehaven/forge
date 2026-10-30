@@ -756,3 +756,98 @@ fn a_refusal_of_the_account_is_not_taken_for_an_expired_token() {
 }
 
 quench_test::main!();
+
+#[quench_test::test]
+fn the_counts_of_every_category_come_from_one_walk_and_agree_with_the_one_by_one_counts() {
+    let mut m = Manifest::new();
+    for category in ["photos", "videos", "custom:docs"] {
+        let files: Vec<Found> = (1..=7)
+            .map(|i| found(&format!("{category}{i}"), i * 10, i as i64))
+            .collect();
+        m.scan(category, &files, false);
+    }
+    m.done("videos", "videos1", "x");
+    m.failed("custom:docs", "custom:docs2", 0, "no");
+    m.too_large("photos", "photos3");
+    let by = m.totals_by_category();
+    assert_eq!(by.len(), 3);
+    for (category, totals) in &by {
+        assert_eq!(*totals, m.totals(Some(category)), "{category}");
+    }
+}
+
+#[quench_test::test]
+fn the_next_batch_is_the_newest_few_of_very_many_waiting_in_order() {
+    let mut m = Manifest::new();
+    // Scrambled times, so that the waiting ones are not in order of age by any accident.
+    let files: Vec<Found> = (0..5000_i64)
+        .map(|i| found(&i.to_string(), 1, (i * 7919) % 5003))
+        .collect();
+    m.scan("photos", &files, false);
+    let mut expected: Vec<(i64, String)> = m
+        .items()
+        .map(|i| (i.modified_ms, i.local_id.clone()))
+        .collect();
+    expected.sort_by(|a, b| b.cmp(a));
+    for n in [0, 1, 3, 50] {
+        let got: Vec<(i64, String)> = m
+            .next_batch(0, n, true)
+            .into_iter()
+            .map(|i| (i.modified_ms, i.local_id.clone()))
+            .collect();
+        assert_eq!(got, expected[..n], "{n}");
+    }
+}
+
+#[quench_test::test]
+fn a_scan_handed_over_in_pages_forgets_what_is_gone_like_one_handed_over_whole() {
+    let all: Vec<Found> = (1..=6).map(|i| found(&i.to_string(), 10, i)).collect();
+    let mut paged = Manifest::new();
+    let mut whole = Manifest::new();
+    paged.scan("photos", &all, false);
+    whole.scan("photos", &all, false);
+    paged.done("photos", "2", "x");
+    whole.done("photos", "2", "x");
+    // 2 (sent) and 4 (not sent) vanish from the device.
+    let now: Vec<Found> = all
+        .iter()
+        .filter(|f| f.local_id != "2" && f.local_id != "4")
+        .cloned()
+        .collect();
+    for page in now.chunks(2) {
+        paged.scan("photos", page, false);
+    }
+    let seen: std::collections::BTreeSet<&str> = now.iter().map(|f| f.local_id.as_str()).collect();
+    paged.mark_missing_ids("photos", &seen);
+    whole.scan("photos", &now, false);
+    whole.mark_missing("photos", &now);
+    assert_eq!(paged, whole);
+    assert!(paged.get("photos", "2").unwrap().gone, "sent: kept, gone");
+    assert!(paged.get("photos", "4").is_none(), "never sent: forgotten");
+}
+
+#[quench_test::test]
+fn what_the_dashboard_showed_is_written_and_read_back() {
+    let mut e = engine(5);
+    e.manifest.done("photos", "1", "x");
+    e.manifest.done("photos", "2", "x");
+    e.manifest.too_large("photos", "3");
+    let mut shot =
+        forklift_core::Snapshot::of(&e, &Settings::default(), true, Some(1_700_000_000_000));
+    shot.quota = Some((12, 3456));
+    let back = forklift_core::Snapshot::from_text(&shot.to_text());
+    assert_eq!(back.totals, shot.totals);
+    assert_eq!(back.rows, shot.rows);
+    assert_eq!(back.checked_ms, shot.checked_ms);
+    assert_eq!(back.quota, shot.quota);
+    assert_eq!(back.headline(), "Backing up: 2 of 4 files");
+    // Damage gives the empty one, never a half-read one.
+    assert_eq!(
+        forklift_core::Snapshot::from_text("junk"),
+        forklift_core::Snapshot::default()
+    );
+    assert_eq!(
+        forklift_core::Snapshot::from_text("forklift-snapshot 1\ntotal 1 2 x"),
+        forklift_core::Snapshot::default()
+    );
+}

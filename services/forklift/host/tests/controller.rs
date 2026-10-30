@@ -8,7 +8,9 @@ use std::rc::Rc;
 use forklift_app::live::Msg;
 use forklift_core::Remote;
 use forklift_core::{Found, LARGE_FILE_BYTES, Settings, Status};
-use forklift_host::{Controller, Device, Node, Platform, Target, UploadEvent};
+use forklift_host::{
+    Controller, Device, MEDIA_PAGE, Node, PUBLISH_EVERY_MS, Platform, Target, UploadEvent,
+};
 use forklift_net::{Change, NetError, Storage, Store};
 
 #[derive(Default)]
@@ -32,6 +34,9 @@ struct Fake {
     now: Cell<i64>,
     later: RefCell<Vec<(u64, Box<dyn FnOnce()>)>>,
     media_calls: RefCell<Vec<(&'static str, u32)>>,
+    /// When set, a page of the media library is not answered until the test says so.
+    hold_media: Cell<bool>,
+    held: RefCell<Vec<Box<dyn FnOnce()>>>,
 }
 
 impl Platform for Fake {
@@ -47,8 +52,18 @@ impl Platform for Fake {
         } else {
             self.images.borrow().clone()
         };
-        let page = all.into_iter().skip(offset as usize).take(500).collect();
-        then(Ok(page));
+        let page = all
+            .into_iter()
+            .skip(offset as usize)
+            .take(MEDIA_PAGE as usize)
+            .collect();
+        if self.hold_media.get() {
+            self.held
+                .borrow_mut()
+                .push(Box::new(move || then(Ok(page))));
+        } else {
+            then(Ok(page));
+        }
     }
     fn folder(&self, uri: &str, then: Box<dyn FnOnce(Result<Vec<Node>, String>)>) {
         then(Ok(self
@@ -175,7 +190,30 @@ fn world(name: &str, settings: Settings, fake: Fake) -> World {
 }
 
 impl World {
+    /// Lets the app be told what the throttle held back (the pictures of a burst come at most every
+    /// `PUBLISH_EVERY_MS`).
+    fn settle(&self) {
+        loop {
+            let due = {
+                let mut later = self.fake.later.borrow_mut();
+                later
+                    .iter()
+                    .position(|(ms, _)| *ms <= PUBLISH_EVERY_MS as u64)
+                    .map(|at| later.remove(at))
+            };
+            let Some((_, call)) = due else { break };
+            call();
+        }
+    }
+    fn snapshots(&self) -> usize {
+        self.sent
+            .borrow()
+            .iter()
+            .filter(|m| matches!(m, Msg::Snapshot(_)))
+            .count()
+    }
     fn last_headline(&self) -> String {
+        self.settle();
         self.sent
             .borrow()
             .iter()
@@ -401,7 +439,9 @@ fn a_large_file_waits_for_the_charger() {
 #[quench_test::test]
 fn paging_goes_on_while_a_page_is_full() {
     let fake = Fake::default();
-    *fake.images.borrow_mut() = (0..501).map(|i| file(&i.to_string(), 10, i)).collect();
+    *fake.images.borrow_mut() = (0..i64::from(MEDIA_PAGE) + 1)
+        .map(|i| file(&i.to_string(), 10, i))
+        .collect();
     let w = world(
         "paging",
         Settings {
@@ -413,9 +453,9 @@ fn paging_goes_on_while_a_page_is_full() {
     w.controller.start();
     assert_eq!(
         *w.fake.media_calls.borrow(),
-        [("images", 0), ("images", 500)]
+        [("images", 0), ("images", MEDIA_PAGE)]
     );
-    assert_eq!(w.store.manifest().len(), 501);
+    assert_eq!(w.store.manifest().len(), MEDIA_PAGE as usize + 1);
     w.cleanup();
 }
 
@@ -584,7 +624,7 @@ fn a_failure_is_tried_again_when_its_wait_is_over() {
         let mut later = w.fake.later.borrow_mut();
         let at = later
             .iter()
-            .position(|(ms, _)| *ms < 60_000)
+            .position(|(ms, _)| (1_000..60_000).contains(ms))
             .expect("a retry was scheduled");
         later.remove(at)
     };
@@ -1219,3 +1259,135 @@ fn the_settings_screen_cannot_change_the_storage_but_a_choice_can() {
 }
 
 quench_test::main!();
+
+fn last_snapshot(w: &World) -> forklift_core::Snapshot {
+    w.settle();
+    w.sent
+        .borrow()
+        .iter()
+        .rev()
+        .find_map(|m| {
+            if let Msg::Snapshot(s) = m {
+                Some((**s).clone())
+            } else {
+                None
+            }
+        })
+        .expect("the app was told")
+}
+
+#[quench_test::test]
+fn a_burst_of_ended_uploads_is_one_picture_for_the_app_not_one_each() {
+    // What made a big backup slow to look at: every upload that ended meant a count of the whole manifest and a
+    // new dashboard. With a few hundred waiting the app is told a handful of times, not once per file.
+    let fake = Fake::default();
+    *fake.images.borrow_mut() = (1..=600).map(|i| file(&i.to_string(), 10, i)).collect();
+    let w = world(
+        "burst",
+        Settings {
+            videos: false,
+            ..Settings::default()
+        },
+        fake,
+    );
+    w.controller.start();
+    for _ in 0..400 {
+        w.done_all();
+    }
+    w.settle();
+    assert_eq!(w.fake.uploads.borrow().len(), 600);
+    let told = w.snapshots();
+    assert!(told <= 8, "the app was told {told} times for 600 files");
+    // ... and the last word is the true one.
+    assert_eq!(last_snapshot(&w).totals.done, 600);
+    w.cleanup();
+}
+
+#[quench_test::test]
+fn the_numbers_grow_while_the_scan_is_still_reading_and_say_how_far_it_is() {
+    // The scan used to hand its files over at its very end: a big library showed nothing for the whole read.
+    let fake = Fake::default();
+    fake.hold_media.set(true);
+    *fake.images.borrow_mut() = (0..i64::from(MEDIA_PAGE) * 2 + 10)
+        .map(|i| file(&i.to_string(), 10, i))
+        .collect();
+    let w = world(
+        "growing",
+        Settings {
+            videos: false,
+            ..Settings::default()
+        },
+        fake,
+    );
+    w.controller.start();
+    // Nothing answered yet.
+    let first = w.fake.held.borrow_mut().remove(0);
+    first();
+    let shot = last_snapshot(&w);
+    assert!(shot.working);
+    assert_eq!(shot.totals.pending, MEDIA_PAGE as usize);
+    assert_eq!(shot.looked_at, MEDIA_PAGE as usize);
+    // The next page is asked for only once the first was taken.
+    assert_eq!(w.fake.media_calls.borrow().len(), 2);
+    let second = w.fake.held.borrow_mut().remove(0);
+    second();
+    let third = w.fake.held.borrow_mut().remove(0);
+    third();
+    let shot = last_snapshot(&w);
+    assert_eq!(shot.looked_at, 0, "a scan that is over says no more");
+    assert_eq!(w.store.manifest().len(), MEDIA_PAGE as usize * 2 + 10);
+    w.cleanup();
+}
+
+#[quench_test::test]
+fn a_file_gone_from_the_device_is_still_noticed_when_the_scan_came_in_pages() {
+    let fake = Fake::default();
+    let total = i64::from(MEDIA_PAGE) + 5;
+    *fake.images.borrow_mut() = (0..total).map(|i| file(&i.to_string(), 10, i)).collect();
+    let w = world(
+        "pages-gone",
+        Settings {
+            videos: false,
+            ..Settings::default()
+        },
+        fake,
+    );
+    w.controller.start();
+    // The newest go first: 2004, 2003 and 2002 were sent.
+    w.done_all();
+    // One of the sent ones (on the second page) and one never sent (on the first) are deleted from the device.
+    w.fake
+        .images
+        .borrow_mut()
+        .retain(|f| f.local_id != "10" && f.local_id != "2003");
+    w.controller.scan(false);
+    let kept = w.store.manifest();
+    assert!(kept.get("photos", "10").is_none(), "never sent: forgotten");
+    let sent = kept.get("photos", "2003").expect("sent: kept as a record");
+    assert!(sent.gone);
+    assert!(!kept.get("photos", "2004").unwrap().gone);
+    w.cleanup();
+}
+
+#[quench_test::test]
+fn the_dashboard_numbers_are_kept_for_the_next_start_and_leave_with_the_session() {
+    let fake = Fake::default();
+    *fake.images.borrow_mut() = (1..=4).map(|i| file(&i.to_string(), 10, i)).collect();
+    let w = world(
+        "kept-snapshot",
+        Settings {
+            videos: false,
+            ..Settings::default()
+        },
+        fake,
+    );
+    w.controller.start();
+    w.done_all();
+    w.done_all();
+    let kept = w.store.snapshot();
+    assert_eq!(kept.totals.done, 4, "{kept:?}");
+    assert_eq!(kept.headline(), "All 4 files are backed up");
+    w.controller.sign_out();
+    assert_eq!(w.store.snapshot(), forklift_core::Snapshot::default());
+    w.cleanup();
+}
