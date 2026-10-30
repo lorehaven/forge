@@ -1,1 +1,43 @@
-theme: jekyll-theme-midnight
+title: Forge
+description: Services, libraries and command-line tools built on Quench - reference and API
+remote_theme: just-the-docs/just-the-docs
+plugins:
+  - jekyll-remote-theme
+  - jekyll-relative-links
+  - jekyll-seo-tag
+relative_links:
+  enabled: true
+  collections: false
+search_enabled: true
+heading_anchors: true
+color_scheme: dark
+back_to_top: true
+back_to_top_text: "Back to top"
+exclude:
+  - _reports/
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+  - scope:
+      path: "services"
+    values:
+      render_with_liquid: false
+  - scope:
+      path: "libs"
+    values:
+      render_with_liquid: false
+  - scope:
+      path: "cli"
+    values:
+      render_with_liquid: false
+  - scope:
+      path: "guides"
+    values:
+      render_with_liquid: false
+  - scope:
+      path: "index.md"
+    values:
+      render_with_liquid: false
+# the pages document template engines and format strings: `{{` and `{%` in them are text, so Liquid is off for them

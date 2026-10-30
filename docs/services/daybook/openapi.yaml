@@ -1,0 +1,612 @@
+openapi: 3.1.0
+info:
+  title: Daybook service
+  version: 0.3.2
+  description: |
+    Personal tasks, lists (projects), labels and repeat rules. Every row belongs to the caller (the token's `sub`);
+    nobody sees another user's rows. The service also serves the browser client (`/ui`) and forwards the client's
+    sign-in to gatehouse (`/auth/login`, `/auth/refresh`).
+servers:
+  - url: "{base}"
+    variables:
+      base:
+        default: /daybook
+        description: The service's BASE_PATH.
+tags:
+  - name: tasks
+    description: Tasks of the inbox and of lists.
+  - name: projects
+    description: The caller's custom lists.
+  - name: labels
+    description: The caller's labels.
+  - name: auth
+    description: Sign-in forwarded to gatehouse (public).
+  - name: ui
+    description: The browser client's page and files (public).
+paths:
+  /api/v1/tasks:
+    get:
+      tags: [tasks]
+      operationId: listTasks
+      summary: List tasks
+      description: |
+        With no `project_id` and no `label_id` and `all` false: the inbox (tasks with no list). With `project_id`: that list.
+        With `label_id`: every task carrying the label in the inbox and in all lists (narrowed to `project_id` when given).
+        `all=true` without `project_id` lifts the one-list restriction. Ordered by `sort_order`, then `created_at`.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: daybook:read
+      parameters:
+        - {name: project_id, in: query, required: false, schema: {type: string}}
+        - {name: label_id, in: query, required: false, schema: {type: string}}
+        - name: all
+          in: query
+          required: false
+          schema: {type: boolean, default: false}
+        - name: completed
+          in: query
+          required: false
+          description: Only completed (true) or only open (false) tasks; absent means both.
+          schema: {type: boolean}
+      responses:
+        "200":
+          description: The tasks.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: "#/components/schemas/Task"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/ForbiddenRead"}
+        "500": {$ref: "#/components/responses/ServerError"}
+        "503": {$ref: "#/components/responses/NotPostgres"}
+    post:
+      tags: [tasks]
+      operationId: createTask
+      summary: Create a task
+      description: |
+        `content` is trimmed and must not be empty. A `recurrence` needs a `due_at` and is validated (see `Recurrence`).
+        With `due_all_day` true the stored `due_at` is midnight UTC of the sent instant's UTC date.
+        A `project_id` or `label_ids` entry that is not the caller's fails with 400.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: daybook:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TaskInput"}
+            example:
+              content: Pay the rent
+              project_id: null
+              due_at: "2026-11-01T00:00:00Z"
+              due_all_day: true
+              remind_at: "2026-10-31T09:00:00Z"
+              label_ids: []
+              recurrence: {unit: month, interval: 1, weekdays: [], mode: fixed, timezone: Europe/Warsaw}
+      responses:
+        "201":
+          description: The task as stored.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Task"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/ForbiddenWrite"}
+        "500": {$ref: "#/components/responses/ServerError"}
+        "503": {$ref: "#/components/responses/NotPostgres"}
+  /api/v1/tasks/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    put:
+      tags: [tasks]
+      operationId: updateTask
+      summary: Replace a task
+      description: |
+        Replaces every field (omitting `description`, `project_id`, `due_at`, `remind_at`, `label_ids` or `recurrence` clears it;
+        omitting `is_completed` means false). Completing (`is_completed` false to true) a task that has a `recurrence` and a
+        `due_at` does not close it: `due_at` moves to the next occurrence, `remind_at` moves with it, and the answer is the
+        open, rolled task. If no next occurrence can be found the task is completed.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: daybook:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TaskUpdateInput"}
+      responses:
+        "200":
+          description: The task as it now is.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Task"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/ForbiddenWrite"}
+        "404":
+          description: "No such task for this caller. Body `{\"error\": \"task not found\"}`."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "500": {$ref: "#/components/responses/ServerError"}
+        "503": {$ref: "#/components/responses/NotPostgres"}
+    delete:
+      tags: [tasks]
+      operationId: deleteTask
+      summary: Delete a task
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: daybook:write
+      responses:
+        "204": {description: "Deleted, no body."}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/ForbiddenWrite"}
+        "404":
+          description: "No such task for this caller. Body `{\"error\": \"task not found\"}`."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "500": {$ref: "#/components/responses/ServerError"}
+        "503": {$ref: "#/components/responses/NotPostgres"}
+  /api/v1/projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      summary: List the caller's lists
+      description: Ordered by `sort_order`, then `name`.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: daybook:read
+      responses:
+        "200":
+          description: The lists.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: "#/components/schemas/Project"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/ForbiddenRead"}
+        "500": {$ref: "#/components/responses/ServerError"}
+        "503": {$ref: "#/components/responses/NotPostgres"}
+    post:
+      tags: [projects]
+      operationId: createProject
+      summary: Create a list
+      description: "`name` is trimmed and must not be empty."
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: daybook:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ProjectInput"}
+            example: {name: Home, sort_order: 0}
+      responses:
+        "201":
+          description: The list.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Project"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/ForbiddenWrite"}
+        "500": {$ref: "#/components/responses/ServerError"}
+        "503": {$ref: "#/components/responses/NotPostgres"}
+  /api/v1/projects/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    put:
+      tags: [projects]
+      operationId: updateProject
+      summary: Rename or reorder a list
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: daybook:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ProjectInput"}
+      responses:
+        "200":
+          description: The list as it now is.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Project"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/ForbiddenWrite"}
+        "404":
+          description: "No such list. Body `{\"error\": \"project not found\"}`."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "500": {$ref: "#/components/responses/ServerError"}
+        "503": {$ref: "#/components/responses/NotPostgres"}
+    delete:
+      tags: [projects]
+      operationId: deleteProject
+      summary: Delete a list and its tasks
+      description: The tasks of the list are deleted with it (foreign key `ON DELETE CASCADE`).
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: daybook:write
+      responses:
+        "204": {description: "Deleted, no body."}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/ForbiddenWrite"}
+        "404":
+          description: "No such list. Body `{\"error\": \"project not found\"}`."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "500": {$ref: "#/components/responses/ServerError"}
+        "503": {$ref: "#/components/responses/NotPostgres"}
+  /api/v1/labels:
+    get:
+      tags: [labels]
+      operationId: listLabels
+      summary: List the caller's labels
+      description: Ordered by lower-case name, then id.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: daybook:read
+      responses:
+        "200":
+          description: The labels.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: "#/components/schemas/Label"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/ForbiddenRead"}
+        "500": {$ref: "#/components/responses/ServerError"}
+        "503": {$ref: "#/components/responses/NotPostgres"}
+    post:
+      tags: [labels]
+      operationId: createLabel
+      summary: Create a label
+      description: |
+        `name` is trimmed and must not be empty; `color` defaults to `#888888`, must be `#rrggbb` and is stored lower-case.
+        Names are unique per user ignoring case (409).
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: daybook:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LabelInput"}
+            example: {name: errand, color: "#22c55e"}
+      responses:
+        "201":
+          description: The label.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Label"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/ForbiddenWrite"}
+        "409": {$ref: "#/components/responses/NameTaken"}
+        "500": {$ref: "#/components/responses/ServerError"}
+        "503": {$ref: "#/components/responses/NotPostgres"}
+  /api/v1/labels/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    put:
+      tags: [labels]
+      operationId: updateLabel
+      summary: Rename or recolour a label
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: daybook:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LabelInput"}
+      responses:
+        "200":
+          description: The label as it now is.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Label"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/ForbiddenWrite"}
+        "404":
+          description: "No such label. Body `{\"error\": \"label not found\"}`."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "409": {$ref: "#/components/responses/NameTaken"}
+        "500": {$ref: "#/components/responses/ServerError"}
+        "503": {$ref: "#/components/responses/NotPostgres"}
+    delete:
+      tags: [labels]
+      operationId: deleteLabel
+      summary: Delete a label
+      description: The label is removed from every task (join rows cascade); the tasks stay.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: daybook:write
+      responses:
+        "204": {description: "Deleted, no body."}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/ForbiddenWrite"}
+        "404":
+          description: "No such label. Body `{\"error\": \"label not found\"}`."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "500": {$ref: "#/components/responses/ServerError"}
+        "503": {$ref: "#/components/responses/NotPostgres"}
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Sign in through gatehouse
+      description: |
+        Forwards the JSON body unchanged to `POST {GATEHOUSE_URL}/api/v1/auth/login` and returns gatehouse's status and body
+        as they are, with `content-type: application/json` and `cache-control: no-store`. If gatehouse cannot be reached:
+        502 with `{"error":"cannot reach the sign-in service"}`. Public. The body is gatehouse's login request (the
+        browser client sends `username` and `password`).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        "200":
+          description: Gatehouse's answer (tokens) or any other status gatehouse gave.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        "502":
+          description: Gatehouse is unreachable.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refresh
+      summary: Refresh a session through gatehouse
+      description: Same forwarding as `/auth/login`, to `POST {GATEHOUSE_URL}/api/v1/auth/refresh`. Public.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: true}
+      responses:
+        "200":
+          description: Gatehouse's answer, whatever its status.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        "502":
+          description: Gatehouse is unreachable.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+  /ui:
+    get:
+      tags: [ui]
+      operationId: uiPage
+      summary: The browser client's page
+      description: HTML with a per-response nonce in the CSP; starts the wasm module. Public.
+      security: []
+      responses:
+        "200":
+          description: HTML.
+          content:
+            text/html: {schema: {type: string}}
+  /ui/assets/quench.js:
+    get:
+      tags: [ui]
+      operationId: uiScript
+      summary: The framework's loader script
+      security: []
+      responses:
+        "200":
+          description: JavaScript.
+          content:
+            application/javascript: {schema: {type: string}}
+  /ui/assets/app.css:
+    get:
+      tags: [ui]
+      operationId: uiStyle
+      summary: The stylesheet (`daybook_web::stylesheet`)
+      security: []
+      responses:
+        "200":
+          description: CSS.
+          content:
+            text/css: {schema: {type: string}}
+  /ui/assets/shell.js:
+    get:
+      tags: [ui]
+      operationId: uiShell
+      summary: The forge shell script
+      security: []
+      responses:
+        "200":
+          description: JavaScript.
+          content:
+            application/javascript: {schema: {type: string}}
+  /ui/assets/favicon.png:
+    get:
+      tags: [ui]
+      operationId: uiFavicon
+      summary: The icon (`services/daybook/icon.png`, compiled in)
+      security: []
+      responses:
+        "200":
+          description: PNG.
+          content:
+            image/png: {schema: {type: string, format: binary}}
+  /ui/assets/app.wasm:
+    get:
+      tags: [ui]
+      operationId: uiModule
+      summary: The browser module
+      description: Read from `$WEB_DIR/app.wasm` on every request; 404 when the file is missing.
+      security: []
+      responses:
+        "200":
+          description: WebAssembly.
+          content:
+            application/wasm: {schema: {type: string, format: binary}}
+        "404": {description: "`app.wasm` is not in WEB_DIR."}
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: A gatehouse access token for audience `daybook`.
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: AUTH_COOKIE_NAME
+      description: The realm session cookie (name from env `AUTH_COOKIE_NAME`), accepted by `Auth` when there is no Authorization header.
+  responses:
+    BadRequest:
+      description: Validation failed or a referenced list or label is not the caller's.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          examples:
+            content: {value: {error: content is required}}
+            reference: {value: {error: a referenced project or label does not exist for this user}}
+    Unauthorized:
+      description: "No valid token or the token's session is not active. Header `WWW-Authenticate: Bearer`, empty body."
+    ForbiddenRead:
+      description: The token lacks `daybook:read`.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {error: no read access to daybook}
+    ForbiddenWrite:
+      description: The token lacks `daybook:write`.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {error: no write access to daybook}
+    NameTaken:
+      description: A label with that name (ignoring case) exists.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {error: that name is already in use}
+    NotPostgres:
+      description: The service runs on the in-memory database.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {error: daybook requires Postgres}
+    ServerError:
+      description: A database error; the body carries the error text.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+    Unit:
+      type: string
+      enum: [day, week, month, year]
+    Mode:
+      type: string
+      enum: [fixed, after_completion]
+    Recurrence:
+      type: object
+      required: [unit, interval]
+      properties:
+        unit: {$ref: "#/components/schemas/Unit"}
+        interval:
+          type: integer
+          minimum: 1
+          maximum: 999
+        weekdays:
+          type: array
+          items: {type: integer, minimum: 1, maximum: 7}
+          default: []
+          description: ISO weekdays, 1 = Monday. Only for unit `week` and mode `fixed`; sorted and de-duplicated on input.
+        mode:
+          allOf: [{$ref: "#/components/schemas/Mode"}]
+          default: fixed
+        timezone:
+          type: string
+          default: UTC
+          description: IANA zone name; unknown names are refused with 400.
+    Task:
+      type: object
+      required: [id, project_id, content, description, is_completed, sort_order, due_at, due_all_day, remind_at, label_ids, recurrence, created_at, updated_at]
+      description: Every field is always present; absent values are `null`.
+      properties:
+        id: {type: string, description: A UUID v4 text.}
+        project_id: {type: [string, "null"]}
+        content: {type: string}
+        description: {type: [string, "null"]}
+        is_completed: {type: boolean}
+        sort_order: {type: integer, format: int32}
+        due_at: {type: [string, "null"], format: date-time}
+        due_all_day: {type: boolean}
+        remind_at: {type: [string, "null"], format: date-time}
+        label_ids:
+          type: array
+          items: {type: string}
+          description: Ordered by lower-case label name, then id.
+        recurrence:
+          oneOf: [{$ref: "#/components/schemas/Recurrence"}, {type: "null"}]
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    TaskInput:
+      type: object
+      required: [content]
+      properties:
+        content: {type: string}
+        description: {type: [string, "null"]}
+        project_id: {type: [string, "null"], description: Null or absent is the inbox.}
+        sort_order: {type: integer, format: int32, default: 0}
+        due_at: {type: [string, "null"], format: date-time}
+        due_all_day: {type: boolean, default: false}
+        remind_at: {type: [string, "null"], format: date-time}
+        label_ids: {type: array, items: {type: string}, default: []}
+        recurrence:
+          oneOf: [{$ref: "#/components/schemas/Recurrence"}, {type: "null"}]
+    TaskUpdateInput:
+      type: object
+      required: [content]
+      properties:
+        content: {type: string}
+        description: {type: [string, "null"]}
+        project_id: {type: [string, "null"]}
+        is_completed: {type: boolean, default: false}
+        sort_order: {type: integer, format: int32, default: 0}
+        due_at: {type: [string, "null"], format: date-time}
+        due_all_day: {type: boolean, default: false}
+        remind_at: {type: [string, "null"], format: date-time}
+        label_ids: {type: array, items: {type: string}, default: []}
+        recurrence:
+          oneOf: [{$ref: "#/components/schemas/Recurrence"}, {type: "null"}]
+    Project:
+      type: object
+      required: [id, name, sort_order, created_at]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        sort_order: {type: integer, format: int32}
+        created_at: {type: string, format: date-time}
+    ProjectInput:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        sort_order: {type: integer, format: int32, default: 0}
+    Label:
+      type: object
+      required: [id, name, color, created_at]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        color: {type: string, pattern: "^#[0-9a-f]{6}$"}
+        created_at: {type: string, format: date-time}
+    LabelInput:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        color: {type: string, pattern: "^#[0-9a-fA-F]{6}$", default: "#888888"}

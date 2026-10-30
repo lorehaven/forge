@@ -19,6 +19,60 @@ pub struct Config {
 
     #[serde(default)]
     pub artifacts: ArtifactsConfig,
+
+    #[serde(default)]
+    pub docs: DocsConfig,
+}
+
+/// `anvil docs`: documentation books that are checked, built with Jekyll and sent to the warehouse.
+#[derive(Debug, Default, Deserialize)]
+pub struct DocsConfig {
+    /// Where the builds go, from the workspace root (default `target/docs`).
+    #[serde(default)]
+    pub out: Option<String>,
+    /// The command that runs Jekyll, split on spaces (default `jekyll`; `bundle exec jekyll` for a Gemfile).
+    #[serde(default)]
+    pub jekyll: Option<String>,
+    /// The warehouse, including its base path; `[artifacts].warehouse_url` when empty.
+    #[serde(default)]
+    pub warehouse_url: Option<String>,
+    /// The warehouse files storage the books are kept in (`docs`): required to release.
+    #[serde(default)]
+    pub storage: Option<String>,
+    /// The books, by name: `[docs.books.<name>]`.
+    #[serde(default)]
+    pub books: BTreeMap<String, DocsBook>,
+}
+
+/// One Jekyll site made of Markdown files.
+#[derive(Debug, Default, Deserialize)]
+pub struct DocsBook {
+    /// The site's source directory, from the workspace root.
+    pub dir: String,
+    /// The name shown with the book (default: the book's name).
+    #[serde(default)]
+    pub title: Option<String>,
+    /// The version of the book, literally. Without it: the version of `version_file`, else today's date.
+    #[serde(default)]
+    pub version: Option<String>,
+    /// A `Cargo.toml` (from the workspace root) whose version is the book's.
+    #[serde(default)]
+    pub version_file: Option<String>,
+    /// The `baseurl` the site is built for (`/docs/forge`): empty for a site at the root.
+    #[serde(default)]
+    pub baseurl: Option<String>,
+    /// Checks each `openapi.yaml` under `<dir>/<specs>/<name>/` against the routes in the source.
+    #[serde(default)]
+    pub openapi: Option<DocsOpenApi>,
+}
+
+/// Where a book's `OpenAPI` documents are and where the routes they describe live.
+#[derive(Debug, Default, Deserialize)]
+pub struct DocsOpenApi {
+    /// The directory of the book that holds one directory per service (`services`).
+    pub specs: String,
+    /// The service's source directories, from the workspace root; `{name}` is the service (`services/{name}/service/src`).
+    pub sources: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

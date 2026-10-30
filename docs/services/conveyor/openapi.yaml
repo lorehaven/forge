@@ -1,0 +1,1671 @@
+openapi: 3.1.0
+info:
+  title: Conveyor service
+  version: 0.7.3
+  description: |
+    The CI service of the estate: a registry of repositories organised in a project tree, a Postgres-backed run queue,
+    workers that check out a commit and run the `.conveyor.toml` it carries, logs (stored and streamed over SSE),
+    sealed secrets and git credentials, scheduled runs, scan summaries and run-result mail.
+    Everything under `/api/v1` needs a verified identity except `/api/v1/webhooks/{provider}`, which is authenticated by
+    an HMAC signature. Access is decided per project: `conveyor:<action>` is the blanket grant,
+    `conveyor:project:<id>:<action>` a grant on one node of the tree and everything beneath it (actions: `read`, `write`).
+    Error bodies are `{"error": "<text>"}`. Times are RFC 3339 strings.
+servers:
+  - url: "{base}"
+    variables:
+      base:
+        default: /conveyor
+        description: The service's BASE_PATH.
+tags:
+  - name: projects
+    description: The organisational tree.
+  - name: repos
+    description: Registered repositories.
+  - name: runs
+    description: Triggering, reading, cancelling and restarting runs; schedules and stages.
+  - name: logs
+    description: Job logs, stored and streamed.
+  - name: overview
+    description: Reads that serve the front page, the history and the access of the caller.
+  - name: scan
+    description: Code-quality summaries and stored reports.
+  - name: secrets
+    description: Sealed values injected into jobs that name them (write-only).
+  - name: credentials
+    description: Sealed git credentials used by checkouts (write-only).
+  - name: subscriptions
+    description: Following the results of a repository or project.
+  - name: webhooks
+    description: Provider deliveries (signature-authenticated).
+  - name: auth
+    description: Sign-in forwarded to gatehouse.
+  - name: ui
+    description: The browser client's page routes and files.
+paths:
+  /api/v1/projects:
+    post:
+      tags: [projects]
+      operationId: createProject
+      summary: Create a project node
+      description: |
+        With `parent_id`, needs write on that parent (or the blanket write grant); without it (a root node) only the blanket
+        `conveyor:write` is enough. The name is trimmed. Sibling names are unique (a root name is unique among roots).
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write (or conveyor:project:<parent_id>:write)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateProject'}
+            example: {name: lorehaven, parent_id: null}
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Project'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '503': {$ref: '#/components/responses/NotPostgres'}
+    get:
+      tags: [projects]
+      operationId: listProjects
+      summary: List project nodes
+      description: |
+        With `all=true`: every node, at any depth. Otherwise the children of `parent_id` (the roots when it is absent).
+        No per-project permission is checked: any authenticated caller sees the names and structure of the tree.
+      security: [{bearer: []}, {sessionCookie: []}]
+      parameters:
+        - {name: parent_id, in: query, required: false, schema: {type: string}}
+        - {name: all, in: query, required: false, schema: {type: boolean}}
+      responses:
+        '200':
+          description: The nodes.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Project'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/NotPostgres'}
+  /api/v1/projects/{id}:
+    get:
+      tags: [projects]
+      operationId: readProject
+      summary: Read a project node
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read (or conveyor:project:<id>:read, or on an ancestor)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The node and its full path (`root/child/...`).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProjectView'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [projects]
+      operationId: updateProject
+      summary: Rename or move a project node
+      description: |
+        Rename happens first, then the move; they are separate statements, so a refused move leaves the rename applied.
+        `to_root: true` moves to the root level and wins over `parent_id`. A move needs write on the destination as well.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the node (and on the destination parent)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateProject'}
+      responses:
+        '200':
+          description: The node after the change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Project'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    delete:
+      tags: [projects]
+      operationId: deleteProject
+      summary: Delete a project node
+      description: Refused with 409 while the node has child nodes or an attached repository.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the node
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: 'Deleted.'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/repos:
+    post:
+      tags: [repos]
+      operationId: registerRepo
+      summary: Register a repository
+      description: |
+        `provider` defaults to `github`. `owner`, `name`, `project_id` are required and trimmed; `clone_url` is checked
+        (not empty, not starting with `-`, no control characters). `default_branch` defaults to `master`. The registering
+        account (the token's `sub`, or `dev` with auth off) becomes `registered_by` and must exist in the realm's users.
+        A second registration of the same `(provider, owner, name)` is a 409.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the target project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterRepo'}
+            example: {owner: lorehaven, name: forge, clone_url: "https://github.com/lorehaven/forge.git", default_branch: master, project_id: "0d3c2f0e-3f0e-4d6e-9d84-0a5b1f8a77c1"}
+      responses:
+        '201':
+          description: Registered.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Repo'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    get:
+      tags: [repos]
+      operationId: listRepos
+      summary: List the repositories the caller may read
+      description: |
+        Filtered, not refused: with the blanket `conveyor:read` (or auth off) every repository; otherwise those under a
+        project the caller holds `project:<id>:read` on, descendants included.
+      security: [{bearer: []}, {sessionCookie: []}]
+      responses:
+        '200':
+          description: The repositories.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Repo'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /api/v1/repos/{id}:
+    get:
+      tags: [repos]
+      operationId: readRepo
+      summary: Read a repository
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The repository.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Repo'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [repos]
+      operationId: updateRepo
+      summary: Partially update a repository
+      description: Absent fields are left alone. `provider` cannot be changed. Moving to another project needs write there too.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the project (and on the destination project)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateRepo'}
+      responses:
+        '200':
+          description: The repository after the change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Repo'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+    delete:
+      tags: [repos]
+      operationId: deleteRepo
+      summary: Delete a repository
+      description: Removes the repository and, through the foreign keys, its runs, jobs, logs, artifacts rows, secrets, credential, schedules and subscriptions.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: 'Deleted.'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/repos/{id}/enabled:
+    post:
+      tags: [repos]
+      operationId: setRepoEnabled
+      summary: Enable or disable a repository
+      description: A disabled repository keeps its history and stops accepting triggers (webhooks are acknowledged and ignored, manual runs are refused with 409, queued runs are not claimed).
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetEnabled'}
+      responses:
+        '200':
+          description: The repository after the change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Repo'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/repos/{repo_id}/runs:
+    post:
+      tags: [runs]
+      operationId: triggerRun
+      summary: Start a run by hand
+      description: |
+        The body is optional (an empty body means all defaults). Without `git_ref` the default branch is built
+        (`refs/heads/<default_branch>`); without `sha`, the remote is asked (`git ls-remote`) what the ref points at, using the
+        repository's git credential if there is one. The pipeline's `on` patterns do not gate a manual run. With `stages`, only
+        those stages run, each whatever its own `when` says. The delivery id is empty, so asking for the same commit twice is
+        allowed.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the repository's project
+      parameters:
+        - {name: repo_id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TriggerRun'}
+            example: {git_ref: refs/heads/master, stages: [security]}
+      responses:
+        '202':
+          description: Queued.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '502':
+          description: The remote could not be asked what the ref points at.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /api/v1/repos/{repo_id}/schedules:
+    get:
+      tags: [runs]
+      operationId: listSchedules
+      summary: A repository's schedules
+      description: Read-only. Rows exist once a run of the default branch has read a pipeline that declares `on.schedule`. Ordered by `next_run_at`, then expression.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: repo_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The schedules.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/StoredSchedule'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/repos/{repo_id}/stages:
+    get:
+      tags: [runs]
+      operationId: listStages
+      summary: The stages of a repository's pipeline, as its recent runs recorded them
+      description: |
+        Looks through the newest 30 runs that were not limited to some stages. Empty until the repository has run.
+        `on_by_default` is false for a stage the newest ordinary (non-schedule) run left out by its own `when`.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: repo_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The stages, in an order that respects `needs`.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/KnownStage'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/runs:
+    get:
+      tags: [runs]
+      operationId: listRuns
+      summary: List runs, newest first
+      description: |
+        With `repo_id`: that repository's runs (403/404 as for the repository). Without: every run the caller may read
+        (filtered, not refused). `limit` defaults to 50 and is clamped to 1..500.
+      security: [{bearer: []}, {sessionCookie: []}]
+      parameters:
+        - {name: repo_id, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, format: int64}}
+      responses:
+        '200':
+          description: The runs.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Run'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/runs/{id}:
+    get:
+      tags: [runs]
+      operationId: readRun
+      summary: A run with its jobs and artifacts
+      description: A run whose repository has since been deleted answers 403, not 404.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The run (fields at the top level) plus `jobs` and `artifacts`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/runs/{id}/cancel:
+    post:
+      tags: [runs]
+      operationId: cancelRun
+      summary: Ask a run to stop
+      description: |
+        A queued run becomes `cancelled` at once. A running run is flagged (`cancel_requested`); the worker holding it notices
+        within about two seconds, stops the executor's job and finishes the run `cancelled`. Accepted, not complete.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '202': {description: 'Accepted, no body.'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/runs/{id}/restart:
+    post:
+      tags: [runs]
+      operationId: restartRun
+      summary: Restart a failed or cancelled run
+      description: |
+        Queues a new run of the same trigger, ref, sha, message and stage selection, with `resumed_from` set to this run.
+        Stages that fully passed last time are carried over instead of rerun.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '202':
+          description: The new run.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/jobs/{id}/logs:
+    get:
+      tags: [logs]
+      operationId: readJobLogs
+      summary: A job's stored log
+      description: Only what was persisted when the job finished. Live output is `/api/v1/jobs/{id}/stream`.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The lines, in order.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/LogChunk'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/jobs/{id}/stream:
+    get:
+      tags: [logs]
+      operationId: streamJobLog
+      summary: A job's log as server-sent events
+      description: |
+        If the executor still knows the job (it is running), the history so far and then the live lines; otherwise the stored
+        log. Either way the stream ends with `event: done`. Frames are `id: <seq>`, `event: stdout|stderr`, `data: <line>`; a
+        subscriber that fell behind gets `event: lagged`. See the events page.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - name: format
+          in: query
+          required: false
+          description: "`text` (default): the line as written. `html`: an escaped `<span class=\"log-line[ log-stderr]\">`."
+          schema: {type: string, enum: [text, html]}
+      responses:
+        '200':
+          description: An event stream.
+          content:
+            text/event-stream:
+              schema: {type: string}
+              example: "id: 7\nevent: stdout\ndata: compiling thing\n\nevent: done\ndata: end of log\n\n"
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/jobs/{id}/raw:
+    get:
+      tags: [logs]
+      operationId: rawJobLog
+      summary: A job's log as plain text
+      description: One line per log line, no framing. A running job's output keeps streaming until it ends.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The log.
+          content:
+            text/plain:
+              schema: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/access:
+    get:
+      tags: [overview]
+      operationId: access
+      summary: What the caller may read and write
+      description: Ids of the projects the caller may read and write (descendants of a granted node included). With the blanket grant, or with auth off, every project.
+      security: [{bearer: []}, {sessionCookie: []}]
+      responses:
+        '200':
+          description: Access.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Access'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /api/v1/overview/runs:
+    get:
+      tags: [overview]
+      operationId: overviewRuns
+      summary: The front page's runs
+      description: |
+        The newest 200 runs in scope, reduced to at most `CONVEYOR_HOME_MAX_RUNS_PER_REPO` per repository and
+        `CONVEYOR_HOME_RECENT_RUNS` in total (defaults 1 and 5). `project` limits the scope to a node and everything under it.
+      security: [{bearer: []}, {sessionCookie: []}]
+      parameters:
+        - {name: project, in: query, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: The runs, newest first.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Run'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/overview/history:
+    get:
+      tags: [overview]
+      operationId: overviewHistory
+      summary: One page of the run history
+      description: Page size is `CONVEYOR_RUNS_PAGE_SIZE` (default 25). `page` starts at 1; a value below 1 is 1.
+      security: [{bearer: []}, {sessionCookie: []}]
+      parameters:
+        - {name: project, in: query, required: false, schema: {type: string}}
+        - {name: page, in: query, required: false, schema: {type: integer, minimum: 1}}
+      responses:
+        '200':
+          description: The page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunsPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/scan:
+    get:
+      tags: [scan]
+      operationId: scanChips
+      summary: The check chips of every readable repository
+      security: [{bearer: []}, {sessionCookie: []}]
+      responses:
+        '200':
+          description: One entry per readable repository.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/RepoChecks'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /api/v1/repos/{id}/scan:
+    get:
+      tags: [scan]
+      operationId: repoScan
+      summary: A repository's code-quality summary
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The newest run and the checks (lint, machete, audit, coverage, tests, security) that exist.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ScanReport'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/repos/{id}/scan/findings:
+    get:
+      tags: [scan]
+      operationId: scanFindings
+      summary: Every finding of the newest security scan
+      description: From the `security-findings.json` artifact of the newest run that kept one, most severe first. 404 `no scanner findings` when there is none.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The findings.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ScanFindings'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/repos/{id}/scan/{category}/report:
+    get:
+      tags: [scan]
+      operationId: scanReport
+      summary: The stored report page of a check
+      description: |
+        Only `tests` and `security` keep one (`index.html` and `security.html`). Served by conveyor with
+        `content-security-policy: sandbox allow-scripts`, `x-content-type-options: nosniff` and `cache-control: private, max-age=60`
+        so the page can filter itself but cannot reach conveyor's session. `download` (any value) adds
+        `content-disposition: attachment; filename="<owner>-<name>-<category>-report.html"`.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: category, in: path, required: true, schema: {type: string, enum: [tests, security]}}
+        - {name: download, in: query, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: The report page.
+          content:
+            text/html:
+              schema: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '502':
+          description: The artifact store could not be read. Body is the text `the report could not be read`.
+          content:
+            text/plain:
+              schema: {type: string}
+  /api/v1/credentials:
+    get:
+      tags: [credentials]
+      operationId: listCredentials
+      summary: The credentials the caller may see
+      description: Never a token. A repository credential is as readable as its repository, a project credential as its project. Credentials of a repository that no longer exists are left out.
+      security: [{bearer: []}, {sessionCookie: []}]
+      responses:
+        '200':
+          description: The credentials.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Credential'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /api/v1/secrets:
+    get:
+      tags: [secrets]
+      operationId: listGlobalSecrets
+      summary: Estate-wide secret names
+      description: Names and metadata only.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read (blanket only)
+      responses:
+        '200':
+          description: The secrets, without values.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/SecretRef'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /api/v1/secrets/{name}:
+    put:
+      tags: [secrets]
+      operationId: putGlobalSecret
+      summary: Set an estate-wide secret
+      description: |
+        Replaces any value under that name. The name holds letters, digits and underscores and does not start with a digit.
+        The value must be at least 4 characters. Needs `CONVEYOR_SECRET_KEY`. The value is never readable back.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write (blanket only)
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetSecret'}
+      responses:
+        '200':
+          description: The stored secret, without its value.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecretRef'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    delete:
+      tags: [secrets]
+      operationId: deleteGlobalSecret
+      summary: Delete an estate-wide secret
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write (blanket only)
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: 'Deleted.'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /api/v1/repos/{repo_id}/secrets:
+    get:
+      tags: [secrets]
+      operationId: listRepoSecrets
+      summary: A repository's secret names
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: repo_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The secrets, without values.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/SecretRef'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /api/v1/repos/{repo_id}/secrets/{name}:
+    put:
+      tags: [secrets]
+      operationId: putRepoSecret
+      summary: Set a repository secret
+      description: Overrides an estate-wide secret of the same name for this repository's jobs. The name `WEBHOOK_SECRET` is the repository's webhook signing secret.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the repository's project
+      parameters:
+        - {name: repo_id, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetSecret'}
+            example: {value: "s3cr3t-value"}
+      responses:
+        '200':
+          description: The stored secret, without its value.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecretRef'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    delete:
+      tags: [secrets]
+      operationId: deleteRepoSecret
+      summary: Delete a repository secret
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the repository's project
+      parameters:
+        - {name: repo_id, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: 'Deleted.'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /api/v1/projects/{project_id}/credentials:
+    put:
+      tags: [credentials]
+      operationId: putProjectCredential
+      summary: Set a project's git credential
+      description: |
+        At most one per project. Used by the checkouts of every repository under the project that has no credential of its own
+        (nearest ancestor wins). Replaces the existing one. Needs `CONVEYOR_CREDENTIAL_KEY`.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the project
+      parameters:
+        - {name: project_id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetCredential'}
+            example: {name: github_read, username: ci-bot, token: "ghp_exampletoken"}
+      responses:
+        '200':
+          description: The stored credential, without its token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Credential'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    get:
+      tags: [credentials]
+      operationId: showProjectCredential
+      summary: A project's git credential, without its token
+      description: "`null` (200) when none is set."
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the project
+      parameters:
+        - {name: project_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The credential or `null`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - {$ref: '#/components/schemas/Credential'}
+                  - {type: 'null'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    delete:
+      tags: [credentials]
+      operationId: deleteProjectCredential
+      summary: Remove a project's git credential
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the project
+      parameters:
+        - {name: project_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: 'Removed.'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /api/v1/repos/{repo_id}/credentials:
+    put:
+      tags: [credentials]
+      operationId: putRepoCredential
+      summary: Set a repository's git credential
+      description: At most one per repository; it wins over any project credential.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the repository's project
+      parameters:
+        - {name: repo_id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetCredential'}
+      responses:
+        '200':
+          description: The stored credential, without its token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Credential'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    get:
+      tags: [credentials]
+      operationId: showRepoCredential
+      summary: A repository's git credential, without its token
+      description: "`null` (200) when none is set."
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: repo_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The credential or `null`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - {$ref: '#/components/schemas/Credential'}
+                  - {type: 'null'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    delete:
+      tags: [credentials]
+      operationId: deleteRepoCredential
+      summary: Remove a repository's git credential
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:write on the repository's project
+      parameters:
+        - {name: repo_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: 'Removed.'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /api/v1/subscriptions:
+    get:
+      tags: [subscriptions]
+      operationId: listSubscriptions
+      summary: The caller's own follows
+      security: [{bearer: []}, {sessionCookie: []}]
+      responses:
+        '200':
+          description: The caller's subscriptions.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Subscription'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /api/v1/repos/{id}/subscription:
+    put:
+      tags: [subscriptions]
+      operationId: followRepo
+      summary: Follow a repository
+      description: Needs read access to the repository's project. `201` when created, `200` when already followed.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the repository's project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Already followed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubscriptionState'}
+        '201':
+          description: Now followed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubscriptionState'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [subscriptions]
+      operationId: unfollowRepo
+      summary: Stop following a repository
+      description: No access check, so someone who lost access can still stop the mail. Always `200`, whether or not a follow existed.
+      security: [{bearer: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Not followed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubscriptionState'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /api/v1/projects/{id}/subscription:
+    put:
+      tags: [subscriptions]
+      operationId: followProject
+      summary: Follow a project
+      description: Covers every repository nested beneath it. `201` when created, `200` when already followed.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: conveyor:read on the project
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Already followed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubscriptionState'}
+        '201':
+          description: Now followed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubscriptionState'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [subscriptions]
+      operationId: unfollowProject
+      summary: Stop following a project
+      description: No access check. Always `200`.
+      security: [{bearer: []}, {sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Not followed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SubscriptionState'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /api/v1/webhooks/{provider}:
+    post:
+      tags: [webhooks]
+      operationId: receiveWebhook
+      summary: Receive a provider delivery
+      description: |
+        The one unauthenticated endpoint (outside `Auth`). `provider` is `github` or `generic`. Order of checks: provider known,
+        payload parsed, fields validated, repository registered, signature verified against the repository's `WEBHOOK_SECRET`
+        secret (else `CONVEYOR_WEBHOOK_SECRET`; without either, 503), repository enabled, fork rule, tag rule, then the run is
+        queued with the provider's delivery id (a redelivery is not queued again).
+        GitHub: header `X-Hub-Signature-256: sha256=<hex>`, `X-GitHub-Event` (`push`, `pull_request`; others are ignored) and
+        `X-GitHub-Delivery`. Generic: header `X-Conveyor-Signature-256: sha256=<hex>` and the JSON body of `GenericEvent`.
+        The signature is HMAC-SHA256 of the raw body.
+      security: []
+      parameters:
+        - {name: provider, in: path, required: true, schema: {type: string, enum: [github, generic]}}
+        - {name: X-Hub-Signature-256, in: header, required: false, schema: {type: string}}
+        - {name: X-GitHub-Event, in: header, required: false, schema: {type: string}}
+        - {name: X-GitHub-Delivery, in: header, required: false, schema: {type: string}}
+        - {name: X-Conveyor-Signature-256, in: header, required: false, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - {$ref: '#/components/schemas/GenericEvent'}
+                - {type: object, description: 'A GitHub `push` or `pull_request` event payload (only the fields conveyor reads are listed in the webhooks section of the API page).'}
+      responses:
+        '200':
+          description: A redelivery; the run made for it the first time.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+        '202':
+          description: 'Either the newly queued run, or {"ignored": "<reason>"} for an event that is acknowledged and not built.'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - {$ref: '#/components/schemas/Run'}
+                  - {$ref: '#/components/schemas/Ignored'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401':
+          description: '`{"error": "bad signature"}`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503':
+          description: 'No webhook secret is configured for the repository or the estate (`conveyor is not configured to accept webhooks for this repository`), or the database is not Postgres.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /ui:
+    get:
+      tags: [ui]
+      operationId: uiRoot
+      summary: Redirect to the front page
+      description: "`302` to `{BASE_PATH}/ui/home` with a session; without one, `302` to the sign-in."
+      security: []
+      responses:
+        '302': {description: 'Redirect.'}
+  /ui/:
+    get:
+      tags: [ui]
+      operationId: uiRootSlash
+      summary: Same as `/ui`
+      security: []
+      responses:
+        '302': {description: 'Redirect.'}
+  /ui/login:
+    get:
+      tags: [auth]
+      operationId: uiLogin
+      summary: Start sign-in (gatehouse)
+      description: See the common runtime page.
+      security: []
+      responses:
+        '302': {description: 'Redirect to gatehouse''s authorize endpoint, or to the home page with fresh cookies.'}
+        '503': {description: 'gatehouse is not configured.'}
+  /ui/login/:
+    get:
+      tags: [auth]
+      operationId: uiLoginSlash
+      summary: Same as `/ui/login`
+      security: []
+      responses:
+        '302': {description: 'Redirect.'}
+        '503': {description: 'gatehouse is not configured.'}
+  /ui/auth/callback:
+    get:
+      tags: [auth]
+      operationId: uiAuthCallback
+      summary: OAuth callback
+      security: []
+      parameters:
+        - {name: code, in: query, required: false, schema: {type: string}}
+        - {name: state, in: query, required: false, schema: {type: string}}
+      responses:
+        '302': {description: 'Redirect to the saved page with session cookies, or back to the sign-in on failure.'}
+  /ui/logout:
+    get:
+      tags: [auth]
+      operationId: uiLogout
+      summary: Sign out through gatehouse
+      security: []
+      responses:
+        '302': {description: 'Redirect to gatehouse''s logout.'}
+        '503': {description: 'gatehouse is not configured.'}
+  /ui/refresh:
+    post:
+      tags: [auth]
+      operationId: uiRefresh
+      summary: Refresh the session
+      security: []
+      responses:
+        '200': {description: 'New session and refresh cookies.'}
+        '401': {description: 'No refresh cookie, or gatehouse refused it.'}
+  /ui/status:
+    get:
+      tags: [auth]
+      operationId: uiStatus
+      summary: Who the session cookie says the caller is
+      description: |
+        Always `200`. With auth off, `{"authenticated": true, "username": "dev", "roles": ["admin"]}`. With no cookie or an
+        invalid one, `{"authenticated": false, "username": null, "roles": []}`. `roles` is the token's `scope` split at commas.
+      security: []
+      responses:
+        '200':
+          description: Status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthStatus'}
+  /ui/home:
+    get:
+      tags: [ui]
+      operationId: uiHome
+      summary: Pipelines (front page)
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: 'The browser client''s HTML page.'}
+        '302': {description: 'No session; redirect to the sign-in.'}
+  /ui/home/:
+    get:
+      tags: [ui]
+      operationId: uiHomeSlash
+      summary: Same as `/ui/home`
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/projects/{id}:
+    get:
+      tags: [ui]
+      operationId: uiProject
+      summary: A project's branch of the front page
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/runs:
+    get:
+      tags: [ui]
+      operationId: uiRuns
+      summary: All pipelines (history)
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/runs/{id}:
+    get:
+      tags: [ui]
+      operationId: uiRun
+      summary: One run
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/credentials:
+    get:
+      tags: [ui]
+      operationId: uiCredentials
+      summary: Credentials
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/repos:
+    get:
+      tags: [ui]
+      operationId: uiRepos
+      summary: Repositories (manage)
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/repos/{owner}/{name}/edit:
+    get:
+      tags: [ui]
+      operationId: uiRepoEdit
+      summary: Edit a repository
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/repos/{owner}/{name}/run:
+    get:
+      tags: [ui]
+      operationId: uiRepoLaunch
+      summary: Run with parameters
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/repos/{owner}/{name}/scan:
+    get:
+      tags: [ui]
+      operationId: uiRepoScan
+      summary: A repository's scan overview
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/repos/{owner}/{name}/scan/{category}:
+    get:
+      tags: [ui]
+      operationId: uiRepoCheck
+      summary: One check of the scan
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+        - {name: category, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/assets/quench.js:
+    get:
+      tags: [ui]
+      operationId: uiAssetScript
+      summary: The UI runtime script
+      security: []
+      responses:
+        '200': {description: 'JavaScript.'}
+  /ui/assets/app.css:
+    get:
+      tags: [ui]
+      operationId: uiAssetStyle
+      summary: The stylesheet (shell styles then the app's)
+      security: []
+      responses:
+        '200': {description: 'CSS.'}
+  /ui/assets/shell.js:
+    get:
+      tags: [ui]
+      operationId: uiAssetShell
+      summary: The shell script
+      security: []
+      responses:
+        '200': {description: 'JavaScript.'}
+  /ui/assets/favicon.png:
+    get:
+      tags: [ui]
+      operationId: uiAssetFavicon
+      summary: The icon
+      security: []
+      responses:
+        '200': {description: 'PNG.'}
+  /ui/assets/app.wasm:
+    get:
+      tags: [ui]
+      operationId: uiAssetModule
+      summary: The browser client module
+      security: []
+      responses:
+        '200': {description: 'WebAssembly (`application/wasm`).'}
+        '404': {description: 'The module is not installed in the web directory.'}
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: A gatehouse access token whose audience includes `conveyor` (a person's, or a client-credentials token).
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: forge_session
+      description: The realm session cookie (name from AUTH_COOKIE_NAME).
+  responses:
+    BadRequest:
+      description: 'Invalid input. Body `{"error": "<text>"}`.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unauthorized:
+      description: No valid token or session (`Auth`). A browser request is redirected instead.
+    Forbidden:
+      description: 'The caller lacks the grant. Body `{"error": "no write access to this repository"}` and similar.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    NotFound:
+      description: 'Not found. Body `{"error": "no such run"}` and similar.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Conflict:
+      description: 'A state or uniqueness conflict. Body `{"error": "<text>"}`.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    NotPostgres:
+      description: The service runs against an in-memory database (`conveyor's queue needs Postgres; ...`).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unavailable:
+      description: 'A missing or invalid sealing key, or no Postgres. Body `{"error": "<text>"}`.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+    Provider:
+      type: string
+      enum: [github, generic]
+    Trigger:
+      type: string
+      enum: [push, pull_request, manual, schedule]
+    Status:
+      type: string
+      enum: [queued, running, success, failed, cancelled, skipped]
+    Project:
+      type: object
+      required: [id, name, parent_id, created_at, updated_at]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        parent_id: {type: [string, 'null'], description: 'Null for a root node.'}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ProjectView:
+      allOf:
+        - {$ref: '#/components/schemas/Project'}
+        - type: object
+          required: [path]
+          properties:
+            path: {type: string, description: "Names from the root, joined with `/`."}
+    CreateProject:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        parent_id: {type: [string, 'null']}
+    UpdateProject:
+      type: object
+      properties:
+        name: {type: [string, 'null']}
+        parent_id: {type: [string, 'null']}
+        to_root: {type: boolean, default: false}
+    Repo:
+      type: object
+      required: [id, provider, owner, name, clone_url, default_branch, registered_by, project_id, enabled, created_at, updated_at]
+      properties:
+        id: {type: string}
+        provider: {$ref: '#/components/schemas/Provider'}
+        owner: {type: string}
+        name: {type: string}
+        clone_url: {type: string}
+        default_branch: {type: string}
+        registered_by: {type: string}
+        project_id: {type: string}
+        enabled: {type: boolean}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    RegisterRepo:
+      type: object
+      required: [owner, name, clone_url, project_id]
+      properties:
+        provider: {type: [string, 'null'], enum: [github, generic, null]}
+        owner: {type: string}
+        name: {type: string}
+        clone_url: {type: string}
+        default_branch: {type: [string, 'null']}
+        project_id: {type: string}
+    UpdateRepo:
+      type: object
+      properties:
+        owner: {type: [string, 'null']}
+        name: {type: [string, 'null']}
+        clone_url: {type: [string, 'null']}
+        default_branch: {type: [string, 'null']}
+        project_id: {type: [string, 'null']}
+        enabled: {type: [boolean, 'null']}
+    SetEnabled:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: {type: boolean}
+    TriggerRun:
+      type: object
+      properties:
+        git_ref: {type: [string, 'null'], description: 'Full ref or a branch/tag ref; defaults to refs/heads/<default branch>.'}
+        sha: {type: [string, 'null'], description: '7 to 64 hex digits.'}
+        stages:
+          type: [array, 'null']
+          items: {type: string}
+          description: At most 64 distinct names of at most 128 characters; blanks are dropped; an empty list is a 400.
+    Run:
+      type: object
+      required: [id, repo_id, trigger, git_ref, sha, status, queued_at, attempt]
+      properties:
+        id: {type: string}
+        repo_id: {type: string}
+        trigger: {$ref: '#/components/schemas/Trigger'}
+        git_ref: {type: string}
+        sha: {type: string}
+        message: {type: [string, 'null']}
+        delivery_id: {type: [string, 'null']}
+        status: {$ref: '#/components/schemas/Status'}
+        queued_at: {type: string, format: date-time}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        claimed_by: {type: [string, 'null']}
+        claimed_at: {type: [string, 'null'], format: date-time}
+        attempt: {type: integer, format: int32}
+        error: {type: [string, 'null']}
+        resumed_from: {type: [string, 'null']}
+        stages:
+          type: [array, 'null']
+          items: {type: string}
+      example:
+        id: 5b0f2f2a-3f9e-4c57-8f36-1a2d0e2a9d11
+        repo_id: 2c4f7b14-0a8e-4e55-9b4f-6a3e1d9c0b22
+        trigger: push
+        git_ref: refs/heads/master
+        sha: 0123456789abcdef0123456789abcdef01234567
+        message: Fix the thing
+        delivery_id: 8a1f0c4e-aaaa-bbbb-cccc-000000000001
+        status: queued
+        queued_at: "2026-10-30T10:15:00Z"
+        started_at: null
+        finished_at: null
+        claimed_by: null
+        claimed_at: null
+        attempt: 0
+        error: null
+        resumed_from: null
+        stages: null
+    Job:
+      type: object
+      required: [id, run_id, stage, name, needs, status]
+      properties:
+        id: {type: string}
+        run_id: {type: string}
+        stage: {type: string}
+        name: {type: string}
+        needs:
+          type: array
+          items: {type: string}
+          description: The stages this job's stage waited on.
+        status: {$ref: '#/components/schemas/Status'}
+        exit_code: {type: [integer, 'null'], format: int32}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+        error: {type: [string, 'null']}
+        reused_from_run: {type: [string, 'null']}
+    Artifact:
+      type: object
+      required: [id, run_id, job_id, kind, name, uri, created_at]
+      properties:
+        id: {type: string}
+        run_id: {type: string}
+        job_id: {type: string}
+        kind: {type: string, description: "`file` for everything conveyor records itself (the type also allows `crate`, `image`)."}
+        name: {type: string}
+        version: {type: [string, 'null']}
+        uri: {type: string}
+        digest: {type: [string, 'null']}
+        created_at: {type: string, format: date-time}
+    ArtifactView:
+      allOf:
+        - {$ref: '#/components/schemas/Artifact'}
+        - type: object
+          required: [href]
+          properties:
+            href: {type: string, description: "`uri` with the in-cluster warehouse address replaced by `WAREHOUSE_PUBLIC_URL` when that is set."}
+    RunDetail:
+      allOf:
+        - {$ref: '#/components/schemas/Run'}
+        - type: object
+          required: [jobs, artifacts]
+          properties:
+            jobs:
+              type: array
+              items: {$ref: '#/components/schemas/Job'}
+            artifacts:
+              type: array
+              items: {$ref: '#/components/schemas/ArtifactView'}
+    RunsPage:
+      type: object
+      required: [runs, page, pages, total]
+      properties:
+        runs:
+          type: array
+          items: {$ref: '#/components/schemas/Run'}
+        page: {type: integer, format: int32}
+        pages: {type: integer, format: int32, description: 'At least 1.'}
+        total: {type: integer, format: int64}
+    LogChunk:
+      type: object
+      required: [seq, stream, line, at]
+      properties:
+        seq: {type: integer, format: int64}
+        stream: {type: string, enum: [stdout, stderr]}
+        line: {type: string}
+        at: {type: string, format: date-time}
+    StoredSchedule:
+      type: object
+      required: [id, repo_id, expression, timezone, next_run_at]
+      properties:
+        id: {type: string}
+        repo_id: {type: string}
+        expression: {type: string}
+        timezone: {type: string}
+        next_run_at: {type: string, format: date-time}
+        last_run_at: {type: [string, 'null'], format: date-time}
+    KnownStage:
+      type: object
+      required: [name, on_by_default]
+      properties:
+        name: {type: string}
+        on_by_default: {type: boolean}
+    Access:
+      type: object
+      required: [username, read, write]
+      properties:
+        username: {type: string}
+        read: {type: array, items: {type: string}}
+        write: {type: array, items: {type: string}}
+    CheckChip:
+      type: object
+      required: [kind, passed, findings]
+      properties:
+        kind: {type: string, enum: [lint, machete, audit, coverage, tests, security]}
+        passed: {type: boolean}
+        findings: {type: integer}
+        metric: {type: [string, 'null']}
+    RepoChecks:
+      type: object
+      required: [repo_id, checks]
+      properties:
+        repo_id: {type: string}
+        checks: {type: array, items: {$ref: '#/components/schemas/CheckChip'}}
+    Finding:
+      type: object
+      required: [title]
+      properties:
+        title: {type: string}
+        id: {type: [string, 'null']}
+        severity: {type: [string, 'null']}
+        date: {type: [string, 'null']}
+        location: {type: [string, 'null']}
+        extra: {type: [string, 'null']}
+    CheckDetail:
+      type: object
+      required: [kind, job_name, passed, headline, findings, has_report]
+      properties:
+        kind: {type: string, enum: [lint, machete, audit, coverage, tests, security]}
+        job_name: {type: string, description: "`stage/job`."}
+        passed: {type: boolean}
+        headline: {type: string}
+        findings: {type: array, items: {$ref: '#/components/schemas/Finding'}, description: 'At most 50.'}
+        metric: {type: [string, 'null']}
+        has_report: {type: boolean}
+        origin: {oneOf: [{$ref: '#/components/schemas/Run'}, {type: 'null'}]}
+    ScanReport:
+      type: object
+      required: [checks]
+      properties:
+        run: {oneOf: [{$ref: '#/components/schemas/Run'}, {type: 'null'}]}
+        checks: {type: array, items: {$ref: '#/components/schemas/CheckDetail'}}
+    ScanFinding:
+      type: object
+      required: [severity, check, service, method, path, detail]
+      properties:
+        severity: {type: string}
+        check: {type: string}
+        service: {type: string}
+        method: {type: string}
+        path: {type: string}
+        detail: {type: string}
+    ScanFindings:
+      type: object
+      required: [findings, run_id, created_at]
+      properties:
+        findings: {type: array, items: {$ref: '#/components/schemas/ScanFinding'}}
+        run_id: {type: string}
+        created_at: {type: string, format: date-time}
+    Credential:
+      type: object
+      required: [id, name, kind, username, preview, created_by, created_at, updated_at]
+      properties:
+        id: {type: string}
+        project_id: {type: [string, 'null']}
+        repo_id: {type: [string, 'null']}
+        name: {type: string}
+        kind: {type: string, enum: [http_token]}
+        username: {type: string}
+        preview: {type: string, description: "`••••…` and the last four characters of the token."}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    SetCredential:
+      type: object
+      required: [name, username, token]
+      properties:
+        name: {type: string, description: 'Letters, digits, underscores; not starting with a digit. A label, not an identity.'}
+        kind: {type: string, default: http_token, enum: [http_token]}
+        username: {type: string, description: 'No control characters.'}
+        token: {type: string, description: 'At least 4 characters, no control characters.'}
+    SecretRef:
+      type: object
+      required: [id, name, created_by, created_at, updated_at]
+      properties:
+        id: {type: string}
+        repo_id: {type: [string, 'null']}
+        name: {type: string}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    SetSecret:
+      type: object
+      required: [value]
+      properties:
+        value: {type: string}
+    Subscription:
+      type: object
+      required: [id, created_at]
+      properties:
+        id: {type: string}
+        repo_id: {type: [string, 'null']}
+        project_id: {type: [string, 'null']}
+        created_at: {type: string, format: date-time}
+    SubscriptionState:
+      type: object
+      required: [subscribed]
+      properties:
+        subscribed: {type: boolean}
+    GenericEvent:
+      type: object
+      required: [delivery_id, owner, name, ref, sha]
+      properties:
+        delivery_id: {type: string, description: 'Unique per delivery; a repeat is not queued twice.'}
+        owner: {type: string}
+        name: {type: string}
+        ref: {type: string, description: 'Full ref, for example refs/heads/master.'}
+        sha: {type: string}
+        message: {type: [string, 'null']}
+        event: {type: [string, 'null'], enum: [push, pull_request, null], description: 'Defaults to push.'}
+    Ignored:
+      type: object
+      required: [ignored]
+      properties:
+        ignored: {type: string}
+    AuthStatus:
+      type: object
+      required: [authenticated, username, roles]
+      properties:
+        authenticated: {type: boolean}
+        username: {type: [string, 'null']}
+        roles: {type: array, items: {type: string}}

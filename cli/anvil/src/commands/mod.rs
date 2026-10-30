@@ -2,6 +2,7 @@ pub mod artifact;
 pub mod build;
 pub mod config_check;
 pub mod docker;
+pub mod docs;
 pub mod install;
 pub mod lint;
 pub mod login;

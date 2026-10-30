@@ -1,0 +1,3481 @@
+# OpenAPI 3.1 description of the service's HTTP routes, hand-checked against the source.
+openapi: 3.1.0
+info:
+  title: Gatehouse
+  version: 0.4.2
+  description: 'Gatehouse is the Forge estate''s authentication service: one identity store, one login,
+    one session. It issues Ed25519-signed tokens that every other service verifies against its JWKS. Version
+    is that of `gatehouse-service`.'
+servers:
+- url: '{base}'
+  description: Mounted under BASE_PATH.
+  variables:
+    base:
+      default: /gatehouse
+      description: The `BASE_PATH` the service is mounted under (`/` when unset; deployments use `/gatehouse`).
+tags:
+- name: auth
+  description: 'Token API: password login, refresh, logout, userinfo. JSON in and out; the credential
+    is in the body.'
+- name: oauth
+  description: 'OAuth 2 surface: authorization code with PKCE, the token endpoint (four grants), JWKS
+    and signing key rotation.'
+- name: users
+  description: Realm user administration and the caller's own effective access. Each route needs a `gatehouse:*`
+    catalog action.
+- name: app-tokens
+  description: A person's long-lived application tokens for command-line tools.
+- name: notify
+  description: Notifications that other services ask Gatehouse to send.
+- name: test
+  description: Token minting for the BDD harness; answers 404 unless `GATEHOUSE_TEST_MODE=true`.
+- name: pages
+  description: JSON the browser client draws its screens from (`/api/v1/ui/...`).
+- name: ui
+  description: 'Single sign-on and account pages (`/ui/...`): HTML shells, form posts that answer with
+    redirects, and the client''s static files.'
+paths:
+  /api/v1/auth/login:
+    post:
+      tags:
+      - auth
+      summary: Password login
+      description: Checks the credentials and returns a token pair. An account with a second factor, a
+        disabled or locked account, and an unconfirmed address are refused with a code in the body; the
+        second-factor step exists only on the browser path (`POST /ui/login/mfa`). A wrong password counts
+        toward the lockout (`GATEHOUSE_LOGIN_MAX_ATTEMPTS`, `GATEHOUSE_LOCKOUT_DURATION_SECS`).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              username: alice
+              password: correct horse
+      responses:
+        '200':
+          description: Tokens issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+              example:
+                access_token: eyJhbGciOiJFZERTQSIs...
+                refresh_token: Zm9vYmFy...
+                token_type: Bearer
+                expires_in: 900
+        '401':
+          description: Refused; the code says why.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginError'
+              example:
+                error: invalid_credentials
+        '400':
+          description: Malformed JSON (text body).
+        '500':
+          description: The user store failed.
+  /api/v1/auth/refresh:
+    post:
+      tags:
+      - auth
+      summary: Rotate a refresh token
+      description: The refresh token comes from the JSON body or, when the body is empty or not the expected
+        JSON, from the refresh cookie. The old token is spent; presenting it again within a short grace
+        period returns the result of the first rotation. Rotations are serialised in-process. In the cookie
+        flow the response also sets the session and refresh cookies.
+      security:
+      - refreshCookie: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            example:
+              refresh_token: Zm9vYmFy...
+      responses:
+        '200':
+          description: New token pair.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+          headers:
+            Set-Cookie:
+              description: The session cookie and the refresh cookie (two headers).
+        '400':
+          description: No refresh token in the body or the cookie.
+        '401':
+          description: Unknown, expired or revoked token, or the user is gone.
+        '500':
+          description: Store or signing failure.
+  /api/v1/auth/logout:
+    post:
+      tags:
+      - auth
+      summary: Revoke a session
+      description: Revokes the session behind the refresh token, realm-wide (every service sees it on
+        its next request). Answers 204 even for an unknown token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            example:
+              refresh_token: Zm9vYmFy...
+      responses:
+        '204':
+          description: Revoked.
+        '400':
+          description: Malformed JSON (text body).
+        '500':
+          description: Session store failure.
+  /api/v1/auth/userinfo:
+    get:
+      tags:
+      - auth
+      summary: What a token says
+      description: 'Accepts only an `Authorization: Bearer` header (never the cookie). The token must
+        verify, include the `gatehouse` audience and (when it has a session id) belong to an active session.'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Subject, roles, audiences, permissions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserInfo'
+              example:
+                sub: alice
+                roles:
+                - user
+                audiences:
+                - sage
+                - gatehouse
+                permissions:
+                  sage:
+                  - read
+                  - write
+        '401':
+          description: No acceptable token (empty body).
+  /api/v1/authorize:
+    get:
+      tags:
+      - oauth
+      summary: Authorization endpoint (code + PKCE)
+      description: Without a session cookie the browser is sent to `/ui/login?redirect=<this URL>`; with
+        one a single-use code (valid 60 seconds) is created and the browser is redirected to `redirect_uri?code=...&state=...`.
+        `redirect_uri` must equal one registered for the client (built from `<PREFIX>_UI_URL` or `<PREFIX>_URL`
+        plus the client's `redirect_path`).
+      security:
+      - sessionCookie: []
+      parameters:
+      - name: client_id
+        in: query
+        required: true
+        description: A client from `config/clients.toml`.
+        schema:
+          type: string
+      - name: redirect_uri
+        in: query
+        required: true
+        description: Exact match of the registration.
+        schema:
+          type: string
+      - name: state
+        in: query
+        required: true
+        description: Opaque, returned unchanged.
+        schema:
+          type: string
+      - name: scope
+        in: query
+        required: false
+        description: Stored with the code; the issued token's audience comes from the client's `allowed_scopes`,
+          not from this.
+        schema:
+          type: string
+      - name: code_challenge
+        in: query
+        required: true
+        description: Base64url SHA-256 of the verifier.
+        schema:
+          type: string
+      - name: code_challenge_method
+        in: query
+        required: false
+        description: Only `S256` is supported (also when omitted).
+        schema:
+          type: string
+          enum:
+          - S256
+      responses:
+        '302':
+          description: To the login page, or back to the client with a code.
+          headers:
+            Location:
+              description: '`/ui/login?redirect=...` or `<redirect_uri>?code=...&state=...`'
+              schema:
+                type: string
+        '400':
+          description: 'Unknown client, unregistered redirect_uri, or a challenge method other than S256
+            (or a missing query field: text body).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: unknown client
+        '401':
+          description: The session's user no longer exists.
+        '500':
+          description: Code could not be stored.
+  /api/v1/token:
+    post:
+      tags:
+      - oauth
+      summary: Token endpoint
+      description: 'Form-encoded. `authorization_code`: code + redirect_uri + client_id + client_secret
+        + code_verifier, returns an access token narrowed to the client''s `allowed_scopes` plus a refresh
+        token. `refresh_token`: rotates like `/auth/refresh`. `client_credentials`: access-only token
+        for the client, scope `service`, audience = the client''s `allowed_scopes`. `app_token`: exchanges
+        an application token (`lht_...`) for an access-only token carrying the owner''s current grants
+        narrowed to the token''s scope.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+            example: grant_type=app_token&app_token=lht_...
+      responses:
+        '200':
+          description: Tokens.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+              example:
+                access_token: eyJ...
+                refresh_token: ''
+                token_type: Bearer
+                expires_in: 900
+        '400':
+          description: Unsupported grant, missing field, unknown client, wrong secret, bad/expired/used
+            code, redirect mismatch, PKCE failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: PKCE verification failed
+        '401':
+          description: 'refresh_token / app_token grant: unknown, expired, revoked or exhausted token,
+            or the user is gone.'
+        '500':
+          description: Store or signing failure.
+  /.well-known/jwks.json:
+    get:
+      tags:
+      - oauth
+      summary: Public signing keys
+      description: The Ed25519 public keys (one active, plus recently rotated-out ones until their retirement).
+        Unauthenticated; relying parties cache it.
+      security: []
+      responses:
+        '200':
+          description: JWK Set.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Jwks'
+              example:
+                keys:
+                - kty: OKP
+                  crv: Ed25519
+                  kid: 0b9c...
+                  x: 11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo
+  /api/v1/admin/keys/rotate:
+    post:
+      tags:
+      - oauth
+      summary: Rotate the signing key
+      description: Retires the active key (it stays in JWKS for one access-token lifetime) and generates
+        a new one.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:manage-signing-keys
+      responses:
+        '204':
+          description: Rotated.
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '403':
+          description: Authenticated but lacking the required `gatehouse` action (empty body).
+        '500':
+          description: Rotation failed.
+  /api/v1/users:
+    get:
+      tags:
+      - users
+      summary: List users
+      description: Sorted by username.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:read-users
+      responses:
+        '200':
+          description: All users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserView'
+              example:
+              - username: alice
+                roles:
+                - user
+                permissions:
+                  sage:
+                  - read
+                wildcard: false
+                email: alice@example.org
+                email_verified: true
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '403':
+          description: Authenticated but lacking the required `gatehouse` action (empty body).
+        '500':
+          description: Store failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+    post:
+      tags:
+      - users
+      summary: Create a user
+      description: Roles default to `["user"]`. Grants are checked against the catalog. With `invite`
+        true and an `email`, the account gets a random password and an invitation link (7 days) is mailed;
+        `invite_sent` reports whether mail was accepted. Assigning `admin` or `service` needs the literal
+        `admin` role.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:create-user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+            example:
+              username: bob
+              password: s3cret
+              roles:
+              - user
+              permissions:
+                workbench:
+                - read
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserView'
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '403':
+          description: Missing `create-user` (empty body), or `admin`/`service` roles requested without
+            the admin role (JSON body).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: only an admin may assign the admin or service role
+        '400':
+          description: Rejected input.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: username must not be empty
+        '409':
+          description: A rule keeping the realm reachable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: the realm must keep at least one admin
+        '500':
+          description: The change could not be saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: the change could not be saved
+  /api/v1/users/{username}:
+    get:
+      tags:
+      - users
+      summary: Read one user
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:read-users
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserView'
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '403':
+          description: Authenticated but lacking the required `gatehouse` action (empty body).
+        '404':
+          description: No such user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: no such user
+    patch:
+      tags:
+      - users
+      summary: Change password, roles or grants
+      description: Only the given fields change. Changing roles or grants, or changing another user at
+        all, ends the target's sessions. Removing `admin` from yourself or from the last admin is refused.
+        A password change mails a security notice to the confirmed address.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:edit-user
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+            example:
+              permissions:
+                sage:
+                - read
+                - write
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserView'
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '403':
+          description: Missing `edit-user`, or roles need admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: only an admin may assign the admin or service role
+        '400':
+          description: Rejected input.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: username must not be empty
+        '404':
+          description: No such user or template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: no such user
+        '409':
+          description: A rule keeping the realm reachable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: the realm must keep at least one admin
+        '500':
+          description: The change could not be saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: the change could not be saved
+    delete:
+      tags:
+      - users
+      summary: Delete a user
+      description: Refused for yourself and for the last admin. Ends the user's sessions.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:delete-user
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '403':
+          description: Authenticated but lacking the required `gatehouse` action (empty body).
+        '404':
+          description: No such user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: '`you cannot delete your own account` or `the realm must keep at least one admin`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: you cannot delete your own account
+        '500':
+          description: Not saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /api/v1/users/{username}/permissions:
+    put:
+      tags:
+      - users
+      summary: Replace a user's grants
+      description: Replaces the whole grant set (an empty `permissions` removes everything). Ends the
+        target's sessions.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:manage-permissions
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplacePermissionsRequest'
+            example:
+              permissions:
+                sage:
+                - read
+                conveyor:
+                - project:7:write
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserView'
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '403':
+          description: Authenticated but lacking the required `gatehouse` action (empty body).
+        '400':
+          description: Rejected input.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: username must not be empty
+        '404':
+          description: No such user or template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: no such user
+        '500':
+          description: The change could not be saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: the change could not be saved
+  /api/v1/users/{username}/template:
+    post:
+      tags:
+      - users
+      summary: Apply a grant template
+      description: Replaces the user's grants with the template's.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:manage-permissions
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyTemplateRequest'
+            example:
+              template: editor
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserView'
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '403':
+          description: Authenticated but lacking the required `gatehouse` action (empty body).
+        '404':
+          description: No such user or no such permission template.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: no such permission template
+        '500':
+          description: Not saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /api/v1/me:
+    get:
+      tags:
+      - users
+      summary: The caller's own effective access
+      description: Read from the user record, not the token, so a grant added since the token was minted
+        shows. A wildcard role lists every catalog action of every service.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '200':
+          description: Effective access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+              example:
+                username: alice
+                roles:
+                - user
+                wildcard: false
+                effective:
+                  sage:
+                  - read
+                  - write
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+  /api/v1/me/tokens:
+    post:
+      tags:
+      - app-tokens
+      summary: Mint an application token
+      description: Needs a login session behind the credential (a token with no session id, such as one
+        from an app-token exchange, gets 403), so a token can always be revoked by its owner. Every `scope`
+        entry must be a `service:action` the owner holds.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAppToken'
+            example:
+              name: anvil on laptop
+              scope:
+              - warehouse:write
+              expires_in_days: 90
+      responses:
+        '201':
+          description: Created; the secret is shown only here.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedAppToken'
+              example:
+                id: x7Qm2pLw9aBc
+                name: anvil on laptop
+                scope:
+                - warehouse:write
+                created_at: '2026-10-30T08:00:00Z'
+                expires_at: '2027-01-28T08:00:00Z'
+                last_used_at: null
+                revoked: false
+                secret: lht_abc...
+        '401':
+          description: No credential, or the user is gone.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: unknown user
+        '403':
+          description: '`application tokens are created from a signed-in session`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: application tokens are created from a signed-in session
+        '422':
+          description: Blank name, `expires_in_days` below 1, malformed entry, or an entry the owner does
+            not hold.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: you do not hold sage:write
+        '500':
+          description: Not stored.
+    get:
+      tags:
+      - app-tokens
+      summary: List my application tokens
+      description: Includes revoked and expired ones; never the secrets.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '200':
+          description: The caller's tokens.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AppTokenView'
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '500':
+          description: Store failure.
+  /api/v1/me/tokens/{id}:
+    delete:
+      tags:
+      - app-tokens
+      summary: Revoke an application token
+      description: Idempotent. Another person's token answers 404.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: The token's `id`.
+        schema:
+          type: string
+        example: x7Qm2pLw9aBc
+      responses:
+        '204':
+          description: Revoked (or already).
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '404':
+          description: Not the caller's token (empty body).
+        '500':
+          description: Store failure.
+  /api/v1/notify:
+    post:
+      tags:
+      - notify
+      summary: Ask Gatehouse to notify a person
+      description: 'Validation comes first (unknown template, missing or extra variable, control characters,
+        values over 300 characters, a `url` that is not under Gatehouse''s public origin: 400). Then:
+        unknown user (`skipped: no_such_user`), no confirmed address (`no_verified_email`), unsubscribed
+        (`not_subscribed`), duplicate `dedupe_key` (`duplicate`), per-person limit 20/hour or per-person-per-template
+        10/hour (`rate_limited`). Mail goes out in the person''s `preferred_locale`.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:notify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotifyBody'
+            example:
+              username: alice
+              template: conveyor.run.failed
+              vars:
+                project: forge
+                run: '#412'
+                ref: master
+                url: https://ennor.ddns.net/conveyor/ui/runs/412
+              dedupe_key: run-412
+              requested: false
+      responses:
+        '202':
+          description: Handed to the mail server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotifyResponse'
+              example:
+                status: accepted
+        '200':
+          description: Deliberately not sent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotifyResponse'
+              example:
+                status: skipped
+                reason: not_subscribed
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: 'no such notification: conveyor.run.nope'
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '403':
+          description: Authenticated but lacking the required `gatehouse` action (empty body).
+        '502':
+          description: Should have been sent and was not.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotifyResponse'
+              example:
+                status: failed
+                reason: the daily email budget is used up
+                retryable: true
+  /api/v1/test/token:
+    post:
+      tags:
+      - test
+      summary: Mint a token (tests only)
+      description: Signs the given claims with the real key. Answers 404 unless the environment variable
+        `GATEHOUSE_TEST_MODE` is `true` (the service's `main` never sets it).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestTokenRequest'
+            example:
+              sub: tester
+              aud:
+              - gatehouse
+              scope: admin
+      responses:
+        '200':
+          description: The token.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                required:
+                - access_token
+              example:
+                access_token: eyJ...
+        '404':
+          description: Test mode is off.
+        '500':
+          description: Signing failed.
+  /api/v1/ui/dashboard:
+    get:
+      tags:
+      - pages
+      summary: Dashboard cards
+      description: 'Services of the catalog with `home = true` whose `<NAME>_UI_URL` (or `<NAME>_URL`)
+        is set and `FEATURE_<NAME>_ENABLED` is not off, filtered to those the person may use: holds `read`
+        on it, or any grant on it, or a wildcard role. In catalog (name) order.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '200':
+          description: Cards.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+  /api/v1/ui/account:
+    get:
+      tags:
+      - pages
+      summary: The caller's account
+      description: With `SERVICE_AUTH_ENABLED` off the stand-in administrator `admin` is used.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '200':
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '404':
+          description: The user is gone (`ui_admin_error_not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: ui_admin_forbidden
+        '500':
+          description: Store failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: ui_admin_forbidden
+  /api/v1/ui/mfa-enroll:
+    get:
+      tags:
+      - pages
+      summary: A fresh TOTP secret
+      description: Nothing is stored until the first code is checked.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '200':
+          description: Secret, URI and QR.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MfaEnrollment'
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '500':
+          description: Secret generation failed (`ui_admin_error_internal`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: ui_admin_forbidden
+    post:
+      tags:
+      - pages
+      summary: Turn on MFA
+      description: Checks the code against the secret, stores the secret encrypted, enables MFA and mails
+        a security notice to the confirmed address.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaEnrollRequest'
+            example:
+              secret: JBSWY3DPEHPK3PXP
+              code: '123456'
+      responses:
+        '200':
+          description: MFA is on.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Done'
+              example:
+                done: true
+        '400':
+          description: Wrong code (`ui_admin_error_mfa_code_invalid`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: ui_admin_forbidden
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '500':
+          description: Not saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: ui_admin_forbidden
+  /api/v1/ui/admin/users:
+    get:
+      tags:
+      - pages
+      summary: User list for the administration screen
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:read-users
+      responses:
+        '200':
+          description: The list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUsers'
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '403':
+          description: Lacks `read-users` (`ui_admin_forbidden`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: ui_admin_forbidden
+  /api/v1/ui/admin/users/{username}:
+    get:
+      tags:
+      - pages
+      summary: One user with the catalog
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:read-users
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      responses:
+        '200':
+          description: The user, the catalog and what the viewer may do.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUser'
+        '401':
+          description: Missing, invalid or revoked token (empty body).
+        '403':
+          description: Lacks `read-users`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: ui_admin_forbidden
+        '404':
+          description: No such user (`ui_admin_error_not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: ui_admin_forbidden
+  /api/v1/ui/confirm-email:
+    get:
+      tags:
+      - pages
+      summary: What an email-change link would set
+      description: 'The link''s token is the credential: no session. Peeks without spending it.'
+      security: []
+      parameters:
+      - name: token
+        in: query
+        required: true
+        description: From the link.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The new address.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfirmEmail'
+        '404':
+          description: Unknown or used token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: ui_not_found
+  /api/v1/ui/unsubscribe:
+    get:
+      tags:
+      - pages
+      summary: What an unsubscribe link ends
+      description: No session; the token is the credential.
+      security: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        description: From the link.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The kind of notification.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnsubscribeInfo'
+        '404':
+          description: Unknown token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: ui_not_found
+  /ui:
+    get:
+      tags:
+      - ui
+      summary: Entry point
+      description: Redirects to `/ui/home` when signed in, otherwise to the login page.
+      security: []
+      responses:
+        '302':
+          description: To `/ui/home` or `/ui/login`.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/:
+    get:
+      tags:
+      - ui
+      summary: Entry point (trailing slash)
+      description: Same as `/ui`.
+      security: []
+      responses:
+        '302':
+          description: To `/ui/home` or `/ui/login`.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/login:
+    get:
+      tags:
+      - ui
+      summary: Sign-in page
+      description: If a refresh cookie is still good the session is renewed and the browser is sent on
+        (302, new cookies) to `?redirect=` or `/ui/home`; otherwise the client page.
+      security: []
+      parameters:
+      - name: redirect
+        in: query
+        required: false
+        description: 'Where to go after signing in: a rooted same-origin path, or a URL under a prefix
+          of `AUTH_REDIRECT_HOSTS`. Invalid values are ignored.'
+        schema:
+          type: string
+      - name: err
+        in: query
+        required: false
+        description: 'A notice code shown on the page: `1` (wrong credentials) or a translation key from
+          the fixed list (`ui_login_verify_invalid`, `ui_login_reset_invalid`, `ui_login_account_disabled`,
+          `ui_login_account_locked`, `ui_login_email_unverified`, `ui_login_rate_limited`, `ui_login_invite_invalid`,
+          `ui_login_confirm_email_invalid`).'
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Silent refresh.
+          headers:
+            Location:
+              description: '`?redirect=` or `/ui/home`; sets both cookies.'
+              schema:
+                type: string
+    post:
+      tags:
+      - ui
+      summary: Sign in
+      description: 'Answers a redirect in every case. Success: cookies set and `302` to the validated
+        `redirect` or `/ui/home`; if the user''s saved `preferred_locale` is supported and the browser
+        holds no explicit language choice, a `qlocale` cookie (1 year) is also set. MFA: `302` to `/ui/login/mfa?pending=...`.
+        Refusals: `302` to `/ui/login?err=...` (`1` wrong credentials or unknown user, `ui_login_account_disabled`,
+        `ui_login_account_locked`, `ui_login_email_unverified`).'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                redirect:
+                  type: string
+                  description: Optional; validated.
+              required:
+              - username
+              - password
+            example: username=alice&password=...&redirect=%2Fsage%2Fui%2Fhome
+      responses:
+        '302':
+          description: See description.
+          headers:
+            Location:
+              description: '`/ui/home`, the redirect, `/ui/login/mfa?...` or `/ui/login?err=...`'
+              schema:
+                type: string
+  /ui/login/:
+    get:
+      tags:
+      - ui
+      summary: Sign-in page (trailing slash)
+      description: If a refresh cookie is still good the session is renewed and the browser is sent on
+        (302, new cookies) to `?redirect=` or `/ui/home`; otherwise the client page.
+      security: []
+      parameters:
+      - name: redirect
+        in: query
+        required: false
+        description: 'Where to go after signing in: a rooted same-origin path, or a URL under a prefix
+          of `AUTH_REDIRECT_HOSTS`. Invalid values are ignored.'
+        schema:
+          type: string
+      - name: err
+        in: query
+        required: false
+        description: 'A notice code shown on the page: `1` (wrong credentials) or a translation key from
+          the fixed list (`ui_login_verify_invalid`, `ui_login_reset_invalid`, `ui_login_account_disabled`,
+          `ui_login_account_locked`, `ui_login_email_unverified`, `ui_login_rate_limited`, `ui_login_invite_invalid`,
+          `ui_login_confirm_email_invalid`).'
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Silent refresh.
+          headers:
+            Location:
+              description: '`?redirect=` or `/ui/home`; sets both cookies.'
+              schema:
+                type: string
+  /ui/login/mfa:
+    get:
+      tags:
+      - ui
+      summary: Second-factor page
+      description: Needs the `pending` query field (a framework `400` without it).
+      security: []
+      parameters:
+      - name: pending
+        in: query
+        required: true
+        description: The signed pending token from `POST /ui/login`.
+        schema:
+          type: string
+      - name: redirect
+        in: query
+        required: false
+        description: Carried through.
+        schema:
+          type: string
+      - name: err
+        in: query
+        required: false
+        description: '`1` after a wrong code.'
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: '`pending` missing (text body).'
+    post:
+      tags:
+      - ui
+      summary: Check the second factor
+      description: '`pending` is `username:expires:HMAC` (valid 120 s). A wrong code counts toward the
+        lockout and sends the browser back to `/ui/login/mfa?pending=...&err=1`.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                pending:
+                  type: string
+                code:
+                  type: string
+                redirect:
+                  type: string
+              required:
+              - pending
+              - code
+            example: pending=alice%3A1767000000%3Aab12...&code=123456
+      responses:
+        '302':
+          description: Success as `POST /ui/login`; refusals to `/ui/login?err=ui_login_account_disabled|ui_login_account_locked`;
+            a wrong code or a bad `pending` back to the code page.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/status:
+    get:
+      tags:
+      - ui
+      summary: Session status for the page watcher
+      description: Always 200. Reads the session cookie and its signature only (not the session store).
+        `roles` is the token scope split on commas (`quench-auth` `auth_status`); the scope is space-separated,
+        so for a non-wildcard user it comes back as one element.
+      security: []
+      responses:
+        '200':
+          description: Whether the cookie is worth anything.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+              example:
+                authenticated: true
+                username: alice
+                roles:
+                - user sage:read
+  /ui/refresh:
+    post:
+      tags:
+      - ui
+      summary: Renew the session from the refresh cookie
+      description: Rotates the refresh cookie in-process and sets both cookies.
+      security:
+      - refreshCookie: []
+      responses:
+        '200':
+          description: Renewed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Authenticated'
+              example:
+                authenticated: true
+          headers:
+            Set-Cookie:
+              description: The session cookie and the refresh cookie (two headers).
+        '401':
+          description: No refresh cookie, or it is no longer good.
+  /ui/logout:
+    get:
+      tags:
+      - ui
+      summary: Sign out
+      description: Revokes the session behind the refresh cookie (realm-wide), clears both cookies and
+        redirects to the validated `?redirect=` or `/ui/login`.
+      security: []
+      parameters:
+      - name: redirect
+        in: query
+        required: false
+        description: Validated like the login redirect.
+        schema:
+          type: string
+      responses:
+        '302':
+          description: To the redirect or the login page; cookies cleared.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/home:
+    get:
+      tags:
+      - ui
+      summary: Services dashboard page
+      description: 'Needs a session; without one: 302 to the login page. The client draws the cards from
+        `GET /api/v1/ui/dashboard`.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: 'No session: to the login page.'
+          headers:
+            Location:
+              description: '`<base>/ui/login`'
+              schema:
+                type: string
+  /ui/home/:
+    get:
+      tags:
+      - ui
+      summary: Services dashboard page (trailing slash)
+      description: 'Needs a session; without one: 302 to the login page. The client draws the cards from
+        `GET /api/v1/ui/dashboard`.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: 'No session: to the login page.'
+          headers:
+            Location:
+              description: '`<base>/ui/login`'
+              schema:
+                type: string
+  /ui/register:
+    get:
+      tags:
+      - ui
+      summary: Registration page
+      description: Public.
+      security: []
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+    post:
+      tags:
+      - ui
+      summary: Register
+      description: 'Invalid address, rate limit (20/hour per client, 3/day per address), or a realm error
+        come back as `302 /ui/register?err=<key>`. Success: the account is created as role `user` with
+        the catalog''s `registration.default_template` grants, a verification link (24 h) is mailed, and
+        the browser goes to `/ui/login?registered=1`.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                email:
+                  type: string
+              required:
+              - username
+              - password
+              - email
+            example: username=carol&password=...&email=carol%40example.org
+      responses:
+        '302':
+          description: '`/ui/login?registered=1` or `/ui/register?err=...`'
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/register/:
+    get:
+      tags:
+      - ui
+      summary: Registration page (trailing slash)
+      description: Public.
+      security: []
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+  /ui/verify:
+    get:
+      tags:
+      - ui
+      summary: Confirm an address from the verification link
+      description: Spends the token and marks the address confirmed.
+      security: []
+      parameters:
+      - name: token
+        in: query
+        required: true
+        description: From the mail.
+        schema:
+          type: string
+      responses:
+        '302':
+          description: '`/ui/login?verified=1` or `/ui/login?err=ui_login_verify_invalid`'
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+        '400':
+          description: '`token` missing (text body).'
+  /ui/forgot-password:
+    get:
+      tags:
+      - ui
+      summary: Forgot-password page
+      description: Public.
+      security: []
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+    post:
+      tags:
+      - ui
+      summary: Request a password reset
+      description: 'Rate limited (20/hour per client, 3/hour per username; over the limit: `/ui/login?err=ui_login_rate_limited`).
+        Otherwise always `302 /ui/login?reset_requested=1`, whether or not the account exists; if it has
+        an address, a link (1 hour) is mailed.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+              required:
+              - username
+            example: username=alice
+      responses:
+        '302':
+          description: '`/ui/login?reset_requested=1` or `?err=ui_login_rate_limited`'
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/forgot-password/:
+    get:
+      tags:
+      - ui
+      summary: Forgot-password page (trailing slash)
+      description: Public.
+      security: []
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+  /ui/reset-password:
+    get:
+      tags:
+      - ui
+      summary: Reset-password page
+      description: Needs `token` in the query.
+      security: []
+      parameters:
+      - name: token
+        in: query
+        required: true
+        description: From the mail.
+        schema:
+          type: string
+      - name: err
+        in: query
+        required: false
+        description: A notice key.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: '`token` missing.'
+    post:
+      tags:
+      - ui
+      summary: Set a new password
+      description: Spends the token, sets the password, ends every session of the user, confirms an unconfirmed
+        address, mails a password-changed notice. An empty password returns to the form with `err=ui_reset_error_password_empty`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+              required:
+              - token
+              - password
+            example: token=...&password=...
+      responses:
+        '302':
+          description: '`/ui/login?reset=1`, `/ui/login?err=ui_login_reset_invalid` or back to the form.'
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/resend-verification:
+    get:
+      tags:
+      - ui
+      summary: Resend-verification page
+      description: Public.
+      security: []
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+    post:
+      tags:
+      - ui
+      summary: Resend the verification link
+      description: 'Limits: 20/hour per client, 3/hour per username, 1/minute per username. Always `302
+        /ui/login?resend_requested=1` unless limited; a link is mailed only for an enabled account whose
+        address is unconfirmed and who needs verification.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+              required:
+              - username
+            example: username=carol
+      responses:
+        '302':
+          description: '`/ui/login?resend_requested=1` or `?err=ui_login_rate_limited`'
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/resend-verification/:
+    get:
+      tags:
+      - ui
+      summary: Resend-verification page (trailing slash)
+      description: Public.
+      security: []
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+  /ui/accept-invite:
+    get:
+      tags:
+      - ui
+      summary: Accept-invitation page
+      description: Needs `token` in the query.
+      security: []
+      parameters:
+      - name: token
+        in: query
+        required: true
+        description: From the invitation mail.
+        schema:
+          type: string
+      - name: err
+        in: query
+        required: false
+        description: A notice key.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: '`token` missing.'
+    post:
+      tags:
+      - ui
+      summary: Choose a password for an invited account
+      description: 'Blank password: back to the form with `err=ui_reset_error_password_empty`. Spends
+        the token, sets the password (ends sessions), confirms the address.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+              required:
+              - token
+              - password
+            example: token=...&password=...
+      responses:
+        '302':
+          description: '`/ui/login?invited=1`, `/ui/login?err=ui_login_invite_invalid` or back to the
+            form.'
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/confirm-email:
+    get:
+      tags:
+      - ui
+      summary: Confirm-new-address page
+      description: Shows the change only; with an unknown token redirects to `/ui/login?err=ui_login_confirm_email_invalid`.
+      security: []
+      parameters:
+      - name: token
+        in: query
+        required: true
+        description: From the mail.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Invalid token.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+        '400':
+          description: '`token` missing.'
+    post:
+      tags:
+      - ui
+      summary: Confirm the new address
+      description: Spends the token and sets the address as confirmed; the previous address, if it was
+        confirmed, is told.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+              required:
+              - token
+            example: token=...
+      responses:
+        '302':
+          description: '`/ui/login?email_changed=1` or `?err=ui_login_confirm_email_invalid`'
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/unsubscribe:
+    get:
+      tags:
+      - ui
+      summary: Unsubscribe page
+      description: Public; opening only asks.
+      security: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        description: From the notification mail.
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+    post:
+      tags:
+      - ui
+      summary: End a subscription
+      description: 'The token is read from `?token=` or the form field `token`. Also the target of a mail
+        provider''s one-click POST (RFC 8058). Idempotent: the token is not spent.'
+      security: []
+      parameters:
+      - name: token
+        in: query
+        required: false
+        description: From the mail (alternatively the form field).
+        schema:
+          type: string
+      requestBody:
+        required: false
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+            example: List-Unsubscribe=One-Click
+      responses:
+        '200':
+          description: Done.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Done'
+              example:
+                done: true
+        '404':
+          description: Unknown token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: ui_unsubscribe_invalid
+        '500':
+          description: Not saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                error: ui_admin_error_internal
+  /ui/account:
+    get:
+      tags:
+      - ui
+      summary: Account page
+      description: The client draws it from `GET /api/v1/ui/account`; `?ok=` / `?err=` show the outcome
+        of a form post.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: 'No session: to the login page.'
+          headers:
+            Location:
+              description: '`<base>/ui/login`'
+              schema:
+                type: string
+    post:
+      tags:
+      - ui
+      summary: Save the profile
+      description: Multipart. Validates the zone (IANA) and locale (one of `en-US pl-PL es-ES de-DE fr-FR`),
+        resolves the picture (`avatar_remove`, else a file, else an http(s) `avatar_url`), updates the
+        record. Redirects to `/ui/account?ok=saved` or `?err=<key>` (`ui_account_error_avatar_size`, `ui_account_error_avatar_type`,
+        `ui_account_error_invalid`, a realm error key).
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AvatarUpload'
+      responses:
+        '302':
+          description: '`/ui/account?ok=saved` or `?err=...`; no session: login page.'
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/account/notifications:
+    post:
+      tags:
+      - ui
+      summary: Choose notification kinds
+      description: One checkbox per kind named `sub_<template id>` (present = wanted). Only departures
+        from a kind's default are stored.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                sub_conveyor.run.failed:
+                  type: string
+                  description: 'Checkbox: present means wanted.'
+            example: sub_conveyor.run.failed=on
+      responses:
+        '302':
+          description: '`/ui/account?ok=notifications_saved` or `?err=ui_admin_error_internal`.'
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/account/avatar:
+    get:
+      tags:
+      - ui
+      summary: The caller's picture
+      description: 'Redirects (302) to an http(s) picture address; serves an uploaded picture (sniffed
+        `image/png|jpeg|gif|webp`, `Cache-Control: private, no-cache`, `X-Content-Type-Options: nosniff`);
+        404 when none or no session.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '200':
+          description: The image.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '302':
+          description: External picture address.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+        '404':
+          description: No picture, or no session.
+  /ui/account/password:
+    post:
+      tags:
+      - ui
+      summary: Change my password
+      description: 'Needs `current_password`; a wrong one counts toward the lockout. Mismatch of `new_password`
+        and `confirm_password`: `err=ui_account_error_password_mismatch`. Does not end sessions (a change
+        of one''s own password alone does not revoke); mails a password-changed notice to the confirmed
+        address.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                current_password:
+                  type: string
+                new_password:
+                  type: string
+                confirm_password:
+                  type: string
+              required:
+              - current_password
+              - new_password
+              - confirm_password
+            example: current_password=a&new_password=b&confirm_password=b
+      responses:
+        '302':
+          description: '`/ui/account?ok=password_changed` or `?err=<key>`'
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/account/email:
+    post:
+      tags:
+      - ui
+      summary: Ask to change my address
+      description: 'Limits: 3/hour per account, 20/hour per client, 3/day per target address. Needs the
+        current password. Mails a confirmation link (24 h) to the new address; nothing changes until it
+        is confirmed.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                email_current_password:
+                  type: string
+              required:
+              - email
+              - email_current_password
+            example: email=new%40example.org&email_current_password=...
+      responses:
+        '302':
+          description: '`/ui/account?ok=email_change_sent` or `?err=` (`ui_register_error_email_invalid`,
+            `ui_account_error_rate_limited`, `ui_account_error_email_same`, `ui_account_error_email_not_sent`,
+            a password error)'
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/account/mfa/enroll:
+    get:
+      tags:
+      - ui
+      summary: MFA enrolment page
+      description: Data comes from `GET`/`POST /api/v1/ui/mfa-enroll`.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: 'No session: to the login page.'
+          headers:
+            Location:
+              description: '`<base>/ui/login`'
+              schema:
+                type: string
+  /ui/account/mfa/disable:
+    post:
+      tags:
+      - ui
+      summary: Turn my MFA off
+      description: Mails a notice if it was on.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '302':
+          description: '`/ui/account?ok=mfa_disabled` or `?err=<key>`'
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+  /ui/admin/users:
+    get:
+      tags:
+      - ui
+      summary: User administration page
+      description: Any signed-in person gets the shell; the data call enforces `gatehouse:read-users`.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: 'No session: to the login page.'
+          headers:
+            Location:
+              description: '`<base>/ui/login`'
+              schema:
+                type: string
+    post:
+      tags:
+      - ui
+      summary: Create a user
+      description: 'Roles: an admin may pick `role` (`admin`, `user`, `service`; anything else is `user`),
+        others always create `user`. With `email`, the account is invited (7-day link) and the redirect
+        carries `?ok=invited` or `?ok=invite_failed`; otherwise `password` is required and the redirect
+        is `?ok=created`. Success redirects to `/ui/admin/users/<name>`; errors to `/ui/admin/users?err=<key>`.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:create-user
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  description: Needed without `email`.
+                email:
+                  type: string
+                  description: Invites instead of setting a password.
+                role:
+                  type: string
+                  enum:
+                  - admin
+                  - user
+                  - service
+              required:
+              - username
+            example: username=bob&password=...&role=user
+      responses:
+        '302':
+          description: Back to the user page or list with `?ok=...` or `?err=<key>`.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+        '403':
+          description: Signed in without the required action (plain 403 page).
+  /ui/admin/users/:
+    get:
+      tags:
+      - ui
+      summary: User administration page (trailing slash)
+      description: Any signed-in person gets the shell; the data call enforces `gatehouse:read-users`.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: 'No session: to the login page.'
+          headers:
+            Location:
+              description: '`<base>/ui/login`'
+              schema:
+                type: string
+  /ui/admin/users/{username}:
+    get:
+      tags:
+      - ui
+      summary: User editor page
+      description: Same as the list.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      responses:
+        '200':
+          description: The client page (HTML shell); the screen is drawn in the browser.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: 'No session: to the login page.'
+          headers:
+            Location:
+              description: '`<base>/ui/login`'
+              schema:
+                type: string
+    post:
+      tags:
+      - ui
+      summary: Save password, role and grants
+      description: 'Form fields: `password` (non-empty changes it), `role` (honoured only for a literal
+        admin) and one checkbox `perm_<service>_<action>` per catalog action; all catalog-listed plain
+        actions are replaced by the checked ones, while grants not representable as a checkbox (resource-scoped
+        ones) are kept.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:edit-user
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+                role:
+                  type: string
+                perm_sage_read:
+                  type: string
+                  description: Checkbox.
+            example: role=user&perm_sage_read=on&perm_sage_write=on
+      responses:
+        '302':
+          description: Back to the user page or list with `?ok=...` or `?err=<key>`.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+        '403':
+          description: Signed in without the required action (plain 403 page).
+  /ui/admin/users/{username}/invite:
+    post:
+      tags:
+      - ui
+      summary: Resend the invitation
+      description: Only for an account with an unconfirmed address (`InviteNeedsEmail` / `AlreadyConfirmed`
+        otherwise).
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:edit-user
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      responses:
+        '302':
+          description: Back to the user page or list with `?ok=...` or `?err=<key>`.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+        '403':
+          description: Signed in without the required action (plain 403 page).
+  /ui/admin/users/{username}/template:
+    post:
+      tags:
+      - ui
+      summary: Apply a grant template
+      description: Replaces the grants with the template's.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:manage-permissions
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                template:
+                  type: string
+              required:
+              - template
+            example: template=editor
+      responses:
+        '302':
+          description: Back to the user page or list with `?ok=...` or `?err=<key>`.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+        '403':
+          description: Signed in without the required action (plain 403 page).
+  /ui/admin/users/{username}/delete:
+    post:
+      tags:
+      - ui
+      summary: Delete a user
+      description: Redirects to `/ui/admin/users?ok=deleted`.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:delete-user
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      responses:
+        '302':
+          description: Back to the user page or list with `?ok=...` or `?err=<key>`.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+        '403':
+          description: Signed in without the required action (plain 403 page).
+  /ui/admin/users/{username}/disable:
+    post:
+      tags:
+      - ui
+      summary: Disable an account
+      description: Blocks future logins without ending current sessions; not for yourself.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:edit-user
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      responses:
+        '302':
+          description: Back to the user page or list with `?ok=...` or `?err=<key>`.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+        '403':
+          description: Signed in without the required action (plain 403 page).
+  /ui/admin/users/{username}/enable:
+    post:
+      tags:
+      - ui
+      summary: Enable an account
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:edit-user
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      responses:
+        '302':
+          description: Back to the user page or list with `?ok=...` or `?err=<key>`.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+        '403':
+          description: Signed in without the required action (plain 403 page).
+  /ui/admin/users/{username}/unlock:
+    post:
+      tags:
+      - ui
+      summary: Clear a lockout
+      description: Resets the failed-attempt counter and `locked_until`.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:edit-user
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      responses:
+        '302':
+          description: Back to the user page or list with `?ok=...` or `?err=<key>`.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+        '403':
+          description: Signed in without the required action (plain 403 page).
+  /ui/admin/users/{username}/mfa/disable:
+    post:
+      tags:
+      - ui
+      summary: Turn a user's MFA off (recovery)
+      description: The administrator never sees the secret. Mails a notice if it was on.
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: gatehouse:edit-user
+      parameters:
+      - name: username
+        in: path
+        required: true
+        description: The account name.
+        schema:
+          type: string
+        example: alice
+      responses:
+        '302':
+          description: Back to the user page or list with `?ok=...` or `?err=<key>`.
+          headers:
+            Location:
+              description: Where the browser goes next.
+              schema:
+                type: string
+        '403':
+          description: Signed in without the required action (plain 403 page).
+  /ui/assets/quench.js:
+    get:
+      tags:
+      - ui
+      summary: The wasm loader script (`quench-ui-web`)
+      description: 'Anonymous: the files hold no data of their own.'
+      security: []
+      responses:
+        '200':
+          description: The wasm loader script (`quench-ui-web`)
+          content:
+            text/javascript:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Not available.
+  /ui/assets/app.css:
+    get:
+      tags:
+      - ui
+      summary: 'The stylesheet: `forge-shell`''s then the client''s'
+      description: 'Anonymous: the files hold no data of their own.'
+      security: []
+      responses:
+        '200':
+          description: 'The stylesheet: `forge-shell`''s then the client''s'
+          content:
+            text/css:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Not available.
+  /ui/assets/shell.js:
+    get:
+      tags:
+      - ui
+      summary: forge-shell's script (theme, language, links)
+      description: 'Anonymous: the files hold no data of their own.'
+      security: []
+      responses:
+        '200':
+          description: forge-shell's script (theme, language, links)
+          content:
+            text/javascript:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Not available.
+  /ui/assets/favicon.png:
+    get:
+      tags:
+      - ui
+      summary: The service icon
+      description: 'Anonymous: the files hold no data of their own.'
+      security: []
+      responses:
+        '200':
+          description: The service icon
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Not available.
+  /ui/assets/icons/{name}:
+    get:
+      tags:
+      - ui
+      summary: A service icon for the dashboard card
+      description: 'Anonymous: the files hold no data of their own.'
+      security: []
+      parameters:
+      - name: name
+        in: path
+        required: true
+        description: '`conveyor`, `daybook`, `gantry`, `id-card`, `gauge`, `hoist`, `sage`, `switchboard`,
+          `warehouse` or `workbench`, with or without `.png`; other names give 404.'
+        schema:
+          type: string
+        example: sage.png
+      responses:
+        '200':
+          description: A service icon for the dashboard card
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Not available.
+  /ui/assets/app.wasm:
+    get:
+      tags:
+      - ui
+      summary: The browser client module (404 when not installed)
+      description: 'Anonymous: the files hold no data of their own.'
+      security: []
+      responses:
+        '200':
+          description: The browser client module (404 when not installed)
+          content:
+            application/wasm:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Not available.
+components:
+  schemas:
+    Permissions:
+      type: object
+      description: 'Grants as `{service: [action, ...]}`. Actions are plain catalog names (`read`) or
+        resource-scoped `<resource_type>:<resource_id>:<action>` (`project:7:write`). Sets: duplicates
+        collapse, order is sorted.'
+      additionalProperties:
+        type: array
+        items:
+          type: string
+      example:
+        sage:
+        - read
+        - write
+        switchboard:
+        - launch
+    Role:
+      type: string
+      enum:
+      - admin
+      - user
+      - service
+      description: '`admin` and `service` are wildcard roles (every permission on every service). Only
+        `admin` may assign them.'
+    Problem:
+      type: object
+      description: 'The `{"error": "..."}` body of most refusals.'
+      properties:
+        error:
+          type: string
+          description: Reason in English (the user API) or a translation key (the page API and the form
+            posts).
+      required:
+      - error
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required:
+      - username
+      - password
+    RefreshRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+      required:
+      - refresh_token
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: EdDSA-signed JWT.
+        refresh_token:
+          type: string
+          description: Opaque, single use (rotated on refresh). Empty string for the `client_credentials`
+            and `app_token` grants.
+        token_type:
+          type: string
+          description: Always `Bearer`.
+        expires_in:
+          type: integer
+          description: Access token lifetime in seconds (`ACCESS_TOKEN_TTL_SECS`, default 900).
+      required:
+      - access_token
+      - refresh_token
+      - token_type
+      - expires_in
+    LoginError:
+      type: object
+      description: Body of a refused `POST /api/v1/auth/login` (always status 401).
+      properties:
+        error:
+          type: string
+          enum:
+          - mfa_required
+          - account_disabled
+          - account_locked
+          - email_unverified
+          - invalid_credentials
+      required:
+      - error
+    UserInfo:
+      type: object
+      description: What a token says. `permissions` is empty for a wildcard role.
+      properties:
+        sub:
+          type: string
+          description: Username (or client id).
+        roles:
+          type: array
+          items:
+            type: string
+          description: Scope entries without a colon (the roles).
+        audiences:
+          type: array
+          items:
+            type: string
+          description: The token's `aud`.
+        permissions:
+          $ref: '#/components/schemas/Permissions'
+      required:
+      - sub
+      - roles
+      - audiences
+      - permissions
+    UserView:
+      type: object
+      description: A user as the API shows them. The password hash and MFA secret never leave.
+      properties:
+        username:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        permissions:
+          $ref: '#/components/schemas/Permissions'
+        wildcard:
+          type: boolean
+          description: True when a role grants everything.
+        email:
+          type:
+          - string
+          - 'null'
+        email_verified:
+          type: boolean
+        invite_sent:
+          type: boolean
+          description: 'Only on the response to creating an invited user: whether the invitation was accepted
+            for delivery. The account exists either way.'
+      required:
+      - username
+      - roles
+      - permissions
+      - wildcard
+      - email
+      - email_verified
+    CreateUserRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          description: 1 to 64 characters of ASCII letters, digits and `. _ - @ +`; trimmed.
+        password:
+          type: string
+          description: Required unless `invite` is true.
+          default: ''
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+          description: Empty means `["user"]`. `admin`/`service` need the literal admin role.
+          default: []
+        permissions:
+          $ref: '#/components/schemas/Permissions'
+        email:
+          type:
+          - string
+          - 'null'
+          description: Required when `invite` is true.
+        invite:
+          type: boolean
+          description: Email the address an invitation to choose a password; the account gets a random
+            password nobody is told.
+          default: false
+      required:
+      - username
+    UpdateUserRequest:
+      type: object
+      description: Every field optional; absent leaves it alone.
+      properties:
+        password:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        permissions:
+          $ref: '#/components/schemas/Permissions'
+    ReplacePermissionsRequest:
+      type: object
+      description: '`permissions` defaults to `{}`, which removes every grant.'
+      properties:
+        permissions:
+          $ref: '#/components/schemas/Permissions'
+    ApplyTemplateRequest:
+      type: object
+      properties:
+        template:
+          type: string
+          description: A template name from `[templates.*]` of the permission catalog.
+      required:
+      - template
+    Me:
+      type: object
+      description: The caller's current access, wildcard resolved (every catalog action for a wildcard
+        role).
+      properties:
+        username:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        wildcard:
+          type: boolean
+        effective:
+          $ref: '#/components/schemas/Permissions'
+      required:
+      - username
+      - roles
+      - wildcard
+      - effective
+    CreateAppToken:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Non-blank after trimming.
+        scope:
+          type: array
+          items:
+            type: string
+          description: '`service:action` entries the token is limited to; each must be held by the owner.
+            Empty is the owner''s full access.'
+          default: []
+        expires_in_days:
+          type:
+          - integer
+          - 'null'
+          description: At least 1; capped at 365. Omitted means 365.
+      required:
+      - name
+    AppTokenView:
+      type: object
+      properties:
+        id:
+          type: string
+          description: 'Public handle: 12 characters.'
+        name:
+          type: string
+        scope:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        last_used_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        revoked:
+          type: boolean
+      required:
+      - id
+      - name
+      - scope
+      - created_at
+      - expires_at
+      - last_used_at
+      - revoked
+    CreatedAppToken:
+      allOf:
+      - $ref: '#/components/schemas/AppTokenView'
+      - type: object
+        properties:
+          secret:
+            type: string
+            description: '`lht_` + 43 URL-safe characters. Shown once; only its SHA-256 is stored.'
+        required:
+        - secret
+      description: An `AppTokenView` plus the one-time `secret`.
+    TokenRequest:
+      type: object
+      description: Form fields; which are required depends on `grant_type`.
+      properties:
+        grant_type:
+          type: string
+          enum:
+          - authorization_code
+          - refresh_token
+          - client_credentials
+          - app_token
+        code:
+          type: string
+          description: 'authorization_code: the code from `/api/v1/authorize`.'
+        redirect_uri:
+          type: string
+          description: 'authorization_code: must equal the one the code was issued for.'
+        code_verifier:
+          type: string
+          description: 'authorization_code: the PKCE verifier (S256).'
+        client_id:
+          type: string
+          description: authorization_code, client_credentials.
+        client_secret:
+          type: string
+          description: authorization_code, client_credentials.
+        refresh_token:
+          type: string
+          description: refresh_token grant.
+        app_token:
+          type: string
+          description: 'app_token grant: the `lht_...` secret.'
+      required:
+      - grant_type
+    Jwks:
+      type: object
+      description: RFC 7517 JWK Set of every non-retired key.
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            properties:
+              kty:
+                type: string
+                enum:
+                - OKP
+              crv:
+                type: string
+                enum:
+                - Ed25519
+              kid:
+                type: string
+              x:
+                type: string
+                description: Base64url (no padding) public key.
+            required:
+            - kty
+            - crv
+            - kid
+            - x
+      required:
+      - keys
+    NotifyBody:
+      type: object
+      properties:
+        username:
+          type: string
+        template:
+          type: string
+          description: 'A template id: `conveyor.run.failed`, `conveyor.run.succeeded`, `conveyor.run.recovered`.'
+        vars:
+          type: object
+          additionalProperties:
+            type: string
+          description: Exactly the variables the template declares (`project`, `run`, `ref`, `url` for
+            the three conveyor templates).
+          default: {}
+        dedupe_key:
+          type:
+          - string
+          - 'null'
+          description: Repeating a key for the same person and template within a day sends nothing.
+        requested:
+          type: boolean
+          description: 'The person subscribed in the calling service: sends a kind that is off by default
+            unless they opted out of it here.'
+          default: false
+      required:
+      - username
+      - template
+    NotifyResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - accepted
+          - skipped
+          - failed
+        reason:
+          type: string
+          description: 'skipped: `no_such_user`, `no_verified_email`, `not_subscribed`, `duplicate`, `rate_limited`.
+            failed: the mail error text.'
+        retryable:
+          type: boolean
+          description: failed only.
+      required:
+      - status
+    TestTokenRequest:
+      type: object
+      properties:
+        sub:
+          type: string
+        aud:
+          type: array
+          items:
+            type: string
+          default: []
+        scope:
+          type: string
+          description: Space separated roles and `service:action` entries.
+        iat:
+          type:
+          - integer
+          - 'null'
+          description: Unix seconds; default now.
+        exp:
+          type:
+          - integer
+          - 'null'
+          description: Unix seconds; default now + access TTL.
+      required:
+      - sub
+      - scope
+    AuthStatus:
+      type: object
+      description: What the page's session watcher is told. Reads the cookie and its signature only.
+      properties:
+        authenticated:
+          type: boolean
+        username:
+          type:
+          - string
+          - 'null'
+        roles:
+          type: array
+          items:
+            type: string
+      required:
+      - authenticated
+      - username
+      - roles
+    ServiceCard:
+      type: object
+      properties:
+        url:
+          type: string
+        title_key:
+          type: string
+          description: '`ui_service_<name>_title`'
+        desc_key:
+          type: string
+          description: '`ui_service_<name>_desc`'
+        label:
+          type: string
+          description: Shown when no translation applies.
+        description:
+          type:
+          - string
+          - 'null'
+        card_class:
+          type: string
+          description: '`home-card-<name>`'
+      required:
+      - url
+      - title_key
+      - desc_key
+      - label
+      - card_class
+    Dashboard:
+      type: object
+      properties:
+        admin:
+          type: boolean
+          description: Whether the person holds the `admin` role.
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceCard'
+      required:
+      - admin
+      - services
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: string
+        service:
+          type: string
+        label_key:
+          type: string
+        wanted:
+          type: boolean
+      required:
+      - id
+      - service
+      - label_key
+      - wanted
+    Account:
+      type: object
+      properties:
+        username:
+          type: string
+        display_name:
+          type:
+          - string
+          - 'null'
+        avatar_url:
+          type:
+          - string
+          - 'null'
+          description: A pasted address; never the bytes of an uploaded picture.
+        has_avatar:
+          type: boolean
+        title:
+          type:
+          - string
+          - 'null'
+        timezone:
+          type:
+          - string
+          - 'null'
+        preferred_locale:
+          type:
+          - string
+          - 'null'
+        email:
+          type:
+          - string
+          - 'null'
+        email_verified:
+          type: boolean
+        mfa_enabled:
+          type: boolean
+        has_notice_address:
+          type: boolean
+          description: Whether a confirmed address exists for notices.
+        timezones:
+          type: array
+          items:
+            type: string
+          description: Every IANA zone name known.
+        locales:
+          type: array
+          items:
+            type: string
+        subscriptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Subscription'
+      required:
+      - username
+      - has_avatar
+      - email_verified
+      - mfa_enabled
+      - has_notice_address
+      - timezones
+      - locales
+      - subscriptions
+    MfaEnrollment:
+      type: object
+      properties:
+        secret:
+          type: string
+          description: Base32 TOTP secret; nothing is stored yet.
+        uri:
+          type: string
+          description: '`otpauth://totp/...`'
+        qr:
+          type:
+          - string
+          - 'null'
+          description: SVG `data:` URI of the QR code.
+      required:
+      - secret
+      - uri
+    MfaEnrollRequest:
+      type: object
+      properties:
+        secret:
+          type: string
+        code:
+          type: string
+          description: The current code from the authenticator.
+      required:
+      - secret
+      - code
+    Grant:
+      type: object
+      properties:
+        service:
+          type: string
+        actions:
+          type: array
+          items:
+            type: string
+      required:
+      - service
+      - actions
+    AdminUserRow:
+      type: object
+      properties:
+        username:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        wildcard:
+          type: boolean
+        grants:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grant'
+      required:
+      - username
+      - roles
+      - wildcard
+      - grants
+    AdminUsers:
+      type: object
+      properties:
+        actor:
+          type: string
+        admin:
+          type: boolean
+          description: Whether the viewer is a literal administrator (may pick roles).
+        can_create:
+          type: boolean
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUserRow'
+      required:
+      - actor
+      - admin
+      - can_create
+      - users
+    CatalogService:
+      type: object
+      properties:
+        name:
+          type: string
+        label:
+          type: string
+        actions:
+          type: array
+          items:
+            type: string
+      required:
+      - name
+      - label
+      - actions
+    AdminUser:
+      type: object
+      properties:
+        username:
+          type: string
+        role:
+          type: string
+          description: 'The most privileged role held: `admin`, `service` or `user`.'
+        wildcard:
+          type: boolean
+        held:
+          type: array
+          items:
+            $ref: '#/components/schemas/Grant'
+        email:
+          type:
+          - string
+          - 'null'
+        email_verified:
+          type: boolean
+        disabled:
+          type: boolean
+        locked:
+          type: boolean
+        mfa_enabled:
+          type: boolean
+        created_at:
+          type: string
+          description: '`2026-10-29 10:00 UTC`'
+        last_login_at:
+          type:
+          - string
+          - 'null'
+        is_self:
+          type: boolean
+        viewer_admin:
+          type: boolean
+        can_edit:
+          type: boolean
+        can_delete:
+          type: boolean
+        can_manage_permissions:
+          type: boolean
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogService'
+        templates:
+          type: array
+          items:
+            type: string
+      required:
+      - username
+      - role
+      - wildcard
+      - held
+      - email_verified
+      - disabled
+      - locked
+      - mfa_enabled
+      - created_at
+      - is_self
+      - viewer_admin
+      - can_edit
+      - can_delete
+      - can_manage_permissions
+      - services
+      - templates
+    ConfirmEmail:
+      type: object
+      properties:
+        new_email:
+          type: string
+      required:
+      - new_email
+    UnsubscribeInfo:
+      type: object
+      properties:
+        label_key:
+          type: string
+      required:
+      - label_key
+    Done:
+      type: object
+      properties:
+        done:
+          type: boolean
+      required:
+      - done
+    Authenticated:
+      type: object
+      properties:
+        authenticated:
+          type: boolean
+      required:
+      - authenticated
+    AvatarUpload:
+      type: object
+      description: multipart/form-data fields. A missing or empty field leaves the value alone (blank
+        cannot clear).
+      properties:
+        avatar_file:
+          type: string
+          description: PNG, JPEG, GIF or WebP, at most 262 144 bytes (type sniffed from the bytes).
+          format: binary
+        avatar_url:
+          type: string
+          description: http(s) address; ignored when a file is uploaded.
+        avatar_remove:
+          type: string
+          description: Present (any value) clears the picture; wins over the others.
+        display_name:
+          type: string
+        title:
+          type: string
+        timezone:
+          type: string
+          description: IANA zone name.
+        preferred_locale:
+          type: string
+          enum:
+          - en-US
+          - pl-PL
+          - es-ES
+          - de-DE
+          - fr-FR
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 'An access token issued by Gatehouse (`Authorization: Bearer <token>`). Its audience
+        must include `gatehouse`; when it carries a session id the session must still be active.'
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: forge_session
+      description: The access token in the session cookie. The name is `AUTH_COOKIE_NAME` (default `forge_session`);
+        `HttpOnly`, `Secure`, `SameSite=Lax`, path `/`.
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: forge_refresh
+      description: The refresh token. Name is `AUTH_REFRESH_COOKIE_NAME` (default `forge_refresh`); Max-Age
+        is `REFRESH_TOKEN_TTL_SECS`.
+  parameters: {}
+  responses: {}

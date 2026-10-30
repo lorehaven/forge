@@ -366,3 +366,40 @@ tag = "x"
         "{all}"
     );
 }
+
+#[quench_test::test]
+fn a_valid_docs_block_has_no_issues() {
+    let toml = r#"
+[docs]
+out = "target/docs"
+storage = "docs"
+jekyll = "bundle exec jekyll"
+
+[docs.books.forge]
+dir = "docs"
+version = "1.0.0"
+
+[docs.books.forge.openapi]
+specs = "services"
+sources = ["services/{name}/service/src"]
+"#;
+    assert_eq!(validate(toml).expect("parses"), Vec::new());
+}
+
+#[quench_test::test]
+fn a_book_without_a_dir_and_unknown_docs_fields_are_reported() {
+    let toml = "[docs]\nbogus = 1\n[docs.books.forge]\ntitle = \"Forge\"\nflavour = \"x\"\n[docs.books.forge.openapi]\nspecs = \"s\"\n";
+    let issues = validate(toml).expect("parses");
+    let has = |path: &str, text: &str| {
+        issues
+            .iter()
+            .any(|i| i.path == path && i.message.contains(text))
+    };
+    assert!(has("docs.bogus", "unknown field"), "{issues:?}");
+    assert!(
+        has("docs.books.forge.flavour", "unknown field"),
+        "{issues:?}"
+    );
+    assert!(has("docs.books.forge", "dir"), "{issues:?}");
+    assert!(has("docs.books.forge.openapi", "sources"), "{issues:?}");
+}

@@ -1,0 +1,1063 @@
+openapi: 3.1.0
+info:
+  title: Gantry service
+  version: 0.2.2
+  description: |
+    The deploy manager of the estate. It lists the packages (`.rivet` files) a registry publishes beside what the cluster
+    runs of them, lists every resource of every package with its state (synced, edited, missing, extra, hidden), and
+    changes the cluster by recording an operation that a short-lived runner executes with `riveter` and `kubectl`.
+    Everything under `/api/v1` needs a verified identity (`Auth` wraps the whole prefix). Access is per package:
+    `gantry:<action>` is the blanket grant and `gantry:target:<package>:<action>` a grant on one package; actions are
+    `read`, `deploy`, `scale`, `activate` and `rollback`. Error bodies are `{"error": "<text>"}`. Times are RFC 3339.
+servers:
+  - url: "{base}"
+    variables:
+      base:
+        default: /gantry
+        description: The service's BASE_PATH.
+tags:
+  - name: info
+    description: Who the caller is and what they may do.
+  - name: targets
+    description: Packages, their versions, and plans to change a package.
+  - name: plans
+    description: Stored plans, looked at and confirmed.
+  - name: resources
+    description: Resources of every kind grouped by package, and direct actions on them.
+  - name: deployments
+    description: Independently startable and stoppable workload groups declared by packages.
+  - name: operations
+    description: Requested changes and their progress.
+  - name: auth
+    description: Sign-in forwarded to gatehouse.
+  - name: ui
+    description: The browser client's page routes and files.
+paths:
+  /api/v1/info:
+    get:
+      tags: [info]
+      operationId: info
+      summary: The service and the caller
+      description: '`can` lists the actions the caller holds as blanket grants (a grant scoped to one package is not listed). With auth off, every action.'
+      security: [{bearer: []}, {sessionCookie: []}]
+      responses:
+        '200':
+          description: Info.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Info'}
+              example: {service: gantry, version: 0.2.2, actor: dev, can: [read, deploy, scale, activate, rollback]}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /api/v1/targets:
+    get:
+      tags: [targets]
+      operationId: listTargets
+      summary: Every package, published or running
+      description: |
+        Assembled on every call from the registry's catalog (the newest non-yanked version of each package) and the
+        cluster's workloads that carry the `riveter.forge/package` label. Only packages the caller may read are listed.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read (per package)
+      responses:
+        '200':
+          description: The targets.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Target'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/ServerError'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/targets/{name}:
+    get:
+      tags: [targets]
+      operationId: readTarget
+      summary: One package with all its published versions
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read on the package
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The target (fields at the top level) and `versions`, newest first, yanked ones included.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/targets/{name}/plan:
+    post:
+      tags: [targets]
+      operationId: planTarget
+      summary: Plan putting a package at a version
+      description: |
+        Stores a plan and changes nothing. Without `version`, the newest non-yanked one. The action is derived from the
+        running version: `install` (nothing running), `upgrade`, `reinstall` (same version) or `downgrade`. A yanked version can only
+        be chosen where it already runs. Planning needs only `read`; the permission for the action is checked when the plan is confirmed.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read on the package
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TargetPlanBody'}
+            example: {version: 1.1.0}
+      responses:
+        '201':
+          description: The stored plan.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredPlan'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/plans/{id}:
+    get:
+      tags: [plans]
+      operationId: readPlan
+      summary: A stored plan
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read on the plan's target
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The plan, its steps in words, and whether the caller may confirm it.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlanDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/plans/{id}/confirm:
+    post:
+      tags: [plans]
+      operationId: confirmPlan
+      summary: Turn a plan into an operation
+      description: |
+        Checks that the caller holds the permission the plan's action needs (`rollback` for a downgrade, `activate` for a swap,
+        `scale` for a start or stop, otherwise `deploy`) on **every** package the plan touches; that the plan was not confirmed
+        before; and that the cluster still looks as it did when the plan was made (the running version for a package plan, the
+        observed state of the involved deployments for a deployment plan); then queues the operation.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:deploy | rollback | scale | activate on each touched package
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '201':
+          description: The queued operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/resources:
+    get:
+      tags: [resources]
+      operationId: listResources
+      summary: Every resource of every package, grouped
+      description: |
+        Merges what each package declared at its last successful install (the inventory) with what the cluster has under the
+        package label, of every kind the cluster serves (discovered; cached a minute). Only packages the caller may read.
+        `can` is the subset of `read`, `deploy`, `scale` the caller holds for that package.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read (per package)
+      responses:
+        '200':
+          description: One group per package.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/GroupView'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/ServerError'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/resources/yaml:
+    get:
+      tags: [resources]
+      operationId: resourceYaml
+      summary: The live YAML of a resource
+      description: |
+        With the fields the API server adds removed (status, uid, resourceVersion, managedFields, ...). Never a Secret
+        (`422`). A resource that is missing from the cluster is `422 ... is not in the cluster; apply it first`. `editable` says
+        whether the caller holds `deploy` on the package.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read on the package
+      parameters:
+        - {name: package, in: query, required: true, schema: {type: string}}
+        - {name: apiVersion, in: query, required: false, schema: {type: string}}
+        - {name: kind, in: query, required: true, schema: {type: string}}
+        - {name: namespace, in: query, required: false, schema: {type: string}}
+        - {name: name, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The YAML text.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ResourceYaml'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/resources/delete:
+    post:
+      tags: [resources]
+      operationId: deleteResource
+      summary: Delete one resource
+      description: |
+        Queues an operation with one `delete` step, at once (no plan to confirm). Refused (`422`) for Namespaces, CustomResourceDefinitions,
+        PersistentVolumes, PersistentVolumeClaims and StorageClasses; for a resource that is already missing; for a Secret;
+        and by the protected-workload rule for a protected Deployment.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:scale on the package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResourceBody'}
+            example: {package: ml, apiVersion: apps/v1, kind: Deployment, name: sage, namespace: ml}
+      responses:
+        '201':
+          description: The queued operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/resources/apply:
+    post:
+      tags: [resources]
+      operationId: applyResource
+      summary: Apply resources again from the package
+      description: |
+        With `kind` and `name`: that one resource. Without a resource: everything the package declares that is `missing`. Runs
+        `pull`, `check`, then an `install` of only those resources, at the version recorded by the last install.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:scale on the package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResourceBody'}
+      responses:
+        '201':
+          description: The queued operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/resources/edit:
+    post:
+      tags: [resources]
+      operationId: editResource
+      summary: Apply edited YAML
+      description: |
+        `kind`, `name` and `yaml` are required (`422` otherwise). The YAML must describe the same kind, name and namespace as the
+        resource opened. It is applied as written, with the annotation `gantry.forge/edited: "<who> at <UTC time>"` added; the next install
+        of the package overwrites it. A workload is then waited on (`rollout status`, 300 s); a ConfigMap's users are restarted.
+        The YAML is limited to 128 KiB and must not be a Secret.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:deploy on the package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResourceBody'}
+      responses:
+        '201':
+          description: The queued operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/resources/refresh:
+    post:
+      tags: [resources]
+      operationId: refreshPackage
+      summary: Re-read what a package declares
+      description: Queues `pull` and `check` of the installed version; nothing is changed, and the inventory is replaced from the runner's output when it succeeds. Needs only `read`.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read on the package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResourceBody'}
+            example: {package: ml}
+      responses:
+        '201':
+          description: The queued operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/deployments:
+    get:
+      tags: [deployments]
+      operationId: listDeployments
+      summary: Deployments with state, drift and conflicts
+      description: A package that declares no `[[deployment]]` is one deployment named after it (its Deployments and StatefulSets). Only deployments of packages the caller may read.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read (per package)
+      responses:
+        '200':
+          description: The deployments.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/DeploymentView'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '500': {$ref: '#/components/responses/ServerError'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/deployments/{name}/plan:
+    post:
+      tags: [deployments]
+      operationId: planDeployment
+      summary: Plan starting or stopping a deployment
+      description: |
+        `stop`: delete each workload in the listed order, delete the `also_stops` pods, wait until the pods are gone.
+        `start`: stop whatever it conflicts with (and what `stop` names) that is running, then apply only this deployment's
+        workloads from the installed version; with something stopped first the plan's action is `swap`.
+        Refused (`422`) when not installed, already stopped/running, protected, or installed at more than one version.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read on the package (planning); scale / activate at confirmation
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeploymentPlanBody'}
+            example: {action: start, stop: []}
+      responses:
+        '201':
+          description: The stored plan.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StoredPlan'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/operations:
+    post:
+      tags: [operations]
+      operationId: submitOperation
+      summary: Submit a raw plan
+      description: |
+        For tools and tests. A raw plan names no package, so only the blanket `gantry:deploy` is enough. The plan is validated
+        (see the plans page): at least one step, names, versions, selectors, the namespace allow-list, a 128 KiB limit on edited YAML; and the
+        protected workloads cannot be stopped. `title` is required and non-blank.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:deploy (blanket only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Submit'}
+            example:
+              title: Scale sage
+              plan:
+                steps:
+                  - {step: scale, namespace: ml, kind: deployment, name: sage, replicas: 0}
+      responses:
+        '201':
+          description: The queued operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '500': {$ref: '#/components/responses/ServerError'}
+    get:
+      tags: [operations]
+      operationId: listOperations
+      summary: Recent operations, newest first
+      description: '`limit` defaults to 50 and is clamped to 1..200. Needs the blanket `gantry:read` (a grant scoped to one package is not enough).'
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read (blanket only)
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer, format: int64}}
+      responses:
+        '200':
+          description: The operations.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Operation'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/ServerError'}
+  /api/v1/operations/{id}:
+    get:
+      tags: [operations]
+      operationId: readOperation
+      summary: One operation, with the runner's live output while it runs
+      description: Needs the blanket `gantry:read`. `live_log` is the runner's output so far while the operation is `queued` or `running` and has a runner (null when over); the stored `log` is written when it ends.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read (blanket only)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The operation, `live_log` and `step_lines`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OperationDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/ServerError'}
+  /api/v1/operations/{id}/cancel:
+    post:
+      tags: [operations]
+      operationId: cancelOperation
+      summary: Cancel an operation
+      description: |
+        A `queued` operation becomes `cancelled` at once. A `running` one is flagged; the reconciler stops its runner within
+        about 3 seconds and records `cancelled` with the error `cancelled; steps already run were not undone`. An operation
+        that is already over is returned unchanged (`200`). Needs the blanket `gantry:deploy`.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:deploy (blanket only)
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The operation after the request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/ServerError'}
+  /ui:
+    get:
+      tags: [ui]
+      operationId: uiRoot
+      summary: Redirect to the front page
+      description: "`302` to `{BASE_PATH}/ui/home` with a session; without one, `302` to the sign-in."
+      security: []
+      responses:
+        '302': {description: 'Redirect.'}
+  /ui/:
+    get:
+      tags: [ui]
+      operationId: uiRootSlash
+      summary: Same as `/ui`
+      security: []
+      responses:
+        '302': {description: 'Redirect.'}
+  /ui/login:
+    get:
+      tags: [auth]
+      operationId: uiLogin
+      summary: Start sign-in (gatehouse)
+      description: See the common runtime page.
+      security: []
+      responses:
+        '302': {description: 'Redirect to gatehouse''s authorize endpoint, or to the home page with fresh cookies.'}
+        '503': {description: 'gatehouse is not configured.'}
+  /ui/login/:
+    get:
+      tags: [auth]
+      operationId: uiLoginSlash
+      summary: Same as `/ui/login`
+      security: []
+      responses:
+        '302': {description: 'Redirect.'}
+        '503': {description: 'gatehouse is not configured.'}
+  /ui/auth/callback:
+    get:
+      tags: [auth]
+      operationId: uiAuthCallback
+      summary: OAuth callback
+      security: []
+      parameters:
+        - {name: code, in: query, required: false, schema: {type: string}}
+        - {name: state, in: query, required: false, schema: {type: string}}
+      responses:
+        '302': {description: 'Redirect to the saved page with session cookies, or back to the sign-in on failure.'}
+  /ui/logout:
+    get:
+      tags: [auth]
+      operationId: uiLogout
+      summary: Sign out through gatehouse
+      security: []
+      responses:
+        '302': {description: 'Redirect to gatehouse''s logout.'}
+        '503': {description: 'gatehouse is not configured.'}
+  /ui/status:
+    get:
+      tags: [auth]
+      operationId: uiStatus
+      summary: Session status for the page shell
+      description: The shared handler of `quench-auth` (see the common runtime page).
+      security: []
+      responses:
+        '200':
+          description: Status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthStatus'}
+  /ui/refresh:
+    post:
+      tags: [auth]
+      operationId: uiRefresh
+      summary: Refresh the session
+      security: []
+      responses:
+        '200': {description: 'New session and refresh cookies.'}
+        '401': {description: 'No refresh cookie, or gatehouse refused it.'}
+  /ui/home:
+    get:
+      tags: [ui]
+      operationId: uiHome
+      summary: Packages (front page)
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: 'The browser client''s HTML page.'}
+        '302': {description: 'No session; redirect to the sign-in.'}
+  /ui/home/:
+    get:
+      tags: [ui]
+      operationId: uiHomeSlash
+      summary: Same as `/ui/home`
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/apps/{name}:
+    get:
+      tags: [ui]
+      operationId: uiApp
+      summary: One application (package) with its resources and deployments
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/targets/{name}:
+    get:
+      tags: [ui]
+      operationId: uiTarget
+      summary: A package's versions and what runs
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/operations:
+    get:
+      tags: [ui]
+      operationId: uiOperations
+      summary: History of operations
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/operations/{id}:
+    get:
+      tags: [ui]
+      operationId: uiOperation
+      summary: One operation with its log
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/plans/{id}:
+    get:
+      tags: [ui]
+      operationId: uiPlan
+      summary: A stored plan
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/resource:
+    get:
+      tags: [ui]
+      operationId: uiResource
+      summary: The YAML editor of one resource (identified by the query)
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: package, in: query, required: false, schema: {type: string}}
+        - {name: kind, in: query, required: false, schema: {type: string}}
+        - {name: name, in: query, required: false, schema: {type: string}}
+        - {name: namespace, in: query, required: false, schema: {type: string}}
+        - {name: api_version, in: query, required: false, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/assets/quench.js:
+    get:
+      tags: [ui]
+      operationId: uiAssetScript
+      summary: The UI runtime script
+      security: []
+      responses:
+        '200': {description: 'JavaScript.'}
+  /ui/assets/app.css:
+    get:
+      tags: [ui]
+      operationId: uiAssetStyle
+      summary: The stylesheet
+      security: []
+      responses:
+        '200': {description: 'CSS.'}
+  /ui/assets/shell.js:
+    get:
+      tags: [ui]
+      operationId: uiAssetShell
+      summary: The shell script
+      security: []
+      responses:
+        '200': {description: 'JavaScript.'}
+  /ui/assets/favicon.png:
+    get:
+      tags: [ui]
+      operationId: uiAssetFavicon
+      summary: The icon
+      security: []
+      responses:
+        '200': {description: 'PNG.'}
+  /ui/assets/app.wasm:
+    get:
+      tags: [ui]
+      operationId: uiAssetModule
+      summary: The browser client module
+      security: []
+      responses:
+        '200': {description: 'WebAssembly (`application/wasm`).'}
+        '404': {description: 'The module is not installed in the web directory.'}
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: A gatehouse access token whose audience includes `gantry`.
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: forge_session
+      description: The realm session cookie (name from AUTH_COOKIE_NAME).
+  responses:
+    Unauthorized:
+      description: No valid token or session. A browser request is redirected instead.
+    Forbidden:
+      description: 'The caller lacks the grant. Body {"error": "no scale access to ml"} and similar.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    NotFound:
+      description: 'Not found. Body {"error": "no such operation"} and similar.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Conflict:
+      description: 'A stale or already confirmed plan, or a second running operation in one scope. Body {"error": "<text>"}.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unprocessable:
+      description: 'Refused: invalid plan, unsupported request, or a rule of the service (protected workload, not deletable kind, missing field). Body {"error": "<text>"}.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    BadGateway:
+      description: 'The package registry or the cluster could not be reached or refused. Body {"error": "<text>"}.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ServerError:
+      description: A database error, or an in-memory database (503 `gantry needs Postgres; ...` for the latter).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+    Info:
+      type: object
+      required: [service, version, actor, can]
+      properties:
+        service: {type: string, enum: [gantry]}
+        version: {type: string}
+        actor: {type: string, description: 'The token subject, or dev with auth off.'}
+        can:
+          type: array
+          items: {type: string, enum: [read, deploy, scale, activate, rollback]}
+    TargetStatus:
+      type: string
+      enum: [not_installed, current, update_available, ahead, mixed, unlisted]
+      description: |
+        not_installed: published, nothing running. current: running the newest published version. update_available: older than the newest.
+        ahead: newer than the newest non-yanked version. mixed: units on different versions. unlisted: running but not published.
+    Unit:
+      type: object
+      required: [kind, name, namespace, desired, ready]
+      properties:
+        kind: {type: string, enum: [deployment, statefulset, daemonset]}
+        name: {type: string}
+        namespace: {type: string}
+        version: {type: [string, 'null']}
+        desired: {type: integer, format: int32}
+        ready: {type: integer, format: int32}
+    Target:
+      type: object
+      required: [name, status, units]
+      properties:
+        name: {type: string}
+        description: '{type: [string, ''null'']}'
+        namespace: {type: [string, 'null'], description: 'The namespace the newest version deploys into by default.'}
+        installed: {type: [string, 'null'], description: 'The version all units run, when they agree.'}
+        offered: {type: [string, 'null'], description: 'The newest non-yanked published version.'}
+        status: {$ref: '#/components/schemas/TargetStatus'}
+        units:
+          type: array
+          items: {$ref: '#/components/schemas/Unit'}
+    PackageVersion:
+      type: object
+      required: [name, version]
+      properties:
+        name: {type: string}
+        version: {type: string}
+        description: '{type: [string, ''null'']}'
+        namespace: {type: [string, 'null']}
+        size_bytes: {type: integer, format: int64}
+        sha256: {type: string}
+        yanked: {type: boolean}
+        uploaded_by: {type: string}
+        manifest: {type: object, description: 'The package''s rivet.toml, parsed.'}
+    TargetDetail:
+      allOf:
+        - {$ref: '#/components/schemas/Target'}
+        - type: object
+          required: [versions]
+          properties:
+            versions:
+              type: array
+              items: {$ref: '#/components/schemas/PackageVersion'}
+    TargetPlanBody:
+      type: object
+      properties:
+        version: {type: [string, 'null']}
+    DeploymentPlanBody:
+      type: object
+      required: [action]
+      properties:
+        action: {type: string, enum: [start, stop]}
+        stop:
+          type: array
+          items: {type: string}
+          description: 'For a start: deployments to stop first, on top of any it conflicts with.'
+    ResourceState:
+      type: string
+      enum: [synced, edited, missing, extra, hidden]
+      description: |
+        synced: there, as the package left it. edited: there, but changed through Gantry (annotation gantry.forge/edited). missing: declared,
+        not in the cluster. extra: in the cluster with the package label but not declared (shown as "not in package"). hidden: a Secret (never looked at).
+    SyncState:
+      type: string
+      enum: [synced, out_of_sync, missing, not_installed, unlisted]
+    Row:
+      type: object
+      required: [apiVersion, kind, name, namespace, state, ready, workload, editable]
+      properties:
+        apiVersion: {type: [string, 'null']}
+        kind: {type: string}
+        name: {type: string}
+        namespace: {type: [string, 'null']}
+        state: {$ref: '#/components/schemas/ResourceState'}
+        ready: {type: [string, 'null'], description: '"1/1" for a workload that reports it (Jobs: done, failed, running).'}
+        workload: {type: boolean}
+        editable: {type: boolean}
+    Summary:
+      type: object
+      required: [sync, total, synced, edited, missing, extra, workloads, not_ready]
+      properties:
+        sync: {$ref: '#/components/schemas/SyncState'}
+        total: {type: integer}
+        synced: {type: integer, description: 'synced plus hidden rows.'}
+        edited: {type: integer}
+        missing: {type: integer}
+        extra: {type: integer}
+        workloads: {type: integer}
+        not_ready: {type: integer, description: 'Present workloads that report fewer ready replicas than desired.'}
+        update_to: {type: [string, 'null'], description: 'The newer version offered, when the running one is behind.'}
+    GroupView:
+      type: object
+      required: [package, status, inventoried, rows, summary, can]
+      properties:
+        package: {type: string}
+        description: '{type: [string, ''null'']}'
+        installed: {type: [string, 'null']}
+        offered: {type: [string, 'null']}
+        status: {$ref: '#/components/schemas/TargetStatus'}
+        inventoried: {type: boolean, description: 'Whether an inventory exists, i.e. whether missing resources can be known.'}
+        rows:
+          type: array
+          items: {$ref: '#/components/schemas/Row'}
+        summary: '{$ref: ''#/components/schemas/Summary''}'
+        can:
+          type: array
+          items: {type: string, enum: [read, deploy, scale]}
+    ResourceYaml:
+      type: object
+      required: [yaml, editable]
+      properties:
+        yaml: {type: string}
+        editable: {type: boolean}
+    ResourceBody:
+      type: object
+      required: [package]
+      properties:
+        package: {type: string}
+        apiVersion: {type: [string, 'null']}
+        kind: {type: [string, 'null']}
+        name: {type: [string, 'null']}
+        namespace: {type: [string, 'null']}
+        yaml: {type: [string, 'null'], description: 'Only for edit.'}
+    ResourceView:
+      type: object
+      required: [kind, name, present]
+      properties:
+        kind: {type: string}
+        name: {type: string}
+        namespace: {type: [string, 'null']}
+        desired: {type: [integer, 'null']}
+        ready: {type: [integer, 'null']}
+        present: {type: boolean}
+    DeploymentView:
+      type: object
+      required: [name, declared, target, resources, default, desired, observed, drift, conflicts_with, conflicting_running]
+      properties:
+        name: {type: string}
+        declared: {type: boolean, description: 'Declared in the package manifest (false for the implicit one-per-package deployment).'}
+        target: {type: string, description: 'The package.'}
+        description: '{type: [string, ''null'']}'
+        resources:
+          type: array
+          items: {$ref: '#/components/schemas/ResourceView'}
+        default: {type: string, enum: [running, stopped]}
+        desired: {type: string, enum: [running, stopped], description: 'What it is meant to be: the last successful start or stop, else the default.'}
+        observed: {type: string, enum: [running, stopped, partial, absent]}
+        drift: {type: boolean, description: 'Meant to be one thing, is another (always true for partial).'}
+        conflicts_with:
+          type: array
+          items: {type: string}
+        conflicting_running:
+          type: array
+          items: {type: string}
+          description: 'The deployments in conflicts_with (declared in either direction) that are running or partial now.'
+    Step:
+      description: One step of a runner plan; the `step` field selects the variant.
+      oneOf:
+        - type: object
+          required: [step, package, version]
+          properties:
+            step: {const: pull}
+            package: {type: string}
+            version: {type: string}
+        - type: object
+          required: [step, package, version]
+          properties:
+            step: {const: check}
+            package: {type: string}
+            version: {type: string}
+            values_secret: {type: [string, 'null']}
+        - type: object
+          required: [step, package, version, namespace]
+          properties:
+            step: {const: install}
+            package: {type: string}
+            version: {type: string}
+            namespace: {type: string}
+            sets: {type: object, additionalProperties: {type: string}}
+            replicas: {type: object, additionalProperties: {type: integer, minimum: 0}}
+            values_secret: {type: [string, 'null']}
+            timeout_secs: {type: [integer, 'null']}
+            targets: {type: array, items: {type: string}}
+            except: {type: array, items: {type: string}}
+            no_wait: {type: boolean}
+        - type: object
+          required: [step, namespace, kind, name, replicas]
+          properties:
+            step: {const: scale}
+            namespace: {type: string}
+            kind: {type: string, enum: [deployment, statefulset, daemonset]}
+            name: {type: string}
+            replicas: {type: integer, minimum: 0}
+        - type: object
+          required: [step, resource]
+          properties:
+            step: {const: delete}
+            resource: {type: string}
+            namespace: {type: [string, 'null']}
+        - type: object
+          required: [step, yaml]
+          properties:
+            step: {const: apply_yaml}
+            namespace: {type: [string, 'null']}
+            yaml: {type: string}
+        - type: object
+          required: [step, namespace, kind, name, timeout_secs]
+          properties:
+            step: {const: restart_users}
+            namespace: {type: string}
+            kind: {type: string, enum: [configmap, secret]}
+            name: {type: string}
+            timeout_secs: {type: integer, minimum: 0}
+        - type: object
+          required: [step, selector]
+          properties:
+            step: {const: delete_pods}
+            selector: {type: string}
+            namespaces: {type: array, items: {type: string}}
+        - type: object
+          required: [step, selector, timeout_secs]
+          properties:
+            step: {const: wait_gone}
+            selector: {type: string}
+            namespaces: {type: array, items: {type: string}}
+            timeout_secs: {type: integer, minimum: 0}
+        - type: object
+          required: [step, namespace, kind, name, timeout_secs]
+          properties:
+            step: {const: rollout}
+            namespace: {type: string}
+            kind: {type: string, enum: [deployment, statefulset, daemonset]}
+            name: {type: string}
+            timeout_secs: {type: integer, minimum: 0}
+            rollback_on_failure: {type: boolean}
+    Effect:
+      type: object
+      required: [effect, deployment, desired]
+      properties:
+        effect: {const: set_desired}
+        deployment: {type: string}
+        desired: {type: string, enum: [running, stopped]}
+    Plan:
+      type: object
+      required: [steps]
+      properties:
+        steps:
+          type: array
+          items: {$ref: '#/components/schemas/Step'}
+        title: {type: string}
+        summary: '{type: array, items: {type: string}}'
+        effects:
+          type: array
+          items: {$ref: '#/components/schemas/Effect'}
+          description: Recorded only when the operation succeeds.
+        touches:
+          type: array
+          items: {type: string}
+          description: Every package the plan touches; confirming needs permission on each.
+        deployments:
+          type: array
+          items: {type: string}
+          description: Deployments a start, stop or swap involves (for the staleness check).
+    StoredPlan:
+      type: object
+      required: [id, target, action, plan, created_by, created_at]
+      properties:
+        id: {type: string}
+        target: {type: string}
+        action: {type: string, enum: [install, upgrade, reinstall, downgrade, stop, start, swap]}
+        version: {type: [string, 'null']}
+        basis: {type: [string, 'null'], description: 'What the plan was made against: the running version, or for deployments a signature like "inference=running,training=stopped".'}
+        plan: {$ref: '#/components/schemas/Plan'}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+        operation_id: {type: [string, 'null'], description: 'Set once confirmed; "claiming" while it is being confirmed.'}
+    PlanDetail:
+      allOf:
+        - {$ref: '#/components/schemas/StoredPlan'}
+        - type: object
+          required: [step_lines, can_confirm]
+          properties:
+            step_lines:
+              type: array
+              items: {type: string}
+            can_confirm: {type: boolean}
+    OperationState:
+      type: string
+      enum: [queued, running, succeeded, failed, rolled_back, cancelled]
+    Operation:
+      type: object
+      required: [id, kind, title, scope, state, plan, requested_by, cancel_requested, created_at]
+      properties:
+        id: {type: string}
+        kind: {type: string, description: 'install, upgrade, reinstall, downgrade, stop, start, swap, delete, apply, edit, refresh or custom.'}
+        title: {type: string}
+        scope: {type: string, description: '`cluster` for every operation.'}
+        state: {$ref: '#/components/schemas/OperationState'}
+        plan: {$ref: '#/components/schemas/Plan'}
+        result: {type: ['object', 'null'], description: 'For a finished operation {"runner": "<job name>"}.'}
+        runner_job: {type: [string, 'null']}
+        requested_by: {type: string}
+        cancel_requested: {type: boolean}
+        error: {type: [string, 'null']}
+        log: {type: [string, 'null'], description: 'The last 64 KiB of the runner output, written when the operation ends.'}
+        created_at: {type: string, format: date-time}
+        started_at: {type: [string, 'null'], format: date-time}
+        finished_at: {type: [string, 'null'], format: date-time}
+    OperationDetail:
+      allOf:
+        - {$ref: '#/components/schemas/Operation'}
+        - type: object
+          required: [live_log, step_lines]
+          properties:
+            live_log: {type: [string, 'null']}
+            step_lines:
+              type: array
+              items: {type: string}
+    Submit:
+      type: object
+      required: [title, plan]
+      properties:
+        kind: {type: string, default: custom}
+        title: {type: string}
+        plan: {$ref: '#/components/schemas/Plan'}
+    AuthStatus:
+      type: object
+      required: [authenticated, username, roles]
+      properties:
+        authenticated: {type: boolean}
+        username: {type: [string, 'null']}
+        roles: {type: array, items: {type: string}}

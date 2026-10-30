@@ -202,6 +202,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: ArtifactCommands,
     },
+    /// Check, build and release documentation books (Jekyll sites of Markdown files)
+    Docs {
+        #[command(subcommand)]
+        command: DocsCommands,
+    },
     /// Print a registry bearer token, for Cargo's `credential-provider = [\"cargo:token-from-stdout\", \"anvil\", \"registry-token\"]`
     RegistryToken,
     /// Store the Android release keystore's password in the git-ignored secret file (after `anvil login`), so
@@ -251,6 +256,51 @@ pub enum ArtifactCommands {
         skip_existing: bool,
     },
     /// List what can be released
+    List,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DocsCommands {
+    /// Check the books without building them: front matter, navigation, links and `OpenAPI` documents against the source
+    Check {
+        /// The book, as named under [docs.books] (every book when left out)
+        book: Option<String>,
+    },
+    /// Check a book, build it with Jekyll and pack the site as <out>/<book>/<book>-<version>.tar.gz with a manifest.json
+    Build {
+        /// The book, as named under [docs.books] (every book when left out)
+        book: Option<String>,
+        /// Build with the installed gems: `just-the-docs` as a local theme, no remote theme and no network
+        #[arg(long)]
+        offline: bool,
+        /// Skip the checks
+        #[arg(long)]
+        no_check: bool,
+        /// Where the builds go (default: `out` under [docs], else `target/docs`)
+        #[arg(long)]
+        out: Option<String>,
+        /// The `baseurl` the site is built for (default: the book's)
+        #[arg(long)]
+        baseurl: Option<String>,
+    },
+    /// Build the books and send them to the warehouse files storage as <book>/<version>/ and <book>/latest.json
+    Release {
+        /// The book, as named under [docs.books] (every book when left out)
+        book: Option<String>,
+        /// Build and check everything, but send nothing
+        #[arg(long)]
+        dry_run: bool,
+        /// Build with the installed gems: `just-the-docs` as a local theme, no remote theme and no network
+        #[arg(long)]
+        offline: bool,
+        /// Skip the checks
+        #[arg(long)]
+        no_check: bool,
+        /// The `baseurl` the site is built for (default: the book's)
+        #[arg(long)]
+        baseurl: Option<String>,
+    },
+    /// List the books
     List,
 }
 

@@ -1,0 +1,238 @@
+openapi: 3.1.0
+info:
+  title: Hoist public catalogue
+  version: 0.1.1
+  description: >-
+    The apps of F-Droid, IzzyOnDroid and Aptoide merged into one row per package, kept in Postgres and refreshed on a
+    timer. Everything under /v1 needs a valid realm login (any identity; nothing is per user). Health probes are outside
+    /v1 and open.
+servers:
+  - url: "{base}"
+    variables:
+      base:
+        default: /hoist
+        description: BASE_PATH of the deployment ("/" when unset)
+tags:
+  - name: catalogue
+    description: Browse, search and read the merged catalogue.
+paths:
+  /v1/apps:
+    get:
+      tags: [catalogue]
+      operationId: list_apps
+      summary: Browse or search the catalogue, a page at a time
+      description: >-
+        Filters combine with AND. `query` matches the label or the package name, any case, as a substring (`%`, `_` and
+        `\` in it are literal). `offset` below 0 is read as 0; `limit` is clamped to 1..100 (both in the query and in the
+        echoed `offset` and `limit`).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: query
+          in: query
+          required: false
+          schema: {type: string}
+          description: Part of the label or package name. Empty or whitespace-only is ignored.
+        - name: category
+          in: query
+          required: false
+          schema: {type: string}
+          description: Exact category name. Empty is ignored.
+        - name: min_votes
+          in: query
+          required: false
+          schema: {type: integer, format: int64}
+          description: Fewest ratings an app must have (`rating_count >= min_votes`).
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [downloads, rating, alpha]
+            default: downloads
+          description: >-
+            `downloads` = downloads descending, `rating` = rating average then count descending, `alpha` = label case
+            insensitively then package. Rows with no figures sort last.
+        - name: offset
+          in: query
+          required: false
+          schema: {type: integer, format: int64, default: 0}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, format: int64, default: 30, minimum: 1, maximum: 100}
+      responses:
+        "200":
+          description: A page.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AppList"}
+              example:
+                total: 1
+                offset: 0
+                limit: 30
+                items:
+                  - package_name: org.example.app
+                    label: Example
+                    summary: An example
+                    description: null
+                    icon_url: null
+                    category: Tools
+                    version_code: 12
+                    version_name: "1.2"
+                    size_bytes: 1048576
+                    download_url: https://f-droid.org/repo/org.example.app_12.apk
+                    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+                    md5: null
+                    install_source: fdroid
+                    rating_avg: 4.3
+                    rating_count: 120
+                    downloads: 50000
+                    malware_rank: null
+        "400":
+          description: "`sort` is not one of the three values (`invalid sort: <value>`)."
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ApiError"}
+        "401":
+          description: No valid token.
+        "500":
+          description: A database error (the message is the error text).
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ApiError"}
+        "503":
+          description: The service runs on the in-memory database (`the catalogue needs Postgres`).
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ApiError"}
+  /v1/categories:
+    get:
+      tags: [catalogue]
+      operationId: list_categories
+      summary: Each category with its app count, the biggest first
+      description: Apps with no category (null or empty) are not counted. Ties are ordered by lowercase name.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The categories.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CategoryList"}
+              example:
+                items:
+                  - {name: Tools, count: 420}
+                  - {name: Games, count: 310}
+        "401":
+          description: No valid token.
+        "500":
+          description: A database error.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ApiError"}
+        "503":
+          description: The service runs on the in-memory database.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ApiError"}
+  /v1/apps/{package_name}:
+    get:
+      tags: [catalogue]
+      operationId: get_app
+      summary: One app
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: package_name
+          in: path
+          required: true
+          schema: {type: string}
+          description: The Android application id.
+      responses:
+        "200":
+          description: The app.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/App"}
+        "401":
+          description: No valid token.
+        "404":
+          description: No such package (`not found`).
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ApiError"}
+        "500":
+          description: A database error.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ApiError"}
+        "503":
+          description: The service runs on the in-memory database.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ApiError"}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: A realm access token issued by Gatehouse. The session in it is checked against the realm's Redis.
+  schemas:
+    App:
+      type: object
+      required: [package_name, label, version_code, version_name, size_bytes, download_url, install_source]
+      properties:
+        package_name: {type: string}
+        label: {type: string}
+        summary: {type: [string, "null"]}
+        description: {type: [string, "null"]}
+        icon_url: {type: [string, "null"]}
+        category: {type: [string, "null"]}
+        version_code: {type: integer, format: int64}
+        version_name: {type: string}
+        size_bytes: {type: integer, format: int64}
+        download_url:
+          type: string
+          description: The store's own address; the file is not served by this service.
+        sha256: {type: [string, "null"], description: "Set for F-Droid and IzzyOnDroid builds; an Aptoide build may have none."}
+        md5: {type: [string, "null"]}
+        install_source:
+          type: string
+          enum: [fdroid, izzyondroid, aptoide]
+        rating_avg: {type: [number, "null"], format: double}
+        rating_count: {type: [integer, "null"], format: int64}
+        downloads: {type: [integer, "null"], format: int64}
+        malware_rank:
+          type: [string, "null"]
+          description: Aptoide's scan verdict of the listing that won the install slot; null for F-Droid and IzzyOnDroid.
+    AppList:
+      type: object
+      required: [total, offset, limit, items]
+      properties:
+        total: {type: integer, format: int64, description: Rows matching the filters, not the page size.}
+        offset: {type: integer, format: int64}
+        limit: {type: integer, format: int64}
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/App"}
+    Category:
+      type: object
+      required: [name, count]
+      properties:
+        name: {type: string}
+        count: {type: integer, format: int64}
+    CategoryList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/Category"}
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+      example: {error: not found}

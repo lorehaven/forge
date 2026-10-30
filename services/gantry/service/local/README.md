@@ -25,5 +25,5 @@ Open <http://localhost:11443/gantry/ui/home>. One card per package; click one fo
   `docker compose down -v` for a clean start.
 
 What this proves is the screens, the recording and the logic. It does not run `riveter` or `kubectl`;
-`GANTRY_RUNNER=local` against a scratch namespace (see `docs/docker/gantry-service.md`) does that. Packages are
+`GANTRY_RUNNER=local` against a scratch namespace (see `docs/services/gantry/operations.md`) does that. Packages are
 rebuilt by `pack.sh`; `*.rivet` files are not committed.

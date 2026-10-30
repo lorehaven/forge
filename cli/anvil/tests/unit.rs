@@ -18,6 +18,8 @@ mod config_check_tests;
 mod config_tests;
 #[path = "unit/docker_tests.rs"]
 mod docker_tests;
+#[path = "unit/docs_tests.rs"]
+mod docs_tests;
 #[path = "unit/install_tests.rs"]
 mod install_tests;
 #[path = "unit/lint_tests.rs"]

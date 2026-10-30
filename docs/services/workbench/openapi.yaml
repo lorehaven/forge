@@ -1,0 +1,1831 @@
+openapi: 3.1.0
+info:
+  title: Workbench
+  version: 0.3.2
+  description: Projects, issues, comments, labels and issue links. All of /api/v1 is behind the realm Auth middleware (bearer
+    or session cookie, audience workbench); each route checks the grant workbench:<action> or the project-scoped workbench:project:<id>:<action>
+    itself.
+servers:
+- url: '{base}'
+  variables:
+    base:
+      default: /workbench
+      description: BASE_PATH of the deployment.
+tags:
+- name: projects
+  description: 'Projects: the flat container issues live in.'
+- name: issues
+  description: Issues and their workflow status.
+- name: comments
+  description: Comments on issues.
+- name: labels
+  description: Project labels and their attachment to issues.
+- name: links
+  description: Typed links between issues.
+- name: people
+  description: Who is asking and who can be assigned.
+- name: ui
+  description: Browser pages, assets and SSO routes.
+security:
+- bearer: []
+- sessionCookie: []
+paths:
+  /api/v1/me:
+    get:
+      tags:
+      - people
+      operationId: me
+      summary: The caller's user name
+      responses:
+        '200':
+          description: '`username` is the token `sub`, or `dev` when authentication is off.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+              example:
+                username: admin
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/users:
+    get:
+      tags:
+      - people
+      operationId: listUsers
+      summary: Every realm user, for the assignee picker
+      description: Needs only a valid identity; no workbench grant is checked.
+      responses:
+        '200':
+          description: Rows of `auth.users` ordered by username (username and display name only).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+              example:
+              - username: admin
+                display_name: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: Query failed (error text of the database error).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: The service runs against an in-memory database.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/projects:
+    post:
+      tags:
+      - projects
+      operationId: createProject
+      summary: Create a project
+      description: '`key` and `name` are trimmed. Only the unscoped grant `workbench:write` works: there is no project id
+        to scope a grant to yet.'
+      x-permission: workbench:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProject'
+            example:
+              key: WB
+              name: Workbench
+              description: The tracker
+      responses:
+        '201':
+          description: The new project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+              example:
+                id: 0b3a4c1e-6d7f-4b8a-9e21-5c2d8f3a1b90
+                key: WB
+                name: Workbench
+                description: null
+                created_at: '2026-10-01T09:30:00.123Z'
+                updated_at: '2026-10-01T09:30:00.123Z'
+        '400':
+          description: Blank key or name, or the project could not be created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: key and name are required
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access here
+        '409':
+          description: The key is taken.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: a record with that identity already exists
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+      - projects
+      operationId: listProjects
+      summary: List projects
+      x-permission: workbench:read (blanket) or project:{id}:read per project
+      responses:
+        '200':
+          description: Every project ordered by key; with only project-scoped read grants, just the granted ones (no 403).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+              example:
+              - id: 0b3a4c1e-6d7f-4b8a-9e21-5c2d8f3a1b90
+                key: WB
+                name: Workbench
+                description: null
+                created_at: '2026-10-01T09:30:00.123Z'
+                updated_at: '2026-10-01T09:30:00.123Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/projects/{id}:
+    get:
+      tags:
+      - projects
+      operationId: getProject
+      summary: Read a project
+      x-permission: workbench:read or workbench:project:{id}:read
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Project id (uuid text).
+      responses:
+        '200':
+          description: The project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+              example:
+                id: 0b3a4c1e-6d7f-4b8a-9e21-5c2d8f3a1b90
+                key: WB
+                name: Workbench
+                description: null
+                created_at: '2026-10-01T09:30:00.123Z'
+                updated_at: '2026-10-01T09:30:00.123Z'
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no read access here
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such project
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags:
+      - projects
+      operationId: updateProject
+      summary: Rename a project
+      description: The key cannot change. `description` replaces the stored value (omitted means null).
+      x-permission: workbench:write or workbench:project:{id}:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Project id (uuid text).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProject'
+      responses:
+        '200':
+          description: The updated project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: name cannot be empty
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access here
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such project
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags:
+      - projects
+      operationId: deleteProject
+      summary: Delete a project
+      x-permission: workbench:write or workbench:project:{id}:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Project id (uuid text).
+      responses:
+        '204':
+          description: Deleted; its issues, labels, comments and links go with it (ON DELETE CASCADE).
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access here
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such project
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/projects/{id}/issues:
+    post:
+      tags:
+      - issues
+      operationId: createIssue
+      summary: Create an issue in a project
+      description: '`seq` is MAX(seq)+1 for the project, assigned in a transaction holding a per-project advisory lock. `reporter`
+        is the caller. `kind` and `priority` are stored as given: the service does not check them against the lists in the
+        core crate.'
+      x-permission: workbench:write or workbench:project:{id}:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Project id (uuid text).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIssue'
+            example:
+              title: Write the docs
+              kind: task
+              priority: medium
+      responses:
+        '201':
+          description: The issue with its number `seq`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+              example:
+                id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                project_id: 0b3a4c1e-6d7f-4b8a-9e21-5c2d8f3a1b90
+                parent_id: null
+                seq: 4
+                kind: task
+                title: Write the docs
+                description: null
+                status: todo
+                priority: medium
+                assignee: null
+                reporter: admin
+                estimate: null
+                created_at: '2026-10-01T09:31:00.000Z'
+                updated_at: '2026-10-01T09:31:00.000Z'
+        '400':
+          description: Blank title, or a related id does not exist (parent, assignee, project).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: title is required
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access here
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+      - issues
+      operationId: listIssues
+      summary: List a project's issues
+      x-permission: workbench:read or workbench:project:{id}:read
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Project id (uuid text).
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Only issues with this status (any text; not validated).
+      responses:
+        '200':
+          description: Issues ordered by `seq`. An unknown project id gives an empty list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Issue'
+              example:
+              - id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                project_id: 0b3a4c1e-6d7f-4b8a-9e21-5c2d8f3a1b90
+                parent_id: null
+                seq: 4
+                kind: task
+                title: Write the docs
+                description: null
+                status: todo
+                priority: medium
+                assignee: null
+                reporter: admin
+                estimate: null
+                created_at: '2026-10-01T09:31:00.000Z'
+                updated_at: '2026-10-01T09:31:00.000Z'
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no read access here
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/issues:
+    get:
+      tags:
+      - issues
+      operationId: findIssueByKey
+      summary: Find an issue by its key
+      description: Resolves the project by key, then the issue by `seq`. Existence is checked before the grant, so a 404 versus
+        403 tells the caller whether the key exists.
+      x-permission: workbench:read or workbench:project:{id}:read
+      parameters:
+      - name: key
+        in: query
+        required: true
+        schema:
+          type: string
+        description: '`KEY-number`, split at the last `-`.'
+      responses:
+        '200':
+          description: The issue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: an issue key looks like WB-4
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no read access to this issue
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such issue
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/issues/{id}:
+    get:
+      tags:
+      - issues
+      operationId: getIssue
+      summary: Read an issue
+      x-permission: workbench:read or workbench:project:<issue.project_id>:read
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Issue id (uuid text).
+      responses:
+        '200':
+          description: The issue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+              example:
+                id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                project_id: 0b3a4c1e-6d7f-4b8a-9e21-5c2d8f3a1b90
+                parent_id: null
+                seq: 4
+                kind: task
+                title: Write the docs
+                description: null
+                status: todo
+                priority: medium
+                assignee: null
+                reporter: admin
+                estimate: null
+                created_at: '2026-10-01T09:31:00.000Z'
+                updated_at: '2026-10-01T09:31:00.000Z'
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no read access to this issue
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such issue
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags:
+      - issues
+      operationId: updateIssue
+      summary: Replace an issue's editable fields
+      description: Every field is replaced (omitted `description`, `assignee`, `estimate` become null). Status is not changed
+        here; see transition.
+      x-permission: workbench:write or workbench:project:<issue.project_id>:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Issue id (uuid text).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateIssue'
+      responses:
+        '200':
+          description: The updated issue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '400':
+          description: Blank title, or the assignee is not a realm user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: title cannot be empty
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access to this issue
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such issue
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags:
+      - issues
+      operationId: deleteIssue
+      summary: Delete an issue
+      x-permission: workbench:write or workbench:project:<issue.project_id>:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Issue id (uuid text).
+      responses:
+        '204':
+          description: Deleted with its comments, links, label attachments and sub-issues (CASCADE).
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access to this issue
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such issue
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/issues/{id}/transition:
+    post:
+      tags:
+      - issues
+      operationId: transitionIssue
+      summary: Set an issue's status
+      description: Any status may follow any status; there are no transition rules.
+      x-permission: workbench:write or workbench:project:<issue.project_id>:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Issue id (uuid text).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Transition'
+            example:
+              status: in-progress
+      responses:
+        '200':
+          description: The updated issue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Issue'
+        '400':
+          description: Unknown status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: unknown status 'x'; must be one of ["blocked", "todo", "in-progress", "done", "rejected"]
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access to this issue
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such issue
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/issues/{id}/labels:
+    get:
+      tags:
+      - labels
+      operationId: listIssueLabels
+      summary: Labels attached to an issue
+      x-permission: workbench:read or workbench:project:<issue.project_id>:read
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Issue id (uuid text).
+      responses:
+        '200':
+          description: Ordered by label name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Label'
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no read access to this issue
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such issue
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/issues/{id}/labels/{label_id}:
+    post:
+      tags:
+      - labels
+      operationId: attachLabel
+      summary: Attach a label to an issue
+      description: The label is not checked to belong to the issue's project.
+      x-permission: workbench:write or workbench:project:<issue.project_id>:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Issue id (uuid text).
+      - name: label_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: 'Attached (idempotent: ON CONFLICT DO NOTHING).'
+        '400':
+          description: The label id does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: the id given for a related record (project, issue, ...) does not exist
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access to this issue
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such issue
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags:
+      - labels
+      operationId: detachLabel
+      summary: Detach a label from an issue
+      x-permission: workbench:write or workbench:project:<issue.project_id>:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Issue id (uuid text).
+      - name: label_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Detached (also when it was not attached).
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access to this issue
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such issue
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/issues/{id}/comments:
+    post:
+      tags:
+      - comments
+      operationId: createComment
+      summary: Add a comment
+      x-permission: workbench:write or workbench:project:<issue.project_id>:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Issue id (uuid text).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewComment'
+            example:
+              body: Looks good.
+      responses:
+        '201':
+          description: The comment (author is the caller).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: body is required
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access to this issue
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such issue
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+      - comments
+      operationId: listComments
+      summary: List an issue's comments
+      x-permission: workbench:read or workbench:project:<issue.project_id>:read
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Issue id (uuid text).
+      responses:
+        '200':
+          description: Oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Comment'
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no read access to this issue
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such issue
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/comments/{id}:
+    delete:
+      tags:
+      - comments
+      operationId: deleteComment
+      summary: Delete a comment
+      description: Any holder of write on the project may delete any comment; the author is not compared.
+      x-permission: workbench:write or workbench:project:<issue.project_id>:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Comment id.
+      responses:
+        '204':
+          description: Deleted.
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access to this comment
+        '404':
+          description: No such comment (or its issue).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such comment
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/issues/{id}/links:
+    post:
+      tags:
+      - links
+      operationId: createIssueLink
+      summary: Link an issue to another
+      description: Only the owning issue's project is checked for the grant; the linked issue may be in another project.
+      x-permission: workbench:write or workbench:project:<issue.project_id>:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Issue id (uuid text).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewLink'
+            example:
+              linked_issue_id: 8d1f2c4a-3b5e-4f60-a7b8-9c0d1e2f3a4b
+              kind: blocks
+      responses:
+        '201':
+          description: The stored link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueLink'
+        '400':
+          description: Unknown kind, self link, or the other issue does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: unknown kind 'x'; must be one of ["blocks", "relates_to"]
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access to this issue
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such issue
+        '409':
+          description: The same (issue, linked issue, kind) exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: a record with that identity already exists
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+      - links
+      operationId: listIssueLinks
+      summary: The links of an issue, resolved
+      x-permission: workbench:read or workbench:project:<issue.project_id>:read
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Issue id (uuid text).
+      responses:
+        '200':
+          description: '`blocks` (this issue blocks them), `blocked_by` (they block this one), `relates_to` (both directions),
+            each ordered by project key and number.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelatedIssues'
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no read access to this issue
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such issue
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/issue-links/{id}:
+    delete:
+      tags:
+      - links
+      operationId: deleteIssueLink
+      summary: Remove a link
+      x-permission: workbench:write or workbench:project:<owning issue.project_id>:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Link id.
+      responses:
+        '204':
+          description: Removed.
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access to this link
+        '404':
+          description: No such link (or its issue).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such link
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/projects/{id}/labels:
+    post:
+      tags:
+      - labels
+      operationId: createLabel
+      summary: Create a label in a project
+      x-permission: workbench:write or workbench:project:{id}:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Project id (uuid text).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLabel'
+            example:
+              name: urgent
+              color: '#ff0000'
+      responses:
+        '201':
+          description: The label.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Label'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: name is required
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access here
+        '409':
+          description: The name exists in the project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: a record with that identity already exists
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags:
+      - labels
+      operationId: listLabels
+      summary: List a project's labels
+      x-permission: workbench:read or workbench:project:{id}:read
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Project id (uuid text).
+      responses:
+        '200':
+          description: Ordered by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Label'
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no read access here
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/labels/{id}:
+    delete:
+      tags:
+      - labels
+      operationId: deleteLabel
+      summary: Delete a label
+      x-permission: workbench:write or workbench:project:<label.project_id>:write
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Label id.
+      responses:
+        '204':
+          description: Deleted; attachments go with it.
+        '403':
+          description: The caller lacks the grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no write access to this label
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: no such label
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /ui:
+    get:
+      tags:
+      - ui
+      operationId: uiRoot
+      summary: Redirect to the home page, or to login without a session
+      security: []
+      responses:
+        '302':
+          description: To {base}/ui/home, or {base}/ui/login when not signed in.
+  /ui/:
+    get:
+      tags:
+      - ui
+      operationId: uiRootSlash
+      summary: Same as /ui
+      security: []
+      responses:
+        '302':
+          description: To {base}/ui/home, or {base}/ui/login when not signed in.
+  /ui/home:
+    get:
+      tags:
+      - ui
+      operationId: uiHome
+      summary: Client page, projects screen
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/home/:
+    get:
+      tags:
+      - ui
+      operationId: uiHomeSlash
+      summary: Same as /ui/home
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/projects/{id}/board:
+    get:
+      tags:
+      - ui
+      operationId: uiBoard
+      summary: Client page, board screen
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/issues/{id}:
+    get:
+      tags:
+      - ui
+      operationId: uiIssue
+      summary: Client page, issue screen
+      security: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/assets/quench.js:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetScript
+      summary: The quench-ui loader script
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            text/javascript:
+              schema:
+                type: string
+  /ui/assets/app.css:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetStyle
+      summary: Shell stylesheet followed by the client stylesheet
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            text/css:
+              schema:
+                type: string
+  /ui/assets/shell.js:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetShell
+      summary: The forge-shell script
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            text/javascript:
+              schema:
+                type: string
+  /ui/assets/favicon.png:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetFavicon
+      summary: The service icon
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/assets/app.wasm:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetModule
+      summary: The browser client module
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            application/wasm:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/login:
+    get:
+      tags:
+      - ui
+      operationId: uiLogin
+      summary: Start sign-in (SSO redirect to Gatehouse)
+      security: []
+      responses:
+        '302':
+          description: To {base}/ui/home (refresh cookie accepted, new cookies set) or to Gatehouse's /api/v1/authorize; sets
+            the cookie forge_authorize_state.
+        '503':
+          description: Text `gatehouse is not configured` (GATEHOUSE_URL, GATEHOUSE_CLIENT_ID or GATEHOUSE_CLIENT_SECRET missing).
+  /ui/login/:
+    get:
+      tags:
+      - ui
+      operationId: uiLoginSlash
+      summary: Same as /ui/login
+      security: []
+      responses:
+        '302':
+          description: See /ui/login.
+        '503':
+          description: Text `gatehouse is not configured` (GATEHOUSE_URL, GATEHOUSE_CLIENT_ID or GATEHOUSE_CLIENT_SECRET missing).
+  /ui/auth/callback:
+    get:
+      tags:
+      - ui
+      operationId: uiAuthCallback
+      summary: Complete the authorization-code exchange
+      security: []
+      parameters:
+      - name: code
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '302':
+          description: To {base}/ui/home with session cookies, or to {base}/ui/login on any failure.
+        '503':
+          description: Text `gatehouse is not configured` (GATEHOUSE_URL, GATEHOUSE_CLIENT_ID or GATEHOUSE_CLIENT_SECRET missing).
+  /ui/logout:
+    get:
+      tags:
+      - ui
+      operationId: uiLogout
+      summary: Realm logout through Gatehouse
+      security: []
+      responses:
+        '302':
+          description: To Gatehouse's /ui/logout with a redirect back to {base}/ui/login.
+        '503':
+          description: Text `gatehouse is not configured` (GATEHOUSE_URL, GATEHOUSE_CLIENT_ID or GATEHOUSE_CLIENT_SECRET missing).
+  /ui/status:
+    get:
+      tags:
+      - ui
+      operationId: uiStatus
+      summary: Session status for the page shell
+      security: []
+      responses:
+        '200':
+          description: Always 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+  /ui/refresh:
+    post:
+      tags:
+      - ui
+      operationId: uiRefresh
+      summary: Exchange the refresh cookie for new cookies
+      security: []
+      responses:
+        '200':
+          description: New session and refresh cookies set.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+              example:
+                authenticated: true
+                username: null
+                roles: []
+        '401':
+          description: No refresh cookie, or Gatehouse refused it. Empty body.
+components:
+  schemas:
+    Me:
+      type: object
+      required:
+      - username
+      properties:
+        username:
+          type: string
+    User:
+      type: object
+      required:
+      - username
+      - display_name
+      properties:
+        username:
+          type: string
+        display_name:
+          type:
+          - string
+          - 'null'
+    Project:
+      type: object
+      required:
+      - id
+      - key
+      - name
+      - description
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+        key:
+          type: string
+          description: Unique short code used in issue keys (WB-4).
+        name:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        created_at:
+          type: string
+          description: RFC 3339 timestamp.
+        updated_at:
+          type: string
+    CreateProject:
+      type: object
+      required:
+      - key
+      - name
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+    UpdateProject:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+    Issue:
+      type: object
+      required:
+      - id
+      - project_id
+      - parent_id
+      - seq
+      - kind
+      - title
+      - description
+      - status
+      - priority
+      - assignee
+      - reporter
+      - estimate
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        parent_id:
+          type:
+          - string
+          - 'null'
+        seq:
+          type: integer
+          format: int32
+          description: Number within the project; the key is `{project.key}-{seq}`.
+        kind:
+          type: string
+          description: The client offers task, bug, story. Not validated by the service.
+        title:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        status:
+          type: string
+          enum:
+          - blocked
+          - todo
+          - in-progress
+          - done
+          - rejected
+        priority:
+          type: string
+          description: The client offers low, medium, high. Not validated.
+        assignee:
+          type:
+          - string
+          - 'null'
+        reporter:
+          type: string
+        estimate:
+          type:
+          - integer
+          - 'null'
+          format: int32
+          description: Story points.
+        created_at:
+          type: string
+        updated_at:
+          type: string
+    CreateIssue:
+      type: object
+      required:
+      - title
+      properties:
+        parent_id:
+          type:
+          - string
+          - 'null'
+        kind:
+          type: string
+          default: task
+        title:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        priority:
+          type: string
+          default: medium
+        assignee:
+          type:
+          - string
+          - 'null'
+          description: A username in the realm (foreign key to auth.users).
+        estimate:
+          type:
+          - integer
+          - 'null'
+          format: int32
+    UpdateIssue:
+      type: object
+      required:
+      - title
+      - kind
+      - priority
+      properties:
+        title:
+          type: string
+        description:
+          type:
+          - string
+          - 'null'
+        kind:
+          type: string
+        priority:
+          type: string
+        assignee:
+          type:
+          - string
+          - 'null'
+        estimate:
+          type:
+          - integer
+          - 'null'
+          format: int32
+    Transition:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - blocked
+          - todo
+          - in-progress
+          - done
+          - rejected
+    Comment:
+      type: object
+      required:
+      - id
+      - issue_id
+      - author
+      - body
+      - created_at
+      properties:
+        id:
+          type: string
+        issue_id:
+          type: string
+        author:
+          type: string
+        body:
+          type: string
+        created_at:
+          type: string
+    NewComment:
+      type: object
+      required:
+      - body
+      properties:
+        body:
+          type: string
+    Label:
+      type: object
+      required:
+      - id
+      - project_id
+      - name
+      - color
+      - created_at
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+        created_at:
+          type: string
+    CreateLabel:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+        color:
+          type: string
+          default: '#888888'
+          description: Not validated.
+    IssueLink:
+      type: object
+      required:
+      - id
+      - issue_id
+      - linked_issue_id
+      - kind
+      - created_at
+      properties:
+        id:
+          type: string
+        issue_id:
+          type: string
+        linked_issue_id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - blocks
+          - relates_to
+        created_at:
+          type: string
+    NewLink:
+      type: object
+      required:
+      - linked_issue_id
+      - kind
+      properties:
+        linked_issue_id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - blocks
+          - relates_to
+    LinkedIssue:
+      type: object
+      required:
+      - link_id
+      - issue_id
+      - project_key
+      - seq
+      - title
+      - status
+      properties:
+        link_id:
+          type: string
+        issue_id:
+          type: string
+        project_key:
+          type: string
+        seq:
+          type: integer
+        title:
+          type: string
+        status:
+          type: string
+    RelatedIssues:
+      type: object
+      required:
+      - blocks
+      - blocked_by
+      - relates_to
+      properties:
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/LinkedIssue'
+        blocked_by:
+          type: array
+          items:
+            $ref: '#/components/schemas/LinkedIssue'
+        relates_to:
+          type: array
+          items:
+            $ref: '#/components/schemas/LinkedIssue'
+    Error:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: string
+    AuthStatus:
+      type: object
+      required:
+      - authenticated
+      - username
+      - roles
+      properties:
+        authenticated:
+          type: boolean
+        username:
+          type:
+          - string
+          - 'null'
+        roles:
+          type: array
+          items:
+            type: string
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from Gatehouse, audience workbench.
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: forge_session
+  responses:
+    Unauthorized:
+      description: No valid token or session (Auth middleware; also unmapped /api/v1 paths). Empty body, or a redirect for
+        a browser.
+    ClientPage:
+      description: The HTML page that starts the browser client (cache-control no-store, nonce CSP).
+      content:
+        text/html:
+          schema:
+            type: string
+    ClientMissing:
+      description: app.wasm is not in WEB_DIR ("the browser client is not installed on this server").

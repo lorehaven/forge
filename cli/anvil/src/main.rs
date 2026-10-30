@@ -1,4 +1,4 @@
-use anvil::cli::{ArtifactCommands, Cli, Commands, ConfigCommands, DockerCommands};
+use anvil::cli::{ArtifactCommands, Cli, Commands, ConfigCommands, DockerCommands, DocsCommands};
 use anvil::commands;
 use anvil::config;
 use anvil::util::{OutputMode, set_output_mode, stdout_is_data};
@@ -111,12 +111,60 @@ fn main() -> Result<()> {
             );
         }
         Commands::Artifact { command } => artifact(&config, command)?,
+        Commands::Docs { command } => docs(&config, command)?,
         Commands::Config { command } => match command {
             ConfigCommands::Check => commands::config_check::check()?,
         },
     }
 
     Ok(())
+}
+
+fn docs(config: &config::Config, command: DocsCommands) -> Result<()> {
+    use commands::docs::{self, Options};
+    let root = std::env::current_dir().context("finding the working directory")?;
+    let mut out = std::io::stdout();
+    match command {
+        DocsCommands::Check { book } => docs::check(config, &root, book.as_deref(), &mut out),
+        DocsCommands::Build {
+            book,
+            offline,
+            no_check,
+            out: dir,
+            baseurl,
+        } => docs::build(
+            config,
+            &root,
+            book.as_deref(),
+            &Options {
+                offline,
+                no_check,
+                out: dir,
+                baseurl,
+                dry_run: false,
+            },
+            &mut out,
+        )
+        .map(|_| ()),
+        DocsCommands::Release {
+            book,
+            dry_run,
+            offline,
+            no_check,
+            baseurl,
+        } => docs::release(
+            config,
+            book.as_deref(),
+            &Options {
+                offline,
+                no_check,
+                out: None,
+                baseurl,
+                dry_run,
+            },
+        ),
+        DocsCommands::List => docs::list(config, &mut out),
+    }
 }
 
 fn artifact(config: &config::Config, command: ArtifactCommands) -> Result<()> {

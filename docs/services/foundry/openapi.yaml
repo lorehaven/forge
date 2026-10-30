@@ -1,0 +1,8 @@
+openapi: 3.1.0
+info:
+  title: Foundry
+  version: 0.2.35
+  description: >
+    Foundry is a run-to-completion command line tool (foundry-service). It serves no HTTP API; this
+    document has no paths on purpose.
+paths: {}

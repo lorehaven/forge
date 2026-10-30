@@ -1,0 +1,2124 @@
+openapi: 3.1.0
+info:
+  title: Sage
+  version: 0.6.3
+  description: 'LLM chat: conversations as message trees, streamed turns, file upload with retrieval, optional web grounding.
+    /api/v1 is behind the realm Auth middleware (bearer or session cookie, audience sage); RequireWrite additionally demands
+    sage:write for every method other than GET, HEAD and OPTIONS. Handlers take the user from the token and scope every record
+    to its owner. Error bodies are plain-text translation keys (api_error_*), not JSON.'
+servers:
+- url: '{base}'
+  variables:
+    base:
+      default: /sage
+      description: BASE_PATH of the deployment.
+tags:
+- name: models
+  description: Models and readiness.
+- name: conversations
+  description: Conversations, branches and message edits.
+- name: projects
+  description: Projects.
+- name: turns
+  description: Turns and their event stream.
+- name: chat
+  description: Stateless chat and observability.
+- name: files
+  description: Files and retrieval.
+- name: ui
+  description: Browser pages, assets and SSO routes.
+security:
+- bearer: []
+- sessionCookie: []
+paths:
+  /api/v1/models:
+    get:
+      tags:
+      - models
+      operationId: listModels
+      summary: Models the composer offers and whether the chat can be used
+      description: Models whose name matches no pattern of SAGE_SUPPORTED_MODELS are neither listed in `instances` nor waited
+        for in `ready`/`defaults`. Embedding instances (task embed/embedding) are not listed. When Switchboard fails, `switchboard_ok`
+        is false, `ready` false, `instances` empty and every default `unknown`.
+      responses:
+        '200':
+          description: Switchboard answered or not; `ready` is true when every supported default model has a running instance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelsView'
+              example:
+                switchboard_ok: true
+                ready: true
+                instances:
+                - id: pid-48213
+                  model: qwen3-8b
+                defaults:
+                - name: qwen3-8b
+                  embedding: false
+                  state: running
+                search_providers:
+                - id: duckduckgo
+                  label: DuckDuckGo
+                default_search_provider: duckduckgo
+                accept: .png,.jpg,.pdf,.txt
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/conversation-id:
+    get:
+      tags:
+      - conversations
+      operationId: newConversationId
+      summary: A fresh conversation id
+      responses:
+        '200':
+          description: A random UUID; nothing is stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Created'
+              example:
+                id: 5b1f7c52-0c43-4b7e-9d52-2c5a2f6a9e10
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/conversations:
+    get:
+      tags:
+      - conversations
+      operationId: listConversations
+      summary: The caller's conversations
+      responses:
+        '200':
+          description: Newest `updated_at` first. A blank title is a conversation created by attaching a file before the first
+            message.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConversationItem'
+              example:
+              - id: c1
+                title: What is Rust?
+                project_id: null
+                updated_at: '2026-10-29T10:00:00.123Z'
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/conversations/{id}:
+    get:
+      tags:
+      - conversations
+      operationId: getConversation
+      summary: The active branch of a conversation
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Conversation id.
+      responses:
+        '200':
+          description: Messages from the root to the tip, each with its siblings, sources and attachments.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationView'
+        '403':
+          description: Another user's conversation. Empty body.
+        '404':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_conversation_not_found
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+    delete:
+      tags:
+      - conversations
+      operationId: deleteConversation
+      summary: Delete a conversation
+      x-permission: sage:write (RequireWrite on non-GET methods)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Conversation id.
+      responses:
+        '204':
+          description: Deleted; messages and files cascade.
+        '403':
+          description: Someone else's record (empty body), or, for a write method, the token lacks `sage:write` (RequireWrite,
+            empty body).
+        '404':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_conversation_not_found
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/conversations/{id}/switch:
+    post:
+      tags:
+      - conversations
+      operationId: switchBranch
+      summary: Make another alternative the current branch
+      x-permission: sage:write (RequireWrite on non-GET methods)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Conversation id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwitchBody'
+            example:
+              target_message_id: m7
+      responses:
+        '204':
+          description: 'Done: the tip is the newest continuation below the target.'
+        '403':
+          description: Someone else's record (empty body), or, for a write method, the token lacks `sage:write` (RequireWrite,
+            empty body).
+        '404':
+          description: Unknown conversation, or the target is not a message of it.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_message_not_found
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/conversations/{id}/resume:
+    post:
+      tags:
+      - turns
+      operationId: resumeConversation
+      summary: Have Sage answer a trailing message of the person's
+      description: 'The turn re-answers the tip message: it is stored with `skip_user_message` so no new user message is made.
+        The model is the first chat-capable instance Switchboard lists.'
+      x-permission: sage:write (RequireWrite on non-GET methods)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Conversation id.
+      responses:
+        '200':
+          description: '`id` is a new turn id to stream, or null when the last message is Sage''s, the conversation has no
+            tip, or no chat-capable model exists.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resumed'
+              example:
+                id: null
+        '403':
+          description: Someone else's record (empty body), or, for a write method, the token lacks `sage:write` (RequireWrite,
+            empty body).
+        '404':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_conversation_not_found
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/messages/{id}/edit:
+    post:
+      tags:
+      - conversations
+      operationId: editMessage
+      summary: Another version of one of the person's messages
+      description: Creates a user message with the same parent and the trimmed content. Sage answers it when the client calls
+        resume.
+      x-permission: sage:write (RequireWrite on non-GET methods)
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Message id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditBody'
+            example:
+              new_content: What is Rust good for?
+      responses:
+        '200':
+          description: The new message, a sibling of the old one, now the tip.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Created'
+        '400':
+          description: The message is not a user message, or the new content is blank.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_edit_non_user
+        '403':
+          description: Someone else's record (empty body), or, for a write method, the token lacks `sage:write` (RequireWrite,
+            empty body).
+        '404':
+          description: Unknown message or conversation.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_message_not_found
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/projects:
+    get:
+      tags:
+      - projects
+      operationId: listProjects
+      summary: The caller's projects
+      responses:
+        '200':
+          description: Newest `updated_at` first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+              example:
+              - id: p1
+                name: Thesis
+                updated_at: '2026-10-01T09:00:00.000Z'
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+    post:
+      tags:
+      - projects
+      operationId: createProject
+      summary: Create a project
+      x-permission: sage:write (RequireWrite on non-GET methods)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewProject'
+            example:
+              name: Thesis
+      responses:
+        '201':
+          description: The project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          description: Blank name or longer than 120 characters.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_project_name
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+        '403':
+          description: The token lacks `sage:write`. Empty body.
+  /api/v1/turns:
+    post:
+      tags:
+      - turns
+      operationId: startTurn
+      summary: Start a turn
+      description: 'Stores the request in memory under a new id (nothing is written to the database yet) and returns the id.
+        `skip_user_message` and `parent_id` from the body are overwritten (false, none): a new message always branches from
+        the conversation''s tip. The conversation may be new; an existing one must belong to the caller. Pending requests
+        are kept in a process-local map and removed when the turn finishes without being aborted.'
+      x-permission: sage:write (RequireWrite on non-GET methods)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TurnRequest'
+            example:
+              instance_id: pid-48213
+              message: What is Rust?
+              conversation_id: 5b1f7c52-0c43-4b7e-9d52-2c5a2f6a9e10
+              project_id: null
+              search_provider: null
+              file_ids: ''
+      responses:
+        '200':
+          description: The id of the stream that carries the answer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TurnStarted'
+              example:
+                id: 9e3c1f0a-3e2b-4a58-9a14-6b8b1b1c7d22
+        '400':
+          description: Blank message.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_empty_message
+        '403':
+          description: Someone else's record (empty body), or, for a write method, the token lacks `sage:write` (RequireWrite,
+            empty body).
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/turns/regenerate:
+    post:
+      tags:
+      - turns
+      operationId: regenerate
+      summary: A new answer next to an old one
+      description: Re-asks the parent user message on the first chat-capable instance Switchboard lists, with `skip_user_message`;
+        the new answer becomes a sibling of the old.
+      x-permission: sage:write (RequireWrite on non-GET methods)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegenerateBody'
+            example:
+              message_id: m8
+      responses:
+        '200':
+          description: The id of the stream that carries the new answer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TurnStarted'
+        '400':
+          description: The message is not an assistant message, or has no parent.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_regenerate_non_assistant
+        '403':
+          description: Someone else's record (empty body), or, for a write method, the token lacks `sage:write` (RequireWrite,
+            empty body).
+        '404':
+          description: Unknown message (empty body), or the parent is missing (`api_error_parent_not_found`).
+        '503':
+          description: No chat-capable instance.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_no_models_available
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/turns/{id}/stream:
+    get:
+      tags:
+      - turns
+      operationId: streamTurn
+      summary: The answer of a turn as server-sent events
+      description: 'Starts the work: the request is read from the pending map (it stays there until the turn completes; an
+        aborted turn leaves it), the instance is looked up, files and history are loaded and a task runs the turn, feeding
+        the stream. The pending id is not tied to a user: the caller needs only a valid login and the id.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The id returned by POST /api/v1/turns, /regenerate or /resume.
+      responses:
+        '200':
+          description: text/event-stream. Events `status`, `delta`, `replace`, `done`, `failure`; see events.md. Errors before
+            the answer starts are sent as a `failure` event on a 200 stream, because EventSource cannot read an error status.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: 'event: delta
+
+                data: {"text":"Rust is"}
+
+
+                event: done
+
+                data: {"conversation_id":"5b1f...","user_message_id":"m1","message_id":"m2","title":"What is Rust?"}
+
+
+                '
+        '404':
+          description: 'No pending turn with that id (empty body): never started, already consumed, or lost on a restart.'
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/chat:
+    post:
+      tags:
+      - chat
+      operationId: chat
+      summary: One-shot chat completion against an instance (JSON API)
+      description: 'Stateless: nothing is stored. Used by tools such as the evaluation scripts. Does not check that the instance
+        is chat-capable. `max_tokens` is the instance''s `max_model_len` capped at 2048 (none when unknown). Grounded mode
+        is on when SAGE_GROUNDED is true and the configured capability profile enables `web_search`.'
+      x-permission: sage:write (RequireWrite on non-GET methods)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            example:
+              instance_id: pid-48213
+              message: What is Rust?
+              history: []
+              search_provider: duckduckgo
+      responses:
+        '200':
+          description: 'text/event-stream of `data:` lines (no `event:` names). Plain mode: `{"content": "<piece>"}` per chunk,
+            or `{"error": "api_error_stream_failed", "detail": "<text>"}`. Grounded mode: one `{"content": "<whole answer>"}`
+            then one `{"grounded": true, "sources": [{"index", "url", "domain"}], "search_failed": bool, "unsourced": bool,
+            "timings": {"retrieve_s", "generate_s", "verify_s"}}`.'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: 'data: {"content":"Hello"}
+
+
+                data: {"content":" there"}
+
+
+                '
+        '403':
+          description: The token lacks `sage:write`. Empty body.
+        '404':
+          description: No instance with that id.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_instance_not_found
+        '500':
+          description: Switchboard unavailable (`api_error_switchboard_unavailable`) or the vLLM stream could not start (`api_error_stream_failed`).
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_switchboard_unavailable
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/chat/capabilities:
+    get:
+      tags:
+      - chat
+      operationId: chatCapabilities
+      summary: The configured capability profile
+      responses:
+        '200':
+          description: Profile name, description, enabled tools (sorted) and available search providers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
+              example:
+                profile: web_assistant
+                description: Web browsing and research capabilities only
+                available_tools:
+                - calculator
+                - file_list
+                - file_search
+                - web_fetch
+                - web_search
+                available_search_providers:
+                - duckduckgo
+                - searxng
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/chat/metrics:
+    get:
+      tags:
+      - chat
+      operationId: chatMetrics
+      summary: Tool usage metrics for every profile
+      description: 'Not per user: any authenticated caller sees the totals.'
+      responses:
+        '200':
+          description: In-memory counters since the process started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsResponse'
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/chat/metrics/{profile}:
+    get:
+      tags:
+      - chat
+      operationId: chatMetricsProfile
+      summary: Tool usage metrics of one profile
+      parameters:
+      - name: profile
+        in: path
+        required: true
+        schema:
+          type: string
+        description: web_assistant, code_assistant or cli_agent.
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileMetrics'
+        '404':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_metrics_not_found
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/chat/costs:
+    get:
+      tags:
+      - chat
+      operationId: chatCosts
+      summary: Estimated cost of tool use per user and per profile
+      description: 'Not restricted to the caller: every user''s costs are visible to any authenticated caller.'
+      responses:
+        '200':
+          description: In-memory.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostsResponse'
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/chat/costs/user/{user_id}:
+    get:
+      tags:
+      - chat
+      operationId: chatCostsUser
+      summary: Costs of one user
+      description: Any authenticated caller may ask for any user.
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCosts'
+        '404':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_costs_not_found
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/chat/context-status/{profile}:
+    get:
+      tags:
+      - chat
+      operationId: chatContextStatus
+      summary: Context window limits of a profile
+      description: 'Limits: 8192 tokens (warning at 75 percent) for code_assistant and cli_agent, 4096 (80 percent) for anything
+        else.'
+      parameters:
+      - name: profile
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 'Computed with 0 current tokens: only the limits are informative.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContextStatus'
+              example:
+                profile: web_assistant
+                current_tokens: 0
+                max_tokens: 4096
+                remaining_tokens: 4096
+                usage_percent: 0.0
+                is_near_limit: false
+                is_at_limit: false
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/files:
+    post:
+      tags:
+      - files
+      operationId: uploadFile
+      summary: Upload a file to a conversation or a project
+      description: multipart/form-data with `file` and exactly one of `conversation_id`, `project_id`. The target must exist
+        and belong to the caller. Non-image files are processed in the background (extract, chunk, embed).
+      x-permission: sage:write (RequireWrite on non-GET methods)
+      responses:
+        '201':
+          description: The stored file (status `uploaded`, or `ready` for an image).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileInfo'
+              example:
+                id: f1
+                file_name: notes.md
+                mime_type: text/markdown
+                file_size: 1204
+                conversation_id: c1
+                project_id: null
+                message_id: null
+                status: uploaded
+                error_message: null
+        '400':
+          description: Missing/both scopes (`api_error_file_scope_required`), missing name (`api_error_missing_file_name`),
+            unsupported extension (`api_error_unsupported_file_type`), empty (`api_error_file_empty`).
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_unsupported_file_type
+        '403':
+          description: Someone else's record (empty body), or, for a write method, the token lacks `sage:write` (RequireWrite,
+            empty body).
+        '404':
+          description: Conversation or project not found.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_conversation_not_found
+        '413':
+          description: Over SAGE_FILE_MAX_SIZE_MB.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_file_too_large
+        '422':
+          description: Scope already holds SAGE_MAX_FILES_PER_SCOPE files.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_file_limit_reached
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '501':
+          description: In-memory database.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_postgres_required
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadForm'
+    get:
+      tags:
+      - files
+      operationId: listFiles
+      summary: Files of a conversation or a project
+      description: Exactly one of the two query parameters.
+      parameters:
+      - name: conversation_id
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 'For a conversation: its own files plus, when it belongs to a project, the project''s files and those
+            of the project''s conversations; ordered by creation. For a project: its files.'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StoredFile'
+        '400':
+          description: Both or neither scope given.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_file_scope_required
+        '403':
+          description: Another user's conversation or project. Empty body.
+        '404':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_conversation_not_found
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/files/staged:
+    post:
+      tags:
+      - files
+      operationId: uploadStagedFile
+      summary: Upload a file from the composer
+      description: As POST /api/v1/files, with a conversation scope only (`project_id` is ignored). A conversation that is
+        not stored yet is created, with a blank title, owned by the caller.
+      x-permission: sage:write (RequireWrite on non-GET methods)
+      responses:
+        '201':
+          description: The stored file with `message_id` null until a message is sent with it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileInfo'
+              example:
+                id: f1
+                file_name: notes.md
+                mime_type: text/markdown
+                file_size: 1204
+                conversation_id: c1
+                project_id: null
+                message_id: null
+                status: uploaded
+                error_message: null
+        '400':
+          description: Missing `conversation_id` (`api_error_missing_conversation_id`) or the errors of POST /api/v1/files.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_missing_conversation_id
+        '403':
+          description: Someone else's record (empty body), or, for a write method, the token lacks `sage:write` (RequireWrite,
+            empty body).
+        '413':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_file_too_large
+        '422':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_file_limit_reached
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '501':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_postgres_required
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadForm'
+  /api/v1/files/{file_id}:
+    get:
+      tags:
+      - files
+      operationId: getFile
+      summary: A file's state
+      parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: File id.
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoredFile'
+        '403':
+          description: Not the owner. Empty body.
+        '404':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_file_not_found
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+    delete:
+      tags:
+      - files
+      operationId: deleteFile
+      summary: Delete a file
+      x-permission: sage:write (RequireWrite on non-GET methods)
+      parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: File id.
+      responses:
+        '204':
+          description: Deleted; blob, chunks and rag context rows follow (CASCADE / SET NULL).
+        '403':
+          description: Someone else's record (empty body), or, for a write method, the token lacks `sage:write` (RequireWrite,
+            empty body).
+        '404':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_file_not_found
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/files/{file_id}/download:
+    get:
+      tags:
+      - files
+      operationId: downloadFile
+      summary: The stored bytes
+      parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: File id.
+      responses:
+        '200':
+          description: The file, `content-type` = stored MIME type, `Content-Disposition` `inline` for images and `attachment`
+            otherwise, with the name stripped of control characters, quotes and backslashes.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '403':
+          description: Not the owner.
+        '404':
+          description: Unknown file, or no blob.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_file_content_not_found
+        '501':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_postgres_required
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/files/{file_id}/reprocess:
+    post:
+      tags:
+      - files
+      operationId: reprocessFile
+      summary: Run the extract, chunk and embed pipeline again
+      x-permission: sage:write (RequireWrite on non-GET methods)
+      parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: File id.
+      responses:
+        '202':
+          description: The file as stored (the status is read again with GET).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoredFile'
+        '403':
+          description: Someone else's record (empty body), or, for a write method, the token lacks `sage:write` (RequireWrite,
+            empty body).
+        '404':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_file_not_found
+        '409':
+          description: Already processing.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_file_already_processing
+        '422':
+          description: Images have no pipeline.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_image_not_processable
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /api/v1/files/{file_id}/chunks:
+    get:
+      tags:
+      - files
+      operationId: listChunks
+      summary: The chunks of a file
+      parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: File id.
+      responses:
+        '200':
+          description: Ordered by `chunk_index`; the embedding vector itself is not returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FileChunk'
+        '403':
+          description: Not the owner.
+        '404':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_file_not_found
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_internal
+        '401':
+          description: No valid token or session. From `Auth` (empty body, or a redirect for a browser) and from the handler
+            (empty body).
+  /ui/chat/stats/{conversation_id}:
+    get:
+      tags:
+      - ui
+      operationId: chatStats
+      summary: Token statistics of a conversation
+      description: A leftover of the server-rendered UI; the browser client does not call it. It uses the Username extractor
+        (token or session cookie) but does not check that the conversation belongs to the caller, and is outside the `Auth`
+        prefixes. Context window fixed at 4096.
+      security: []
+      parameters:
+      - name: conversation_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: '`success` true with `stats`, `display` and an optional `warning`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatStats'
+              example:
+                success: true
+                stats:
+                  total_messages: 4
+                  total_tokens: 310
+                  max_tokens: 4096
+                  system_tokens: 120
+                  utilization_percent: 7.5
+                  near_limit: false
+                  at_limit: false
+                display: 'Tokens: 310/4096 (7.6%) | Messages: 4 | System: 120'
+                warning: null
+        '401':
+          description: No valid session. Empty body.
+        '500':
+          description: '`{"success": false, "error": "<text>"}`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatStats'
+  /ui:
+    get:
+      tags:
+      - ui
+      operationId: uiRoot
+      summary: Redirect to the home page, or to login without a session
+      security: []
+      responses:
+        '302':
+          description: To {base}/ui/home, or {base}/ui/login when not signed in.
+  /ui/:
+    get:
+      tags:
+      - ui
+      operationId: uiRootSlash
+      summary: Same as /ui
+      security: []
+      responses:
+        '302':
+          description: To {base}/ui/home, or {base}/ui/login when not signed in.
+  /ui/home:
+    get:
+      tags:
+      - ui
+      operationId: uiHome
+      summary: Client page, chat screen
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/home/:
+    get:
+      tags:
+      - ui
+      operationId: uiHomeSlash
+      summary: Same as /ui/home
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/initializing:
+    get:
+      tags:
+      - ui
+      operationId: uiInitializing
+      summary: Client page, initializing screen
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/assets/quench.js:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetScript
+      summary: The quench-ui loader script
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            text/javascript:
+              schema:
+                type: string
+  /ui/assets/app.css:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetStyle
+      summary: Shell stylesheet followed by the client stylesheet
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            text/css:
+              schema:
+                type: string
+  /ui/assets/shell.js:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetShell
+      summary: The forge-shell script
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            text/javascript:
+              schema:
+                type: string
+  /ui/assets/favicon.png:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetFavicon
+      summary: The service icon
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/assets/app.wasm:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetModule
+      summary: The browser client module
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            application/wasm:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/login:
+    get:
+      tags:
+      - ui
+      operationId: uiLogin
+      summary: Start sign-in (SSO redirect to Gatehouse)
+      security: []
+      responses:
+        '302':
+          description: To {base}/ui/home (refresh cookie accepted, new cookies set) or to Gatehouse's /api/v1/authorize; sets
+            the cookie forge_authorize_state.
+        '503':
+          description: Text `gatehouse is not configured` (GATEHOUSE_URL, GATEHOUSE_CLIENT_ID or GATEHOUSE_CLIENT_SECRET missing).
+  /ui/login/:
+    get:
+      tags:
+      - ui
+      operationId: uiLoginSlash
+      summary: Same as /ui/login
+      security: []
+      responses:
+        '302':
+          description: See /ui/login.
+        '503':
+          description: Text `gatehouse is not configured` (GATEHOUSE_URL, GATEHOUSE_CLIENT_ID or GATEHOUSE_CLIENT_SECRET missing).
+  /ui/auth/callback:
+    get:
+      tags:
+      - ui
+      operationId: uiAuthCallback
+      summary: Complete the authorization-code exchange
+      security: []
+      parameters:
+      - name: code
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '302':
+          description: To {base}/ui/home with session cookies, or to {base}/ui/login on any failure.
+        '503':
+          description: Text `gatehouse is not configured` (GATEHOUSE_URL, GATEHOUSE_CLIENT_ID or GATEHOUSE_CLIENT_SECRET missing).
+  /ui/logout:
+    get:
+      tags:
+      - ui
+      operationId: uiLogout
+      summary: Realm logout through Gatehouse
+      security: []
+      responses:
+        '302':
+          description: To Gatehouse's /ui/logout with a redirect back to {base}/ui/login.
+        '503':
+          description: Text `gatehouse is not configured` (GATEHOUSE_URL, GATEHOUSE_CLIENT_ID or GATEHOUSE_CLIENT_SECRET missing).
+  /ui/status:
+    get:
+      tags:
+      - ui
+      operationId: uiStatus
+      summary: Session status for the page shell
+      security: []
+      responses:
+        '200':
+          description: Always 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+  /ui/refresh:
+    post:
+      tags:
+      - ui
+      operationId: uiRefresh
+      summary: Exchange the refresh cookie for new cookies
+      security: []
+      responses:
+        '200':
+          description: New session and refresh cookies set.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+              example:
+                authenticated: true
+                username: null
+                roles: []
+        '401':
+          description: No refresh cookie, or Gatehouse refused it. Empty body.
+components:
+  schemas:
+    Created:
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type: string
+    Project:
+      type: object
+      required:
+      - id
+      - name
+      - updated_at
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        updated_at:
+          type: string
+          description: RFC 3339.
+    NewProject:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          maxLength: 120
+    ConversationItem:
+      type: object
+      required:
+      - id
+      - title
+      - project_id
+      - updated_at
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+          description: The first 30 characters of the first message, with `...` when longer; blank until the first message.
+        project_id:
+          type:
+          - string
+          - 'null'
+        updated_at:
+          type: string
+    FileInfo:
+      type: object
+      required:
+      - id
+      - file_name
+      - mime_type
+      - file_size
+      - conversation_id
+      - project_id
+      - message_id
+      - status
+      - error_message
+      properties:
+        id:
+          type: string
+        file_name:
+          type: string
+        mime_type:
+          type: string
+        file_size:
+          type: integer
+          format: int64
+        conversation_id:
+          type:
+          - string
+          - 'null'
+        project_id:
+          type:
+          - string
+          - 'null'
+        message_id:
+          type:
+          - string
+          - 'null'
+        status:
+          type: string
+          enum:
+          - uploaded
+          - processing
+          - ready
+          - failed
+        error_message:
+          type:
+          - string
+          - 'null'
+    StoredFile:
+      description: 'A files row as stored (GET /api/v1/files*, reprocess): FileInfo plus owner and timestamps.'
+      allOf:
+      - $ref: '#/components/schemas/FileInfo'
+      - type: object
+        required:
+        - owner
+        - created_at
+        - updated_at
+        properties:
+          owner:
+            type: string
+          created_at:
+            type: string
+          updated_at:
+            type: string
+    FileChunk:
+      type: object
+      required:
+      - id
+      - file_id
+      - chunk_index
+      - content
+      - embedding_model
+      - metadata
+      - created_at
+      properties:
+        id:
+          type: string
+        file_id:
+          type: string
+        chunk_index:
+          type: integer
+        content:
+          type: string
+        embedding_model:
+          type:
+          - string
+          - 'null'
+        metadata:
+          description: 'JSON: heading, page, language, depending on the format.'
+        created_at:
+          type: string
+    UploadForm:
+      type: object
+      required:
+      - file
+      properties:
+        file:
+          type: string
+          format: binary
+        conversation_id:
+          type: string
+        project_id:
+          type: string
+    Source:
+      type: object
+      required:
+      - file_name
+      - chunk_index
+      - detail
+      - similarity
+      properties:
+        file_name:
+          type: string
+          description: File name, or the web page label.
+        chunk_index:
+          type:
+          - integer
+          - 'null'
+        detail:
+          type:
+          - string
+          - 'null'
+        similarity:
+          type:
+          - number
+          - 'null'
+    MessageNode:
+      type: object
+      required:
+      - id
+      - parent_id
+      - role
+      - content
+      - created_at
+      - siblings
+      - sources
+      - attachments
+      properties:
+        id:
+          type: string
+        parent_id:
+          type:
+          - string
+          - 'null'
+        role:
+          type: string
+          enum:
+          - user
+          - assistant
+        content:
+          type: string
+        created_at:
+          type: string
+        siblings:
+          type: array
+          items:
+            type: string
+          description: Ids of the alternatives at this point of the tree, this one included, oldest first.
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileInfo'
+    ConversationView:
+      type: object
+      required:
+      - id
+      - title
+      - project_id
+      - messages
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        project_id:
+          type:
+          - string
+          - 'null'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageNode'
+    ModelOption:
+      type: object
+      required:
+      - id
+      - model
+      properties:
+        id:
+          type: string
+          description: Switchboard instance id.
+        model:
+          type: string
+    DefaultModelState:
+      type: object
+      required:
+      - name
+      - embedding
+      - state
+      properties:
+        name:
+          type: string
+        embedding:
+          type: boolean
+        state:
+          type: string
+          enum:
+          - running
+          - starting
+          - pending
+          - failed
+          - unknown
+    SearchProviderOption:
+      type: object
+      required:
+      - id
+      - label
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+    ModelsView:
+      type: object
+      required:
+      - switchboard_ok
+      - ready
+      - instances
+      - defaults
+      - search_providers
+      - default_search_provider
+      - accept
+      properties:
+        switchboard_ok:
+          type: boolean
+        ready:
+          type: boolean
+        instances:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelOption'
+        defaults:
+          type: array
+          items:
+            $ref: '#/components/schemas/DefaultModelState'
+        search_providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchProviderOption'
+        default_search_provider:
+          type: string
+        accept:
+          type: string
+          description: 'The `accept` value of the file picker: every allowed extension with a dot, comma-separated (image
+            extensions only when SAGE_IMAGES_ENABLED).'
+    SwitchBody:
+      type: object
+      required:
+      - target_message_id
+      properties:
+        target_message_id:
+          type: string
+    EditBody:
+      type: object
+      required:
+      - new_content
+      properties:
+        new_content:
+          type: string
+    RegenerateBody:
+      type: object
+      required:
+      - message_id
+      properties:
+        message_id:
+          type: string
+          description: An assistant message.
+    TurnStarted:
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type: string
+    Resumed:
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type:
+          - string
+          - 'null'
+    TurnRequest:
+      type: object
+      required:
+      - instance_id
+      - message
+      - conversation_id
+      properties:
+        instance_id:
+          type: string
+          description: A chat-capable Switchboard instance id (from GET /api/v1/models).
+        message:
+          type: string
+        conversation_id:
+          type: string
+          description: From GET /api/v1/conversation-id for a new chat.
+        project_id:
+          type:
+          - string
+          - 'null'
+        search_provider:
+          type:
+          - string
+          - 'null'
+          description: duckduckgo, searxng, brave or serpapi; the configured default when absent.
+        capability_profile:
+          type:
+          - string
+          - 'null'
+          description: web_assistant, code_assistant or cli_agent; an unknown name falls back to the configured profile. Accepted
+            from the body although the browser client never sends it.
+        tool_confirmations:
+          type: array
+          items:
+            type: string
+          default: []
+          description: Names of tools the caller confirms (command, file_ops).
+        file_ids:
+          type: string
+          default: ''
+          description: Staged file ids, comma separated.
+        parent_id:
+          description: Ignored (reset to null).
+        skip_user_message:
+          description: Ignored (reset to false).
+    ChatRequest:
+      type: object
+      required:
+      - instance_id
+      - message
+      properties:
+        instance_id:
+          type: string
+        message:
+          type: string
+        history:
+          type: array
+          items:
+            type: object
+            required:
+            - role
+            - content
+            properties:
+              role:
+                type: string
+                enum:
+                - user
+                - assistant
+              content:
+                type: string
+          default: []
+          description: Earlier turns, oldest first; other roles are dropped.
+        search_provider:
+          type:
+          - string
+          - 'null'
+        evidence:
+          type:
+          - array
+          - 'null'
+          items:
+            type: object
+            required:
+            - url
+            - text
+            properties:
+              url:
+                type: string
+              text:
+                type: string
+          description: Fixed source passages. Present (even empty) means planning, search and fetching are skipped and the
+            answer is grounded on these.
+    CapabilitiesResponse:
+      type: object
+      required:
+      - profile
+      - description
+      - available_tools
+      - available_search_providers
+      properties:
+        profile:
+          type: string
+        description:
+          type: string
+        available_tools:
+          type: array
+          items:
+            type: string
+        available_search_providers:
+          type: array
+          items:
+            type: string
+    ToolMetrics:
+      type: object
+      required:
+      - calls
+      - successes
+      - failures
+      - timeouts
+      - total_duration_ms
+      - min_duration_ms
+      - max_duration_ms
+      properties:
+        calls:
+          type: integer
+        successes:
+          type: integer
+        failures:
+          type: integer
+        timeouts:
+          type: integer
+        total_duration_ms:
+          type: integer
+        min_duration_ms:
+          type: integer
+          description: u128::MAX until a call was recorded.
+        max_duration_ms:
+          type: integer
+    ProfileMetrics:
+      type: object
+      required:
+      - profile
+      - total_calls
+      - total_successes
+      - total_failures
+      - tools
+      properties:
+        profile:
+          type: string
+        total_calls:
+          type: integer
+        total_successes:
+          type: integer
+        total_failures:
+          type: integer
+        tools:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ToolMetrics'
+    MetricsResponse:
+      type: object
+      required:
+      - profiles
+      properties:
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProfileMetrics'
+    UserCosts:
+      type: object
+      required:
+      - user_id
+      - request_count
+      - total_duration_ms
+      - total_tokens_used
+      - total_api_calls
+      - estimated_cost
+      - avg_cost_per_request
+      properties:
+        user_id:
+          type: string
+        request_count:
+          type: integer
+        total_duration_ms:
+          type: integer
+        total_tokens_used:
+          type: integer
+        total_api_calls:
+          type: integer
+        estimated_cost:
+          type: number
+        avg_cost_per_request:
+          type: number
+    ProfileCosts:
+      type: object
+      required:
+      - profile
+      - request_count
+      - total_duration_ms
+      - total_tokens_used
+      - total_api_calls
+      - estimated_cost
+      - avg_cost_per_request
+      properties:
+        profile:
+          type: string
+        request_count:
+          type: integer
+        total_duration_ms:
+          type: integer
+        total_tokens_used:
+          type: integer
+        total_api_calls:
+          type: integer
+        estimated_cost:
+          type: number
+        avg_cost_per_request:
+          type: number
+    CostsResponse:
+      type: object
+      required:
+      - users
+      - profiles
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserCosts'
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProfileCosts'
+    ContextStatus:
+      type: object
+      required:
+      - profile
+      - current_tokens
+      - max_tokens
+      - remaining_tokens
+      - usage_percent
+      - is_near_limit
+      - is_at_limit
+      properties:
+        profile:
+          type: string
+        current_tokens:
+          type: integer
+        max_tokens:
+          type: integer
+        remaining_tokens:
+          type: integer
+        usage_percent:
+          type: number
+        is_near_limit:
+          type: boolean
+        is_at_limit:
+          type: boolean
+    ChatStats:
+      type: object
+      required:
+      - success
+      properties:
+        success:
+          type: boolean
+        stats:
+          type: object
+          properties:
+            total_messages:
+              type: integer
+            total_tokens:
+              type: integer
+            max_tokens:
+              type: integer
+            system_tokens:
+              type: integer
+            utilization_percent:
+              type: number
+            near_limit:
+              type: boolean
+            at_limit:
+              type: boolean
+        display:
+          type: string
+        warning:
+          type:
+          - string
+          - 'null'
+        error:
+          type: string
+    Error:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: string
+    AuthStatus:
+      type: object
+      required:
+      - authenticated
+      - username
+      - roles
+      properties:
+        authenticated:
+          type: boolean
+        username:
+          type:
+          - string
+          - 'null'
+        roles:
+          type: array
+          items:
+            type: string
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from Gatehouse, audience sage.
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: forge_session
+  responses:
+    Unauthorized:
+      description: No valid token or session (Auth middleware; also unmapped /api/v1 paths). Empty body, or a redirect for
+        a browser.
+    ClientPage:
+      description: The HTML page that starts the browser client (cache-control no-store, nonce CSP).
+      content:
+        text/html:
+          schema:
+            type: string
+    ClientMissing:
+      description: app.wasm is not in WEB_DIR ("the browser client is not installed on this server").

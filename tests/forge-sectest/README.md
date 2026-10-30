@@ -68,7 +68,7 @@ independent count of route attributes so a new attribute style cannot silently h
 ## The nightly gate (what conveyor runs)
 
 `scripts/security.fish` and the `security` stage of `.conveyor.toml` run the scanner as a **test run**, so the
-result is a `quench-test` report conveyor shows as the Security card (see `docs/docker/conveyor-service.md`).
+result is a `quench-test` report conveyor shows as the Security card (see `docs/services/conveyor/scans.md`).
 One case per stage:
 
 * `tests/gate.rs` (`--features gate`): `cargo deny`, `cargo audit` (advisories appear without any code

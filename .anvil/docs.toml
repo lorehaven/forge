@@ -1,0 +1,18 @@
+# `anvil docs check|build|release`: the documentation books (Jekyll sites of Markdown files).
+[docs]
+out = "target/docs"
+# The warehouse files storage the books are kept in: <book>/<version>/ and <book>/latest.json
+storage = "docs"
+
+[docs.books.forge]
+dir = "docs"
+title = "Forge"
+# Each docs/services/<name>/openapi.yaml is checked against the routes in the service's source.
+[docs.books.forge.openapi]
+specs = "services"
+sources = ["services/{name}/service/src"]
+
+# The framework's book lives in the sibling repository; building it from here keeps one command for both.
+[docs.books.quench]
+dir = "../quench/docs"
+title = "Quench"

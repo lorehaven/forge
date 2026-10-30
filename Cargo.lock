@@ -7,10 +7,12 @@ name = "anvil"
 version = "0.4.24"
 dependencies = [
  "gatehouse-auth",
+ "quench-archive",
  "quench-args",
  "quench-cli",
  "quench-client",
  "quench-core",
+ "quench-crypto",
  "quench-serde",
  "quench-test",
 ]

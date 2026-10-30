@@ -32,8 +32,18 @@ impl fmt::Display for ConfigIssue {
     }
 }
 
-const TOP_FIELDS: &[&str] = &["docker", "install", "release", "artifacts"];
+const TOP_FIELDS: &[&str] = &["docker", "install", "release", "artifacts", "docs"];
 const ARTIFACTS_FIELDS: &[&str] = &["warehouse_url", "programs"];
+const DOCS_FIELDS: &[&str] = &["out", "jekyll", "warehouse_url", "storage", "books"];
+const BOOK_FIELDS: &[&str] = &[
+    "dir",
+    "title",
+    "version",
+    "version_file",
+    "baseurl",
+    "openapi",
+];
+const OPENAPI_FIELDS: &[&str] = &["specs", "sources"];
 const PROGRAM_FIELDS: &[&str] = &["program", "dir", "version_file", "targets", "image"];
 const IMAGE_FIELDS: &[&str] = &[
     "dockerfile",
@@ -228,6 +238,9 @@ pub fn validate_value(root: &Value) -> Vec<ConfigIssue> {
     if let Some(artifacts) = table.get("artifacts") {
         check_artifacts(artifacts, &mut issues);
     }
+    if let Some(docs) = table.get("docs") {
+        check_docs(docs, &mut issues);
+    }
 
     issues.sort_by(|a, b| a.path.cmp(&b.path));
     issues
@@ -248,6 +261,51 @@ fn check_image(image: &Value, path: &str, issues: &mut Vec<ConfigIssue>) {
     }
     if let Some(v) = table.get("registries") {
         expect_string_array(v, &format!("{path}.registries"), issues);
+    }
+}
+
+fn check_docs(docs: &Value, issues: &mut Vec<ConfigIssue>) {
+    let Some(table) = expect_table(docs, "docs", issues) else {
+        return;
+    };
+    unknown_fields(table, DOCS_FIELDS, "docs", issues);
+    for field in ["out", "jekyll", "warehouse_url", "storage"] {
+        if let Some(v) = table.get(field) {
+            expect_string(v, &format!("docs.{field}"), issues);
+        }
+    }
+    let Some(books) = table.get("books") else {
+        return;
+    };
+    let Some(books) = expect_table(books, "docs.books", issues) else {
+        return;
+    };
+    for (name, book) in books.iter() {
+        let path = format!("docs.books.{name}");
+        let Some(book) = expect_table(book, &path, issues) else {
+            continue;
+        };
+        unknown_fields(book, BOOK_FIELDS, &path, issues);
+        if let Some(v) = require(book, "dir", &path, issues) {
+            expect_string(v, &format!("{path}.dir"), issues);
+        }
+        for field in ["title", "version", "version_file", "baseurl"] {
+            if let Some(v) = book.get(field) {
+                expect_string(v, &format!("{path}.{field}"), issues);
+            }
+        }
+        if let Some(openapi) = book.get("openapi") {
+            let opath = format!("{path}.openapi");
+            if let Some(t) = expect_table(openapi, &opath, issues) {
+                unknown_fields(t, OPENAPI_FIELDS, &opath, issues);
+                if let Some(v) = require(t, "specs", &opath, issues) {
+                    expect_string(v, &format!("{opath}.specs"), issues);
+                }
+                if let Some(v) = require(t, "sources", &opath, issues) {
+                    expect_string_array(v, &format!("{opath}.sources"), issues);
+                }
+            }
+        }
     }
 }
 

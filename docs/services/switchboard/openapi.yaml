@@ -1,0 +1,1188 @@
+openapi: 3.1.0
+info:
+  title: Switchboard
+  version: 0.6.2
+  description: vLLM instance manager and model registry. Everything under /api/v1/{gpu,vllm,models} is behind the realm Auth
+    middleware (bearer or session cookie, audience switchboard); launch, stop and delete are additionally checked against
+    the grants switchboard:launch, switchboard:stop and switchboard:delete-model. Error bodies are plain-text translation
+    keys (api_error_*), not JSON.
+servers:
+- url: '{base}'
+  variables:
+    base:
+      default: /switchboard
+      description: BASE_PATH of the deployment.
+tags:
+- name: gpu
+  description: GPU memory.
+- name: vllm
+  description: vLLM instances and capabilities.
+- name: models
+  description: Model registry.
+- name: ui
+  description: Browser pages, assets and SSO routes.
+security:
+- bearer: []
+- sessionCookie: []
+paths:
+  /api/v1/gpu/status:
+    get:
+      tags:
+      - gpu
+      operationId: gpuStatus
+      summary: Video memory of the machine's GPU
+      description: Reads `/sys/class/drm/card<N>/device/mem_info_vram_{total,used}`; among several cards the one with the
+        most memory wins (ties by name). Values are GiB rounded to two decimals.
+      responses:
+        '200':
+          description: Read from sysfs on every call. All zeros and an empty name when no card reports video memory (no error
+            status).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GpuInfo'
+              example:
+                name: card1
+                total_gb: 32.0
+                used_gb: 1.2
+                free_gb: 30.8
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/vllm/capabilities:
+    get:
+      tags:
+      - vllm
+      operationId: vllmCapabilities
+      summary: What is switched on and what the caller may do
+      description: The `can_*` fields are true when authentication is off, or when the token holds `switchboard:<action>`
+        (service name from SERVICE_NAME) or a wildcard role. The caller needs no grant to ask.
+      responses:
+        '200':
+          description: Feature flags, the caller's launch/stop/delete grants and the namespace.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+              example:
+                models_dashboard: true
+                vllm_management: true
+                can_launch: true
+                can_stop: true
+                can_delete_model: false
+                namespace: native
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/vllm/list:
+    get:
+      tags:
+      - vllm
+      operationId: listInstancesCanonical
+      summary: List vLLM instances
+      description: 'No grant is checked: any identity that passes Auth may list.'
+      x-permission: any authenticated identity
+      responses:
+        '200':
+          description: 'Instances as the active engine sees them (native: processes whose command line contains `vllm serve`,
+            plus instances being terminated; kubernetes: managed pods; mock: in-memory).'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VllmInstance'
+              example:
+              - id: pid-48213
+                namespace: native
+                model: /mnt/dev/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/abc
+                host: 0.0.0.0
+                port: 8000
+                quantization: null
+                dtype: null
+                limit_mm_per_prompt: null
+                max_model_len: 16384
+                gpu_memory_utilization: 0.9
+                enable_prefix_caching: true
+                enable_tool_calling: false
+                task: null
+                device: null
+                started_at: '2026-10-29T10:00:00.123Z'
+                status: starting
+                log_path: dist/vllm_logs/20261029T100000-...-8000-pid-48213.log
+                last_error: null
+        '500':
+          description: The engine failed to list.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_vllm_list_failed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/vllm/instances:
+    get:
+      tags:
+      - vllm
+      operationId: listInstances
+      summary: List vLLM instances (alias of /api/v1/vllm/list)
+      description: 'No grant is checked: any identity that passes Auth may list.'
+      x-permission: any authenticated identity
+      responses:
+        '200':
+          description: 'Instances as the active engine sees them (native: processes whose command line contains `vllm serve`,
+            plus instances being terminated; kubernetes: managed pods; mock: in-memory).'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VllmInstance'
+              example:
+              - id: pid-48213
+                namespace: native
+                model: /mnt/dev/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/abc
+                host: 0.0.0.0
+                port: 8000
+                quantization: null
+                dtype: null
+                limit_mm_per_prompt: null
+                max_model_len: 16384
+                gpu_memory_utilization: 0.9
+                enable_prefix_caching: true
+                enable_tool_calling: false
+                task: null
+                device: null
+                started_at: '2026-10-29T10:00:00.123Z'
+                status: starting
+                log_path: dist/vllm_logs/20261029T100000-...-8000-pid-48213.log
+                last_error: null
+        '500':
+          description: The engine failed to list.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_vllm_list_failed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+      - vllm
+      operationId: launchInstance
+      summary: Launch a vLLM instance
+      description: 'The engine error text is logged, not returned. Native: the first free port at or above `port` is used
+        (so the reported `port` can differ); Kubernetes: `host` in the request is ignored, the container binds 0.0.0.0 and
+        the reported host is `<pod>.<namespace>.svc.cluster.local`. See launching.md.'
+      x-permission: switchboard:launch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LaunchRequest'
+            example:
+              model: /mnt/dev/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/abc
+              host: 0.0.0.0
+              port: 8000
+              max_model_len: 16384
+              gpu_memory_utilization: 0.9
+              enable_prefix_caching: true
+              enable_tool_calling: false
+      responses:
+        '202':
+          description: 'Accepted: the instance exists with status `starting`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VllmInstance'
+              example:
+                id: pid-48213
+                namespace: native
+                model: /mnt/dev/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/abc
+                host: 0.0.0.0
+                port: 8000
+                quantization: null
+                dtype: null
+                limit_mm_per_prompt: null
+                max_model_len: 16384
+                gpu_memory_utilization: 0.9
+                enable_prefix_caching: true
+                enable_tool_calling: false
+                task: null
+                device: null
+                started_at: '2026-10-29T10:00:00.123Z'
+                status: starting
+                log_path: dist/vllm_logs/20261029T100000-...-8000-pid-48213.log
+                last_error: null
+        '400':
+          description: Blank `model`.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_model_name_empty
+        '403':
+          description: The caller lacks `switchboard:launch`. Empty body.
+        '500':
+          description: 'The engine failed (native: the process exited within 1.2 s, the port search failed or `vllm` could
+            not be spawned; kubernetes: pod or service creation failed).'
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_vllm_launch_failed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/vllm/launch:
+    post:
+      tags:
+      - vllm
+      operationId: launchInstanceForm
+      summary: Launch a vLLM instance from an HTML form
+      description: 'Legacy server-rendered form variant, kept in the code; the browser client uses POST /api/v1/vllm/instances.
+        Form fields: model (required), host (default 0.0.0.0), port (default 8000), namespace, quantization, dtype, limit_mm_per_prompt,
+        max_model_len, gpu_memory_utilization (default 0.90, none for device cpu), enable_prefix_caching or prefix_caching,
+        enable_tool_calling, task, device. Blank strings are treated as absent. The model name is not checked for blank.'
+      x-permission: switchboard:launch
+      responses:
+        '202':
+          description: HTML fragment `<div id="launch-modal" class="modal launch-modal"></div>`.
+          content:
+            text/html:
+              schema:
+                type: string
+        '403':
+          description: The caller lacks `switchboard:launch`. Empty body.
+        '500':
+          description: Engine failure.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_vllm_launch_failed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LaunchForm'
+  /api/v1/vllm/instances/{id}:
+    delete:
+      tags:
+      - vllm
+      operationId: stopInstance
+      summary: Stop a vLLM instance
+      description: 'Native: sends SIGTERM (`kill -TERM <pid>`) and marks the record `terminating` for 15 seconds. Kubernetes:
+        deletes the pod (its service goes with it). A failure whose text contains "not found" (any case) is a 404.'
+      x-permission: switchboard:stop
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: 'Native: `pid-<pid>`; Kubernetes: `pod:<namespace>:<name>` (or the older `pod-<name>`); mock: `mock-<millis>`.'
+      responses:
+        '200':
+          description: HTML fragment `<div id="confirm-stop-instance-modal" class="estimates-modal"></div>`.
+          content:
+            text/html:
+              schema:
+                type: string
+        '403':
+          description: The caller lacks `switchboard:stop`. Empty body.
+        '404':
+          description: No such instance.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_instance_not_found
+        '500':
+          description: Stopping failed.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_vllm_stop_failed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/models/list:
+    post:
+      tags:
+      - models
+      operationId: listModels
+      summary: List the discovered models
+      description: Every field is optional. `source` defaults to `hf`; `all` keeps every source. The GPU's current free memory
+        is used by the `vram_*` sorts.
+      x-permission: any authenticated identity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelFilters'
+            example:
+              source: hf
+              search: qwen
+              sort: name_asc
+              quant: ALL
+              context: '0'
+              vllm_only: false
+      responses:
+        '200':
+          description: Models from the cache (database), filtered and sorted in memory. Unknown sort values keep the stored
+            order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Model'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/models/running:
+    get:
+      tags:
+      - models
+      operationId: runningModels
+      summary: Models currently served by instances
+      description: 'Not a `switchboard:*` grant: the caller must hold a wildcard role, or authentication must be off. This
+        is the route Sage polls with its client-credentials token. `endpoint` is `http://<host>:<port>` of the instance record.'
+      x-permission: wildcard role (admin or service)
+      responses:
+        '200':
+          description: One entry per instance.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RunningModel'
+              example:
+              - id: pid-48213
+                model: Qwen/Qwen3-8B
+                endpoint: http://0.0.0.0:8000
+                status: running
+        '403':
+          description: Not an admin. Empty body.
+        '500':
+          description: Listing failed.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_vllm_list_failed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/models/delete:
+    post:
+      tags:
+      - models
+      operationId: deleteModel
+      summary: Delete a model from the drive
+      description: Removes the directory (`remove_dir_all`) or file at `path`. The check is `Path::starts_with` against each
+        root, component-wise; `..` segments in the path are not resolved.
+      x-permission: switchboard:delete-model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteModelRequest'
+            example:
+              path: /mnt/dev/huggingface/hub/models--Qwen--Qwen3-8B
+      responses:
+        '200':
+          description: Deleted from disk and from the cache. Empty body.
+        '403':
+          description: Missing grant (empty body) or a path outside HF_ROOTS and GGUF_ROOTS (text `api_error_invalid_model_path`).
+          content:
+            text/plain:
+              schema:
+                type: string
+        '404':
+          description: The path does not exist.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_model_not_found
+        '500':
+          description: Removal failed.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_model_delete_failed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/models/delete-form:
+    post:
+      tags:
+      - models
+      operationId: deleteModelForm
+      summary: Delete a model, form variant
+      description: Legacy form variant (field `path`); same checks as POST /api/v1/models/delete.
+      x-permission: switchboard:delete-model
+      responses:
+        '200':
+          description: 'HTML fragment `<div id="confirm-delete-modal" class="estimates-modal"></div>` with header `HX-Trigger:
+            models-refresh`.'
+          content:
+            text/html:
+              schema:
+                type: string
+        '403':
+          description: The caller lacks `switchboard:delete-model`. Empty body.
+        '404':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_model_not_found
+        '500':
+          description: ''
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: api_error_model_delete_failed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeleteModelRequest'
+  /ui:
+    get:
+      tags:
+      - ui
+      operationId: uiRoot
+      summary: Redirect to the home page, or to login without a session
+      security: []
+      responses:
+        '302':
+          description: To {base}/ui/home, or {base}/ui/login when not signed in.
+  /ui/:
+    get:
+      tags:
+      - ui
+      operationId: uiRootSlash
+      summary: Same as /ui
+      security: []
+      responses:
+        '302':
+          description: To {base}/ui/home, or {base}/ui/login when not signed in.
+  /ui/home:
+    get:
+      tags:
+      - ui
+      operationId: uiHome
+      summary: Client page, home screen
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/home/:
+    get:
+      tags:
+      - ui
+      operationId: uiHomeSlash
+      summary: Same as /ui/home
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/models/dashboard:
+    get:
+      tags:
+      - ui
+      operationId: uiModels
+      summary: Client page, models registry
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/models/dashboard/:
+    get:
+      tags:
+      - ui
+      operationId: uiModelsSlash
+      summary: Same as /ui/models/dashboard
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/vllm/manage:
+    get:
+      tags:
+      - ui
+      operationId: uiVllm
+      summary: Client page, vLLM management
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/vllm/manage/:
+    get:
+      tags:
+      - ui
+      operationId: uiVllmSlash
+      summary: Same as /ui/vllm/manage
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ClientPage'
+        '302':
+          description: To {base}/ui/login without a valid session cookie.
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/assets/quench.js:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetScript
+      summary: The quench-ui loader script
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            text/javascript:
+              schema:
+                type: string
+  /ui/assets/app.css:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetStyle
+      summary: Shell stylesheet followed by the client stylesheet
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            text/css:
+              schema:
+                type: string
+  /ui/assets/shell.js:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetShell
+      summary: The forge-shell script
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            text/javascript:
+              schema:
+                type: string
+  /ui/assets/favicon.png:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetFavicon
+      summary: The service icon
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/assets/app.wasm:
+    get:
+      tags:
+      - ui
+      operationId: uiAssetModule
+      summary: The browser client module
+      security: []
+      responses:
+        '200':
+          description: 'The file (cache-control: no-cache).'
+          content:
+            application/wasm:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/ClientMissing'
+  /ui/login:
+    get:
+      tags:
+      - ui
+      operationId: uiLogin
+      summary: Start sign-in (SSO redirect to Gatehouse)
+      security: []
+      responses:
+        '302':
+          description: To {base}/ui/home (refresh cookie accepted, new cookies set) or to Gatehouse's /api/v1/authorize; sets
+            the cookie forge_authorize_state.
+        '503':
+          description: Text `gatehouse is not configured` (GATEHOUSE_URL, GATEHOUSE_CLIENT_ID or GATEHOUSE_CLIENT_SECRET missing).
+  /ui/login/:
+    get:
+      tags:
+      - ui
+      operationId: uiLoginSlash
+      summary: Same as /ui/login
+      security: []
+      responses:
+        '302':
+          description: See /ui/login.
+        '503':
+          description: Text `gatehouse is not configured` (GATEHOUSE_URL, GATEHOUSE_CLIENT_ID or GATEHOUSE_CLIENT_SECRET missing).
+  /ui/auth/callback:
+    get:
+      tags:
+      - ui
+      operationId: uiAuthCallback
+      summary: Complete the authorization-code exchange
+      security: []
+      parameters:
+      - name: code
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '302':
+          description: To {base}/ui/home with session cookies, or to {base}/ui/login on any failure.
+        '503':
+          description: Text `gatehouse is not configured` (GATEHOUSE_URL, GATEHOUSE_CLIENT_ID or GATEHOUSE_CLIENT_SECRET missing).
+  /ui/logout:
+    get:
+      tags:
+      - ui
+      operationId: uiLogout
+      summary: Realm logout through Gatehouse
+      security: []
+      responses:
+        '302':
+          description: To Gatehouse's /ui/logout with a redirect back to {base}/ui/login.
+        '503':
+          description: Text `gatehouse is not configured` (GATEHOUSE_URL, GATEHOUSE_CLIENT_ID or GATEHOUSE_CLIENT_SECRET missing).
+  /ui/status:
+    get:
+      tags:
+      - ui
+      operationId: uiStatus
+      summary: Session status for the page shell
+      security: []
+      responses:
+        '200':
+          description: Always 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+  /ui/refresh:
+    post:
+      tags:
+      - ui
+      operationId: uiRefresh
+      summary: Exchange the refresh cookie for new cookies
+      security: []
+      responses:
+        '200':
+          description: New session and refresh cookies set.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+              example:
+                authenticated: true
+                username: null
+                roles: []
+        '401':
+          description: No refresh cookie, or Gatehouse refused it. Empty body.
+components:
+  schemas:
+    GpuInfo:
+      type: object
+      required:
+      - name
+      - total_gb
+      - used_gb
+      - free_gb
+      properties:
+        name:
+          type: string
+          description: Card directory name, e.g. card1.
+        total_gb:
+          type: number
+        used_gb:
+          type: number
+        free_gb:
+          type: number
+    Capabilities:
+      type: object
+      required:
+      - models_dashboard
+      - vllm_management
+      - can_launch
+      - can_stop
+      - can_delete_model
+      - namespace
+      properties:
+        models_dashboard:
+          type: boolean
+          description: FEATURE_MODELS_DASHBOARD_ENABLED.
+        vllm_management:
+          type: boolean
+          description: FEATURE_VLLM_MANAGEMENT_ENABLED.
+        can_launch:
+          type: boolean
+        can_stop:
+          type: boolean
+        can_delete_model:
+          type: boolean
+        namespace:
+          type: string
+          description: '`native`, `mock`, or the Kubernetes namespace (VLLM_K8S_NAMESPACE, else the pod''s, else `default`).'
+    VllmInstance:
+      type: object
+      required:
+      - id
+      - namespace
+      - model
+      - host
+      - port
+      - quantization
+      - dtype
+      - limit_mm_per_prompt
+      - max_model_len
+      - gpu_memory_utilization
+      - enable_prefix_caching
+      - enable_tool_calling
+      - task
+      - device
+      - started_at
+      - status
+      - log_path
+      - last_error
+      properties:
+        id:
+          type: string
+        namespace:
+          type: string
+        model:
+          type: string
+          description: Path or name given to `vllm serve`.
+        host:
+          type: string
+        port:
+          type: integer
+          format: uint16
+        quantization:
+          type:
+          - string
+          - 'null'
+        dtype:
+          type:
+          - string
+          - 'null'
+        limit_mm_per_prompt:
+          type:
+          - string
+          - 'null'
+        max_model_len:
+          type:
+          - integer
+          - 'null'
+        gpu_memory_utilization:
+          type:
+          - number
+          - 'null'
+        enable_prefix_caching:
+          type: boolean
+        enable_tool_calling:
+          type: boolean
+        task:
+          type:
+          - string
+          - 'null'
+        device:
+          type:
+          - string
+          - 'null'
+        started_at:
+          type: string
+          description: RFC 3339.
+        status:
+          type: string
+          description: 'Native: starting, running, terminating. Kubernetes: starting, running, terminating, completed, interrupted,
+            or the raw pod phase (Failed, Unknown). Mock: running.'
+        log_path:
+          type:
+          - string
+          - 'null'
+        last_error:
+          type:
+          - string
+          - 'null'
+    LaunchRequest:
+      type: object
+      required:
+      - model
+      - host
+      - port
+      - enable_prefix_caching
+      properties:
+        model:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+          format: uint16
+        namespace:
+          type:
+          - string
+          - 'null'
+          description: Kubernetes namespace; default the engine's. Ignored natively.
+        quantization:
+          type:
+          - string
+          - 'null'
+          description: Passed as --quantization.
+        dtype:
+          type:
+          - string
+          - 'null'
+          description: Passed as --dtype.
+        limit_mm_per_prompt:
+          type:
+          - string
+          - 'null'
+          description: 'Passed as --limit-mm-per-prompt, e.g. {"image": 4}.'
+        max_num_seqs:
+          type:
+          - integer
+          - 'null'
+          description: --max-num-seqs. Not offered by the browser form.
+        max_model_len:
+          type:
+          - integer
+          - 'null'
+        gpu_memory_utilization:
+          type:
+          - number
+          - 'null'
+          description: --gpu-memory-utilization, formatted with two decimals; not passed for device cpu.
+        enable_prefix_caching:
+          type: boolean
+          description: Required in the JSON body.
+        enable_tool_calling:
+          type: boolean
+          default: false
+          description: --enable-auto-tool-choice --tool-call-parser hermes.
+        task:
+          type:
+          - string
+          - 'null'
+          description: 'embed or embedding: --runner pooling --convert embed; classify: --runner pooling --convert classify;
+            generate: --runner generate; anything else: --runner <value>.'
+        device:
+          type:
+          - string
+          - 'null'
+          description: '`cpu` selects the CPU path; empty, gpu, auto and default pass nothing; any other value is passed as
+            --device.'
+    LaunchForm:
+      type: object
+      required:
+      - model
+      properties:
+        model:
+          type: string
+        host:
+          type: string
+        port:
+          type: string
+        namespace:
+          type: string
+        quantization:
+          type: string
+        dtype:
+          type: string
+        limit_mm_per_prompt:
+          type: string
+        max_model_len:
+          type: string
+        gpu_memory_utilization:
+          type: string
+        task:
+          type: string
+        device:
+          type: string
+        enable_prefix_caching:
+          type: boolean
+        prefix_caching:
+          type: boolean
+        enable_tool_calling:
+          type: boolean
+    ModelFilters:
+      type: object
+      properties:
+        source:
+          type: string
+          description: '`hf` (default), `gguf` or `all`. Alias key `type`. Compared case-insensitively with the stored source
+            (HF, GGUF).'
+        search:
+          type: string
+          description: Case-insensitive substring of the name.
+        sort:
+          type: string
+          enum:
+          - name_asc
+          - name_desc
+          - params_asc
+          - params_desc
+          - vram_asc
+          - vram_desc
+        quant:
+          type: string
+          description: ALL (or empty) for all; otherwise a quantisation name (FP16, BF16, FP8, INT8, AWQ, GPTQ, Q80 or Q8_0,
+            Q6K or Q6_K, ...).
+        context:
+          description: 'Minimum context: number or numeric string; 0 or absent for all.'
+          oneOf:
+          - type: integer
+          - type: string
+        vllm_only:
+          type: boolean
+    Model:
+      type: object
+      required:
+      - source
+      - name
+      - path
+      - architecture
+      - vllm_supported
+      - quant
+      - context
+      - layers
+      - hidden_size
+      - params_billion
+      - estimates
+      properties:
+        source:
+          type: string
+          enum:
+          - HF
+          - GGUF
+        name:
+          type: string
+        path:
+          type: string
+        architecture:
+          type:
+          - string
+          - 'null'
+        vllm_supported:
+          type: boolean
+        quant:
+          type: string
+          enum:
+          - ALL
+          - FP16
+          - BF16
+          - FP8
+          - INT8
+          - Q80
+          - Q6K
+          - Q5KM
+          - Q50
+          - Q4KM
+          - Q40
+          - Q3KM
+          - Q2K
+          - AWQ
+          - GPTQ
+        context:
+          description: A number from 512 to 131072 in powers of two, or the string "ALL" (the model's own maximum, treated
+            as 131072 in comparisons).
+          oneOf:
+          - type: integer
+            enum:
+            - 512
+            - 1024
+            - 2048
+            - 4096
+            - 8192
+            - 16384
+            - 32768
+            - 65536
+            - 131072
+          - type: string
+            enum:
+            - ALL
+        layers:
+          type: integer
+        hidden_size:
+          type: integer
+        params_billion:
+          type: number
+        estimates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelEstimate'
+    ModelEstimate:
+      type: object
+      required:
+      - quant
+      - context
+      - weights_gb
+      - kv_gb
+      - total_gb
+      properties:
+        quant:
+          type: string
+          enum:
+          - ALL
+          - FP16
+          - BF16
+          - FP8
+          - INT8
+          - Q80
+          - Q6K
+          - Q5KM
+          - Q50
+          - Q4KM
+          - Q40
+          - Q3KM
+          - Q2K
+          - AWQ
+          - GPTQ
+        context:
+          description: A number from 512 to 131072 in powers of two, or the string "ALL" (the model's own maximum, treated
+            as 131072 in comparisons).
+          oneOf:
+          - type: integer
+            enum:
+            - 512
+            - 1024
+            - 2048
+            - 4096
+            - 8192
+            - 16384
+            - 32768
+            - 65536
+            - 131072
+          - type: string
+            enum:
+            - ALL
+        weights_gb:
+          type: number
+        kv_gb:
+          type: number
+        total_gb:
+          type: number
+          description: (weights + kv + 3.0) * 1.15.
+    RunningModel:
+      type: object
+      required:
+      - id
+      - model
+      - endpoint
+      - status
+      properties:
+        id:
+          type: string
+        model:
+          type: string
+        endpoint:
+          type: string
+        status:
+          type: string
+    DeleteModelRequest:
+      type: object
+      required:
+      - path
+      properties:
+        path:
+          type: string
+          description: The model's `path` as listed.
+    Error:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: string
+    AuthStatus:
+      type: object
+      required:
+      - authenticated
+      - username
+      - roles
+      properties:
+        authenticated:
+          type: boolean
+        username:
+          type:
+          - string
+          - 'null'
+        roles:
+          type: array
+          items:
+            type: string
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from Gatehouse, audience switchboard.
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: forge_session
+  responses:
+    Unauthorized:
+      description: No valid token or session (Auth middleware; also unmapped /api/v1 paths). Empty body, or a redirect for
+        a browser.
+    ClientPage:
+      description: The HTML page that starts the browser client (cache-control no-store, nonce CSP).
+      content:
+        text/html:
+          schema:
+            type: string
+    ClientMissing:
+      description: app.wasm is not in WEB_DIR ("the browser client is not installed on this server").

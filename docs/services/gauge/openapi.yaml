@@ -1,0 +1,680 @@
+openapi: 3.1.0
+info:
+  title: Gauge
+  version: 0.2.3
+  description: >
+    Host metrics dashboard. Scrapes PCP (pmproxy) and node_exporter, keeps the last hour in memory and, with
+    a database, a month of one-minute samples. Everything under /api/v1 is behind the realm's Auth
+    middleware (bearer token or session cookie); no per-action permission is checked by the service.
+servers:
+  - url: "{base}"
+    variables:
+      base:
+        default: /gauge
+        description: BASE_PATH of the deployment.
+tags:
+  - name: hosts
+    description: Live state and stored history of the watched hosts.
+  - name: storage
+    description: Filesystem forecast.
+  - name: alerts
+    description: Alert log.
+  - name: ui
+    description: Browser pages, assets and SSO routes.
+security:
+  - bearer: []
+  - sessionCookie: []
+paths:
+  /api/v1/hosts:
+    get:
+      tags: [hosts]
+      operationId: listHosts
+      summary: Every watched host with the CPU history its card draws
+      responses:
+        "200":
+          description: One entry per configured target, in configuration order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/HostCard" }
+              example:
+                - name: nogrod
+                  kind: node
+                  url: "http://192.168.0.8:9100"
+                  up: true
+                  error: null
+                  last_ok: 1761800000.5
+                  view: null
+                  cpu: [12.5, 14.0, null, 9.8]
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/hosts/{name}:
+    get:
+      tags: [hosts]
+      operationId: getHost
+      summary: One host with its in-memory history (the last hour)
+      parameters:
+        - $ref: "#/components/parameters/HostName"
+      responses:
+        "200":
+          description: The host and up to 360 points.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HostDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No target of that name.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: no such host }
+  /api/v1/hosts/{name}/history:
+    get:
+      tags: [hosts]
+      operationId: getHostHistory
+      summary: Stored history of one host
+      description: >
+        Evenly spaced points from the one-minute samples in Postgres, grouped to the step of the range;
+        a step with no samples is a gap (a point with every field null).
+      parameters:
+        - $ref: "#/components/parameters/HostName"
+        - name: range
+          in: query
+          required: false
+          schema: { type: string, enum: ["24h", "7d", "30d"], default: "24h" }
+          description: "`1h` is a valid Range but is rejected here: the last hour is in the host's own answer."
+        - name: stat
+          in: query
+          required: false
+          schema: { type: string }
+          description: "`max` selects the highest value of each step; any other value (or none) selects the mean."
+      responses:
+        "200":
+          description: 288 (24h), 336 (7d) or 360 (30d) points.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HostHistory" }
+              example:
+                name: nogrod
+                range: 24h
+                step_secs: 300
+                points:
+                  - { t: 1761720000.0, cpu: 11.2, mem: 40.1, rx: 1200.0, tx: 800.0, read: 0.0, write: 5000.0, gpu: null, vram: null, psi_cpu: 0.1, psi_mem: 0.0, psi_io: 0.0, disk_util: 1.5, power: null }
+                  - { t: 1761720300.0, cpu: null, mem: null, rx: null, tx: null, read: null, write: null, gpu: null, vram: null, psi_cpu: null, psi_mem: null, psi_io: null, disk_util: null, power: null }
+        "400":
+          description: Unknown range, or `1h`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "range is one of 24h, 7d, 30d (the last hour is in the host's own answer)" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No target of that name (checked first).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: The query failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: could not read the history }
+        "503": { $ref: "#/components/responses/NoHistory" }
+  /api/v1/forecast:
+    get:
+      tags: [storage]
+      operationId: getForecast
+      summary: How full each filesystem is and when it fills
+      description: A straight line fitted to the last seven days of hourly samples (see data.md).
+      responses:
+        "200":
+          description: One entry per host and mount seen in the last seven days; empty when none.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DiskForecast" }
+              example:
+                - { host: ossiriand, mount: /data, size: 4000000000000.0, used: 3100000000000.0, per_day: 21000000000.0, days_left: 42.8 }
+                - { host: nogrod, mount: /, size: 500000000000.0, used: 120000000000.0, per_day: null, days_left: null }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500":
+          description: The query failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: could not read the history }
+        "503": { $ref: "#/components/responses/NoHistory" }
+  /api/v1/alerts/history:
+    get:
+      tags: [alerts]
+      operationId: getAlertLog
+      summary: Alerts that opened or were open within the retention, newest first
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, format: int64, default: 200 }
+          description: Clamped to 1..1000.
+      responses:
+        "200":
+          description: Alert events ordered by `opened` descending, then by id descending.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AlertEvent" }
+              example:
+                - { host: lorien, key: down, kind: down, detail: "http://192.168.0.2:44322/metrics?names=...: error sending request", severe: true, opened: 1761790000.0, closed: null }
+                - { host: ossiriand, key: "hot:k10temp", kind: hot, detail: "k10temp 92 °C", severe: true, opened: 1761700000.0, closed: 1761701200.0 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500":
+          description: The query failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: could not read the alert log }
+        "503": { $ref: "#/components/responses/NoHistory" }
+  /ui:
+    get:
+      tags: [ui]
+      operationId: uiRoot
+      summary: Redirect to the home page, or to login without a session
+      security: []
+      responses:
+        "302": { description: "To {base}/ui/home, or {base}/ui/login when not signed in." }
+  /ui/:
+    get:
+      tags: [ui]
+      operationId: uiRootSlash
+      summary: Same as /ui
+      security: []
+      responses:
+        "302": { description: "To {base}/ui/home, or {base}/ui/login when not signed in." }
+  /ui/home:
+    get:
+      tags: [ui]
+      operationId: uiHome
+      summary: Client page, hosts screen
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/ClientPage" }
+        "302": { description: "To {base}/ui/login without a valid session cookie." }
+        "404": { $ref: "#/components/responses/ClientMissing" }
+  /ui/home/:
+    get:
+      tags: [ui]
+      operationId: uiHomeSlash
+      summary: Same as /ui/home
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/ClientPage" }
+        "302": { description: "To {base}/ui/login without a valid session cookie." }
+        "404": { $ref: "#/components/responses/ClientMissing" }
+  /ui/hosts/{name}:
+    get:
+      tags: [ui]
+      operationId: uiHost
+      summary: Client page, host screen
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/HostName"
+      responses:
+        "200": { $ref: "#/components/responses/ClientPage" }
+        "302": { description: "To {base}/ui/login without a valid session cookie." }
+        "404": { $ref: "#/components/responses/ClientMissing" }
+  /ui/fleet:
+    get:
+      tags: [ui]
+      operationId: uiFleet
+      summary: Client page, fleet screen
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/ClientPage" }
+        "302": { description: "To {base}/ui/login without a valid session cookie." }
+        "404": { $ref: "#/components/responses/ClientMissing" }
+  /ui/storage:
+    get:
+      tags: [ui]
+      operationId: uiStorage
+      summary: Client page, storage screen
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/ClientPage" }
+        "302": { description: "To {base}/ui/login without a valid session cookie." }
+        "404": { $ref: "#/components/responses/ClientMissing" }
+  /ui/gpus:
+    get:
+      tags: [ui]
+      operationId: uiGpus
+      summary: Client page, GPUs screen
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/ClientPage" }
+        "302": { description: "To {base}/ui/login without a valid session cookie." }
+        "404": { $ref: "#/components/responses/ClientMissing" }
+  /ui/network:
+    get:
+      tags: [ui]
+      operationId: uiNetwork
+      summary: Client page, network screen
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/ClientPage" }
+        "302": { description: "To {base}/ui/login without a valid session cookie." }
+        "404": { $ref: "#/components/responses/ClientMissing" }
+  /ui/power:
+    get:
+      tags: [ui]
+      operationId: uiPower
+      summary: Client page, power screen
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/ClientPage" }
+        "302": { description: "To {base}/ui/login without a valid session cookie." }
+        "404": { $ref: "#/components/responses/ClientMissing" }
+  /ui/alerts:
+    get:
+      tags: [ui]
+      operationId: uiAlerts
+      summary: Client page, alerts screen
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/ClientPage" }
+        "302": { description: "To {base}/ui/login without a valid session cookie." }
+        "404": { $ref: "#/components/responses/ClientMissing" }
+  /ui/assets/quench.js:
+    get:
+      tags: [ui]
+      operationId: uiAssetScript
+      summary: The quench-ui loader script
+      security: []
+      responses:
+        "200": { description: JavaScript., content: { text/javascript: { schema: { type: string } } } }
+  /ui/assets/app.css:
+    get:
+      tags: [ui]
+      operationId: uiAssetStyle
+      summary: Shell stylesheet followed by Gauge's stylesheet
+      security: []
+      responses:
+        "200": { description: CSS., content: { text/css: { schema: { type: string } } } }
+  /ui/assets/shell.js:
+    get:
+      tags: [ui]
+      operationId: uiAssetShell
+      summary: The forge-shell script
+      security: []
+      responses:
+        "200": { description: JavaScript., content: { text/javascript: { schema: { type: string } } } }
+  /ui/assets/favicon.png:
+    get:
+      tags: [ui]
+      operationId: uiAssetFavicon
+      summary: The service icon
+      security: []
+      responses:
+        "200": { description: PNG., content: { image/png: { schema: { type: string, format: binary } } } }
+  /ui/assets/app.wasm:
+    get:
+      tags: [ui]
+      operationId: uiAssetModule
+      summary: The browser client module
+      security: []
+      responses:
+        "200": { description: WebAssembly module., content: { application/wasm: { schema: { type: string, format: binary } } } }
+        "404": { $ref: "#/components/responses/ClientMissing" }
+  /ui/login:
+    get:
+      tags: [ui]
+      operationId: uiLogin
+      summary: Start sign-in (SSO redirect to Gatehouse)
+      security: []
+      responses:
+        "302": { description: "To {base}/ui/home (refresh cookie accepted) or to Gatehouse's /api/v1/authorize; sets forge_authorize_state." }
+        "503": { description: "Text `gatehouse is not configured`." }
+  /ui/login/:
+    get:
+      tags: [ui]
+      operationId: uiLoginSlash
+      summary: Same as /ui/login
+      security: []
+      responses:
+        "302": { description: See /ui/login. }
+        "503": { description: "Text `gatehouse is not configured`." }
+  /ui/auth/callback:
+    get:
+      tags: [ui]
+      operationId: uiAuthCallback
+      summary: Complete the authorization-code exchange
+      security: []
+      parameters:
+        - { name: code, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: false, schema: { type: string } }
+      responses:
+        "302": { description: "To {base}/ui/home with session cookies, or to {base}/ui/login on any failure." }
+        "503": { description: "Text `gatehouse is not configured`." }
+  /ui/logout:
+    get:
+      tags: [ui]
+      operationId: uiLogout
+      summary: Realm logout through Gatehouse
+      security: []
+      responses:
+        "302": { description: "To Gatehouse's /ui/logout with a redirect back to {base}/ui/login." }
+        "503": { description: "Text `gatehouse is not configured`." }
+  /ui/status:
+    get:
+      tags: [ui]
+      operationId: uiStatus
+      summary: Session status for the page shell
+      security: []
+      responses:
+        "200":
+          description: Always 200.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthStatus" }
+  /ui/refresh:
+    post:
+      tags: [ui]
+      operationId: uiRefresh
+      summary: Exchange the refresh cookie for new cookies
+      security: []
+      responses:
+        "200":
+          description: New session and refresh cookies set.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthStatus" }
+              example: { authenticated: true, username: null, roles: [] }
+        "401": { description: No refresh cookie, or Gatehouse refused it. Empty body. }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from Gatehouse, audience gauge.
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: forge_session
+  parameters:
+    HostName:
+      name: name
+      in: path
+      required: true
+      schema: { type: string }
+      description: The `name` of a target in targets.toml.
+  responses:
+    Unauthorized:
+      description: No valid token or session (Auth middleware, also for unmapped /api/v1 paths). Empty or redirect for browsers.
+    NoHistory:
+      description: Gauge has no database connection.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "history is not available: Gauge has no database connection" }
+    ClientPage:
+      description: The HTML page that starts the browser client (cache-control no-store, nonce CSP).
+      content:
+        text/html: { schema: { type: string } }
+    ClientMissing:
+      description: app.wasm is not in WEB_DIR ("the browser client is not installed on this server").
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    HostSummary:
+      type: object
+      required: [name, kind, url, up, error, last_ok, view]
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [pcp, node] }
+        url: { type: string }
+        up: { type: boolean }
+        error: { type: [string, "null"], description: Why the last scrape failed. }
+        last_ok: { type: [number, "null"], description: Unix seconds of the last good scrape. }
+        view: { oneOf: [{ $ref: "#/components/schemas/View" }, { type: "null" }] }
+    HostCard:
+      description: HostSummary fields flattened, plus cpu.
+      allOf:
+        - $ref: "#/components/schemas/HostSummary"
+        - type: object
+          required: [cpu]
+          properties:
+            cpu:
+              type: array
+              items: { type: [number, "null"] }
+              description: CPU busy percent per history point, oldest first.
+    HostDetail:
+      description: HostSummary fields flattened, plus history.
+      allOf:
+        - $ref: "#/components/schemas/HostSummary"
+        - type: object
+          required: [history]
+          properties:
+            history:
+              type: array
+              items: { $ref: "#/components/schemas/Point" }
+    HostHistory:
+      type: object
+      required: [name, range, step_secs, points]
+      properties:
+        name: { type: string }
+        range: { type: string, enum: ["24h", "7d", "30d"] }
+        step_secs: { type: integer, description: "300, 1800 or 7200." }
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/Point" }
+    Point:
+      type: object
+      required: [t, cpu, mem, rx, tx, read, write, gpu, vram, psi_cpu, psi_mem, psi_io, disk_util, power]
+      properties:
+        t: { type: number, description: Unix seconds. }
+        cpu: { type: [number, "null"] }
+        mem: { type: [number, "null"] }
+        rx: { type: [number, "null"], description: Bytes per second received, all interfaces summed. }
+        tx: { type: [number, "null"] }
+        read: { type: [number, "null"], description: Bytes per second read, all disks summed. }
+        write: { type: [number, "null"] }
+        gpu: { type: [number, "null"], description: Busiest GPU, percent. }
+        vram: { type: [number, "null"], description: Fullest GPU memory, percent. }
+        psi_cpu: { type: [number, "null"] }
+        psi_mem: { type: [number, "null"] }
+        psi_io: { type: [number, "null"] }
+        disk_util: { type: [number, "null"], description: Busiest disk, percent. }
+        power: { type: [number, "null"], description: Hungriest GPU, watts. }
+    View:
+      type: object
+      description: The latest numbers of a host (rates need two scrapes).
+      required: [at, hostname, uptime_secs, cpu_pct, cores_pct, load, mem_total, mem_used, swap_total, swap_used, filesystems, disks, nics, gpus, temps, psi, mem_parts, swap_in_per_sec, swap_out_per_sec, oom_kills, tcp_retrans_per_sec, disk_stats, links, cpu_freq_mhz, cpu_watts, procs_blocked, fans, faults, alerts]
+      properties:
+        at: { type: number }
+        hostname: { type: [string, "null"] }
+        uptime_secs: { type: [number, "null"] }
+        cpu_pct: { type: [number, "null"] }
+        cores_pct:
+          type: array
+          description: Pairs [core id, percent].
+          items:
+            type: array
+            prefixItems: [{ type: string }, { type: number }]
+            minItems: 2
+            maxItems: 2
+        load:
+          type: [array, "null"]
+          items: { type: number }
+          minItems: 3
+          maxItems: 3
+        mem_total: { type: [number, "null"] }
+        mem_used: { type: [number, "null"] }
+        swap_total: { type: [number, "null"] }
+        swap_used: { type: [number, "null"] }
+        filesystems:
+          type: array
+          items: { $ref: "#/components/schemas/Filesystem" }
+        disks:
+          type: array
+          description: a = read, b = write, bytes per second.
+          items: { $ref: "#/components/schemas/Rate" }
+        nics:
+          type: array
+          description: a = received, b = sent, bytes per second.
+          items: { $ref: "#/components/schemas/Rate" }
+        gpus:
+          type: array
+          items: { $ref: "#/components/schemas/Gpu" }
+        temps:
+          type: array
+          items: { $ref: "#/components/schemas/Temp" }
+        psi: { oneOf: [{ $ref: "#/components/schemas/PsiPct" }, { type: "null" }] }
+        mem_parts: { oneOf: [{ $ref: "#/components/schemas/MemParts" }, { type: "null" }] }
+        swap_in_per_sec: { type: [number, "null"] }
+        swap_out_per_sec: { type: [number, "null"] }
+        oom_kills: { type: [number, "null"] }
+        tcp_retrans_per_sec: { type: [number, "null"] }
+        disk_stats:
+          type: array
+          items: { $ref: "#/components/schemas/DiskStat" }
+        links:
+          type: array
+          items: { $ref: "#/components/schemas/LinkView" }
+        cpu_freq_mhz: { type: [number, "null"] }
+        cpu_watts: { type: [number, "null"] }
+        procs_blocked: { type: [number, "null"] }
+        fans:
+          type: array
+          items: { $ref: "#/components/schemas/Fan" }
+        faults:
+          type: array
+          items: { $ref: "#/components/schemas/Fault" }
+        alerts:
+          type: array
+          items: { $ref: "#/components/schemas/Alert" }
+    Filesystem:
+      type: object
+      required: [device, mount, size, avail]
+      properties:
+        device: { type: string }
+        mount: { type: [string, "null"] }
+        size: { type: number }
+        avail: { type: number }
+    Rate:
+      type: object
+      required: [name, a_per_sec, b_per_sec]
+      properties:
+        name: { type: string }
+        a_per_sec: { type: number }
+        b_per_sec: { type: number }
+    Gpu:
+      type: object
+      required: [name, busy_pct, vram_used, vram_total, temp_c, power_w, power_cap_w, fan_rpm, fan_max_rpm, sclk_mhz, mclk_mhz, gtt_used, gtt_total]
+      properties:
+        name: { type: string }
+        busy_pct: { type: [number, "null"] }
+        vram_used: { type: [number, "null"] }
+        vram_total: { type: [number, "null"] }
+        temp_c: { type: [number, "null"] }
+        power_w: { type: [number, "null"] }
+        power_cap_w: { type: [number, "null"] }
+        fan_rpm: { type: [number, "null"] }
+        fan_max_rpm: { type: [number, "null"] }
+        sclk_mhz: { type: [number, "null"] }
+        mclk_mhz: { type: [number, "null"] }
+        gtt_used: { type: [number, "null"] }
+        gtt_total: { type: [number, "null"] }
+    Temp:
+      type: object
+      required: [label, celsius]
+      properties:
+        label: { type: string }
+        celsius: { type: number }
+    PsiPct:
+      type: object
+      required: [cpu, mem, mem_full, io, io_full]
+      properties:
+        cpu: { type: number }
+        mem: { type: number }
+        mem_full: { type: number }
+        io: { type: number }
+        io_full: { type: number }
+    MemParts:
+      type: object
+      required: [anon, cached, buffers, dirty]
+      properties:
+        anon: { type: number }
+        cached: { type: number }
+        buffers: { type: number }
+        dirty: { type: number }
+    DiskStat:
+      type: object
+      required: [name, util_pct, iops, read_ms, write_ms, queue]
+      properties:
+        name: { type: string }
+        util_pct: { type: number }
+        iops: { type: number }
+        read_ms: { type: [number, "null"] }
+        write_ms: { type: [number, "null"] }
+        queue: { type: number }
+    LinkView:
+      type: object
+      required: [name, up, speed, errors_per_sec]
+      properties:
+        name: { type: string }
+        up: { type: boolean }
+        speed: { type: [number, "null"], description: Bytes per second. }
+        errors_per_sec: { type: number }
+    Fan:
+      type: object
+      required: [label, rpm]
+      properties:
+        label: { type: string }
+        rpm: { type: number }
+    Fault:
+      type: object
+      required: [what, count]
+      properties:
+        what: { type: string }
+        count: { type: number }
+    Alert:
+      type: object
+      required: [key, kind, detail, severe]
+      properties:
+        key: { type: string, examples: ["hot:k10temp", "disk_full:/data", "fills_soon:/data"] }
+        kind:
+          type: string
+          description: "fault, oom, disk_full, hot, pressure_mem, pressure_io, swapping, fills_soon (and down in the log)."
+        detail: { type: string }
+        severe: { type: boolean }
+    DiskForecast:
+      type: object
+      required: [host, mount, size, used, per_day, days_left]
+      properties:
+        host: { type: string }
+        mount: { type: string, description: The mount point, or the device when the agent does not say. }
+        size: { type: number }
+        used: { type: number }
+        per_day: { type: [number, "null"], description: Bytes added a day; null without enough history. }
+        days_left: { type: [number, "null"] }
+    AlertEvent:
+      type: object
+      required: [host, key, kind, detail, severe, opened, closed]
+      properties:
+        host: { type: string }
+        key: { type: string }
+        kind: { type: string }
+        detail: { type: string }
+        severe: { type: boolean }
+        opened: { type: number, description: Unix seconds. }
+        closed: { type: [number, "null"] }
+    AuthStatus:
+      type: object
+      required: [authenticated, username, roles]
+      properties:
+        authenticated: { type: boolean }
+        username: { type: [string, "null"] }
+        roles: { type: array, items: { type: string } }

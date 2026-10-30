@@ -22,4 +22,4 @@ Build the browser module with `cargo build --target wasm32-unknown-unknown --pro
 
 Plan and checklist: `quench/docs/migration/daybook.md`. The Flutter app this replaces is `mobile-apps/daybook`.
 
-The service's own documentation is `docs/docker/daybook-service.md`.
+The service's own documentation is `docs/services/daybook/index.md`.
