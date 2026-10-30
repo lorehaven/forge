@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "anvil"
-version = "0.4.22"
+version = "0.4.23"
 dependencies = [
  "gatehouse-auth",
  "quench-args",
@@ -260,7 +260,7 @@ checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "foreman"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "libc",
  "quench-args",
@@ -307,7 +307,7 @@ dependencies = [
 
 [[package]]
 name = "forge-toolbox"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "quench-args",
  "quench-cli",
@@ -408,7 +408,7 @@ dependencies = [
 
 [[package]]
 name = "foundry-service"
-version = "0.2.33"
+version = "0.2.34"
 dependencies = [
  "quench-args",
  "quench-cli",
