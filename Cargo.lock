@@ -515,7 +515,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-service"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "forge-web",
  "gatehouse-core",
