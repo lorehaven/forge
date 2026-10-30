@@ -408,7 +408,7 @@ dependencies = [
 
 [[package]]
 name = "foundry-service"
-version = "0.2.34"
+version = "0.2.35"
 dependencies = [
  "quench-args",
  "quench-cli",
@@ -568,7 +568,7 @@ dependencies = [
 
 [[package]]
 name = "gauge-service"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "forge-web",
  "gauge-core",
