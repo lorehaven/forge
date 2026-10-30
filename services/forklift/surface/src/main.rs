@@ -20,6 +20,8 @@ use quench_ui::mount;
 use quench_ui_native::NativeRenderer;
 
 type Then<T> = Box<dyn FnOnce(T)>;
+/// Where the last page of the media library ended: kind, modified in seconds, id.
+type MediaEnd = Rc<RefCell<Option<(&'static str, i64, i64)>>>;
 /// Builds the controller from the manifest once that is read.
 type Maker = Rc<RefCell<Option<Rc<dyn Fn(Manifest)>>>>;
 /// Where the app's `deliver` goes once the app exists.
@@ -96,6 +98,9 @@ enum Answer {
 }
 
 struct Android {
+    /// Where the last page of the media library ended: `(kind, modified in seconds, id)`. The next page is asked for
+    /// by that key (MediaStore walks every row an offset skips, so reading a big library by offsets is quadratic).
+    media_end: MediaEnd,
     bridge: Bridge,
     worker: Rc<Worker>,
     /// Told when the host cannot even start an upload.
@@ -104,25 +109,43 @@ struct Android {
 
 impl Platform for Android {
     fn media(&self, kind: &'static str, offset: u32, then: Then<Result<Vec<Found>, String>>) {
-        self.bridge.call(
-            "files",
-            "media",
-            object(&[
-                ("kind", Value::String(kind.into())),
-                (
-                    "limit",
-                    Value::from(i64::from(forklift_surface::MEDIA_PAGE)),
-                ),
-                ("offset", Value::from(i64::from(offset))),
-            ]),
-            move |answer| {
+        let mut args = vec![
+            ("kind", Value::String(kind.into())),
+            (
+                "limit",
+                Value::from(i64::from(forklift_surface::MEDIA_PAGE)),
+            ),
+        ];
+        let end = if offset == 0 {
+            None
+        } else {
+            self.media_end.borrow().filter(|(k, _, _)| *k == kind)
+        };
+        match end {
+            Some((_, modified, id)) => {
+                args.push(("before_modified", Value::from(modified)));
+                args.push(("before_id", Value::from(id)));
+            }
+            None => args.push(("offset", Value::from(i64::from(offset)))),
+        }
+        let remember = Rc::clone(&self.media_end);
+        self.bridge
+            .call("files", "media", object(&args), move |answer| {
                 then(answer.map_err(|e: CallError| e.to_string()).map(|rows| {
-                    rows.as_array()
+                    let found: Vec<Found> = rows
+                        .as_array()
                         .map(|rows| rows.iter().filter_map(found_of).collect())
-                        .unwrap_or_default()
+                        .unwrap_or_default();
+                    if let Some(last) = found.last() {
+                        *remember.borrow_mut() = Some((
+                            kind,
+                            last.modified_ms / 1000,
+                            last.local_id.parse().unwrap_or(0),
+                        ));
+                    }
+                    found
                 }));
-            },
-        );
+            });
     }
 
     fn folder(&self, uri: &str, then: Then<Result<Vec<Node>, String>>) {
@@ -451,6 +474,7 @@ fn main() -> std::io::Result<()> {
     };
     *worker_late.borrow_mut() = Some(Rc::clone(&worker));
     let platform = Rc::new(Android {
+        media_end: Rc::default(),
         bridge: bridge.clone(),
         worker,
         controller: Rc::clone(&controller),
@@ -613,6 +637,9 @@ fn main() -> std::io::Result<()> {
                     message: text(e, "message"),
                 });
             });
+            if session.lock().unwrap().is_some() {
+                c.show();
+            }
             if session.lock().unwrap().is_some() && !paused.get() {
                 c.start();
             }

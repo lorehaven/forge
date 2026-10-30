@@ -1391,3 +1391,30 @@ fn the_dashboard_numbers_are_kept_for_the_next_start_and_leave_with_the_session(
     assert_eq!(w.store.snapshot(), forklift_core::Snapshot::default());
     w.cleanup();
 }
+
+#[quench_test::test]
+fn the_counts_are_shown_before_any_scan_and_nothing_is_claimed_until_one_has_finished() {
+    // A manifest of an earlier run, an empty library for now: before the scan has finished the app is told what it
+    // had, and not "nothing to back up".
+    let fake = Fake::default();
+    fake.hold_media.set(true);
+    let w = world(
+        "before-scan",
+        Settings {
+            videos: false,
+            ..Settings::default()
+        },
+        fake,
+    );
+    w.controller.show();
+    let shot = last_snapshot(&w);
+    assert!(!shot.settled);
+    assert_eq!(shot.headline(), "Looking for files");
+    w.controller.start();
+    let page = w.fake.held.borrow_mut().remove(0);
+    page();
+    let shot = last_snapshot(&w);
+    assert!(shot.settled, "a scan that read everything has finished");
+    assert_eq!(shot.headline(), "Nothing to back up yet");
+    w.cleanup();
+}

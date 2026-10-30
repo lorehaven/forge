@@ -423,7 +423,9 @@ fn snap(n: usize, done: usize, working: bool) -> forklift_core::Snapshot {
     for i in 1..=done {
         e.manifest.done("photos", &i.to_string(), "x");
     }
-    forklift_core::Snapshot::of(&e, &Settings::default(), working, None)
+    let mut shot = forklift_core::Snapshot::of(&e, &Settings::default(), working, None);
+    shot.settled = true;
+    shot
 }
 
 #[quench_test::test]
@@ -432,6 +434,11 @@ fn the_headline_says_where_the_backup_is() {
     assert_eq!(snap(0, 0, true).headline(), "Looking for files");
     assert_eq!(snap(4, 1, true).headline(), "Backing up: 1 of 4 files");
     assert_eq!(snap(4, 4, false).headline(), "All 4 files are backed up");
+    // Not looked at yet (no scan has finished, the manifest may still be loading): no claim that there is nothing.
+    let mut unknown = snap(0, 0, false);
+    unknown.settled = false;
+    assert_eq!(unknown.headline(), "Looking for files");
+    assert!(unknown.fraction() < 0.01);
 }
 
 #[quench_test::test]

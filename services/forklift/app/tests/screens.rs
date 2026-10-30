@@ -250,7 +250,9 @@ fn a_failed_login_is_said_and_a_good_one_opens_the_dashboard() {
 #[quench_test::test]
 fn the_dashboard_follows_the_snapshots() {
     let (r, _asked, deliver, _m) = live(true);
-    assert!(r.text().contains("Nothing to back up yet"), "{}", r.text());
+    // Before the host has said anything nothing is known: the empty state is not shown.
+    assert!(r.text().contains("Looking for files"), "{}", r.text());
+    assert!(!r.text().contains("Nothing to back up yet"), "{}", r.text());
     deliver(Msg::Snapshot(Box::new(shot(4, 1))));
     let text = r.text();
     assert!(text.contains("Backing up: 1 of 4 files"), "{text}");
@@ -620,4 +622,15 @@ fn a_scan_under_way_says_how_many_files_it_has_looked_at() {
         "{}",
         r.text()
     );
+}
+
+#[quench_test::test]
+fn nothing_to_back_up_is_said_only_once_the_files_were_looked_at() {
+    let (r, _asked, deliver, _m) = live(true);
+    let mut s = shot(0, 0);
+    deliver(Msg::Snapshot(Box::new(s.clone())));
+    assert!(r.text().contains("Looking for files"), "{}", r.text());
+    s.settled = true;
+    deliver(Msg::Snapshot(Box::new(s)));
+    assert!(r.text().contains("Nothing to back up yet"), "{}", r.text());
 }

@@ -492,3 +492,64 @@ fn changing_one_task_leaves_the_other_rows_alone() {
 }
 
 quench_test::main!();
+
+/// The rules of the style sheet as `(selector, declarations)`, the ones inside `@media` included.
+fn rules() -> Vec<(String, String)> {
+    let css: String = daybook_app::STYLE
+        .split("/*")
+        .enumerate()
+        .map(|(i, part)| {
+            if i == 0 {
+                part
+            } else {
+                part.split_once("*/").map_or("", |(_, rest)| rest)
+            }
+        })
+        .collect();
+    css.split('}')
+        .filter_map(|rule| rule.rsplit_once('{'))
+        .map(|(selector, body)| {
+            (
+                selector
+                    .rsplit(['{', ';'])
+                    .next()
+                    .unwrap_or(selector)
+                    .trim()
+                    .to_string(),
+                body.to_string(),
+            )
+        })
+        .filter(|(selector, _)| !selector.is_empty() && !selector.starts_with('@'))
+        .collect()
+}
+
+#[quench_test::test]
+fn the_style_keeps_to_what_a_phone_paints_quickly() {
+    // The native renderer draws every frame in software, on the phone's own CPU. A blurred shadow is drawn over the whole
+    // element and a border all round a rounded box that fills the screen is as dear: with those on the list card and the
+    // inputs a screen of tasks took 100+ ms a frame on a desktop (5x as much as without), and every tap felt half a second
+    // late. Only the two small things that float have a shadow; the list's card has no border all round.
+    let rules = rules();
+    assert!(rules.len() > 50, "the rules were read: {}", rules.len());
+    for (selector, body) in &rules {
+        if body.contains("box-shadow") {
+            assert!(
+                selector == ".q-fab" || selector == ".q-dialog",
+                "{selector} has a box-shadow: that is drawn on every frame; keep to a border"
+            );
+        }
+        if selector == ".dbk-tasks" {
+            let all_round = body
+                .split(';')
+                .any(|d| d.trim_start().starts_with("border:"));
+            assert!(
+                !all_round,
+                ".dbk-tasks: a border all round a rounded card is dear to paint"
+            );
+            assert!(
+                !body.contains("overflow"),
+                ".dbk-tasks: a clip on a screen-sized box is dear to paint"
+            );
+        }
+    }
+}

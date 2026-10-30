@@ -5,8 +5,8 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Condvar, Mutex};
 
 use forklift_core::{Manifest, Settings, Snapshot};
 
@@ -15,6 +15,10 @@ use forklift_core::{Manifest, Settings, Snapshot};
 /// manifest over a newer one.
 static ASKED: AtomicU64 = AtomicU64::new(0);
 static WRITTEN: Mutex<BTreeMap<PathBuf, u64>> = Mutex::new(BTreeMap::new());
+/// Background writes not finished yet, by data directory: a read of the manifest waits for them, so it never sees a
+/// manifest older than the last one this program asked to be written.
+static PENDING: Mutex<BTreeMap<PathBuf, usize>> = Mutex::new(BTreeMap::new());
+static WRITTEN_SIGNAL: Condvar = Condvar::new();
 
 /// The data directory's files.
 #[derive(Debug, Clone)]
@@ -137,6 +141,7 @@ impl Store {
     /// The manifest, with files that were sending when the app died waiting again.
     #[must_use]
     pub fn manifest(&self) -> Manifest {
+        self.settle_writes();
         let mut manifest = self
             .read("manifest")
             .map(|t| Manifest::from_text(&t))
@@ -155,7 +160,33 @@ impl Store {
     pub fn set_manifest_in_background(&self, manifest: &Manifest) {
         let (text, number) = (manifest.to_text(), ASKED.fetch_add(1, Ordering::SeqCst) + 1);
         let store = self.clone();
-        std::thread::spawn(move || store.write_manifest(text, number));
+        *PENDING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(self.dir.clone())
+            .or_insert(0) += 1;
+        std::thread::spawn(move || {
+            store.write_manifest(text, number);
+            let mut pending = PENDING
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(n) = pending.get_mut(&store.dir) {
+                *n = n.saturating_sub(1);
+            }
+            WRITTEN_SIGNAL.notify_all();
+        });
+    }
+
+    /// Waits until the manifest writes asked for in the background have reached the disk.
+    fn settle_writes(&self) {
+        let mut pending = PENDING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while pending.get(&self.dir).copied().unwrap_or(0) > 0 {
+            pending = WRITTEN_SIGNAL
+                .wait(pending)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
     }
 
     fn write_manifest(&self, text: String, number: u64) {

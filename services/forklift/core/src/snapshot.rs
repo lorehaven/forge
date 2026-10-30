@@ -27,6 +27,9 @@ pub struct Snapshot {
     pub quota: Option<(u64, u64)>,
     /// How many files a scan under way has looked at so far (0 when none is).
     pub looked_at: usize,
+    /// Whether the files have been looked at since the app started. Until then "nothing to back up" is not known to be
+    /// true (the manifest may still be loading, the first scan not done), so it is not said.
+    pub settled: bool,
 }
 
 impl Snapshot {
@@ -75,6 +78,7 @@ impl Snapshot {
             checked_ms,
             quota: None,
             looked_at: 0,
+            settled: false,
         }
     }
 
@@ -174,7 +178,8 @@ impl Snapshot {
     pub fn fraction(&self) -> f64 {
         let all = self.files();
         if all == 0 {
-            1.0
+            // Nothing is known yet: an empty bar, not a full one.
+            if self.settled { 1.0 } else { 0.0 }
         } else {
             self.totals.done as f64 / all as f64
         }
@@ -188,7 +193,7 @@ impl Snapshot {
         }
         let t = &self.totals;
         if self.files() == 0 {
-            return if self.working {
+            return if self.working || !self.settled {
                 "Looking for files".into()
             } else {
                 "Nothing to back up yet".into()

@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Base64
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.FileInputStream
@@ -23,7 +24,9 @@ import java.util.concurrent.ConcurrentHashMap
  * move their bytes without holding them in the page: `read` in chunks, and `upload`, which streams a
  * file to a URL from native code and reports progress as events.
  *
- * Methods: `media {kind: images|video|audio, limit, offset}`, `pick_folder`, `pick_files`,
+ * Methods: `media {kind: images|video|audio, limit, offset | before_modified, before_id}` (newest first; a page after the
+ * one ending at `before_modified`/`before_id` is read by its key, not by skipping rows: an offset makes MediaStore walk
+ * every row it skips, which for a library of tens of thousands is most of the time of a scan), `pick_folder`, `pick_files`,
  * `list_folder {uri, limit}`, `stat {uri}`, `read {uri, offset, length}` (base64, at most 256 KiB),
  * `upload {id, uri, url, method, headers}` (events `progress {id, sent, total}` and
  * `done {id, status, body}` or `failed {id, message}`), `cancel_upload {id}`.
@@ -72,14 +75,29 @@ class FilesPlugin(private val activity: Activity) : Plugin("files") {
             if (!granted) return@permissions call.reject("permission_denied", "the media library is not allowed")
             val query = Bundle().apply {
                 putInt(ContentResolver.QUERY_ARG_LIMIT, args.optInt("limit", 50).coerceIn(1, 5000))
-                putInt(ContentResolver.QUERY_ARG_OFFSET, args.optInt("offset", 0))
-                putStringArray(ContentResolver.QUERY_ARG_SORT_COLUMNS, arrayOf(MediaStore.MediaColumns.DATE_MODIFIED))
-                putInt(ContentResolver.QUERY_ARG_SORT_DIRECTION, ContentResolver.QUERY_SORT_DIRECTION_DESCENDING)
+                if (args.has("before_modified")) {
+                    // The key of the last row of the page before: what follows it in (date, id) order, newest first.
+                    val modified = args.getLong("before_modified")
+                    val id = args.getLong("before_id")
+                    putString(
+                        ContentResolver.QUERY_ARG_SQL_SELECTION,
+                        "(${MediaStore.MediaColumns.DATE_MODIFIED} < ?) OR (${MediaStore.MediaColumns.DATE_MODIFIED} = ? AND ${MediaStore.MediaColumns._ID} < ?)",
+                    )
+                    putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, arrayOf("$modified", "$modified", "$id"))
+                } else {
+                    putInt(ContentResolver.QUERY_ARG_OFFSET, args.optInt("offset", 0))
+                }
+                // Newest first, and by id among the files of one second: the order the next page is asked for by.
+                putString(
+                    ContentResolver.QUERY_ARG_SQL_SORT_ORDER,
+                    "${MediaStore.MediaColumns.DATE_MODIFIED} DESC, ${MediaStore.MediaColumns._ID} DESC",
+                )
             }
             val columns = arrayOf(
                 MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE,
-                MediaStore.MediaColumns.MIME_TYPE, MediaStore.MediaColumns.DATE_MODIFIED,
+                MediaStore.MediaColumns.DATE_MODIFIED,
             )
+            val started = System.nanoTime()
             val list = JSONArray()
             resolver.query(uri, columns, query, null)?.use { c ->
                 while (c.moveToNext()) {
@@ -87,10 +105,11 @@ class FilesPlugin(private val activity: Activity) : Plugin("files") {
                         JSONObject()
                             .put("uri", android.content.ContentUris.withAppendedId(uri, c.getLong(0)).toString())
                             .put("name", c.getString(1)).put("size", c.getLong(2))
-                            .put("mime", c.getString(3)).put("modified_ms", c.getLong(4) * 1000)
+                            .put("modified_ms", c.getLong(3) * 1000)
                     )
                 }
             }
+            Log.i("forklift-files", "media $kind: ${list.length()} rows in ${(System.nanoTime() - started) / 1_000_000} ms")
             call.resolve(list)
         }
     }

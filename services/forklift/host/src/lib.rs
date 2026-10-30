@@ -106,6 +106,8 @@ struct State {
     seen: Vec<String>,
     /// How many files the running scan has looked at.
     looked_at: usize,
+    /// Whether a scan has finished since the app started (see `Snapshot::settled`).
+    settled: bool,
     /// When the app was last told the numbers, and whether a telling is already set for later.
     published_ms: i64,
     publish_set: bool,
@@ -165,6 +167,7 @@ impl Controller {
                 rescan_scheduled: false,
                 seen: Vec::new(),
                 looked_at: 0,
+                settled: false,
                 published_ms: i64::MIN / 2,
                 publish_set: false,
             }),
@@ -182,6 +185,7 @@ impl Controller {
         let mut shot = Snapshot::of(&st.engine, &st.settings, working, self.store.checked_ms());
         shot.quota = st.quota;
         shot.looked_at = if st.scanning { st.looked_at } else { 0 };
+        shot.settled = st.settled;
         shot
     }
 
@@ -241,6 +245,12 @@ impl Controller {
 
     fn notice(&self, text: &str) {
         (self.emit)(Msg::Notice(text.to_string()));
+    }
+
+    /// Tells the app what the manifest holds, before any scan: the counts of the last run are on the screen as soon as the
+    /// manifest is read, also when the scan cannot start yet (another program has the backup).
+    pub fn show(&self) {
+        self.publish();
     }
 
     /// The app is up and signed in: look for files, and keep looking while it is open.
@@ -499,9 +509,11 @@ impl Controller {
                 st.engine.manifest.reconcile(&listing);
             }
             st.scanning = false;
+            st.settled = true;
         }
         self.store.set_checked_ms(self.platform.now_ms());
-        self.save();
+        // The end of a scan of a big library is a manifest of megabytes: its `fsync` is not waited for.
+        self.save_in_background();
         self.publish();
         self.pump();
         self.refresh_quota();
