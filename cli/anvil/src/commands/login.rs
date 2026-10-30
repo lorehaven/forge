@@ -41,6 +41,51 @@ pub fn login(
     Ok(())
 }
 
+/// The table of the secret file that keeps the Android signing passwords, and the variables the build reads them from.
+const ANDROID: &str = "android";
+const PASSWORDS: [(&str, &str); 2] = [
+    ("keystore_password", "QUENCH_KEYSTORE_PASSWORD"),
+    ("key_password", "QUENCH_KEY_PASSWORD"),
+];
+
+/// Stores the release keystore's password (and the key's own, when it has one) in the secret file, which is git-ignored
+/// and readable by its owner only.
+pub fn keystore_password(separate_key_password: bool) -> Result<()> {
+    let dir = std::env::current_dir().context("finding the working directory")?;
+    let password = gatehouse_auth::prompt_password("Keystore password: ")?;
+    if password.is_empty() {
+        bail!("the keystore password is required");
+    }
+    let path = gatehouse_auth::set_extra(TOOL, &dir, ANDROID, PASSWORDS[0].0, &password)?;
+    if separate_key_password {
+        let key = gatehouse_auth::prompt_password("Key password: ")?;
+        if key.is_empty() {
+            bail!("the key password is required (leave out --key when it is the keystore's)");
+        }
+        gatehouse_auth::set_extra(TOOL, &dir, ANDROID, PASSWORDS[1].0, &key)?;
+    }
+    println!("Stored the keystore password in {}", path.display());
+    Ok(())
+}
+
+/// The signing passwords for a build run from `dir`: what the secret file keeps, for every variable the environment does
+/// not already set (the environment wins, as it does for the registry token).
+pub fn keystore_env(
+    dir: &Path,
+    env_has: impl Fn(&str) -> bool,
+) -> Result<Vec<(&'static str, String)>> {
+    let mut found = Vec::new();
+    for (key, var) in PASSWORDS {
+        if env_has(var) {
+            continue;
+        }
+        if let Some(value) = gatehouse_auth::extra(TOOL, dir, ANDROID, key)? {
+            found.push((var, value));
+        }
+    }
+    Ok(found)
+}
+
 /// The environment variable Cargo reads a registry's token from.
 #[must_use]
 pub fn registry_token_var(registry: &str) -> String {

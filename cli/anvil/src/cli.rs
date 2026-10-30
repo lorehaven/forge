@@ -204,6 +204,13 @@ pub enum Commands {
     },
     /// Print a registry bearer token, for Cargo's `credential-provider = [\"cargo:token-from-stdout\", \"anvil\", \"registry-token\"]`
     RegistryToken,
+    /// Store the Android release keystore's password in the git-ignored secret file (after `anvil login`), so
+    /// `anvil artifact release` signs without `QUENCH_KEYSTORE_PASSWORD` in the environment
+    KeystorePassword {
+        /// Ask for the key's own password too (when it is not the keystore's)
+        #[arg(long)]
+        key: bool,
+    },
     /// Mint an application token and store it in the git-ignored `.anvil/secret.toml` (`.anvil.secret.toml` when there is no `.anvil/`)
     Login {
         /// Gatehouse including its base path (defaults to the one already stored)

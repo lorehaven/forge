@@ -152,3 +152,30 @@ fn a_gitignore_that_ignores_every_secret_directory_file_is_enough() {
         ".*/secret.toml\n"
     );
 }
+
+#[quench_test::test]
+fn extra_values_are_kept_beside_the_credentials_and_survive_a_new_login() {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    assert_eq!(
+        set_extra("anvil", dir.path(), "android", "keystore_password", "pw")
+            .unwrap_err()
+            .to_string(),
+        "no secret file: run `anvil login` first"
+    );
+    save("anvil", dir.path(), &credentials()).unwrap();
+    set_extra("anvil", dir.path(), "android", "keystore_password", "pw1").unwrap();
+    set_extra("anvil", dir.path(), "android", "key_password", "pw2").unwrap();
+    let get = |key| extra("anvil", dir.path(), "android", key).unwrap();
+    assert_eq!(get("keystore_password").as_deref(), Some("pw1"));
+    assert_eq!(get("key_password").as_deref(), Some("pw2"));
+    assert_eq!(get("nothing"), None);
+    assert_eq!(load("anvil", dir.path()).unwrap(), Some(credentials()));
+
+    let next = Credentials {
+        gatehouse_url: "https://host/gatehouse".to_string(),
+        app_token: "lht_new".to_string(),
+    };
+    save("anvil", dir.path(), &next).unwrap();
+    assert_eq!(get("keystore_password").as_deref(), Some("pw1"));
+    assert_eq!(load("anvil", dir.path()).unwrap(), Some(next));
+}

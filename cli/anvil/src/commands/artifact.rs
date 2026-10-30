@@ -209,9 +209,11 @@ fn run_build(
     let Some((command, rest)) = args.split_first() else {
         bail!("target `{}` has an empty `build`", target.platform);
     };
+    let passwords = crate::commands::login::keystore_env(dir, |v| std::env::var_os(v).is_some())?;
     let status = Command::new(command)
         .args(rest)
         .current_dir(dir)
+        .envs(passwords)
         .env("ANVIL_VERSION_NAME", name)
         .env("ANVIL_VERSION_CODE", code.to_string())
         .status()

@@ -99,6 +99,12 @@ anvil login [--gatehouse-url <url>] [--username <name>] [--scope <service:action
 
 Signs in to Gatehouse once (the password is asked for and never stored), mints a long-lived, revocable application token and keeps it in the git-ignored `.anvil/secret.toml` (`.anvil.secret.toml` when the workspace has no `.anvil/` directory; a login into the directory takes the old file away). `anvil release` then trades it for a short-lived token on every run and hands it to `cargo publish` as `CARGO_REGISTRIES_<REGISTRY>_TOKEN`, so no token is copied by hand. A `CARGO_REGISTRIES_<REGISTRY>_TOKEN` already in your environment wins. `--scope warehouse:write` limits the token to what publishing needs.
 
+```
+anvil keystore-password [--key]
+```
+
+Keeps the Android release keystore's password in the same secret file, under `[android]` (`keystore_password`, and with `--key` the key's own `key_password`); the password is asked for and not echoed. Run `anvil login` first: the file has to exist. `anvil artifact release` hands the stored passwords to the build as `QUENCH_KEYSTORE_PASSWORD` and `QUENCH_KEY_PASSWORD`, so `quench build apk --release` signs without them in your shell; a variable already in the environment wins. A later `anvil login` keeps them.
+
 ### Docker
 
 ```bash

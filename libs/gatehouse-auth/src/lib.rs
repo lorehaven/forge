@@ -5,7 +5,7 @@
 //! bearer token on every run; [`login`] mints the app token in the first place.
 
 use quench_core::{Context, Result, bail};
-use quench_serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize, Value};
 use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -68,11 +68,70 @@ pub fn save(tool: &str, dir: &Path, credentials: &Credentials) -> Result<PathBuf
     } else {
         (beside, secret_file_name(tool), inside)
     };
+    // Whatever else the file keeps (see [`set_extra`]) survives a new login.
+    let text = match fs::read_to_string(&path)
+        .ok()
+        .and_then(|old| quench_serde::toml::parse(&old).ok())
+    {
+        Some(Value::Object(mut kept)) => {
+            if let Value::Object(fresh) =
+                quench_serde::toml::parse(&text).context("reading back")?
+            {
+                for (key, value) in fresh.iter() {
+                    kept.insert(key.clone(), value.clone());
+                }
+            }
+            quench_serde::toml::to_string(&Value::Object(kept))
+                .context("serialising credentials")?
+        }
+        _ => text,
+    };
     write_private(&path, &text)?;
     ensure_ignored(dir, &ignored)?;
     if old.is_file() {
         fs::remove_file(&old).with_context(|| format!("removing the old {}", old.display()))?;
     }
+    Ok(path)
+}
+
+/// A value the tool keeps in its secret file besides the credentials, `[table] key = "..."` (the Android keystore's
+/// passwords, for one). `None` when there is no secret file or no such value.
+pub fn extra(tool: &str, start: &Path, table: &str, key: &str) -> Result<Option<String>> {
+    let Some(path) = find_secret_file(tool, start) else {
+        return Ok(None);
+    };
+    let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let value =
+        quench_serde::toml::parse(&text).with_context(|| format!("parsing {}", path.display()))?;
+    Ok(value
+        .get(table)
+        .and_then(|t| t.get(key))
+        .and_then(Value::as_str)
+        .map(str::to_string))
+}
+
+/// Stores `[table] key = "value"` in the tool's existing secret file, leaving the rest of it as it was.
+///
+/// # Errors
+/// There is no secret file (`login` makes it), or it cannot be read, parsed or written.
+pub fn set_extra(tool: &str, start: &Path, table: &str, key: &str, value: &str) -> Result<PathBuf> {
+    let Some(path) = find_secret_file(tool, start) else {
+        bail!("no secret file: run `{tool} login` first");
+    };
+    let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let Value::Object(mut all) =
+        quench_serde::toml::parse(&text).with_context(|| format!("parsing {}", path.display()))?
+    else {
+        bail!("{} is not a TOML table", path.display());
+    };
+    let mut inner = match all.get(table) {
+        Some(Value::Object(inner)) => inner.clone(),
+        _ => quench_serde::Map::new(),
+    };
+    inner.insert(key.to_string(), Value::from(value));
+    all.insert(table.to_string(), Value::Object(inner));
+    let text = quench_serde::toml::to_string(&Value::Object(all)).context("serialising")?;
+    write_private(&path, &text)?;
     Ok(path)
 }
 

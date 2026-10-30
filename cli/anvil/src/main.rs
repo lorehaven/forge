@@ -7,6 +7,7 @@ use quench_cli::require::require_binary;
 use quench_cli::terminal::print_box_banner;
 use quench_core::{Context, Result};
 
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
@@ -101,6 +102,7 @@ fn main() -> Result<()> {
             scope,
             days,
         } => commands::login::login(&config, gatehouse_url, username, name, scope, days)?,
+        Commands::KeystorePassword { key } => commands::login::keystore_password(key)?,
         Commands::RegistryToken => {
             let dir = std::env::current_dir().context("finding the working directory")?;
             println!(

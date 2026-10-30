@@ -98,3 +98,28 @@ fn registry_token_reports_an_unreachable_gatehouse() {
     };
     assert!(registry_token(dir.path(), env).is_err());
 }
+
+#[quench_test::test]
+fn the_build_gets_the_stored_signing_passwords_unless_the_environment_has_them() {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    assert!(keystore_env(dir.path(), |_| false).unwrap().is_empty());
+
+    let credentials = Credentials {
+        gatehouse_url: "https://host/gatehouse".to_string(),
+        app_token: "lht_secret".to_string(),
+    };
+    gatehouse_auth::save("anvil", dir.path(), &credentials).unwrap();
+    gatehouse_auth::set_extra("anvil", dir.path(), "android", "keystore_password", "ks").unwrap();
+    gatehouse_auth::set_extra("anvil", dir.path(), "android", "key_password", "key").unwrap();
+
+    let all = keystore_env(dir.path(), |_| false).unwrap();
+    assert_eq!(
+        all,
+        [
+            ("QUENCH_KEYSTORE_PASSWORD", "ks".to_string()),
+            ("QUENCH_KEY_PASSWORD", "key".to_string())
+        ]
+    );
+    let rest = keystore_env(dir.path(), |v| v == "QUENCH_KEYSTORE_PASSWORD").unwrap();
+    assert_eq!(rest, [("QUENCH_KEY_PASSWORD", "key".to_string())]);
+}
