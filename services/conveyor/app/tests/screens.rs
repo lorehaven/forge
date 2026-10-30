@@ -371,6 +371,27 @@ fn the_history_asks_for_the_page_in_the_address_and_pages_through() {
 }
 
 #[quench_test::test]
+fn the_history_and_the_repositories_are_asked_for_again_so_new_runs_appear() {
+    let l = live("/conveyor/ui/runs?page=2");
+    let before = l.asked().len();
+    tick(5_000.0);
+    assert!(l.asked().len() > before);
+    assert_eq!(
+        l.asked().last(),
+        Some(&Request::History {
+            scope: None,
+            page: 2
+        })
+    );
+
+    let l = live("/conveyor/ui/repos");
+    let before = l.asked().len();
+    tick(5_000.0);
+    assert!(l.asked().len() > before);
+    assert_eq!(l.asked().last(), Some(&Request::Repos));
+}
+
+#[quench_test::test]
 fn the_ends_of_the_pager_do_not_link() {
     let l = live("/conveyor/ui/runs");
     l.send(Msg::History(RunsPage {

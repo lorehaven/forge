@@ -32,7 +32,7 @@ pub enum Request {
     Home {
         scope: Option<String>,
     },
-    /// Only the runs of the front page, again (the poll).
+    /// Only the runs of the front page and the checks of the repositories, again (the poll).
     Recent {
         scope: Option<String>,
     },
@@ -468,6 +468,25 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                 let page = page_of(at.query_get("page"));
                 untrack(|| ask(Request::History { scope, page }));
             });
+            // New runs show up, and a running one changes its status, without a reload.
+            let (ask, router_now, path) = (
+                Rc::clone(&env.ask),
+                router.clone(),
+                format!("{}/ui/runs", env.base),
+            );
+            poll(
+                home_ms,
+                Rc::new(move || {
+                    let at = router_now.location();
+                    if at.path.trim_end_matches('/') == path {
+                        ask(Request::History {
+                            scope: at.query_get("project"),
+                            page: page_of(at.query_get("page")),
+                        });
+                    }
+                    true
+                }),
+            );
             let (env, state, router) = (env.clone(), state.clone(), router.clone());
             View::dynamic(move || screens::history(&env, &state, &router))
         }
@@ -521,6 +540,14 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         move |_: &RouteContext| -> View {
             state.enter();
             (env.ask)(Request::Repos);
+            let ask = Rc::clone(&env.ask);
+            poll(
+                home_ms,
+                Rc::new(move || {
+                    ask(Request::Repos);
+                    true
+                }),
+            );
             let (env, state) = (env.clone(), state.clone());
             View::dynamic(move || screens::repos(&env, &state))
         }
@@ -568,6 +595,17 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                 owner: owner.clone(),
                 name: name.clone(),
             });
+            let (ask, again_owner, again_name) = (Rc::clone(&env.ask), owner.clone(), name.clone());
+            poll(
+                home_ms,
+                Rc::new(move || {
+                    ask(Request::Scan {
+                        owner: again_owner.clone(),
+                        name: again_name.clone(),
+                    });
+                    true
+                }),
+            );
             let (env, state) = (env.clone(), state.clone());
             View::dynamic(move || screens::scan(&env, &state, &owner, &name))
         }

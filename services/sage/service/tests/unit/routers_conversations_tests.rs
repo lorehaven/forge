@@ -42,7 +42,7 @@ fn sage_config() -> sage_service::config::SageConfig {
             task: None,
             device: None,
         }],
-        supported_models: Vec::new(),
+        supported_models: vec!["*".to_string()],
         default_search_provider: "duckduckgo".to_string(),
         available_search_providers: vec!["duckduckgo".to_string(), "brave".to_string()],
         capability_profile: sage_service::tools::capabilities::get_profile("web_assistant")

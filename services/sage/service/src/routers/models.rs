@@ -85,8 +85,16 @@ pub fn models_view(
     config: &SageConfig,
     instances: &quench_core::Result<Vec<VllmInstance>>,
 ) -> ModelsView {
-    let defaults = config
+    // A model the configuration does not support is never launched, so it is neither waited for nor offered: a default
+    // that matches no pattern would hold the chat unready for good, and an instance somebody started by hand in
+    // Switchboard is not Sage's to hand out.
+    let wanted: Vec<DefaultModel> = config
         .default_models
+        .iter()
+        .filter(|m| config.is_model_supported(&m.name))
+        .cloned()
+        .collect();
+    let defaults = wanted
         .iter()
         .map(|model| DefaultModelState {
             name: model.name.clone(),
@@ -102,13 +110,13 @@ pub fn models_view(
         switchboard_ok: instances.is_ok(),
         ready: instances
             .as_ref()
-            .is_ok_and(|all| all_models_running(&config.default_models, all)),
+            .is_ok_and(|all| all_models_running(&wanted, all)),
         // Only chat-capable instances belong in the picker; embedding instances would 404 on chat completions.
         instances: instances.as_ref().map_or_else(
             |_| Vec::new(),
             |all| {
                 all.iter()
-                    .filter(|i| i.is_chat_capable())
+                    .filter(|i| i.is_chat_capable() && config.is_model_supported(&i.model))
                     .map(|i| ModelOption {
                         id: i.id.clone(),
                         model: i.model.clone(),

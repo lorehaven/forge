@@ -273,10 +273,22 @@ impl<T: Transport> Client<T> {
                 }
                 out
             }
-            Request::Recent { scope } => vec![match self.recent(scope.as_deref()).await {
-                Ok(runs) => Msg::Recent { scope, runs },
-                Err(failure) => failure.read(),
-            }],
+            Request::Recent { scope } => {
+                let mut out = Vec::new();
+                match self.recent(scope.as_deref()).await {
+                    Ok(runs) => out.push(Msg::Recent { scope, runs }),
+                    Err(failure) => return vec![failure.read()],
+                }
+                // A finished run moves its repository's checks too; the poll that cannot read them (a service
+                // without the scanner) is not an error.
+                if let Ok(Some(chips)) = self
+                    .optional::<Vec<RepoChecks>>("/api/v1/scan".into())
+                    .await
+                {
+                    out.push(Msg::Chips(chips));
+                }
+                out
+            }
             Request::History { scope, page } => {
                 let mut out = Vec::new();
                 if scope.is_some() {

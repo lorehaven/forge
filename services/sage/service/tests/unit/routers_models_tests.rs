@@ -78,3 +78,37 @@ fn all_running_requires_every_default_model() {
 fn no_default_models_is_ready() {
     assert!(all_models_running(&[], &[]));
 }
+
+fn config_supporting(patterns: &[&str], defaults: &[&str]) -> sage_service::config::SageConfig {
+    sage_service::config::SageConfig {
+        system_prompt: String::new(),
+        default_models: defaults.iter().map(|n| model(n)).collect(),
+        supported_models: patterns.iter().map(ToString::to_string).collect(),
+        default_search_provider: "none".to_string(),
+        available_search_providers: vec![],
+        capability_profile: sage_service::tools::capabilities::get_profile("web_assistant")
+            .unwrap(),
+        stop_models_on_shutdown: false,
+    }
+}
+
+#[quench_test::test]
+fn a_model_the_configuration_does_not_support_is_neither_offered_nor_waited_for() {
+    let config = config_supporting(
+        &["Qwen/*", "RedHatAI/*"],
+        &["RedHatAI/Qwen3.5-4B", "losseheil/stepover"],
+    );
+    let instances = Ok(vec![
+        instance("RedHatAI/Qwen3.5-4B", "running"),
+        instance("losseheil/stepover", "running"),
+    ]);
+    let view = models_view(&config, &instances);
+    let offered: Vec<_> = view.instances.iter().map(|i| i.model.as_str()).collect();
+    assert_eq!(offered, ["RedHatAI/Qwen3.5-4B"]);
+    let defaults: Vec<_> = view.defaults.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(defaults, ["RedHatAI/Qwen3.5-4B"]);
+    assert!(
+        view.ready,
+        "the unsupported default must not hold the chat back"
+    );
+}
