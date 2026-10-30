@@ -5,7 +5,9 @@ use quench_core::base64::STANDARD;
 use quench_db::prelude::{Crud, Db};
 use quench_http::http::{Method, StatusCode};
 use warehouse_service::docker_token::DockerTokenConfig;
-use warehouse_service::routers::docker::token::{register_routes, validate_basic_encoded};
+use warehouse_service::routers::docker::token::{
+    granted_scope, register_routes, validate_basic_encoded,
+};
 
 async fn user_db_with(username: &str, password: &str) -> std::sync::Arc<UserDb> {
     let db = Db::connect("").await.expect("in-memory database");
@@ -146,4 +148,63 @@ async fn validate_basic_encoded_rejects_malformed_base64_and_missing_colon() {
             .await
             .is_none()
     );
+}
+
+fn user_with(actions: &[&str]) -> User {
+    let mut permissions = Permissions::new();
+    if !actions.is_empty() {
+        permissions.insert(
+            "warehouse".to_string(),
+            actions.iter().map(|a| (*a).to_string()).collect(),
+        );
+    }
+    User::new(
+        "alice".to_string(),
+        "pw".to_string(),
+        vec![Role::User],
+        permissions,
+        None,
+    )
+    .expect("build user")
+}
+
+const ASKED: &str = "repository:app/web:pull,push repository:*:delete";
+
+#[quench_test::test]
+fn granted_scope_gives_a_user_without_grants_nothing() {
+    assert_eq!(granted_scope(Some(ASKED), Some(&user_with(&[]))), "");
+}
+
+#[quench_test::test]
+fn granted_scope_gives_a_reader_pull_only() {
+    assert_eq!(
+        granted_scope(Some(ASKED), Some(&user_with(&["read"]))),
+        "repository:app/web:pull"
+    );
+}
+
+#[quench_test::test]
+fn granted_scope_gives_a_writer_everything() {
+    assert_eq!(
+        granted_scope(Some(ASKED), Some(&user_with(&["write"]))),
+        ASKED
+    );
+}
+
+#[quench_test::test]
+fn granted_scope_drops_entries_that_are_not_repositories_or_are_malformed() {
+    let writer = user_with(&["write"]);
+    assert_eq!(
+        granted_scope(
+            Some("registry:catalog:* repository:x repository:a:pull"),
+            Some(&writer)
+        ),
+        "repository:a:pull"
+    );
+}
+
+#[quench_test::test]
+fn granted_scope_without_a_user_or_scope_keeps_the_old_behaviour() {
+    assert_eq!(granted_scope(Some(ASKED), None), ASKED);
+    assert_eq!(granted_scope(None, Some(&user_with(&[]))), "docker");
 }

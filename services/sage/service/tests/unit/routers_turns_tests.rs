@@ -895,3 +895,15 @@ async fn a_message_to_a_project_conversation_keeps_its_project_link() {
     let conv = conversations.read("in-p1").await.unwrap().unwrap();
     assert_eq!(conv.project_id.as_deref(), Some("p1"));
 }
+
+#[quench_test::test]
+fn a_requested_profile_may_narrow_the_configured_one_but_not_widen_it() {
+    use sage_service::routers::turns::narrows;
+    use sage_service::tools::capabilities::get_profile;
+
+    let web = get_profile("web_assistant").unwrap();
+    let cli = get_profile("cli_agent").unwrap();
+    assert!(narrows(&web, &web));
+    assert!(narrows(&web, &cli));
+    assert!(!narrows(&cli, &web));
+}

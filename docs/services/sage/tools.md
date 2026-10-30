@@ -26,7 +26,7 @@ The registry (`ToolRegistry`) applies, in order: the rate limit ([Observability]
 
 ## Capability profiles
 
-`SAGE_CAPABILITY_PROFILE` selects the profile; a turn may override it with `capability_profile` in `POST /api/v1/turns` (unknown names fall back to the configured profile; the browser client never sends it).
+`SAGE_CAPABILITY_PROFILE` selects the profile; a turn may narrow it with `capability_profile` in `POST /api/v1/turns` (an unknown name, or a profile enabling any tool the configured one does not, falls back to the configured profile; the browser client never sends it).
 
 | Profile | Tools | Default timeout / per tool (s) | Rate limit (calls/min, burst per conversation) | Context window (tokens, warn at) |
 |---|---|---|---|---|

@@ -222,6 +222,27 @@ async fn a_delivery_for_an_unregistered_repository_is_refused() {
 }
 
 #[quench_test::test]
+async fn an_unsigned_delivery_for_an_unregistered_repository_learns_nothing() {
+    let Some((db, _guard)) = database().await else {
+        return skipped("an_unsigned_delivery_for_an_unregistered_repository_learns_nothing");
+    };
+    configure(Some(SECRET));
+
+    let status = deliver(
+        &db,
+        ConveyorConfig::default(),
+        "push",
+        &push("someone", "unknown", "refs/heads/master", &"a".repeat(40)),
+        "not-the-secret",
+        "d-2",
+    )
+    .await;
+
+    // The same answer a registered repository gives for a bad signature.
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[quench_test::test]
 async fn a_delivery_for_a_disabled_repository_is_accepted_and_ignored() {
     // Accepted rather than refused: a provider retries a 4xx, and there is
     // nothing here for a retry to fix.

@@ -1,5 +1,10 @@
 # Report: libs (conveyor-pipeline, forge-shell, forge-ui, forge-web, gatehouse-auth, gatehouse-client, rivet-package) and services gatehouse, warehouse
 
+> **Fixed 2026-10-30** (the pages of the book describe the fixed behaviour; the text below is the original finding):
+> * Security 1: `GET /token` narrows the requested scope to the user's `warehouse:read` / `warehouse:write` grants (`/v2/_catalog` is still not scope-checked).
+> * Security 7: `quench-auth` `/ui/status` splits the scope on spaces as well as commas.
+
+
 Scope: `docs/libs/<lib>/`, `docs/services/gatehouse/`, `docs/services/warehouse/`, and `scripts/docs-check.py` (two changes, below). Route coverage: gatehouse 85 operations documented, 85 route declarations in `services/gatehouse/service/src`; warehouse 119 documented, 119 declared (115 macro routes plus 4 hand-registered `HEAD` routes). `python3 scripts/docs-check.py gatehouse warehouse` passes.
 
 ## Changes to `scripts/docs-check.py` (please review)

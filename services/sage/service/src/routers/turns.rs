@@ -133,7 +133,18 @@ pub fn embed_tool_results_into_response(
     result
 }
 
-/// The capability profile the request asks for, else the configured one.
+/// Whether a client-requested profile only narrows the operator's: every tool it enables is one
+/// the configured profile already enables.
+#[must_use]
+pub fn narrows(
+    requested: &crate::tools::capabilities::CapabilityProfile,
+    configured: &crate::tools::capabilities::CapabilityProfile,
+) -> bool {
+    requested.enabled_tools.is_subset(&configured.enabled_tools)
+}
+
+/// The capability profile the request asks for, if it is no broader than the configured one; else
+/// the configured one. The profile is the operator's decision: a caller can drop tools, not add them.
 fn resolve_profile(
     req: &ChatRequest,
     config: &SageConfig,
@@ -141,20 +152,25 @@ fn resolve_profile(
     req.capability_profile.as_ref().map_or_else(
         || config.capability_profile.clone(),
         |requested_profile| {
-            crate::tools::capabilities::get_profile(requested_profile).map_or_else(
-                || {
-                    quench_log::warn!(
-                        "Requested profile '{}' not found, using default '{}'",
-                        requested_profile,
-                        config.capability_profile.name
-                    );
-                    config.capability_profile.clone()
-                },
-                |profile| {
-                    quench_log::info!("Using requested capability profile: {}", requested_profile);
-                    profile
-                },
-            )
+            crate::tools::capabilities::get_profile(requested_profile)
+                .filter(|profile| narrows(profile, &config.capability_profile))
+                .map_or_else(
+                    || {
+                        quench_log::warn!(
+                            "Requested profile '{}' unknown or broader than '{}', using the latter",
+                            requested_profile,
+                            config.capability_profile.name
+                        );
+                        config.capability_profile.clone()
+                    },
+                    |profile| {
+                        quench_log::info!(
+                            "Using requested capability profile: {}",
+                            requested_profile
+                        );
+                        profile
+                    },
+                )
         },
     )
 }
@@ -1115,6 +1131,12 @@ pub async fn stream_message(
         return Response::new(StatusCode::NOT_FOUND);
     };
 
+    // A turn is started by whoever owns its conversation; nobody else may run it by guessing the id.
+    // (A first message names a conversation that does not exist yet, which nobody owns.)
+    if let Err(response) = owned_conversation(&db, &req.conversation_id, &username).await {
+        return response;
+    }
+
     quench_log::info!(
         "Chat request: search_provider={:?}, instance_id={}",
         req.search_provider,
@@ -1223,8 +1245,14 @@ pub async fn token_stats(
     Inject(db): Inject<Db>,
     Inject(sage_config): Inject<SageConfig>,
 ) -> Response {
-    if username.or_401().is_err() {
-        return Response::new(StatusCode::UNAUTHORIZED);
+    let username = match username.or_401() {
+        Ok(username) => username,
+        Err(response) => return response,
+    };
+    match owned_conversation(&db, &conversation_id, &username).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return Response::new(StatusCode::NOT_FOUND),
+        Err(response) => return response,
     }
 
     match crate::routers::ui::context_builder::build_conversation_context(

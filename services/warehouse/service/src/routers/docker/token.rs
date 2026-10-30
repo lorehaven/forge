@@ -1,5 +1,5 @@
 use crate::docker_token::{DockerClaims, DockerTokenConfig};
-use quench_auth::domain::auth::UserDb;
+use quench_auth::domain::auth::{User, UserDb};
 use quench_core::async_trait;
 use quench_core::time::{Duration, Time};
 use quench_http::prelude::{
@@ -42,7 +42,8 @@ pub async fn handle(
     Query(query): Query<TokenQuery>,
 ) -> Response {
     // Validate Basic authentication (or allow anonymous if disabled)
-    let Some(username) = validate_basic(authorization.as_deref(), &config, &user_db).await else {
+    let Some((username, user)) = validate_basic(authorization.as_deref(), &config, &user_db).await
+    else {
         return Response::new(StatusCode::UNAUTHORIZED)
             .header("www-authenticate", "Basic realm=\"registry\"");
     };
@@ -59,7 +60,7 @@ pub async fn handle(
     let claims = DockerClaims {
         sub: username,
         service: query.service.clone(),
-        scope: query.scope.clone().unwrap_or_else(|| "docker".to_string()),
+        scope: granted_scope(query.scope.as_deref(), user.as_ref()),
         iat: usize::try_from(now.timestamp()).unwrap_or_default(),
         exp: usize::try_from(exp.timestamp()).unwrap_or_default(),
     };
@@ -77,30 +78,60 @@ pub async fn handle(
     .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
+/// Narrows the requested registry scope to what the caller's realm grants allow.
+///
+/// `pull` needs `warehouse:read` or `warehouse:write`, every other action (`push`, `delete`, `*`)
+/// needs `warehouse:write`. Without a user (auth disabled) the request is granted as asked.
+#[must_use]
+pub fn granted_scope(requested: Option<&str>, user: Option<&User>) -> String {
+    let Some(requested) = requested else {
+        return "docker".to_string();
+    };
+    let Some(user) = user else {
+        return requested.to_string();
+    };
+    let write = user.can("warehouse", "write");
+    let read = write || user.can("warehouse", "read");
+
+    requested
+        .split_whitespace()
+        .filter_map(|entry| {
+            let mut parts = entry.splitn(3, ':');
+            let (kind, name, actions) = (parts.next()?, parts.next()?, parts.next()?);
+            if kind != "repository" {
+                return None;
+            }
+            let actions: Vec<&str> = actions
+                .split(',')
+                .filter(|action| if *action == "pull" { read } else { write })
+                .collect();
+            (!actions.is_empty()).then(|| format!("{kind}:{name}:{}", actions.join(",")))
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Basic auth only - a docker client never carries the realm session cookie.
 async fn validate_basic(
     authorization: Option<&str>,
     config: &DockerTokenConfig,
     user_db: &UserDb,
-) -> Option<String> {
+) -> Option<(String, Option<User>)> {
     if !config.auth_enabled {
-        return Some("anonymous".to_string());
+        return Some(("anonymous".to_string(), None));
     }
 
     let encoded = authorization?.strip_prefix("Basic ")?;
-    validate_basic_encoded(encoded, user_db).await
+    let user = validate_basic_encoded(encoded, user_db).await?;
+    Some((user.username.clone(), Some(user)))
 }
 
-pub async fn validate_basic_encoded(encoded: &str, user_db: &UserDb) -> Option<String> {
+pub async fn validate_basic_encoded(encoded: &str, user_db: &UserDb) -> Option<User> {
     let decoded = quench_core::base64::STANDARD.decode(encoded).ok()?;
     let creds = String::from_utf8(decoded).ok()?;
     let (username, password) = creds.split_once(':')?;
 
-    if user_db.validate(username, password).await.is_some() {
-        Some(username.to_string())
-    } else {
-        None
-    }
+    user_db.validate(username, password).await
 }
 
 pub fn register_routes() {

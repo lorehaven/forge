@@ -1490,9 +1490,9 @@ paths:
       - docker
       summary: Issue a registry token
       description: 'Basic-auth with realm credentials (or anonymous when `SERVICE_AUTH_ENABLED` is false).
-        `service` must equal `SERVICE_NAME`. The token (10 minutes) carries `scope` exactly as requested
-        (default `docker`): **the requested scope is not checked against the user''s grants** (see the
-        report).'
+        `service` must equal `SERVICE_NAME`. The token (10 minutes) carries the requested `scope`
+        narrowed to the user''s grants (`pull` needs `warehouse:read` or `warehouse:write`; other actions
+        need `warehouse:write`); default `docker` when none is asked.'
       security:
       - dockerBasic: []
       parameters:

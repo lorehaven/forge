@@ -1,5 +1,9 @@
 # Report: conveyor and gantry service pages
 
+> **Fixed 2026-10-30** (the pages of the book describe the fixed behaviour; the text below is the original finding):
+> * Conveyor 3: an unregistered repository's delivery gets `401 bad signature` unless it is signed with the estate secret; only then `404`. (Covered by database-backed integration tests that need `CONVEYOR_TEST_DATABASE_URL`; not run here.)
+
+
 Pages written: `docs/services/conveyor/` (index, api, openapi.yaml, pipelines, scheduler, executors, events, scans, permissions, configuration, data, operations, client) and `docs/services/gantry/` (index, api, openapi.yaml, resources, deployments, reconciler, permissions, configuration, data, operations, client). Old pages `docs/docker/conveyor-service.md` and `docs/docker/gantry-service.md` deleted. `python3 scripts/docs-check.py conveyor gantry` passes (conveyor 47 API + 24 `/ui` routes; gantry 18 API + 21 `/ui` routes; all are `#[get]`/`#[post]`/... macros, so the checker's regex covers every form used). The three `quench-starter` routes (`/health`, `/health/live`, `/health/ready`) cannot be in an `openapi.yaml` while the checker reports "documented but no route macro in source"; they are documented on the Operations pages and on the common-runtime page.
 
 ## 1. Stale or wrong statements in the old docs

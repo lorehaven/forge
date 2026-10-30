@@ -24,7 +24,7 @@ The allow-list of vLLM architectures is read from the JSON file at `VLLM_ARCHITE
 
 ## Cache and sync
 
-Models live in `switchboard.model_cache` (`path`, JSON `data`, `updated_at`); an in-memory map caches single lookups. At start, `warm_model_cache` scans both kinds in parallel with the wait for Gatehouse, and the service is `ready` only after both finish. Every 60 seconds `sync_models` deletes cached rows whose path is no longer on disk and rescans: known HF models are re-read and rewritten only when `quant`, `context`, `layers`, `hidden_size` or `params_billion` changed; known GGUF paths are skipped. The architectures list is re-checked on each HF scan (`vllm_supported` follows the current list for rows already cached). `POST /api/v1/models/delete` removes the file or directory and the cache row.
+Models live in `switchboard.model_cache` (`path`, JSON `data`, `updated_at`); an in-memory map caches single lookups. At start, `warm_model_cache` scans both kinds in parallel with the wait for Gatehouse, and the service is `ready` only after both finish. Every 60 seconds `sync_models` deletes cached rows whose path is no longer on disk and rescans: known HF models are re-read and rewritten only when `quant`, `context`, `layers`, `hidden_size` or `params_billion` changed; known GGUF paths are skipped. The architectures list is re-checked on each HF scan (`vllm_supported` follows the current list for rows already cached). `POST /api/v1/models/delete` removes the file or directory and the cache row; the path must lie strictly below a configured root (`HF_ROOTS`, `GGUF_ROOTS`): a path with a `..` component, the root itself, or one that resolves (through symlinks) outside the roots is `403 api_error_invalid_model_path`.
 
 ## Estimates
 

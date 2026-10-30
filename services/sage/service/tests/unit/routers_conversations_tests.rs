@@ -656,11 +656,29 @@ async fn with_switchboard_down_the_models_are_unknown_and_not_ready() {
 }
 
 #[quench_test::test]
-async fn the_token_stats_route_still_answers() {
+async fn the_token_stats_route_answers_for_the_owner_only() {
     let rig = rig().await;
+    let repo = rig.db.repository::<Conversation>();
+    repo.create(&conversation("conv", "admin", None, "2026-01-01T00:00:00Z"))
+        .await
+        .unwrap();
+    repo.create(&conversation(
+        "theirs",
+        "someone",
+        None,
+        "2026-01-01T00:00:00Z",
+    ))
+    .await
+    .unwrap();
+
     let (status, body) = call(&rig, Method::GET, "/ui/chat/stats/conv", None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.contains("\"success\":true"), "{body}");
+
+    let (status, _) = call(&rig, Method::GET, "/ui/chat/stats/theirs", None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = call(&rig, Method::GET, "/ui/chat/stats/missing", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[quench_test::test]

@@ -408,7 +408,7 @@ Request body (`application/json`), required: [`TurnRequest`](#turnrequest)
 | conversation_id | string | yes | From GET /api/v1/conversation-id for a new chat. |
 | project_id | string or null | no |  |
 | search_provider | string or null | no | duckduckgo, searxng, brave or serpapi; the configured default when absent. |
-| capability_profile | string or null | no | web_assistant, code_assistant or cli_agent; an unknown name falls back to the configured profile. Accepted from the body although the browser client never sends it. |
+| capability_profile | string or null | no | web_assistant, code_assistant or cli_agent; an unknown name, or a profile broader than the configured one, falls back to the configured profile. Accepted from the body although the browser client never sends it. |
 | tool_confirmations | array of string | no | Names of tools the caller confirms (command, file_ops). Default `[]`. |
 | file_ids | string | no | Staged file ids, comma separated. Default `""`. |
 | parent_id | any | no | Ignored (reset to null). |
@@ -500,7 +500,7 @@ api_error_no_models_available
 
 The answer of a turn as server-sent events. Operation id `streamTurn`.
 
-Starts the work: the request is read from the pending map (it stays there until the turn completes; an aborted turn leaves it), the instance is looked up, files and history are loaded and a task runs the turn, feeding the stream. The pending id is not tied to a user: the caller needs only a valid login and the id.
+Starts the work: the request is read from the pending map (it stays there until the turn completes; an aborted turn leaves it), the instance is looked up, files and history are loaded and a task runs the turn, feeding the stream. The caller must own the turn's conversation (`403` otherwise); a first message names a conversation that does not exist yet, which nobody owns.
 
 Authentication: bearer token or session cookie.
 
@@ -1093,7 +1093,7 @@ Browser pages, assets and SSO routes.
 
 Token statistics of a conversation. Operation id `chatStats`.
 
-A leftover of the server-rendered UI; the browser client does not call it. It uses the Username extractor (token or session cookie) but does not check that the conversation belongs to the caller, and is outside the `Auth` prefixes. Context window fixed at 4096.
+A leftover of the server-rendered UI; the browser client does not call it. It uses the Username extractor (token or session cookie) is outside the `Auth` prefixes, and answers `403` for a conversation of someone else and `404` for one that does not exist. Context window fixed at 4096.
 
 Authentication: none (the route checks the session itself where noted).
 
@@ -1502,7 +1502,7 @@ A files row as stored (GET /api/v1/files*, reprocess): FileInfo plus owner and t
 | conversation_id | string | yes | From GET /api/v1/conversation-id for a new chat. |
 | project_id | string or null | no |  |
 | search_provider | string or null | no | duckduckgo, searxng, brave or serpapi; the configured default when absent. |
-| capability_profile | string or null | no | web_assistant, code_assistant or cli_agent; an unknown name falls back to the configured profile. Accepted from the body although the browser client never sends it. |
+| capability_profile | string or null | no | web_assistant, code_assistant or cli_agent; an unknown name, or a profile broader than the configured one, falls back to the configured profile. Accepted from the body although the browser client never sends it. |
 | tool_confirmations | array of string | no | Names of tools the caller confirms (command, file_ops). Default `[]`. |
 | file_ids | string | no | Staged file ids, comma separated. Default `""`. |
 | parent_id | any | no | Ignored (reset to null). |

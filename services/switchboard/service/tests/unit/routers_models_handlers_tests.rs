@@ -18,7 +18,9 @@ use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
 use quench_http::http::StatusCode;
 use quench_http::prelude::{Form, Inject, Json};
-use switchboard_service::routers::models::delete::{delete_model, delete_model_form};
+use switchboard_service::routers::models::delete::{
+    delete_model, delete_model_form, is_below_root,
+};
 use switchboard_service::routers::models::list::handle_list;
 use switchboard_service::routers::models::mod_impl::OptionalClaims;
 use switchboard_service::routers::models::running::list_running_models;
@@ -219,4 +221,30 @@ async fn sync_models_removes_stale_entries_not_present_on_disk() {
     sync_models().await;
 
     assert!(get_store().get_model(stale_path).await.is_none());
+}
+
+#[quench_test::test]
+fn is_below_root_rejects_parent_components_and_the_root_itself() {
+    let roots = vec!["/mnt/dev/huggingface/hub".to_string()];
+    let below = |p: &str| is_below_root(std::path::Path::new(p), &roots);
+    assert!(below("/mnt/dev/huggingface/hub/models--a--b"));
+    assert!(!below("/mnt/dev/huggingface/hub"));
+    assert!(!below("/mnt/dev/huggingface/hub/../../../etc/x"));
+    assert!(!below("/mnt/dev/huggingface/hub-other/x"));
+    assert!(!below("/etc/passwd"));
+}
+
+#[quench_test::test]
+async fn delete_model_rejects_a_path_that_climbs_out_of_a_root() {
+    ensure_store().await;
+
+    let resp = delete_model(
+        OptionalClaims(None),
+        config(false),
+        Json(DeleteModelRequest {
+            path: "/mnt/dev/huggingface/hub/../../../etc/x".to_string(),
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }

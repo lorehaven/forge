@@ -256,7 +256,7 @@ Following a repository or project. A project covers every repository under it. W
 
 1. The provider parses the delivery. GitHub needs the headers `X-GitHub-Event` and `X-GitHub-Delivery` (`400 missing <header>`). `push` events are read; a deleted branch (`deleted` true or `after` all zeros) is ignored. `pull_request` events with action `opened`, `reopened`, `synchronize` or `ready_for_review` are read; other actions and other events (`ping`, ...) are ignored. A body that cannot be read is `400 <provider> sent an event conveyor cannot read: <reason>`. An ignored event is `202 {"ignored": "nothing to build for this event"}`.
 2. The event is validated: ref and sha as for a manual run, a non-empty delivery id, owner and name (`400`).
-3. The repository is looked up by `(provider, owner, name)`: `404 <owner>/<name> is not registered with conveyor`.
+3. The repository is looked up by `(provider, owner, name)`. If it is not registered: `401 bad signature` unless the delivery is signed with the estate's `CONVEYOR_WEBHOOK_SECRET`, in which case `404 <owner>/<name> is not registered with conveyor` (so an unauthenticated sender cannot learn which repositories exist).
 4. The secret: the repository's `WEBHOOK_SECRET` (needs `CONVEYOR_SECRET_KEY`), else `CONVEYOR_WEBHOOK_SECRET`. Without one: `503 conveyor is not configured to accept webhooks for this repository`.
 5. The signature: HMAC-SHA256 of the raw body, hex, header value `sha256=<hex>`. GitHub: `X-Hub-Signature-256`. Generic: `X-Conveyor-Signature-256`. Wrong or missing: `401 {"error": "bad signature"}`.
 6. A disabled repository: `202 {"ignored": "this repository is disabled"}`.

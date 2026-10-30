@@ -45,11 +45,11 @@ Applies to the `path` query of `GET|HEAD|PUT|DELETE /api/v1/files/{storage}/file
 ## Docker authorisation in detail
 
 1. Client calls `/v2/...` without a token: `401` with `WWW-Authenticate: Bearer realm="<SERVICE_REALM>",service="<SERVICE_NAME>"`.
-2. Client calls `GET /token?service=<SERVICE_NAME>&scope=repository:<repo>:pull,push` with Basic credentials; the realm user must exist and the password match (`UserDb::validate`). **No warehouse grant is consulted**, and the issued token's `scope` is whatever the client asked for (default `docker`).
+2. Client calls `GET /token?service=<SERVICE_NAME>&scope=repository:<repo>:pull,push` with Basic credentials; the realm user must exist and the password match (`UserDb::validate`). The issued token's `scope` is the request narrowed to the user's grants: `pull` needs `warehouse:read` or `warehouse:write`, every other action (`push`, `delete`, `*`) needs `warehouse:write`; entries left with no action are dropped (a user with no warehouse grant gets an empty scope and can reach nothing). With auth off the scope is as requested. No scope at all gives `docker`.
 3. `WarehouseAuth` checks, for `/v2/<repo>/(blobs|manifests|tags/list)...`, that some scope entry has type `repository`, repository equal to the path's (or `*`) and an action list containing the needed action (`pull` for GET/HEAD, `push` for POST/PATCH/PUT/DELETE) or `*`. `/v2/`, `/v2/_catalog` and paths with no repository are not scope-checked.
 4. Failed authentications are counted per client (first `X-Forwarded-For` entry, else `unknown`): after `MAX_AUTH_FAILURES_PER_MINUTE` (default 30) within `AUTH_FAILURE_WINDOW_SECONDS` (default 60), answer `429` (`DENIED`, `too many authentication attempts`); a success clears the count. In-process only.
 
-Consequence: any registered realm user can obtain a token with any scope and so read and write any repository. This is listed in the gap report of this book (not published with the site).
+Consequence: a realm user can pull or push only if their warehouse grants allow it. `GET /v2/_catalog` is still not scope-checked.
 
 ## Cargo clients
 

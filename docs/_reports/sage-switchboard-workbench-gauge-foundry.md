@@ -1,5 +1,11 @@
 # Gap report: sage, switchboard, workbench, gauge, foundry
 
+> **Fixed 2026-10-30** (the pages of the book describe the fixed behaviour; the text below is the original finding):
+> * Switchboard model delete: `..` components, the root itself and paths resolving outside the roots are refused.
+> * Sage turns: a requested `capability_profile` may only narrow the configured one.
+> * Sage `GET /ui/chat/stats/{id}` and `GET /api/v1/turns/{id}/stream` check that the conversation belongs to the caller.
+
+
 Written with `docs/services/{sage,switchboard,workbench,gauge,foundry}`. Routes: the checker passes for all five (`python3 scripts/docs-check.py sage switchboard workbench gauge foundry`). Counts of operations in each `openapi.yaml` against route macros in `service/src`: sage 28 API operations and 17 `/ui` operations (pages, assets, SSO routes and `/ui/chat/stats/{conversation_id}`); switchboard 11 API + 19 UI; workbench 26 API + 17 UI; gauge 5 API + 22 UI; foundry 0 (no HTTP). The routes added by `quench-starter` (`/health`, `/health/live`, `/health/ready`, `/swagger-ui`, `/swagger-ui/`, base-path redirects) are `#[get]` macros in the starter crate, not in the services; they are documented once in `docs/services/common-runtime.md`.
 
 ## 1. Stale or wrong statements in the old notes

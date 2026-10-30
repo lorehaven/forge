@@ -514,7 +514,7 @@ paths:
       summary: The answer of a turn as server-sent events
       description: 'Starts the work: the request is read from the pending map (it stays there until the turn completes; an
         aborted turn leaves it), the instance is looked up, files and history are loaded and a task runs the turn, feeding
-        the stream. The pending id is not tied to a user: the caller needs only a valid login and the id.'
+        the stream. The caller must own the turn''s conversation (`403` otherwise); a first message names a conversation that does not exist yet, which nobody owns.'
       parameters:
       - name: id
         in: path
@@ -1176,8 +1176,8 @@ paths:
       operationId: chatStats
       summary: Token statistics of a conversation
       description: A leftover of the server-rendered UI; the browser client does not call it. It uses the Username extractor
-        (token or session cookie) but does not check that the conversation belongs to the caller, and is outside the `Auth`
-        prefixes. Context window fixed at 4096.
+        (token or session cookie), is outside the `Auth` prefixes, and answers `403` for a conversation of someone else and `404`
+        for one that does not exist. Context window fixed at 4096.
       security: []
       parameters:
       - name: conversation_id
@@ -1816,7 +1816,7 @@ components:
           type:
           - string
           - 'null'
-          description: web_assistant, code_assistant or cli_agent; an unknown name falls back to the configured profile. Accepted
+          description: web_assistant, code_assistant or cli_agent; an unknown name, or a profile broader than the configured one, falls back to the configured profile. Accepted
             from the body although the browser client never sends it.
         tool_confirmations:
           type: array

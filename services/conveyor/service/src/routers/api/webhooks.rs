@@ -45,7 +45,15 @@ pub async fn receive(
     let repo = match repos::find_by_slug(&db, provider_kind, &event.owner, &event.name).await {
         Ok(Some(repo)) => repo,
         // Registration is explicit - a delivery for an unregistered repo isn't an invitation to build it.
+        // Only a sender holding the estate's secret is told so; anyone else gets what a bad signature gets,
+        // so the answer does not reveal which repositories are registered.
         Ok(None) => {
+            let authentic = providers::webhook_secret()
+                .is_some_and(|secret| provider.verify(&request.0, &body, secret.as_bytes()));
+            if !authentic {
+                quench_log::warn!("rejected a {} delivery: bad signature", provider.name());
+                return json_error(StatusCode::UNAUTHORIZED, "bad signature");
+            }
             return json_error(
                 StatusCode::NOT_FOUND,
                 &format!(

@@ -3,7 +3,7 @@ use super::store::get_store;
 use super::types::DeleteModelRequest;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Form, Inject, Json, Response, post};
-use std::path::Path;
+use std::path::{Component, Path};
 
 #[post("/api/v1/models/delete")]
 pub async fn delete_model(
@@ -40,11 +40,33 @@ pub async fn delete_model_form(
     }
 }
 
+/// Whether `path` lies strictly below one of `roots`: no `..` components, and never a root itself.
+#[must_use]
+pub fn is_below_root(path: &Path, roots: &[String]) -> bool {
+    !path.components().any(|c| c == Component::ParentDir)
+        && roots
+            .iter()
+            .any(|root| path != Path::new(root) && path.starts_with(root))
+}
+
+/// The same check on resolved paths, so a symlink cannot lead out of the roots.
+fn resolves_below_root(path: &Path, roots: &[String]) -> bool {
+    let Ok(resolved) = path.canonicalize() else {
+        return false;
+    };
+    let resolved_roots: Vec<String> = roots
+        .iter()
+        .filter_map(|root| Path::new(root).canonicalize().ok())
+        .map(|root| root.to_string_lossy().into_owned())
+        .collect();
+    is_below_root(&resolved, &resolved_roots)
+}
+
 async fn delete_model_path(model_path: &str) -> Response {
     let path = Path::new(model_path);
 
-    let is_valid_hf = HF_ROOTS.iter().any(|root| path.starts_with(root));
-    let is_valid_gguf = GGUF_ROOTS.iter().any(|root| path.starts_with(root));
+    let is_valid_hf = is_below_root(path, &HF_ROOTS);
+    let is_valid_gguf = is_below_root(path, &GGUF_ROOTS);
 
     if !is_valid_hf && !is_valid_gguf {
         return Response::text(
@@ -57,6 +79,15 @@ async fn delete_model_path(model_path: &str) -> Response {
         return Response::text(
             quench_http::http::StatusCode::NOT_FOUND,
             "api_error_model_not_found",
+        );
+    }
+
+    if !(is_valid_hf && resolves_below_root(path, &HF_ROOTS)
+        || is_valid_gguf && resolves_below_root(path, &GGUF_ROOTS))
+    {
+        return Response::text(
+            quench_http::http::StatusCode::FORBIDDEN,
+            "api_error_invalid_model_path",
         );
     }
 
