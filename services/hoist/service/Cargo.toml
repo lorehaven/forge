@@ -1,6 +1,6 @@
 [package]
 name = "hoist-service"
-version = "0.1.1"
+version = "0.1.2"
 edition.workspace = true
 description = "Hoist's public catalogue: F-Droid, IzzyOnDroid and Aptoide merged into one, served to the app's Public tab"
 publish = false

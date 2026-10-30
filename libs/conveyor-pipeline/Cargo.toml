@@ -1,6 +1,6 @@
 [package]
 name = "conveyor-pipeline"
-version = "0.2.1"
+version = "0.2.2"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "The Conveyor pipeline language - parsing, conditions and run planning"
