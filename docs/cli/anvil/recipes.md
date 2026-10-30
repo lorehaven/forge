@@ -79,7 +79,7 @@ anvil artifact release hoist --skip-existing   # re-run after a partial failure
 
 ```bash
 anvil docs check                       # front matter, navigation, links, OpenAPI against the routes
-anvil docs build forge --offline       # Jekyll with the installed gems -> target/docs/forge/
+anvil docs build forge                 # Jekyll with the installed just-the-docs gem -> target/docs/forge/
 anvil docs release forge --dry-run     # build, show what would be sent
 anvil docs release                     # every book, to the warehouse files storage
 ```

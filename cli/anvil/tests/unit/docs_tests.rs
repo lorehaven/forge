@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use anvil::commands::artifact::Upload;
 use anvil::commands::docs::{
     Options, check_book, destinations, links, normalise_route, openapi_problems, release_with,
-    source_routes, split_front_matter,
+    rewrite_links, source_routes, split_front_matter,
 };
 use anvil::config::Config;
 
@@ -379,4 +379,84 @@ fn the_destinations_are_book_version_and_latest() {
             "forge/latest.json"
         ]
     );
+}
+
+#[quench_test::test]
+fn links_between_pages_point_at_the_html_jekyll_writes() {
+    let body = "[a](a.md) [b](../dir/b.md#part) [c](c.md?x=1) [d](https://x.example/d.md) [e](dir/) [f](f.pdf)\n\
+                `[no](code.md)`\n```\n[no](fenced.md)\n```\n[g](G.MD)\n";
+    assert_eq!(
+        rewrite_links(body),
+        "[a](a.html) [b](../dir/b.html#part) [c](c.html?x=1) [d](https://x.example/d.md) [e](dir/) [f](f.pdf)\n\
+         `[no](code.md)`\n```\n[no](fenced.md)\n```\n[g](G.html)\n"
+    );
+}
+
+#[cfg(unix)]
+#[quench_test::test]
+fn jekyll_is_given_a_staged_copy_with_the_links_rewritten() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (root, config) = demo("staged");
+    write(
+        &root,
+        "docs/other.md",
+        &page("Other", "nav_order: 2\n", "[home](index.md)"),
+    );
+    // A Jekyll that copies what it is given, so the test can look at it.
+    let script = root.join("copy-jekyll");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then exit 0; fi\n\
+         while [ $# -gt 0 ]; do case \"$1\" in --destination) dest=\"$2\"; shift;; --source) src=\"$2\"; shift;; esac; shift; done\n\
+         mkdir -p \"$dest\" && cp -r \"$src\"/. \"$dest\"/\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = Config {
+        docs: anvil::config::DocsConfig {
+            jekyll: Some(script.to_string_lossy().into_owned()),
+            ..config.docs
+        },
+        ..config
+    };
+    anvil::commands::docs::build(
+        &config,
+        &root,
+        Some("demo"),
+        &Options::default(),
+        &mut Vec::new(),
+    )
+    .unwrap();
+    let built = std::fs::read_to_string(root.join("target/docs/demo/site/other.md")).unwrap();
+    assert!(built.contains("[home](index.html)"), "{built}");
+    // The book itself is untouched.
+    let original = std::fs::read_to_string(root.join("docs/other.md")).unwrap();
+    assert!(original.contains("[home](index.md)"), "{original}");
+}
+
+#[cfg(unix)]
+#[quench_test::test]
+fn a_missing_gem_is_named_in_the_error() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (root, config) = demo("gem");
+    let script = root.join("bad-jekyll");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then exit 0; fi\n\
+         echo \"cannot load such file -- jekyll-remote-theme (LoadError)\" >&2\nexit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = Config {
+        docs: anvil::config::DocsConfig {
+            jekyll: Some(script.to_string_lossy().into_owned()),
+            ..config.docs
+        },
+        ..config
+    };
+    let err =
+        anvil::commands::docs::build(&config, &root, None, &Options::default(), &mut Vec::new())
+            .unwrap_err()
+            .to_string();
+    assert!(err.contains("gem install jekyll-remote-theme"), "{err}");
 }

@@ -270,9 +270,9 @@ pub enum DocsCommands {
     Build {
         /// The book, as named under [docs.books] (every book when left out)
         book: Option<String>,
-        /// Build with the installed gems: `just-the-docs` as a local theme, no remote theme and no network
+        /// Use the theme the book's `_config.yml` names (a remote theme: needs the `jekyll-remote-theme` gem and the network) instead of the installed `just-the-docs` gem
         #[arg(long)]
-        offline: bool,
+        remote_theme: bool,
         /// Skip the checks
         #[arg(long)]
         no_check: bool,
@@ -290,9 +290,9 @@ pub enum DocsCommands {
         /// Build and check everything, but send nothing
         #[arg(long)]
         dry_run: bool,
-        /// Build with the installed gems: `just-the-docs` as a local theme, no remote theme and no network
+        /// Use the theme the book's `_config.yml` names (a remote theme: needs the `jekyll-remote-theme` gem and the network) instead of the installed `just-the-docs` gem
         #[arg(long)]
-        offline: bool,
+        remote_theme: bool,
         /// Skip the checks
         #[arg(long)]
         no_check: bool,

@@ -10,8 +10,8 @@ nav_order: 4
 ```text
 anvil docs list
 anvil docs check   [BOOK]
-anvil docs build   [BOOK] [--offline] [--no-check] [--out DIR] [--baseurl URL]
-anvil docs release [BOOK] [--dry-run] [--offline] [--no-check] [--baseurl URL]
+anvil docs build   [BOOK] [--remote-theme] [--no-check] [--out DIR] [--baseurl URL]
+anvil docs release [BOOK] [--dry-run] [--remote-theme] [--no-check] [--baseurl URL]
 ```
 
 `BOOK` is a name from `[docs.books]`; left out, the command runs for every book, in name order. These commands do not run through the output pump, so `--silent` and `--tail` have no effect.
@@ -55,12 +55,12 @@ Checks the book (unless `--no-check`), runs `jekyll build`, and packs the result
 
 | Option | Meaning |
 |---|---|
-| `--offline` | Build with the gems that are installed: `remote_theme` is switched off, `just-the-docs` is used as a local theme and only `jekyll-seo-tag` is loaded, so nothing is fetched. Without it the book's own `_config.yml` decides (the book's `remote_theme` needs the network at build time). |
+| `--remote-theme` | Use the theme the book's `_config.yml` names (`remote_theme`, fetched from GitHub: needs the `jekyll-remote-theme` gem and the network). By default the installed `just-the-docs` gem is the theme and only `jekyll-seo-tag` is loaded, so nothing is fetched. |
 | `--no-check` | Skip the checks. |
 | `--out <dir>` | Where the builds go (default: `out` under `[docs]`, else `target/docs`). |
 | `--baseurl <url>` | The `baseurl` the site is built for, for a site served below a path (`/docs/forge`). Default: the book's `baseurl`, else the one in `_config.yml`. |
 
-Jekyll is started as `jekyll build --source <dir> --disable-disk-cache --destination <out>/<book>/site [--config <dir>/_config.yml[,<offline override>]] [--baseurl <url>]` with `JEKYLL_ENV=production`. The command is `jekyll` unless `[docs].jekyll` says otherwise (`bundle exec jekyll`). If it cannot be run, anvil says how to install it. A failed Jekyll run prints the last 25 lines of its error output.
+Jekyll is started as `jekyll build --source <out>/<book>/src --disable-disk-cache --destination <out>/<book>/site --config <out>/<book>/src/_config.yml,<out>/<book>/jekyll-override.yml [--baseurl <url>]` with `JEKYLL_ENV=production`. The command is `jekyll` unless `[docs].jekyll` says otherwise (`bundle exec jekyll`). If it cannot be run, anvil says how to install it. A failed Jekyll run prints the last 25 lines of its error output, and names a missing gem (`gem install <gem>`).
 
 What a build leaves under `<out>/<book>/`:
 
@@ -69,12 +69,13 @@ What a build leaves under `<out>/<book>/`:
 | `site/` | The Jekyll output; cleared at the start of every build. |
 | `<book>-<version>.tar.gz` | Every file of `site/` (paths relative to it), as a gzip-compressed tar. The archive is **reproducible**: entries are sorted, owner is root, modification time is 0, so the same site gives the same bytes. |
 | `manifest.json` | `book`, `title`, `version`, `built` (UTC, RFC 3339), `archive` (file name), `archive_bytes`, `archive_sha256`, `files`, `site_bytes`, and `baseurl` when there is one. |
-| `jekyll-offline.yml` | With `--offline`: the override configuration. |
+| `src/` | The staged copy of the book that Jekyll reads: relative links to `.md` pages are rewritten to `.html` (what the `jekyll-relative-links` plugin does, so that plugin is not needed). The book itself is not changed. |
+| `jekyll-override.yml` | The theme and plugin override passed to Jekyll. |
 
 The **version** of a book is, in this order: `version` from the configuration; the version of its `version_file` (a `Cargo.toml`, `[workspace.package]` else `[package]`); today's date (`2026-10-30`).
 
 ```text
-$ anvil docs build forge --offline
+$ anvil docs build forge
 ok   forge
 running: jekyll build /mnt/extdrive/projects/lorehaven/forge/docs
 built forge 2026-10-30: 223 files, 14727801 bytes -> target/docs/forge/forge-2026-10-30.tar.gz
@@ -95,12 +96,12 @@ An upload to an existing path replaces it, so releasing a version again replaces
 | Option | Meaning |
 |---|---|
 | `--dry-run` | Build and check everything, then print `would send <storage>/<path> (<bytes> bytes)` for each file; asks for no token and sends nothing. |
-| `--offline`, `--no-check`, `--baseurl` | As for `build`. |
+| `--remote-theme`, `--no-check`, `--baseurl` | As for `build`. |
 
 Refusals: `401`/`403` say to run `anvil login --scope warehouse:write` (and that the storage needs a write grant); `404` says the files storage does not exist (in the cluster it is a static storage, `docs=/docs` in `FILE_STORAGES` of the Warehouse deployment in homecloud; a dynamic storage can be created with the Warehouse's `POST /api/v1/files`); any other status prints the status and the body. `warehouse_url` comes from `[docs]`, else `[artifacts]`; `storage` is required.
 
 ```text
-$ anvil docs release forge --offline --dry-run
+$ anvil docs release forge --dry-run
 ok   forge
 running: jekyll build /mnt/extdrive/projects/lorehaven/forge/docs
 built forge 2026-10-30: 224 files, 14814378 bytes -> /mnt/extdrive/projects/lorehaven/forge/target/docs/forge/forge-2026-10-30.tar.gz
