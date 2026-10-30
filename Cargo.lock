@@ -89,7 +89,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "conveyor-core",
  "conveyor-pipeline",
@@ -188,7 +188,7 @@ dependencies = [
 
 [[package]]
 name = "daybook-service"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "daybook-web",
  "forge-web",
@@ -440,7 +440,7 @@ dependencies = [
 
 [[package]]
 name = "gantry-service"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "forge-web",
  "gantry-core",
@@ -513,7 +513,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-service"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "forge-web",
  "gatehouse-core",
@@ -568,7 +568,7 @@ dependencies = [
 
 [[package]]
 name = "gauge-service"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "forge-web",
  "gauge-core",
@@ -1509,7 +1509,7 @@ dependencies = [
 
 [[package]]
 name = "sage-service"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "forge-web",
  "quench-auth",
@@ -1610,7 +1610,7 @@ dependencies = [
 
 [[package]]
 name = "switchboard-service"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "forge-web",
  "quench-auth",
@@ -1725,7 +1725,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "forge-web",
  "quench-archive",
@@ -1897,7 +1897,7 @@ dependencies = [
 
 [[package]]
 name = "workbench-service"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "forge-web",
  "quench-auth",
