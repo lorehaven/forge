@@ -192,10 +192,20 @@ fn the_shipped_catalog_offers_every_estate_service_but_not_gatehouse() {
             "daybook",
             "gantry",
             "gauge",
+            "lectern",
             "sage",
             "switchboard",
             "warehouse",
             "workbench"
         ]
     );
+    // Documentation is for everyone: its card needs no grant, and there is nothing to grant.
+    let public: Vec<_> = shipped
+        .home_services()
+        .into_iter()
+        .filter(|s| s.public)
+        .map(|s| s.name)
+        .collect();
+    assert_eq!(public, ["lectern"]);
+    assert!(shipped.actions_for("lectern").is_empty());
 }

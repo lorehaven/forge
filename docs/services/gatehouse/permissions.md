@@ -23,6 +23,7 @@ Path: `PERMISSIONS_CONFIG` (default `config/permissions.toml`). A missing or inv
 [services.<name>]
 label = "Shown name"            # optional; default the key
 home = true                     # optional: a card on the dashboard
+public = true                   # optional: a service anyone may use; its card needs no grant (below)
 description = "English text"    # optional; card text until a translation exists
 actions = ["read", "write"]     # grantable action names, no implication between them
 resource_types = ["project"]    # optional: allows <type>:<id>:<action> grants
@@ -48,6 +49,7 @@ The service keys are also the realm's **audience list**. A service absent from t
 | `daybook` | Daybook | yes | `read`, `write` | |
 | `gantry` | Gantry | yes | `read`, `deploy`, `scale`, `activate`, `rollback` | `target` |
 | `gauge` | Gauge | yes | `read` | |
+| `lectern` | Lectern | yes (`public`) | none | |
 | `hoist` | Hoist | no | `read` | |
 | `gatehouse` | Gatehouse | no | `read-users`, `create-user`, `edit-user`, `delete-user`, `manage-permissions`, `manage-signing-keys`, `notify` | |
 
@@ -73,7 +75,7 @@ The admin form's checkboxes cover only the plain catalog actions (`perm_<service
 
 ## Dashboard visibility
 
-A catalog service with `home = true` gets a card when `<NAME>_UI_URL` (or `<NAME>_URL`) is set and `FEATURE_<NAME>_ENABLED` is not `0/false/no/off` (default on). The person sees the card if they can `read` it, hold any grant on it, or hold a wildcard role. Card text keys: `ui_service_<name>_title`, `ui_service_<name>_desc`.
+A catalog service with `home = true` gets a card when `<NAME>_UI_URL` (or `<NAME>_URL`) is set and `FEATURE_<NAME>_ENABLED` is not `0/false/no/off` (default on). The person sees the card if they can `read` it, hold any grant on it, or hold a wildcard role; the card of a `public` service (Lectern: documentation that needs no sign-in) is shown to everyone who is signed in, and such a service, having no `actions`, has no row in the permission editor. Card text keys: `ui_service_<name>_title`, `ui_service_<name>_desc`.
 
 ## OAuth clients
 

@@ -72,6 +72,7 @@ Names that are paths of the service itself (`api`, `health`, `ui`) cannot be boo
 * Identity towards Warehouse: the OAuth client `lectern-warehouse` (`client_credentials`, audience `warehouse`), defined in Gatehouse's `config/clients.toml`; its secret is `CLIENT_SECRET_LECTERN_WAREHOUSE` there and `WAREHOUSE_CLIENT_SECRET` here.
 * Caching: every file answers `Cache-Control: no-cache` with a weak `ETag` of the release version, so a revalidation is a `304` and a new release is never mixed with files cached from the last one. A page opened in the browser's window and the same page asked for by the frame have different validators and `Vary: Sec-Fetch-Dest`.
 * Responses carry `X-Content-Type-Options: nosniff` and a correlation id.
+* On the dashboard: Gatehouse shows a card for it to everyone who is signed in (`[services.lectern]` in its catalog has `public = true`, and Gatehouse needs `LECTERN_UI_URL`); there is no grant to hold, so Lectern has no row in the permission editor. The card's picture is `services/lectern/icon.png`.
 * Tab and top-bar icon: `services/lectern/icon.png`, served at `/ui/assets/favicon.png`.
 
 ## Pages

@@ -960,7 +960,7 @@ JSON the browser client draws its screens from (`/api/v1/ui/...`).
 
 Dashboard cards
 
-Services of the catalog with `home = true` whose `<NAME>_UI_URL` (or `<NAME>_URL`) is set and `FEATURE_<NAME>_ENABLED` is not off, filtered to those the person may use: holds `read` on it, or any grant on it, or a wildcard role. In catalog (name) order.
+Services of the catalog with `home = true` whose `<NAME>_UI_URL` (or `<NAME>_URL`) is set and `FEATURE_<NAME>_ENABLED` is not off, filtered to those the person may use: holds `read` on it, or any grant on it, or a wildcard role; a `public` service is always offered. `GET /api/v1/ui/admin/users/{username}` lists only the services that have actions to grant. In catalog (name) order.
 
 **Authentication:** `bearerAuth` or `sessionCookie`.
 

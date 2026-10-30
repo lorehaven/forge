@@ -48,6 +48,12 @@ label = "Hidden"
 home = true
 actions = ["read"]
 
+[services.opendemo]
+label = "Open demo"
+home = true
+public = true
+actions = []
+
 [templates.viewer]
 pagesdemo = ["read"]
 "#,
@@ -276,6 +282,38 @@ async fn the_dashboard_offers_only_the_services_the_person_may_use() {
     let dashboard: Dashboard = read(&world, "/api/v1/ui/dashboard", Some(&admin)).await;
     assert!(labels(&dashboard).contains(&"Pages demo".to_string()));
     assert!(labels(&dashboard).contains(&"Hidden".to_string()));
+}
+
+#[quench_test::test]
+async fn a_public_service_has_its_card_for_everyone_and_nothing_to_grant() {
+    let _guard = auth_enabled().await;
+    quench_core::env::set("OPENDEMO_UI_URL", "https://demo.example.test/opendemo/");
+    let world = world().await;
+    person(&world, "alice", Role::User).await;
+
+    // A person with no grant at all still sees it; a switched-off one is not offered even then.
+    let nothing = bearer(&world, "alice", "gatehouse:read-users").await;
+    let dashboard: Dashboard = read(&world, "/api/v1/ui/dashboard", Some(&nothing)).await;
+    let card = dashboard
+        .services
+        .iter()
+        .find(|c| c.label == "Open demo")
+        .expect("the card");
+    assert_eq!(card.url, "https://demo.example.test/opendemo");
+    quench_core::env::set("FEATURE_OPENDEMO_ENABLED", "false");
+    let dashboard: Dashboard = read(&world, "/api/v1/ui/dashboard", Some(&nothing)).await;
+    assert!(dashboard.services.iter().all(|c| c.label != "Open demo"));
+    quench_core::env::remove("FEATURE_OPENDEMO_ENABLED");
+
+    // No row in the permission editor: there is nothing to tick.
+    let all = bearer(&world, "root", "admin").await;
+    let user: AdminUser = read(&world, "/api/v1/ui/admin/users/alice", Some(&all)).await;
+    assert!(
+        user.services.iter().all(|s| s.name != "opendemo"),
+        "{:?}",
+        user.services
+    );
+    assert!(user.services.iter().any(|s| s.name == "pagesdemo"));
 }
 
 #[quench_test::test]

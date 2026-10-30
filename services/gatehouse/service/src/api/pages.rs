@@ -110,7 +110,8 @@ async fn dashboard(subject: PageClaims, Inject(catalog): Inject<PermissionCatalo
     let services = enabled_services(&catalog)
         .into_iter()
         .filter(|service| {
-            claims.can(&service.name, "read")
+            service.public
+                || claims.can(&service.name, "read")
                 || held
                     .get(&service.name)
                     .is_some_and(|actions| !actions.is_empty())
@@ -299,6 +300,8 @@ async fn admin_user(
     };
     let services = catalog
         .service_names()
+        // A service anyone may use has nothing to grant.
+        .filter(|name| !catalog.actions_for(name).is_empty())
         .map(|name| CatalogService {
             name: name.to_string(),
             label: catalog.label(name).to_string(),

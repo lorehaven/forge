@@ -33,3 +33,15 @@ All three are under `BASE_PATH`, like every other route.
 * **A page shows without styles:** the book was built with a `baseurl` that is not the path Lectern serves it at. Release it without a `baseurl`, or with the right one.
 * **A new release does not show:** it appears within `LECTERN_REFRESH_SECS` of `latest.json` being written; releases write the archive first and `latest.json` last, so a half-written release is never picked up.
 * **Memory:** every book is held unpacked. The forge book is 224 files, about 15 MB.
+
+## Deploying
+
+The cluster overlay is `homecloud/overlays/forge/lectern/` (deployment, service, ingress, config map, secret), listed in `overlay.yaml`, with the values in `values.yaml` (`LECTERN_*`). The pod runs the image `forge/lectern/lectern`, reads `docs` through the cluster address of Warehouse (`LECTERN_WAREHOUSE_URL`) and signs in to it as the `lectern-warehouse` client. Public address: `https://ennor.ddns.net/lectern/`, with no authentication in front of it.
+
+What has to be in place, in this order:
+
+1. The Warehouse has the `docs` storage (`FILE_STORAGES` names `docs=/docs`, with the volume mounted).
+2. Gatehouse knows the client: `lectern-warehouse` in its `clients-configmap`, with its secret `CLIENT_SECRET_LECTERN_WAREHOUSE` in Gatehouse's secret, and the catalog entry `[services.lectern]` in its `permissions-configmap` (the card on the dashboard) with `LECTERN_UI_URL`. The same secret value goes into `lectern-secret` as `WAREHOUSE_CLIENT_SECRET`. Both come from `CLIENT_SECRET_LECTERN_WAREHOUSE` in `secrets.yaml`, which therefore has to be given a value (any random string) before the overlay renders.
+3. A Gatehouse release that knows `public` services. An older one does not read the `public` key, so the card would only show to people holding a grant on Lectern, which nobody can.
+4. The image is in the registry.
+5. At least one book is released (`anvil docs release`); until then the front page says no documentation has been published yet.

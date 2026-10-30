@@ -55,6 +55,7 @@ pub(super) async fn service_icon(Path(name): Path<String>) -> Response {
         "id-card" => include_bytes!("../../../../id-card.png"),
         "gauge" => include_bytes!("../../../../../gauge/icon.png"),
         "hoist" => include_bytes!("../../../../../hoist/icon.png"),
+        "lectern" => include_bytes!("../../../../../lectern/icon.png"),
         "sage" => include_bytes!("../../../../../sage/icon.png"),
         "switchboard" => include_bytes!("../../../../../switchboard/icon.png"),
         "warehouse" => include_bytes!("../../../../../warehouse/icon.png"),

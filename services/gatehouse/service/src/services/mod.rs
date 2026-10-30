@@ -19,6 +19,8 @@ pub struct ServiceLink {
     pub label: String,
     pub description: Option<String>,
     pub card_class: String,
+    /// Open to everyone: the card needs no grant.
+    pub public: bool,
 }
 
 /// `workbench` -> `WORKBENCH`, for `WORKBENCH_UI_URL` / `FEATURE_WORKBENCH_ENABLED`.
@@ -43,6 +45,7 @@ pub fn enabled_services(catalog: &PermissionCatalog) -> Vec<ServiceLink> {
                 label: service.label.to_string(),
                 description: service.description.map(str::to_string),
                 card_class: format!("home-card-{}", service.name),
+                public: service.public,
             })
         })
         .collect()

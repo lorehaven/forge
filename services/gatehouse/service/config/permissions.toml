@@ -38,6 +38,15 @@ actions = ["read", "write"]
 # sharing with someone who isn't the owner.
 resource_types = ["storage"]
 
+# Lectern shows the documentation books to anyone, so there is nothing to grant: `public` puts its card in front of
+# every signed-in person, and `actions` stays empty (no row in the permission editor).
+[services.lectern]
+label = "Lectern"
+home = true
+public = true
+description = "Documentation: the books of the estate."
+actions = []
+
 [services.conveyor]
 label = "Conveyor"
 home = true

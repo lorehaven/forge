@@ -22,6 +22,10 @@ struct ServiceEntry {
     /// English text for the card until (or unless) `ui_service_<name>_desc` translates it.
     #[serde(default)]
     description: Option<String>,
+    /// Open to everyone, with no grant to hold (a documentation reader): its card is shown to every signed-in
+    /// person, and it has no row in the permission editor.
+    #[serde(default)]
+    public: bool,
 }
 
 /// A service the home page may offer - what the catalog knows; the URL comes from the environment.
@@ -30,6 +34,8 @@ pub struct HomeService<'a> {
     pub name: &'a str,
     pub label: &'a str,
     pub description: Option<&'a str>,
+    /// Whether everyone may use it: the card is not tied to a grant.
+    pub public: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -109,6 +115,7 @@ impl PermissionCatalog {
                 name,
                 label: entry.label.as_deref().unwrap_or(name),
                 description: entry.description.as_deref(),
+                public: entry.public,
             })
             .collect()
     }
