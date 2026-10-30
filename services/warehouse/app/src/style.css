@@ -95,7 +95,7 @@ details>summary.wh-folder{cursor:pointer}
 .wh-preview{margin-top:1rem;padding-top:1rem;border-top:1px solid var(--wh-border)}
 .wh-preview-media{display:block;max-width:100%;max-height:60vh;object-fit:contain;background:var(--wh-surface-2);border:1px solid var(--wh-border);border-radius:.5rem}
 .wh-preview-audio{width:100%}
-.wh-preview-frame{width:100%;height:60vh;border:1px solid var(--wh-border);border-radius:.5rem;background:#fff}
+.wh-preview-frame{width:100%;height:60vh;border:1px solid var(--wh-border);border-radius:.5rem;background:var(--wh-surface)}
 
 /* the confirmation dialog */
 .wh-modal{position:fixed;inset:0;display:flex;z-index:9999;padding:1rem}
