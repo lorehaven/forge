@@ -4,12 +4,12 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gauge_core::{HostCard, HostDetail};
+use gauge_core::{AlertEvent, DiskForecast, HostCard, HostDetail, HostHistory, Range};
 use quench_ui::i18n::I18n;
 use quench_ui::prelude::*;
 use quench_ui::router::{History, RouteContext, Router, Routes};
 
-use crate::screens;
+use crate::{fleet, screens};
 
 /// What the app asks its host for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +18,12 @@ pub enum Request {
     Hosts,
     /// One host, with its history.
     Host(String),
+    /// How full each filesystem is and when it fills, from the stored history.
+    Forecast,
+    /// The alerts that opened and closed, from the stored history.
+    AlertLog,
+    /// One host's stored history over a range (never `Live`: that is in the host's own answer).
+    History(String, Range),
     /// The person chose a language (the host keeps it for next time).
     Language(String),
 }
@@ -27,6 +33,11 @@ pub enum Request {
 pub enum Msg {
     Hosts(Vec<HostCard>),
     Detail(Box<HostDetail>),
+    History(Box<HostHistory>),
+    Forecast(Vec<DiskForecast>),
+    AlertLog(Vec<AlertEvent>),
+    /// The service keeps no history: it has no database.
+    NoHistory,
     /// There is no such host.
     NotFound(String),
     /// The service could not be reached, or answered something else.
@@ -129,9 +140,16 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     let hosts: Signal<Option<Vec<HostCard>>> = create_signal(None);
     let detail: Signal<Option<HostDetail>> = create_signal(None);
     let problem: Signal<Option<Problem>> = create_signal(None);
+    let range: Signal<Range> = create_signal(Range::Live);
+    let stored: Signal<Option<HostHistory>> = create_signal(None);
+    let no_history: Signal<bool> = create_signal(false);
+    let forecast: Signal<Option<Vec<DiskForecast>>> = create_signal(None);
+    let alert_log: Signal<Option<Vec<AlertEvent>>> = create_signal(None);
 
     {
         let (hosts, detail, problem) = (hosts.clone(), detail.clone(), problem.clone());
+        let (stored, no_history) = (stored.clone(), no_history.clone());
+        let (forecast, alert_log) = (forecast.clone(), alert_log.clone());
         *inbox.borrow_mut() = Some(Rc::new(move |m: Msg| match m {
             Msg::Hosts(list) => {
                 problem.set(None);
@@ -141,6 +159,20 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                 problem.set(None);
                 detail.set(Some(*d));
             }
+            Msg::History(h) => {
+                problem.set(None);
+                no_history.set(false);
+                stored.set(Some(*h));
+            }
+            Msg::Forecast(list) => {
+                problem.set(None);
+                forecast.set(Some(list));
+            }
+            Msg::AlertLog(list) => {
+                problem.set(None);
+                alert_log.set(Some(list));
+            }
+            Msg::NoHistory => no_history.set(true),
             Msg::NotFound(name) => problem.set(Some(Problem::NotFound(name))),
             Msg::Failed(why) => problem.set(Some(Problem::Failed(why))),
             Msg::SignedOut => problem.set(Some(Problem::SignedOut)),
@@ -182,11 +214,38 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             base.clone(),
             Rc::clone(&setup.now),
         );
+        let (range, stored, no_history) = (range.clone(), stored.clone(), no_history.clone());
         move |ctx: &RouteContext| -> View {
             let name = ctx.param("name").unwrap_or_default();
+            range.set(Range::Live);
             requests(Request::Host(name.clone()));
             let (again, who) = (Rc::clone(&requests), name.clone());
             poll(refresh, Rc::new(move || again(Request::Host(who.clone()))));
+            // The stored history changes by the minute: ask for it far less often.
+            let (again, who, asked) = (Rc::clone(&requests), name.clone(), range.clone());
+            poll(
+                refresh * 6,
+                Rc::new(move || {
+                    if asked.get() != Range::Live {
+                        again(Request::History(who.clone(), asked.get()));
+                    }
+                }),
+            );
+            let pick: Rc<dyn Fn(Range)> = {
+                let (requests, who, range, no_history) = (
+                    Rc::clone(&requests),
+                    name.clone(),
+                    range.clone(),
+                    no_history.clone(),
+                );
+                Rc::new(move |r| {
+                    range.set(r);
+                    if r != Range::Live {
+                        no_history.set(false);
+                        requests(Request::History(who.clone(), r));
+                    }
+                })
+            };
             let (i18n, detail, problem, base, now) = (
                 Rc::clone(&i18n),
                 detail.clone(),
@@ -194,12 +253,22 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                 base.clone(),
                 Rc::clone(&now),
             );
+            let (range, stored, no_history) = (range.clone(), stored.clone(), no_history.clone());
             View::dynamic(move || {
                 if problem.get() == Some(Problem::NotFound(name.clone())) {
                     return screens::not_found(&i18n, &base);
                 }
                 match detail.get() {
-                    Some(d) if d.host.name == name => screens::host(&i18n, &d, &base, now()),
+                    Some(d) if d.host.name == name => {
+                        let stored = stored.get();
+                        let looking = screens::Looking {
+                            range: range.get(),
+                            stored: stored.as_ref(),
+                            unavailable: no_history.get(),
+                            pick: Rc::clone(&pick),
+                        };
+                        screens::host(&i18n, &d, &base, now(), &looking)
+                    }
                     _ => p()
                         .attr("id", "waiting")
                         .class("fui-empty")
@@ -209,7 +278,105 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             })
         }
     };
+    // The screens across hosts show what the list of hosts already carries, and poll it like the home screen does.
+    let across = |screen: fn(&I18n, Option<&[HostCard]>, &str, f64) -> View| {
+        let (i18n, hosts, requests, base, now) = (
+            Rc::clone(&i18n),
+            hosts.clone(),
+            Rc::clone(requests),
+            base.clone(),
+            Rc::clone(&setup.now),
+        );
+        move |_: &RouteContext| -> View {
+            requests(Request::Hosts);
+            let again = Rc::clone(&requests);
+            poll(refresh, Rc::new(move || again(Request::Hosts)));
+            let (i18n, hosts, base, now) = (
+                Rc::clone(&i18n),
+                hosts.clone(),
+                base.clone(),
+                Rc::clone(&now),
+            );
+            View::dynamic(move || screen(&i18n, hosts.get().as_deref(), &base, now()))
+        }
+    };
+    // Storage also wants the forecast, which changes by the hour: asked for on arrival and then once a minute.
+    let storage = {
+        let (i18n, hosts, forecast, requests, base, now) = (
+            Rc::clone(&i18n),
+            hosts.clone(),
+            forecast.clone(),
+            Rc::clone(requests),
+            base.clone(),
+            Rc::clone(&setup.now),
+        );
+        move |_: &RouteContext| -> View {
+            requests(Request::Hosts);
+            requests(Request::Forecast);
+            let again = Rc::clone(&requests);
+            poll(refresh, Rc::new(move || again(Request::Hosts)));
+            let again = Rc::clone(&requests);
+            poll(refresh * 6, Rc::new(move || again(Request::Forecast)));
+            let (i18n, hosts, forecast, base, now) = (
+                Rc::clone(&i18n),
+                hosts.clone(),
+                forecast.clone(),
+                base.clone(),
+                Rc::clone(&now),
+            );
+            View::dynamic(move || {
+                fleet::storage(
+                    &i18n,
+                    hosts.get().as_deref(),
+                    forecast.get().as_deref(),
+                    &base,
+                    now(),
+                )
+            })
+        }
+    };
+    // Alerts also want the log, which changes when an alert opens or closes: asked for on arrival and every half minute.
+    let alerts = {
+        let (i18n, hosts, alert_log, requests, base, now) = (
+            Rc::clone(&i18n),
+            hosts.clone(),
+            alert_log.clone(),
+            Rc::clone(requests),
+            base.clone(),
+            Rc::clone(&setup.now),
+        );
+        move |_: &RouteContext| -> View {
+            requests(Request::Hosts);
+            requests(Request::AlertLog);
+            let again = Rc::clone(&requests);
+            poll(refresh, Rc::new(move || again(Request::Hosts)));
+            let again = Rc::clone(&requests);
+            poll(refresh * 3, Rc::new(move || again(Request::AlertLog)));
+            let (i18n, hosts, alert_log, base, now) = (
+                Rc::clone(&i18n),
+                hosts.clone(),
+                alert_log.clone(),
+                base.clone(),
+                Rc::clone(&now),
+            );
+            View::dynamic(move || {
+                fleet::alerts(
+                    &i18n,
+                    hosts.get().as_deref(),
+                    alert_log.get().as_deref(),
+                    &base,
+                    now(),
+                )
+            })
+        }
+    };
     let routes = Routes::new()
+        .route(&format!("{base}/ui/fleet"), across(fleet::fleet))
+        .route(&format!("{base}/ui/storage"), storage)
+        .route(&format!("{base}/ui/gpus"), across(fleet::gpus))
+        .route(&format!("{base}/ui/network"), across(fleet::network))
+        .route(&format!("{base}/ui/power"), across(fleet::power))
+        .route(&format!("{base}/ui/alerts"), alerts)
         .route(&format!("{base}/ui/home"), home.clone())
         .route(&format!("{base}/ui/home/"), home.clone())
         .route(&format!("{base}/ui"), home.clone())
@@ -269,7 +436,10 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     div()
         .attr("id", "gauge")
         .class("fui-app fui-client")
-        .child(forge_shell::sidebar(&bar, vec![]))
+        .child(forge_shell::sidebar(
+            &bar,
+            vec![screens::sidebar(&i18n, &router, &base)],
+        ))
         .child(
             div()
                 .class("fui-client-col")

@@ -1,7 +1,7 @@
 //! How the app's requests become calls to the service, and how the answers become messages.
 
 use gauge_app::{Msg, Request};
-use gauge_core::{HostCard, HostDetail};
+use gauge_core::{AlertEvent, DiskForecast, HostCard, HostDetail, HostHistory};
 use quench_serde::json;
 
 /// The service's path prefix from the page's own path: `/gauge/ui/home` is `/gauge`, `/ui/home` is no prefix.
@@ -34,6 +34,13 @@ pub fn url_for(base: &str, request: &Request) -> Option<String> {
     match request {
         Request::Hosts => Some(format!("{base}/api/v1/hosts")),
         Request::Host(name) => Some(format!("{base}/api/v1/hosts/{}", segment(name))),
+        Request::History(name, range) => Some(format!(
+            "{base}/api/v1/hosts/{}/history?range={}",
+            segment(name),
+            range.as_str()
+        )),
+        Request::Forecast => Some(format!("{base}/api/v1/forecast")),
+        Request::AlertLog => Some(format!("{base}/api/v1/alerts/history")),
         Request::Language(_) => None,
     }
 }
@@ -47,13 +54,26 @@ pub fn interpret(request: &Request, status: u16, body: &str) -> Msg {
             Request::Host(_) => {
                 json::from_str::<HostDetail>(body).map(|d| Msg::Detail(Box::new(d)))
             }
+            Request::History(..) => {
+                json::from_str::<HostHistory>(body).map(|h| Msg::History(Box::new(h)))
+            }
+            Request::Forecast => json::from_str::<Vec<DiskForecast>>(body).map(Msg::Forecast),
+            Request::AlertLog => json::from_str::<Vec<AlertEvent>>(body).map(Msg::AlertLog),
             Request::Language(_) => return Msg::Failed("nothing to ask".into()),
         }
         .unwrap_or_else(|e| Msg::Failed(format!("the service answered something unreadable: {e}"))),
         401 => Msg::SignedOut,
         403 => Msg::Failed("this account may not see Gauge: ask for access in gatehouse".into()),
+        // No database behind the service: a fact about it, not a failure of the screen.
+        503 if matches!(
+            request,
+            Request::History(..) | Request::Forecast | Request::AlertLog
+        ) =>
+        {
+            Msg::NoHistory
+        }
         404 => match request {
-            Request::Host(name) => Msg::NotFound(name.clone()),
+            Request::Host(name) | Request::History(name, _) => Msg::NotFound(name.clone()),
             _ => Msg::Failed("the service answered 404".into()),
         },
         other => Msg::Failed(format!("the service answered {other}")),

@@ -12,7 +12,7 @@ pub const H: f64 = 64.0;
 /// One series, `None` where the agent reported nothing (a gap).
 #[derive(Debug, Clone, Copy)]
 pub struct Series<'a> {
-    /// `1` or `2`: which colour.
+    /// `1` to `3`: which colour.
     pub colour: u8,
     pub values: &'a [Option<f64>],
 }
@@ -47,7 +47,7 @@ pub fn points(values: &[Option<f64>], max: f64, slots: usize) -> Vec<String> {
 const STYLE: &str = "<style>\
 .g{stroke:#98a2b3;stroke-opacity:.28;stroke-width:1}\
 .l{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}\
-.l1{stroke:#17b26a}.l2{stroke:#2e90fa}.a1{fill:#17b26a;fill-opacity:.12}\
+.l1{stroke:#17b26a}.l2{stroke:#2e90fa}.l3{stroke:#f79009}.a1{fill:#17b26a;fill-opacity:.12}\
 </style>";
 
 /// A line chart of `slots` evenly spaced samples (the newest at the right edge), scaled 0..`max`, with a faint area under
@@ -89,7 +89,7 @@ pub fn line_svg(series: &[Series<'_>], max: f64, slots: usize) -> String {
             let _ = write!(
                 svg,
                 "<polyline class='l l{}' points='{run}' vector-effect='non-scaling-stroke'/>",
-                s.colour.clamp(1, 2)
+                s.colour.clamp(1, 3)
             );
         }
     }

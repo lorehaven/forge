@@ -36,11 +36,13 @@ fn view() -> View {
             vram_used: Some(8.0e9),
             vram_total: Some(24.0e9),
             temp_c: Some(55.0),
+            ..Gpu::default()
         }],
         temps: vec![Temp {
             label: "Tctl".into(),
             celsius: 48.0,
         }],
+        ..View::default()
     }
 }
 

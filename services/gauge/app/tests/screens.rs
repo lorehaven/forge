@@ -5,8 +5,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gauge_app::{Gauge, Msg, Request, Setup, gauge};
-use gauge_core::model::{Filesystem, Gpu, Point, Rate, Temp, View as Metrics};
-use gauge_core::{HostCard, HostDetail, HostSummary};
+use gauge_core::model::{
+    Alert, DiskStat, Fan, Filesystem, Gpu, LinkView, MemParts, Point, PsiPct, Rate, Temp,
+    View as Metrics,
+};
+use gauge_core::{AlertEvent, DiskForecast, HostCard, HostDetail, HostHistory, HostSummary, Range};
 use quench_ui::Event;
 use quench_ui::prelude::*;
 use quench_ui::router::{History, MemoryHistory};
@@ -113,11 +116,61 @@ fn metrics() -> Metrics {
             vram_used: Some(8.0e9),
             vram_total: Some(24.0e9),
             temp_c: Some(55.0),
+            power_w: Some(150.0),
+            power_cap_w: Some(300.0),
+            fan_rpm: Some(1500.0),
+            fan_max_rpm: Some(3000.0),
+            sclk_mhz: Some(2100.0),
+            mclk_mhz: Some(1249.0),
+            gtt_used: Some(1.0e9),
+            gtt_total: Some(4.0e10),
         }],
         temps: vec![Temp {
             label: "Tctl".into(),
             celsius: 48.0,
         }],
+        psi: Some(PsiPct {
+            cpu: 7.0,
+            mem: 3.0,
+            mem_full: 1.0,
+            io: 11.0,
+            io_full: 6.0,
+        }),
+        mem_parts: Some(MemParts {
+            anon: 8.0 * 1024.0 * 1024.0 * 1024.0,
+            cached: 30.0 * 1024.0 * 1024.0 * 1024.0,
+            buffers: 1024.0 * 1024.0 * 1024.0,
+            dirty: 2.0 * 1024.0 * 1024.0,
+        }),
+        swap_in_per_sec: Some(0.0),
+        swap_out_per_sec: Some(2048.0),
+        oom_kills: Some(3.0),
+        tcp_retrans_per_sec: Some(0.5),
+        disk_stats: vec![DiskStat {
+            name: "nvme0n1".into(),
+            util_pct: 37.0,
+            iops: 250.0,
+            read_ms: Some(0.4),
+            write_ms: None,
+            queue: 1.0,
+        }],
+        links: vec![LinkView {
+            name: "eth0".into(),
+            up: true,
+            speed: Some(125_000_000.0),
+            errors_per_sec: 0.0,
+        }],
+        fans: vec![Fan {
+            label: "nct6683 fan2".into(),
+            rpm: 900.0,
+        }],
+        alerts: vec![Alert {
+            key: "fault:btrfs nvme0n1 corruption".into(),
+            kind: "fault".into(),
+            detail: "btrfs nvme0n1 corruption: 2".into(),
+            severe: true,
+        }],
+        ..Metrics::default()
     }
 }
 
@@ -151,6 +204,11 @@ fn detail(name: &str) -> HostDetail {
         write: Some(2.0),
         gpu: Some(40.0),
         vram: Some(33.0),
+        psi_cpu: Some(2.0),
+        psi_mem: Some(1.0),
+        psi_io: Some(4.0),
+        disk_util: Some(12.0),
+        power: Some(120.0),
     };
     HostDetail {
         host: summary(name, true),
@@ -289,6 +347,22 @@ fn a_host_screen_has_every_section() {
         "48 °C",
         "load 0.50 · 0.40 · 0.30",
         "1d 1h",
+        "Needs a look",
+        "Hardware errors — btrfs nvme0n1 corruption: 2",
+        "Pressure",
+        "Programs 8.00 GiB",
+        "Cache 30.0 GiB",
+        "OOM kills",
+        "150 W / 300 W",
+        "1500 rpm (50%)",
+        "2100 / 1249 MHz",
+        "37%",
+        "0.4 ms / —",
+        "1000 Mb/s",
+        "TCP retransmits",
+        "Fans",
+        "nct6683 fan2",
+        "900 rpm",
     ] {
         assert!(
             text.contains(expected) || expected == "8.00 GB",
@@ -376,3 +450,419 @@ fn the_title_leads_home_and_sign_out_leaves() {
 }
 
 quench_test::main!();
+
+/// Opens a screen across hosts with a host that answers and one that does not.
+fn across(path: &str) -> Live {
+    let l = live(path);
+    assert_eq!(l.asked.borrow()[0], Request::Hosts);
+    (l.deliver)(Msg::Hosts(vec![
+        card("lorien", true),
+        card("nogrod", false),
+    ]));
+    l
+}
+
+#[quench_test::test]
+fn the_sidebar_leads_to_every_screen_and_marks_the_one_open() {
+    let l = across("/gauge/ui/storage");
+    let html = l.r.html();
+    for id in [
+        "nav-hosts",
+        "nav-fleet",
+        "nav-storage",
+        "nav-gpus",
+        "nav-network",
+        "nav-power",
+        "nav-alerts",
+    ] {
+        assert!(html.contains(&format!("id=\"{id}\"")), "{id}: {html}");
+    }
+    let storage = find(&l.r, "a", ("id", "nav-storage"));
+    assert_eq!(l.r.attr(storage, "aria-current").as_deref(), Some("page"));
+    let fleet = find(&l.r, "a", ("id", "nav-fleet"));
+    assert_eq!(l.r.attr(fleet, "aria-current"), None);
+}
+
+#[quench_test::test]
+fn a_host_screen_counts_as_the_hosts_in_the_sidebar() {
+    let l = live("/gauge/ui/hosts/lorien");
+    let hosts = find(&l.r, "a", ("id", "nav-hosts"));
+    assert_eq!(l.r.attr(hosts, "aria-current").as_deref(), Some("page"));
+}
+
+#[quench_test::test]
+fn storage_lists_every_filesystem_with_the_fullest_host_first_and_totals() {
+    let l = across("/gauge/ui/storage");
+    let text = l.r.text();
+    for expected in [
+        "Capacity",
+        "Free",
+        "Fullest",
+        "lorien / 80%",
+        "nvme0n1",
+        "37%",
+        "0.4 ms / —",
+        "nogrod",
+        "unreachable",
+    ] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
+}
+
+#[quench_test::test]
+fn the_fleet_has_a_row_per_host_and_a_bar_per_signal() {
+    let l = across("/gauge/ui/fleet");
+    let text = l.r.text();
+    for expected in [
+        "Host", "CPU", "Pressure", "lorien", "42%", "55 °C", "nogrod",
+    ] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
+}
+
+#[quench_test::test]
+fn the_gpus_screen_has_a_section_for_each_card_and_says_when_there_is_none() {
+    let l = across("/gauge/ui/gpus");
+    let text = l.r.text();
+    for expected in ["lorien", "RX 7900", "150 W / 300 W", "1500 rpm", "GPU busy"] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
+    let l = live("/gauge/ui/gpus");
+    let mut bare = card("pihole", true);
+    bare.host.view.as_mut().unwrap().gpus.clear();
+    (l.deliver)(Msg::Hosts(vec![bare]));
+    assert!(present(&l.r, "no-gpus"));
+}
+
+#[quench_test::test]
+fn the_network_screen_sums_throughput_and_shows_each_link() {
+    let l = across("/gauge/ui/network");
+    let text = l.r.text();
+    for expected in ["Received", "eth0", "1000 Mb/s", "0.00/s", "TCP retransmits"] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
+}
+
+#[quench_test::test]
+fn the_power_screen_adds_up_what_is_measured_on_hosts_that_answer() {
+    let l = across("/gauge/ui/power");
+    let text = l.r.text();
+    for expected in [
+        "Measured draw",
+        "150 W",
+        "55 °C",
+        "Tctl",
+        "nct6683 fan2",
+        "900 rpm",
+    ] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
+}
+
+#[quench_test::test]
+fn the_alerts_screen_puts_severe_ones_first_and_an_unreachable_host_is_severe() {
+    let l = live("/gauge/ui/alerts");
+    let mut busy = card("lorien", true);
+    busy.host.view.as_mut().unwrap().alerts.insert(
+        0,
+        Alert {
+            key: "swapping".into(),
+            kind: "swapping".into(),
+            detail: "3 MiB/s".into(),
+            severe: false,
+        },
+    );
+    (l.deliver)(Msg::Hosts(vec![busy, card("nogrod", false)]));
+    let text = l.r.text();
+    let at = |needle: &str| {
+        text.find(needle)
+            .unwrap_or_else(|| panic!("{needle}: {text}"))
+    };
+    let fault = at("Hardware errors — btrfs nvme0n1 corruption: 2");
+    let down = at("Host unreachable");
+    let swap = at("Swapping — 3 MiB/s");
+    assert!(fault < down && down < swap, "{text}");
+    assert!(!present(&l.r, "all-clear"));
+}
+
+#[quench_test::test]
+fn with_nothing_wrong_the_alerts_screen_says_so() {
+    let l = live("/gauge/ui/alerts");
+    let mut fine = card("lorien", true);
+    fine.host.view.as_mut().unwrap().alerts.clear();
+    (l.deliver)(Msg::Hosts(vec![fine]));
+    assert!(present(&l.r, "all-clear"));
+    assert!(l.r.text().contains("All clear."));
+}
+
+#[quench_test::test]
+fn a_screen_across_hosts_asks_again_until_it_is_left() {
+    let l = across("/gauge/ui/fleet");
+    tick(10_000.0);
+    tick(10_000.0);
+    assert_eq!(l.asked.borrow().len(), 3);
+}
+
+fn stored(range: &str, step_secs: u64) -> HostHistory {
+    let point = |t: f64| Point {
+        cpu: Some(10.0 + t),
+        mem: Some(20.0),
+        ..Point::gap(t)
+    };
+    HostHistory {
+        name: "lorien".into(),
+        range: range.into(),
+        step_secs,
+        points: vec![point(1.0), point(2.0), Point::gap(3.0), point(4.0)],
+    }
+}
+
+#[quench_test::test]
+fn the_host_screen_starts_live_and_offers_the_stored_ranges() {
+    let l = live("/gauge/ui/hosts/lorien");
+    (l.deliver)(Msg::Detail(Box::new(detail("lorien"))));
+    for id in ["range-1h", "range-24h", "range-7d", "range-30d"] {
+        assert!(present(&l.r, id), "{id}");
+    }
+    let live_button = find(&l.r, "button", ("id", "range-1h"));
+    assert_eq!(
+        l.r.attr(live_button, "aria-pressed").as_deref(),
+        Some("true")
+    );
+    assert!(
+        !present(&l.r, "range-note"),
+        "nothing to explain about the live view"
+    );
+    assert_eq!(*l.asked.borrow(), [Request::Host("lorien".into())]);
+}
+
+#[quench_test::test]
+fn choosing_a_range_asks_for_its_history_and_draws_it_when_it_comes() {
+    let l = live("/gauge/ui/hosts/lorien");
+    (l.deliver)(Msg::Detail(Box::new(detail("lorien"))));
+    l.r.fire(find(&l.r, "button", ("id", "range-7d")), &Event::Click);
+    assert_eq!(
+        l.asked.borrow().last(),
+        Some(&Request::History("lorien".into(), Range::Week))
+    );
+    assert!(
+        l.r.text().contains("Waiting for the first scrape"),
+        "until it comes"
+    );
+
+    (l.deliver)(Msg::History(Box::new(stored("7d", 1800))));
+    let text = l.r.text();
+    assert!(
+        text.contains("Showing the last 7d · 30m per point"),
+        "{text}"
+    );
+    let on = find(&l.r, "button", ("id", "range-7d"));
+    assert_eq!(l.r.attr(on, "aria-pressed").as_deref(), Some("true"));
+    assert!(l.r.html().matches("data:image/svg+xml,").count() >= 5);
+}
+
+#[quench_test::test]
+fn history_of_another_range_is_not_drawn_under_this_one() {
+    let l = live("/gauge/ui/hosts/lorien");
+    (l.deliver)(Msg::Detail(Box::new(detail("lorien"))));
+    l.r.fire(find(&l.r, "button", ("id", "range-30d")), &Event::Click);
+    (l.deliver)(Msg::History(Box::new(stored("24h", 300))));
+    assert!(l.r.text().contains("Waiting for the first scrape"));
+    assert!(!l.r.text().contains("per point"));
+}
+
+#[quench_test::test]
+fn a_service_without_a_database_says_so_and_the_live_view_still_works() {
+    let l = live("/gauge/ui/hosts/lorien");
+    (l.deliver)(Msg::Detail(Box::new(detail("lorien"))));
+    l.r.fire(find(&l.r, "button", ("id", "range-24h")), &Event::Click);
+    (l.deliver)(Msg::NoHistory);
+    assert!(l.r.text().contains("keeps no history"));
+    assert!(!present(&l.r, "problem"), "it is not an error banner");
+    l.r.fire(find(&l.r, "button", ("id", "range-1h")), &Event::Click);
+    assert!(!present(&l.r, "range-note"));
+}
+
+#[quench_test::test]
+fn the_open_range_asks_again_but_slowly_and_the_live_one_does_not() {
+    let l = live("/gauge/ui/hosts/lorien");
+    (l.deliver)(Msg::Detail(Box::new(detail("lorien"))));
+    l.r.fire(find(&l.r, "button", ("id", "range-24h")), &Event::Click);
+    let history_asks = || {
+        l.asked
+            .borrow()
+            .iter()
+            .filter(|q| matches!(q, Request::History(..)))
+            .count()
+    };
+    assert_eq!(history_asks(), 1);
+    tick(10_000.0);
+    assert_eq!(history_asks(), 1, "not on the live interval");
+    tick(50_000.0);
+    assert_eq!(history_asks(), 2, "a minute after");
+}
+
+fn forecast() -> Vec<DiskForecast> {
+    let gib = 1024.0 * 1024.0 * 1024.0;
+    vec![
+        DiskForecast {
+            host: "lorien".into(),
+            mount: "/".into(),
+            size: 931.0 * gib,
+            used: 745.0 * gib,
+            per_day: Some(12.0 * gib),
+            days_left: Some(15.0),
+        },
+        DiskForecast {
+            host: "nogrod".into(),
+            mount: "/".into(),
+            size: 931.0 * gib,
+            used: 745.0 * gib,
+            per_day: Some(0.0),
+            days_left: None,
+        },
+    ]
+}
+
+#[quench_test::test]
+fn the_storage_screen_asks_for_the_forecast_too_and_again_each_minute() {
+    let l = live("/gauge/ui/storage");
+    assert_eq!(*l.asked.borrow(), [Request::Hosts, Request::Forecast],);
+    tick(60_000.0);
+    let forecasts = l
+        .asked
+        .borrow()
+        .iter()
+        .filter(|q| **q == Request::Forecast)
+        .count();
+    assert_eq!(forecasts, 2);
+}
+
+#[quench_test::test]
+fn the_storage_screen_says_how_fast_each_disk_grows_and_when_it_fills() {
+    let l = across("/gauge/ui/storage");
+    assert!(
+        !l.r.text().contains("15 days"),
+        "nothing until the forecast comes"
+    );
+    (l.deliver)(Msg::Forecast(forecast()));
+    let text = l.r.text();
+    for expected in [
+        "Growth",
+        "Full in",
+        "+12.0 GiB/day",
+        "15 days",
+        "not growing",
+        "Fills first",
+    ] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
+}
+
+#[quench_test::test]
+fn without_history_the_storage_screen_still_lists_the_disks() {
+    let l = across("/gauge/ui/storage");
+    (l.deliver)(Msg::NoHistory);
+    let text = l.r.text();
+    assert!(text.contains("745 GiB / 931 GiB"), "{text}");
+    assert!(!text.contains("Fills first"));
+}
+
+#[quench_test::test]
+fn every_chart_has_a_time_axis_for_its_range() {
+    let l = live("/gauge/ui/hosts/lorien");
+    (l.deliver)(Msg::Detail(Box::new(detail("lorien"))));
+    let text = l.r.text();
+    for expected in ["−1 h", "−45 min", "−30 min", "−15 min", "now"] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
+    let axes = l.r.html().matches("gg-axis").count();
+    assert!(
+        axes >= 5,
+        "a chart each for CPU, memory, pressure, disks and network: {axes}"
+    );
+
+    l.r.fire(find(&l.r, "button", ("id", "range-30d")), &Event::Click);
+    (l.deliver)(Msg::History(Box::new(stored("30d", 7200))));
+    let text = l.r.text();
+    for expected in ["−30 d", "−22.5 d", "−15 d", "−7.5 d"] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
+    assert!(!text.contains("−1 h"));
+}
+
+fn event(
+    host: &str,
+    key: &str,
+    kind: &str,
+    opened_ago: f64,
+    closed_ago: Option<f64>,
+) -> AlertEvent {
+    let now = 1_800_000_000.0;
+    AlertEvent {
+        host: host.into(),
+        key: key.into(),
+        kind: kind.into(),
+        detail: format!("{key} detail"),
+        severe: true,
+        opened: now - opened_ago,
+        closed: closed_ago.map(|c| now - c),
+    }
+}
+
+#[quench_test::test]
+fn the_alerts_screen_asks_for_the_log_and_says_how_long_each_alert_has_gone_on() {
+    let l = live("/gauge/ui/alerts");
+    assert_eq!(*l.asked.borrow(), [Request::Hosts, Request::AlertLog]);
+    (l.deliver)(Msg::Hosts(vec![card("lorien", true)]));
+    assert!(
+        !l.r.text().contains(" · for "),
+        "nothing to say before the log comes"
+    );
+    (l.deliver)(Msg::AlertLog(vec![event(
+        "lorien",
+        "fault:btrfs nvme0n1 corruption",
+        "fault",
+        3.0 * 3600.0 + 120.0,
+        None,
+    )]));
+    let text = l.r.text();
+    assert!(
+        text.contains("Hardware errors — btrfs nvme0n1 corruption: 2 · for 3h 2m"),
+        "{text}"
+    );
+}
+
+#[quench_test::test]
+fn alerts_that_ended_are_listed_with_when_and_for_how_long() {
+    let l = live("/gauge/ui/alerts");
+    let mut fine = card("lorien", true);
+    fine.host.view.as_mut().unwrap().alerts.clear();
+    (l.deliver)(Msg::Hosts(vec![fine]));
+    (l.deliver)(Msg::AlertLog(vec![
+        event("nogrod", "down", "down", 7_200.0, Some(3_600.0)),
+        event("lorien", "hot:k10temp", "hot", 90_000.0, Some(86_400.0)),
+    ]));
+    assert!(present(&l.r, "all-clear"), "nothing is wrong now");
+    assert!(present(&l.r, "alert-log"));
+    let text = l.r.text();
+    for expected in [
+        "Recently ended",
+        "nogrod",
+        "Host unreachable — down detail",
+        "1h 0m ago · lasted 1h 0m",
+        "Running hot — hot:k10temp detail",
+        "1d 0h ago · lasted 1h 0m",
+    ] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
+}
+
+#[quench_test::test]
+fn without_a_log_the_alerts_screen_is_just_the_current_list() {
+    let l = live("/gauge/ui/alerts");
+    (l.deliver)(Msg::Hosts(vec![card("lorien", true)]));
+    (l.deliver)(Msg::NoHistory);
+    assert!(!present(&l.r, "alert-log"));
+    assert!(l.r.text().contains("Hardware errors"));
+}

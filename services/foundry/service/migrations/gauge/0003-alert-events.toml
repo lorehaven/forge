@@ -1,0 +1,33 @@
+[[migrations]]
+id = "0003-alert-events"
+author = "gauge-service"
+since = "0.4.0"
+
+# Alerts as they opened and closed, so "since when" outlives a restart and the Alerts screen has a log. `key` is what
+# the alert is of (`hot:k10temp`, `fills_soon:/data`, `down`); `detail` is the wording when it opened. A row with no
+# `closed` is still going; at most one row per host and key is open at once. Gauge closes rows left open by a
+# restart when it starts (an alert that outlives the restart opens again), so an event across a restart is split.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.alert_events (
+    id BIGSERIAL PRIMARY KEY,
+    host TEXT NOT NULL,
+    key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    severe BOOLEAN NOT NULL,
+    opened TIMESTAMPTZ NOT NULL,
+    closed TIMESTAMPTZ
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS alert_events_open_idx ON ${schema}.alert_events (host, key) WHERE closed IS NULL;
+"""
+
+# The log is read newest first.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS alert_events_opened_idx ON ${schema}.alert_events (opened);
+"""

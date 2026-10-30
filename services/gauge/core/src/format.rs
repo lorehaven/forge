@@ -41,6 +41,22 @@ pub fn duration(secs: f64) -> String {
     }
 }
 
+/// A span as an axis label: `45 min`, `6 h`, `1.5 d`.
+#[must_use]
+pub fn span(secs: f64) -> String {
+    let trim = |v: f64| {
+        let text = format!("{v:.1}");
+        text.strip_suffix(".0").unwrap_or(&text).to_string()
+    };
+    if secs >= 86_400.0 {
+        format!("{} d", trim(secs / 86_400.0))
+    } else if secs >= 3600.0 {
+        format!("{} h", trim(secs / 3600.0))
+    } else {
+        format!("{} min", trim(secs / 60.0))
+    }
+}
+
 /// "3h 12m ago" for a time `secs` in the past; "just now" under a minute.
 #[must_use]
 pub fn ago(secs: f64) -> String {

@@ -5,6 +5,8 @@
 mod api_tests;
 #[path = "unit/chart_tests.rs"]
 mod chart_tests;
+#[path = "unit/forecast_tests.rs"]
+mod forecast_tests;
 #[path = "unit/format_tests.rs"]
 mod format_tests;
 #[path = "unit/model_tests.rs"]

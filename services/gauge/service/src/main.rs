@@ -1,4 +1,9 @@
-use gauge_service::domain::{collector, config::Config, store::Store};
+use gauge_service::domain::{
+    collector,
+    config::Config,
+    history,
+    store::{ForecastCell, Store},
+};
 use gauge_service::routers;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::domain::session::SessionDb;
@@ -23,7 +28,19 @@ async fn main() -> std::io::Result<()> {
         config.targets.len(),
         config.interval_secs
     );
-    let store = Store::new(&config.targets);
+    let (tap, points) = tokio::sync::mpsc::unbounded_channel();
+    let forecast = ForecastCell::default();
+    let store = Store::new(&config.targets)
+        .with_tap(tap)
+        .with_forecast(forecast.clone());
+    let history = history::History::default();
+    history::spawn(
+        &history,
+        points,
+        quench_core::env::get_any(&["DATABASE_URL", "POSTGRES_URL"], ""),
+        history::retention_days(),
+        forecast,
+    );
     collector::spawn(&config, &store);
 
     let jwt_config = JwtConfig::init().await;
@@ -38,6 +55,7 @@ async fn main() -> std::io::Result<()> {
 
     let container = ContainerBuilder::new()
         .provide(store)
+        .provide(history)
         .provide(health_state)
         .provide(jwt_config.clone())
         .provide(sso_config)

@@ -29,3 +29,14 @@ fn a_bar_warns_at_three_quarters_and_is_critical_at_nine_tenths() {
     assert_eq!(Level::of(90.0), Level::Crit);
     assert_eq!(Level::Crit.class(), "gg-crit");
 }
+
+#[quench_test::test]
+fn a_span_is_short_and_has_no_trailing_zero() {
+    use gauge_core::format::span;
+    assert_eq!(span(3600.0), "1 h");
+    assert_eq!(span(2700.0), "45 min");
+    assert_eq!(span(86_400.0 * 7.0), "7 d");
+    assert_eq!(span(86_400.0 * 1.5), "1.5 d");
+    assert_eq!(span(3600.0 * 4.5), "4.5 h");
+    assert_eq!(span(0.0), "0 min");
+}

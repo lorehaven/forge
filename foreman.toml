@@ -443,8 +443,9 @@ cert_from = "services/warehouse/service"
 GATEHOUSE_CLIENT_SECRET = "${client_secret_gantry}"
 SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:11080"
 
-# Gauge reads the PCP / node_exporter endpoints listed in services/gauge/service/config/targets.toml and keeps
-# no state, so the realm is all it waits for.
+# Gauge reads the PCP / node_exporter endpoints listed in services/gauge/service/config/targets.toml. It keeps the
+# last hour in memory and a month of minute samples in Postgres (foundry's `gauge` module); it runs without the
+# database, so the realm is all it waits for.
 [[services]]
 name = "gauge"
 package = "gauge-service"

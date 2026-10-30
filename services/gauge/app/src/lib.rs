@@ -1,6 +1,7 @@
 //! Gauge's screens: the hosts, and one host with everything Gauge knows of it. The app does no I/O: it asks its host for
 //! the numbers (`live::Request`) and is told what came (`live::Msg`), so the same screens run in the browser and in tests.
 
+pub mod fleet;
 pub mod live;
 pub mod screens;
 

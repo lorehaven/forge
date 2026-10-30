@@ -1,0 +1,24 @@
+[[migrations]]
+id = "0002-filesystem-samples"
+author = "gauge-service"
+since = "0.3.0"
+
+# How full each filesystem was, once an hour: what "full in N days" is fitted to. A row is upserted every few
+# minutes while its hour is open, so it holds the hour's latest values. `mount` is the mount point, or the device for
+# an agent (PCP) that does not report one. Sizes are in bytes.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.filesystem_samples (
+    host TEXT NOT NULL,
+    mount TEXT NOT NULL,
+    t TIMESTAMPTZ NOT NULL,
+    size_bytes DOUBLE PRECISION NOT NULL,
+    used_bytes DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (host, mount, t)
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS filesystem_samples_t_idx ON ${schema}.filesystem_samples (t);
+"""

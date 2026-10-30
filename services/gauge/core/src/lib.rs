@@ -2,9 +2,13 @@
 
 pub mod api;
 pub mod chart;
+pub mod forecast;
 pub mod format;
 pub mod model;
 
-pub use api::{HostCard, HostDetail, HostSummary};
+pub use api::{AlertEvent, DiskForecast, HostCard, HostDetail, HostHistory, HostSummary, Range};
 pub use format::Level;
-pub use model::{Filesystem, Gpu, Point, Rate, Reading, Temp, View};
+pub use model::{
+    Alert, DiskStat, Fan, Fault, Filesystem, Gpu, LinkView, MemParts, Point, PsiPct, Rate, Reading,
+    Temp, View,
+};

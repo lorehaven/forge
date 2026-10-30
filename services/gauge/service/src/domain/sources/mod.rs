@@ -34,8 +34,7 @@ pub async fn scrape(http: &Client, target: &Target) -> Result<Reading, String> {
     if let Some(also) = &target.also
         && let Ok(extra) = node::scrape(http, also).await
     {
-        reading.gpus.extend(extra.gpus);
-        reading.temps.extend(extra.temps);
+        reading.merge(extra);
     }
     Ok(reading)
 }

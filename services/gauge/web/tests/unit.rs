@@ -97,3 +97,87 @@ fn the_stylesheet_is_the_apps() {
 }
 
 quench_test::main!();
+
+#[quench_test::test]
+fn the_stored_history_is_asked_by_range_and_read_back() {
+    use gauge_core::{HostHistory, Point, Range};
+    let ask = Request::History("a b".into(), Range::Week);
+    assert_eq!(
+        url_for("/gauge", &ask).as_deref(),
+        Some("/gauge/api/v1/hosts/a%20b/history?range=7d")
+    );
+    let body = json::to_string(&HostHistory {
+        name: "a b".into(),
+        range: "7d".into(),
+        step_secs: 1800,
+        points: vec![Point::gap(1.0)],
+    });
+    let Msg::History(h) = interpret(&ask, 200, &body) else {
+        panic!("not history")
+    };
+    assert_eq!((h.range.as_str(), h.points.len()), ("7d", 1));
+}
+
+#[quench_test::test]
+fn no_database_is_not_a_failure_of_the_screen() {
+    use gauge_core::Range;
+    let ask = Request::History("lorien".into(), Range::Day);
+    assert!(matches!(interpret(&ask, 503, "{}"), Msg::NoHistory));
+    assert!(matches!(
+        interpret(&Request::Hosts, 503, "{}"),
+        Msg::Failed(_)
+    ));
+    assert!(matches!(interpret(&ask, 404, "{}"), Msg::NotFound(n) if n == "lorien"));
+}
+
+#[quench_test::test]
+fn the_forecast_is_asked_for_and_read_back() {
+    use gauge_core::DiskForecast;
+    assert_eq!(
+        url_for("/gauge", &Request::Forecast).as_deref(),
+        Some("/gauge/api/v1/forecast")
+    );
+    let body = json::to_string(&vec![DiskForecast {
+        host: "lorien".into(),
+        mount: "/".into(),
+        size: 10.0,
+        used: 5.0,
+        per_day: Some(1.0),
+        days_left: Some(5.0),
+    }]);
+    let Msg::Forecast(list) = interpret(&Request::Forecast, 200, &body) else {
+        panic!("not a forecast")
+    };
+    assert_eq!(list[0].days_left, Some(5.0));
+    assert!(matches!(
+        interpret(&Request::Forecast, 503, "{}"),
+        Msg::NoHistory
+    ));
+}
+
+#[quench_test::test]
+fn the_alert_log_is_asked_for_and_read_back() {
+    use gauge_core::AlertEvent;
+    assert_eq!(
+        url_for("/gauge", &Request::AlertLog).as_deref(),
+        Some("/gauge/api/v1/alerts/history")
+    );
+    let body = json::to_string(&vec![AlertEvent {
+        host: "lorien".into(),
+        key: "hot:k10temp".into(),
+        kind: "hot".into(),
+        detail: "k10temp 95 °C".into(),
+        severe: true,
+        opened: 1.0,
+        closed: None,
+    }]);
+    let Msg::AlertLog(list) = interpret(&Request::AlertLog, 200, &body) else {
+        panic!("not a log")
+    };
+    assert_eq!(list[0].key, "hot:k10temp");
+    assert!(list[0].closed.is_none());
+    assert!(matches!(
+        interpret(&Request::AlertLog, 503, "{}"),
+        Msg::NoHistory
+    ));
+}

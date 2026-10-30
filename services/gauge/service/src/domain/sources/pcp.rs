@@ -107,6 +107,7 @@ fn gpus_from(x: &Exposition, busy: &str, used: &str, total: &str, temp: &str) ->
             vram_total: find(total, &card).map(|s| s.value * x.byte_scale(total)),
             temp_c: find(temp, &card).map(|s| s.value),
             name: card,
+            ..Gpu::default()
         })
         .collect()
 }
@@ -225,7 +226,6 @@ pub fn reading(x: &Exposition, at: f64) -> Reading {
             "network_interface_out_bytes",
             is_real_nic,
         ),
-        gpus: Vec::new(),
-        temps: Vec::new(),
+        ..Reading::default()
     }
 }

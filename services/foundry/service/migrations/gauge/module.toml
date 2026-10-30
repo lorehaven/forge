@@ -1,4 +1,5 @@
 name = "gauge"
-version = "0.1.0"
-description = "Gauge - host metrics dashboard; keeps no state, so this module has no migrations (foreman installs one per selected service)"
+version = "0.4.0"
+description = "Gauge - host metrics dashboard; keeps a month of one-minute samples per host of hourly filesystem fullness, and the alert log"
 default_schema = "gauge"
+requires = ["quench-core@^0.1"]

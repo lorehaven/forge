@@ -1,0 +1,50 @@
+[[migrations]]
+id = "0001-samples"
+author = "gauge-service"
+since = "0.2.0"
+
+# One row per host per minute: the mean and the highest of what the scrapes in that minute saw (a scrape is every
+# ten seconds, so six of them). Wide on purpose - 5 hosts is 7 200 rows a day, a month is about 216 000 - and a
+# column that is NULL is a signal the host does not report (no GPU, no pressure stall info).
+# `t` is the start of the minute. Retention is a DELETE the service runs; at this size no partitioning is worth it.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.samples (
+    host TEXT NOT NULL,
+    t TIMESTAMPTZ NOT NULL,
+    scrapes INTEGER NOT NULL,
+    cpu DOUBLE PRECISION,
+    cpu_max DOUBLE PRECISION,
+    mem DOUBLE PRECISION,
+    mem_max DOUBLE PRECISION,
+    net_rx DOUBLE PRECISION,
+    net_rx_max DOUBLE PRECISION,
+    net_tx DOUBLE PRECISION,
+    net_tx_max DOUBLE PRECISION,
+    disk_read DOUBLE PRECISION,
+    disk_read_max DOUBLE PRECISION,
+    disk_write DOUBLE PRECISION,
+    disk_write_max DOUBLE PRECISION,
+    gpu DOUBLE PRECISION,
+    gpu_max DOUBLE PRECISION,
+    vram DOUBLE PRECISION,
+    vram_max DOUBLE PRECISION,
+    psi_cpu DOUBLE PRECISION,
+    psi_cpu_max DOUBLE PRECISION,
+    psi_mem DOUBLE PRECISION,
+    psi_mem_max DOUBLE PRECISION,
+    psi_io DOUBLE PRECISION,
+    psi_io_max DOUBLE PRECISION,
+    disk_util DOUBLE PRECISION,
+    disk_util_max DOUBLE PRECISION,
+    gpu_power DOUBLE PRECISION,
+    gpu_power_max DOUBLE PRECISION,
+    PRIMARY KEY (host, t)
+);
+"""
+
+# The retention delete's own query; the key serves the per-host range reads.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS samples_t_idx ON ${schema}.samples (t);
+"""
