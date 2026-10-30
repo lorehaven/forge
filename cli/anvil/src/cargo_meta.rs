@@ -11,7 +11,7 @@
 //! string, not workspace inheritance) or guessing a package's directory
 //! from an anvil-configured module name (which only works when that name
 //! happens to double as a real path prefix, as it does for forge's own
-//! `docker/<service>/` layout but not every workspace's).
+//! `services/<name>/service` layout but not every workspace's).
 
 use quench_core::{Context, Result};
 use quench_serde::Value;

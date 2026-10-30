@@ -106,7 +106,7 @@ pub struct MacheteFinding {
 ///
 /// ```text
 /// cargo-machete found the following unused dependencies in this directory:
-/// workbench-service -- ./docker/workbench-service/Cargo.toml:
+/// workbench-service -- ./services/workbench/service/Cargo.toml:
 ///     rustls
 /// ```
 ///

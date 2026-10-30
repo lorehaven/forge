@@ -8,7 +8,12 @@ use std::pin::Pin;
 use daybook_core::Data;
 use daybook_host::{Op, Reply};
 use daybook_net::NetError;
-use daybook_net::api::{self, API, LOGIN, REFRESH, segment};
+use daybook_net::api::{self, API, segment};
+
+/// Sign-in goes through the page's own server (`daybook-service` passes it on to gatehouse), so the page only ever calls
+/// the address it came from.
+const LOGIN: &str = "/daybook/auth/login";
+const REFRESH: &str = "/daybook/auth/refresh";
 use quench_serde::{Map, Value, json};
 
 /// A request to send. `bearer` is the access token when the call needs one.

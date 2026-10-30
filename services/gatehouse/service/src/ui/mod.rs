@@ -1,0 +1,47 @@
+use quench_auth::domain::jwt::JwtConfig;
+use quench_core::async_trait;
+use quench_http::prelude::{FromRequest, HttpError, Request, Response, get};
+use quench_starter::common::routes::with_base_path;
+
+pub mod common;
+pub mod locale;
+pub mod pages;
+
+/// `/ui` is where the root redirects land: the service list when there is a
+/// session, the login form when there is not.
+struct UiRoot(bool);
+
+#[async_trait]
+impl FromRequest for UiRoot {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self(false));
+        };
+        Ok(Self(common::is_ui_authenticated(req, &config).await))
+    }
+}
+
+fn ui_root(authenticated: bool) -> Response {
+    if authenticated {
+        Response::new(quench_http::http::StatusCode::FOUND)
+            .header("Location", with_base_path("/ui/home"))
+    } else {
+        pages::auth::login_redirect()
+    }
+}
+
+#[get("/ui")]
+async fn root(UiRoot(authenticated): UiRoot) -> Response {
+    ui_root(authenticated)
+}
+
+#[get("/ui/")]
+async fn root_slash(UiRoot(authenticated): UiRoot) -> Response {
+    ui_root(authenticated)
+}
+
+pub fn register_routes() {
+    let _ = root as fn(_) -> _;
+    let _ = root_slash as fn(_) -> _;
+    pages::register_routes();
+}

@@ -68,7 +68,7 @@ A name that is not defined is an error rather than an empty string — a blank `
 ```toml
 [vars]
 database_url = "postgres://postgres:postgres@localhost:5432/postgres"
-jwt_secret = { env_file = "docker/api/.env", key = "JWT_SECRET", default = "dev" }
+jwt_secret = { env_file = "services/api/service/.env", key = "JWT_SECRET", default = "dev" }
 ```
 
 An entry is either a literal string, or `{ env_file, key, default }`, which lifts a value out of a dotenv file a service already reads so the config can't drift from what the services expect (`env_file` is relative to the project root; `default` is used if the key is missing). Vars cannot refer to one another — one pass, no ordering to reason about, nothing that can loop.
@@ -109,7 +109,7 @@ host = "localhost"
 health_path = "/health"
 start_timeout_secs = 30
 stop_timeout_secs = 4
-workdir = "docker/${package}"
+workdir = "services/${name}/service"
 cert_files = ["cert.pem", "key.pem"]
 env = { DATABASE_URL = "${database_url}", SERVER_ADDR = "0.0.0.0:${port}" }
 
@@ -120,7 +120,7 @@ port = 8443
 base_path = "/sage"
 needs = ["gatehouse", "switchboard"]
 unset = ["GATEHOUSE_URL"]            # drop a shared default, or an inherited name
-cert_from = "docker/warehouse-service"   # borrow a dev certificate
+cert_from = "services/warehouse/service"   # borrow a dev certificate
 env = { SAGE_MODE = "local" }
 
 # Applied only when that variable is set in foreman's own environment.

@@ -4,7 +4,6 @@
 .dockerignore
 .gitignore
 .git/
-docker/Dockerfile*
 **/target/
 **/dist/
 **/storage/
@@ -12,6 +11,6 @@ docker/Dockerfile*
 **/*.sh
 /vllm/
 /images/
-/services/hoist/android/
+/services/*/android/
 /docs/
 /plans/

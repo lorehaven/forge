@@ -398,14 +398,14 @@ fn nav_row(
     icon: Element,
     title: &str,
     count: usize,
-    on: Signal<bool>,
+    on: impl Fn() -> bool + 'static,
     pick: impl Fn() + 'static,
 ) -> View {
     button()
         .attr("type", "button")
         .attr("id", id)
         .class("dbk-nav-row")
-        .class_if("dbk-nav-on", move || on.get())
+        .class_if("dbk-nav-on", on)
         .child(icon)
         .child(span().class("dbk-nav-title").text(title))
         .child(span().class("dbk-nav-count").text(if count > 0 {
@@ -428,10 +428,7 @@ fn nav_view(nav: &Nav) -> View {
     };
     let is = |what: ListRef| {
         let list = nav.list.clone();
-        let on = create_signal(false);
-        let out = on.clone();
-        create_effect(move || out.set(list.get() == what));
-        on
+        move || list.get() == what
     };
     let mut rows: Vec<View> = vec![nav_row(
         "nav-inbox",
@@ -490,6 +487,24 @@ fn nav_view(nav: &Nav) -> View {
     div().class("dbk-nav").children(rows).into_view()
 }
 
+/// A task with the labels it shows.
+#[derive(Clone, PartialEq)]
+struct Row {
+    task: Task,
+    labels: Vec<Label>,
+}
+
+impl Row {
+    /// What identifies the row across updates: its task and everything the row shows of it. A row with the same key is
+    /// kept as it is, so the key changes when anything shown does.
+    fn key(&self) -> String {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        format!("{:?}{:?}", self.task, self.labels).hash(&mut hasher);
+        format!("{}:{:x}", self.task.id, hasher.finish())
+    }
+}
+
 struct Screen {
     data: Signal<Data>,
     list: Signal<ListRef>,
@@ -541,8 +556,28 @@ fn tasks_screen(s: &Screen) -> View {
             s.confirm.clone(),
             Rc::clone(&s.requests),
         );
+        let shape = {
+            let (data, list) = (data.clone(), list.clone());
+            create_memo(move || {
+                let current = list.get();
+                data.with(|d| {
+                    let own = match &current {
+                        ListRef::Inbox => String::new(),
+                        ListRef::Project(_) => title_of(d, &current),
+                        ListRef::Label(id) => d
+                            .labels
+                            .iter()
+                            .find(|l| &l.id == id)
+                            .map(|l| format!("{l:?}"))
+                            .unwrap_or_default(),
+                    };
+                    format!("{current:?}|{own}")
+                })
+            })
+        };
         let actions = move || {
             View::dynamic({
+                let shape = shape.clone();
                 let (data, list, naming, confirm, requests) = (
                     data.clone(),
                     list.clone(),
@@ -563,8 +598,10 @@ fn tasks_screen(s: &Screen) -> View {
                             .on_click(move || reload(Request::Reload))
                             .into_view(),
                     );
-                    let current = list.get();
-                    let d = data.get();
+                    // Only a change of the view or of its own name or colour rebuilds these buttons.
+                    let _ = shape.get();
+                    let current = list.get_untracked();
+                    let d = data.get_untracked();
                     let (edit, delete): (Option<Naming>, Option<Confirm>) = match &current {
                         ListRef::Inbox => (None, None),
                         ListRef::Project(id) => {
@@ -626,46 +663,78 @@ fn tasks_screen(s: &Screen) -> View {
             })
         };
         View::dynamic(move || {
-            let title = title_of(&title_data.get(), &title_list.get());
+            let title = title_data.with(|d| title_of(d, &title_list.get()));
             app_bar(&title, Some(menu()), vec![actions()]).into_view()
         })
     };
+    // What the list shows, worked out once per change of the data or the view; the rows of tasks that did not change are
+    // kept (the list is keyed by what a row shows), so checking one off no longer rebuilds every row.
+    let shown: Memo<Vec<Row>> = {
+        let (data, list, zone) = (s.data.clone(), s.list.clone(), s.zone.clone());
+        create_memo(move || {
+            let current = list.get();
+            data.with(|d| {
+                view(&d.tasks, &current, &zone)
+                    .into_iter()
+                    .map(|task| {
+                        let labels = task
+                            .label_ids
+                            .iter()
+                            .filter_map(|id| d.labels.iter().find(|l| &l.id == id).cloned())
+                            .collect();
+                        Row { task, labels }
+                    })
+                    .collect()
+            })
+        })
+    };
     let rows = {
-        let (data, list, zone, clock, requests, open_form, confirm) = (
-            s.data.clone(),
-            s.list.clone(),
+        let (zone, clock, requests, open_form, confirm) = (
             s.zone.clone(),
             Rc::clone(&s.clock),
             Rc::clone(&s.requests),
             Rc::clone(&s.open_form),
             s.confirm.clone(),
         );
-        View::dynamic(move || {
-            let tasks = view(&data.get().tasks, &list.get(), &zone);
-            if tasks.is_empty() {
-                return p()
-                    .attr("id", "empty")
-                    .class("dbk-empty")
-                    .text("Nothing here. Add a task with the + button.")
-                    .into_view();
-            }
-            let now = clock();
-            let items: Vec<View> = tasks
-                .iter()
-                .map(|t| {
-                    let row = task_row(t, now, &zone, &data.get(), &requests, &open_form);
-                    let (confirm, id, title) = (confirm.clone(), t.id.clone(), t.content.clone());
-                    li().child(swipe_action(row, "Delete", move || {
+        let (empty, items) = (shown.clone(), shown);
+        div()
+            .class("dbk-rows")
+            .child(View::show(
+                move || empty.with(Vec::is_empty),
+                || {
+                    p().attr("id", "empty")
+                        .class("dbk-empty")
+                        .text("Nothing here. Add a task with the + button.")
+                        .into_view()
+                },
+            ))
+            .child(ul().class("q-list dbk-tasks").child(View::keyed(
+                move || items.get(),
+                Row::key,
+                move |row: Row| {
+                    let row_view = task_row(
+                        &row.task,
+                        clock(),
+                        &zone,
+                        &row.labels,
+                        &requests,
+                        &open_form,
+                    );
+                    let (confirm, id, title) = (
+                        confirm.clone(),
+                        row.task.id.clone(),
+                        row.task.content.clone(),
+                    );
+                    li().child(swipe_action(row_view, "Delete", move || {
                         confirm.set(Some(Confirm::DeleteTask {
                             id: id.clone(),
                             title: title.clone(),
                         }))
                     }))
                     .into_view()
-                })
-                .collect();
-            ul().class("q-list dbk-tasks").children(items).into_view()
-        })
+                },
+            )))
+            .into_view()
     };
     let refreshing = s.loading.clone();
     let reload = Rc::clone(&s.requests);
@@ -702,7 +771,7 @@ fn task_row(
     t: &Task,
     now: Time,
     zone: &Zone,
-    data: &Data,
+    labels: &[Label],
     requests: &Rc<dyn Fn(Request)>,
     open_form: &Rc<dyn Fn(Target)>,
 ) -> View {
@@ -748,17 +817,15 @@ fn task_row(
                 .into_view(),
         );
     }
-    for label_id in &t.label_ids {
-        if let Some(l) = data.labels.iter().find(|l| &l.id == label_id) {
-            let (r, g, b) = l.rgb();
-            meta.push(
-                span()
-                    .class("dbk-label")
-                    .css("color", move || format!("rgb({r},{g},{b})"))
-                    .text(l.name.clone())
-                    .into_view(),
-            );
-        }
+    for l in labels {
+        let (r, g, b) = l.rgb();
+        meta.push(
+            span()
+                .class("dbk-label")
+                .css("color", move || format!("rgb({r},{g},{b})"))
+                .text(l.name.clone())
+                .into_view(),
+        );
     }
     let open = {
         let (open_form, task) = (Rc::clone(open_form), t.clone());

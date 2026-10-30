@@ -1,0 +1,87 @@
+use conveyor_service::notifications::gatehouse::GatehouseNotifier;
+use conveyor_service::notifications::{self, Notifications};
+use conveyor_service::{routers, startup};
+use quench_http::prelude::*;
+use quench_starter::common::health::HealthState;
+use quench_starter::common::routes::normalize_base_path;
+use quench_starter::common::wait::{gatehouse_health_url, wait_for_services};
+use quench_starter::http::serve_app;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    startup::init_tracing();
+    quench_core::env::set(
+        "SERVICE_NAME",
+        quench_core::env::get_or("SERVICE_NAME", "conveyor"),
+    );
+    quench_core::env::set(
+        "DB_SCHEMA",
+        quench_core::env::get_or("DB_SCHEMA", "conveyor"),
+    );
+
+    let base_path = normalize_base_path(&quench_core::env::get_or("BASE_PATH", "/"));
+    quench_log::info!("Server initialized with BASE_PATH: {base_path}");
+
+    let (state, db_wrapper) = startup::AppState::init().await;
+
+    // Reported at startup, not discovered mid-first-run.
+    startup::report_toolchain(&state.config);
+
+    // Workers share this process but talk to it only via the DB, so serving and building scale independently.
+    // Run-result mail goes through gatehouse; without its address and conveyor's secret for it, off.
+    let notifications = if let Some(notifier) = GatehouseNotifier::from_env() {
+        notifications::spawn_delivery(state.db.clone(), Arc::new(notifier));
+        Some(Arc::new(Notifications {
+            user_db: state.user_db.clone(),
+            auth_enabled: state.jwt_config.auth_enabled,
+        }))
+    } else {
+        quench_log::info!(
+            "CLIENT_SECRET_CONVEYOR_GATEHOUSE is not set: run notifications are switched off"
+        );
+        None
+    };
+    conveyor_service::scheduler::spawn_pool_notifying(
+        state.db.clone(),
+        state.config.clone(),
+        state.executor.0.clone(),
+        state.providers.clone(),
+        notifications,
+    );
+
+    // The clock for `on.schedule`: starts a `schedule` run whenever a repository's declared cron comes due.
+    conveyor_service::scheduler::schedules::spawn(state.db.clone());
+
+    let health_state = HealthState::live();
+    let gatehouse_health_url = gatehouse_health_url();
+    health_state.spawn_ready_when(async move {
+        wait_for_services("conveyor-service", vec![gatehouse_health_url.as_str()]).await;
+    });
+
+    let jwt_config = state.jwt_config.clone();
+
+    let container = ContainerBuilder::new()
+        .provide(db_wrapper.db.clone())
+        .provide(health_state)
+        .provide(state.config)
+        .provide(state.jwt_config)
+        .provide(state.sso_config)
+        .provide_arc(state.user_db)
+        .provide_arc(state.session_db)
+        .provide(state.db)
+        .provide(state.executor)
+        .provide_arc(state.providers)
+        .build()
+        .await
+        .unwrap_or_else(|e| panic!("dependency graph failed to resolve: {e}"));
+    let container = Arc::new(container);
+
+    // Only linked-in routes get discovered - see `routers::swagger::register_routes`'s doc comment.
+    routers::register_routes();
+
+    let app = quench_starter::http::discover_and_mount(base_path.clone());
+    let app = routers::wrap_auth(app, jwt_config, &base_path);
+
+    serve_app("conveyor-service", app, container).await
+}

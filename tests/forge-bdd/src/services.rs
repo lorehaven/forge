@@ -15,7 +15,7 @@ use tokio::time::{Duration, sleep};
 
 /// Lines gatehouse has printed to stdout, captured live.
 ///
-/// `LoggingSender` (`docker/gatehouse-service/src/email.rs`) writes the
+/// `LoggingSender` (`services/gatehouse/service/src/email.rs`) writes the
 /// registration/reset link nowhere else, by design - this is what lets the
 /// registration and password-reset BDD scenarios read a link they were never
 /// otherwise given. Every other service inherits the harness's own stdout
@@ -83,13 +83,9 @@ impl Fixture {
         Self { workspace_root }
     }
 
-    /// Where a service's crate lives: under `docker/`, or, for a service that is part of an app, in that app's
-    /// `service/` directory (`daybook-service` is `services/daybook/service`).
+    /// Where a service's crate lives: the `service/` directory of its project (`daybook-service` is
+    /// `services/daybook/service`).
     fn service_dir(&self, package: &str) -> PathBuf {
-        let in_docker = self.workspace_root.join("docker").join(package);
-        if in_docker.is_dir() {
-            return in_docker;
-        }
         let app = package.strip_suffix("-service").unwrap_or(package);
         self.workspace_root
             .join("services")
@@ -170,7 +166,7 @@ impl Fixture {
     /// in-memory store, so these scenarios cover what a database cannot change:
     /// the UI shell, gatehouse delegation, which routes need a token, and the
     /// webhook endpoint's refusals. Everything that does touch the queue is
-    /// covered by `docker/conveyor-service/tests/integration`, against a real
+    /// covered by `services/conveyor/service/tests/integration`, against a real
     /// Postgres.
     async fn start_conveyor(&self) -> Service {
         self.build("conveyor-service").await;
@@ -207,7 +203,7 @@ impl Fixture {
     /// runs on an in-memory store, so these scenarios cover what a database
     /// cannot change: the UI shell, gatehouse delegation, and which routes
     /// need a token. Everything that touches the tables is covered by
-    /// `docker/workbench-service/tests/integration`, against a real Postgres.
+    /// `services/workbench/service/tests/integration`, against a real Postgres.
     async fn start_workbench(&self) -> Service {
         self.build("workbench-service").await;
         println!("Starting workbench-service...");
@@ -389,7 +385,7 @@ impl Fixture {
             .env("SERVER_CERT_PATH", "/nonexistent/bdd-no-tls.pem")
             .env("SERVER_KEY_PATH", "/nonexistent/bdd-no-tls.key")
             // Ignored now (the permission catalog decides audiences - see
-            // `docker/gatehouse-service/config/permissions.toml`, which
+            // `services/gatehouse/service/config/permissions.toml`, which
             // already lists every BDD service), kept for anyone still
             // reading this env block for the old story.
             .env(
@@ -407,7 +403,7 @@ impl Fixture {
             // secret: a real, JWKS-verifiable token for an arbitrary
             // subject/audience/scope, no user or session required.
             .env("GATEHOUSE_TEST_MODE", "true")
-            // Mirrors `docker/gatehouse-service/config/clients.toml`, with
+            // Mirrors `services/gatehouse/service/config/clients.toml`, with
             // redirect_uris pointed at the fixed ports below instead of a
             // real deployment's - see `tests/forge-bdd/clients.toml`. Powers
             // the `/ui/login` → gatehouse `/authorize` → code → `/ui/auth/callback`
@@ -435,7 +431,7 @@ impl Fixture {
             // Home page fixture: two services configured, one turned off by its
             // feature flag, so the suite covers both halves of the gating rule.
             // Also what `clients.toml`'s redirect_uris are built from - see
-            // `redirect_base_url` in `docker/gatehouse-service/src/clients.rs`.
+            // `redirect_base_url` in `services/gatehouse/service/src/clients.rs`.
             .env("SAGE_UI_URL", "https://127.0.0.1:7777/sage/ui/home")
             .env(
                 "SWITCHBOARD_UI_URL",

@@ -1,0 +1,56 @@
+[package]
+name = "gatehouse-service"
+version = "0.4.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Gatehouse - the Forge authentication service: one login, one identity store"
+keywords = ["auth", "sso", "jwt", "identity"]
+categories = ["authentication", "web-programming"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = "README.md"
+autotests = false
+
+[lib]
+name = "gatehouse_service"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "gatehouse-service"
+path = "src/main.rs"
+
+[dependencies]
+quench-crypto = { workspace = true }
+quench-qr = { workspace = true }
+quench-log = { workspace = true }
+quench-core = { workspace = true }
+quench-serde = { workspace = true }
+quench-tz = { workspace = true }
+forge-web = { workspace = true }
+gatehouse-core = { workspace = true }
+gatehouse-web = { workspace = true }
+quench-auth = { workspace = true }
+quench-cache = { workspace = true, features = ["redis"] }
+quench-config = { workspace = true }
+quench-db = { workspace = true }
+quench-http = { workspace = true }
+quench-mail = { workspace = true }
+quench-starter = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+
+[[test]]
+name = "pg_models"
+path = "tests/pg_models.rs"
+harness = false
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false

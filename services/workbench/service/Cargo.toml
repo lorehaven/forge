@@ -1,0 +1,51 @@
+[package]
+name = "workbench-service"
+version = "0.3.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Workbench - task management service"
+keywords = ["development", "tools"]
+categories = ["development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+autotests = false
+
+[lib]
+name = "workbench_service"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "workbench-service"
+path = "src/main.rs"
+
+[dependencies]
+quench-pg = { workspace = true }
+quench-log = { workspace = true }
+quench-serde = { workspace = true }
+quench-core = { workspace = true }
+forge-web = { workspace = true }
+quench-auth = { workspace = true }
+quench-db = { workspace = true }
+quench-http = { workspace = true }
+quench-starter = { workspace = true }
+workbench-core = { workspace = true }
+workbench-web = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+harness = false
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false

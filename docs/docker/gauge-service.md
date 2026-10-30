@@ -1,6 +1,6 @@
 # Gauge Service
 
-Gauge is the estate's host metrics dashboard. It scrapes the [PCP](https://pcp.io) (`pmproxy`) and `node_exporter` endpoints of the hosts it is told about, keeps the last hour in memory and shows CPU, memory, GPU, disks, network and temperatures per host. Binary and crate: `gauge-service` (`docker/gauge-service`). No database: a restart starts the charts over.
+Gauge is the estate's host metrics dashboard. It scrapes the [PCP](https://pcp.io) (`pmproxy`) and `node_exporter` endpoints of the hosts it is told about, keeps the last hour in memory and shows CPU, memory, GPU, disks, network and temperatures per host. Binary and crate: `gauge-service` (`services/gauge/service`). No database: a restart starts the charts over.
 
 ## Hosts
 
@@ -40,7 +40,7 @@ PCP units come from the metric's own header, so values are scaled without a tabl
 
 `foreman start gauge` (port 13443, `/gauge`), or without a realm: see the crate's `README.md`.
 
-Without a realm (auth off), from `docker/gauge-service`:
+Without a realm (auth off), from `services/gauge/service`:
 
 ```text
 SERVICE_AUTH_ENABLED=false BASE_PATH=/gauge SERVER_ADDR=127.0.0.1:11444 SERVER_CERT_PATH=/nonexistent \

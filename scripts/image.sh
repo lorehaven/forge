@@ -18,7 +18,7 @@ case "$name" in
   rust-builder) tag="$registry/ci/rust-builder:latest" ;;
   gantry-runner)
     # Tagged with Gantry's version: the service names the image and the two are released together.
-    version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/docker/gantry-service/Cargo.toml" | head -1)"
+    version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/services/gantry/service/Cargo.toml" | head -1)"
     [ -n "$version" ] || { echo "cannot read gantry-service's version" >&2; exit 1; }
     tag="$registry/gantry/runner:$version"
     ;;

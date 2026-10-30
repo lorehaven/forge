@@ -11,7 +11,7 @@ Feature: Conveyor's webhook endpoint
   # That means the signature checks need a database, and this suite runs on an
   # in-memory store. What is covered here is everything decided *before* the
   # lookup. The signature behaviour itself has twelve scenarios in
-  # `docker/conveyor-service/tests/integration/webhook_tests.rs`, against a
+  # `services/conveyor/service/tests/integration/webhook_tests.rs`, against a
   # real Postgres.
 
   Background:

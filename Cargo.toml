@@ -1,14 +1,17 @@
 [workspace]
 members = [
   "cli/*",
-  "docker/*",
   "libs/*",
-  "services/daybook/service",
-  "services/daybook/core",
-  "services/daybook/net",
-  "services/daybook/host",
+  "services/conveyor/app",
+  "services/conveyor/core",
+  "services/conveyor/service",
+  "services/conveyor/web",
   "services/daybook/app",
+  "services/daybook/core",
   "services/daybook/desktop",
+  "services/daybook/host",
+  "services/daybook/net",
+  "services/daybook/service",
   "services/daybook/surface",
   "services/daybook/web",
   "services/forklift/app",
@@ -17,12 +20,41 @@ members = [
   "services/forklift/host",
   "services/forklift/net",
   "services/forklift/surface",
+  "services/foundry/service",
+  "services/gantry/app",
+  "services/gantry/core",
+  "services/gantry/service",
+  "services/gantry/web",
+  "services/gatehouse/app",
+  "services/gatehouse/core",
+  "services/gatehouse/service",
+  "services/gatehouse/web",
+  "services/gauge/app",
+  "services/gauge/core",
+  "services/gauge/service",
+  "services/gauge/web",
   "services/hoist/app",
   "services/hoist/core",
   "services/hoist/desktop",
   "services/hoist/net",
   "services/hoist/service",
   "services/hoist/surface",
+  "services/sage/app",
+  "services/sage/core",
+  "services/sage/service",
+  "services/sage/web",
+  "services/switchboard/app",
+  "services/switchboard/core",
+  "services/switchboard/service",
+  "services/switchboard/web",
+  "services/warehouse/app",
+  "services/warehouse/core",
+  "services/warehouse/service",
+  "services/warehouse/web",
+  "services/workbench/app",
+  "services/workbench/core",
+  "services/workbench/service",
+  "services/workbench/web",
   "tests/*",
 ]
 resolver = "2"
@@ -41,12 +73,14 @@ conveyor-pipeline = { path = "libs/conveyor-pipeline", registry = "ennor", versi
 gatehouse-client = { path = "libs/gatehouse-client" }
 gatehouse-auth = { path = "libs/gatehouse-auth", registry = "ennor", version = "0.1.0" }
 forge-ui = { path = "libs/forge-ui", version = "0.1.0" }
+forge-shell = { path = "libs/forge-shell" }
+forge-web = { path = "libs/forge-web" }
 libc = { version = "0.2" }
-quench-android-surface = { registry = "ennor", version = "0.1.3" }
+quench-android-surface = { registry = "ennor", version = "0.1.5" }
 quench-desktop-native = { registry = "ennor", version = "0.1.3" }
 quench-style = { registry = "ennor", version = "0.1.2" }
 quench-ui = { registry = "ennor", version = "0.1.3" }
-quench-ui-native = { registry = "ennor", version = "0.1.3" }
+quench-ui-native = { registry = "ennor", version = "0.1.5" }
 quench-ui-web = { registry = "ennor", version = "0.1.7" }
 quench-archive = { registry = "ennor", version = "0.1.1" }
 quench-args = { registry = "ennor", version = "0.1.1" }
@@ -80,12 +114,36 @@ quench-template = { registry = "ennor", version = "0.1.2" }
 quench-tz = { registry = "ennor", version = "0.1.2" }
 quench-web = { registry = "ennor", version = "0.1.23" }
 quench-web-components = { registry = "ennor", version = "0.1.18" }
+conveyor-app = { path = "services/conveyor/app" }
+conveyor-core = { path = "services/conveyor/core" }
+conveyor-web = { path = "services/conveyor/web" }
 daybook-app = { path = "services/daybook/app" }
 daybook-core = { path = "services/daybook/core" }
 daybook-desktop = { path = "services/daybook/desktop" }
 daybook-host = { path = "services/daybook/host", default-features = false }
 daybook-net = { path = "services/daybook/net", default-features = false }
 daybook-web = { path = "services/daybook/web" }
+gantry-app = { path = "services/gantry/app" }
+gantry-core = { path = "services/gantry/core" }
+gantry-web = { path = "services/gantry/web" }
+gatehouse-app = { path = "services/gatehouse/app" }
+gatehouse-core = { path = "services/gatehouse/core" }
+gatehouse-web = { path = "services/gatehouse/web" }
+gauge-app = { path = "services/gauge/app" }
+gauge-core = { path = "services/gauge/core" }
+gauge-web = { path = "services/gauge/web" }
+warehouse-app = { path = "services/warehouse/app" }
+warehouse-core = { path = "services/warehouse/core" }
+warehouse-web = { path = "services/warehouse/web" }
+switchboard-app = { path = "services/switchboard/app" }
+switchboard-core = { path = "services/switchboard/core" }
+switchboard-web = { path = "services/switchboard/web" }
+sage-app = { path = "services/sage/app" }
+sage-core = { path = "services/sage/core" }
+sage-web = { path = "services/sage/web" }
+workbench-app = { path = "services/workbench/app" }
+workbench-core = { path = "services/workbench/core" }
+workbench-web = { path = "services/workbench/web" }
 forklift-app = { path = "services/forklift/app" }
 forklift-core = { path = "services/forklift/core" }
 forklift-host = { path = "services/forklift/host" }

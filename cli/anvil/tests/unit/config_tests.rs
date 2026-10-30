@@ -189,7 +189,7 @@ fn test_the_estates_own_config_needs_only_one_dockerfile() {
     let config = load_from(&root).expect("the estate's configuration");
 
     let module = config.docker.modules.get("docker").expect("docker module");
-    assert_eq!(module.dockerfile, "docker/Dockerfile.alpine");
+    assert_eq!(module.dockerfile, "images/Dockerfile.alpine");
 
     // A package may still name a genuinely different base - switchboard needs a
     // ROCm one for the GPU runtime. What it may not do is name a *variant* of

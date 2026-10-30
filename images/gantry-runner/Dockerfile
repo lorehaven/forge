@@ -6,7 +6,7 @@
 #
 # Built from this workspace, like rust-builder, so the riveter in the runner is always the one the commit
 # was written against: a plan that uses a new riveter flag must not meet an older riveter at run time.
-# Lives outside docker/ for the same reason rust-builder does (every direct child of docker/ must be a crate).
+# Lives in images/ for the same reason rust-builder does: it is a tool image, not a service.
 #
 #   docker build -f images/gantry-runner/Dockerfile -t ossiriand.arda:8080/forge/gantry/runner:<gantry version> .
 #
@@ -28,7 +28,7 @@ RUN mkdir -p /usr/local/cargo && \
 WORKDIR /usr/src/app
 COPY Cargo.toml Cargo.lock ./
 COPY cli ./cli
-COPY docker ./docker
+COPY services ./services
 COPY libs ./libs
 COPY tests ./tests
 

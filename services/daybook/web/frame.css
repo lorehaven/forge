@@ -1,0 +1,20 @@
+/* Daybook under forge's frame: the brand over the lists on wide screens, the top bar beside them, the app below it. */
+.fui-client-web { min-height: 100vh; background: var(--fui-bg); }
+.fui-client-web #daybook { height: calc(100vh - var(--fui-topbar-h)); background: var(--fui-bg); color: var(--fui-text); }
+.fui-client-web .dbk-side { background: var(--fui-surface); border-right-color: var(--fui-border); }
+.fui-client-web .dbk-toast { background: var(--fui-surface-2); color: var(--fui-text); }
+.fui-client-web .dbk-login > * { max-width: 26rem; margin-left: auto; margin-right: auto; }
+.fui-client-web .dbk-login { padding-top: 2rem; }
+.fui-side-fixed { display: none; }
+@media (min-width: 840px) {
+  /* The brand takes the corner the sidebar owns; the bar and the app start beside it. */
+  .fui-side-fixed { display: block; position: fixed; top: 0; left: 0; width: 280px; height: var(--fui-topbar-h); z-index: 31; background: var(--fui-surface); border-right: 1px solid var(--fui-border); border-bottom: 1px solid var(--fui-border); }
+  .fui-client-web .fui-topbar .fui-brand { display: none; }
+  .fui-client-web #daybook { height: 100vh; }
+  .fui-client-web .fui-topbar { position: fixed; top: 0; left: 280px; right: 0; }
+  .fui-client-web .dbk-side { padding-top: calc(var(--fui-topbar-h) + .5rem); }
+  .fui-client-web .dbk-main { padding-top: var(--fui-topbar-h); }
+  .fui-client-web:has(.dbk-signed-out) .fui-side-fixed { display: none; }
+  .fui-client-web:has(.dbk-signed-out) .fui-topbar { left: 0; }
+  .fui-client-web:has(.dbk-signed-out) .fui-topbar .fui-brand { display: inline-flex; }
+}

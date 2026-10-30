@@ -9,6 +9,7 @@ pub mod api_error;
 pub mod authz;
 pub mod labels;
 pub mod projects;
+pub mod signin;
 pub mod tasks;
 pub mod ui;
 
@@ -43,6 +44,7 @@ pub fn wrap_auth(
 pub fn register_routes() {
     labels::register_routes();
     projects::register_routes();
+    signin::register_routes();
     tasks::register_routes();
     ui::register_routes();
 }

@@ -234,9 +234,9 @@ fn parse_machete_output_reads_no_unused_dependencies_as_empty() {
 #[quench_test::test]
 fn parse_machete_output_reads_one_finding_per_crate_block() {
     let stdout = "cargo-machete found the following unused dependencies in this directory:\n\
-        workbench-service -- ./docker/workbench-service/Cargo.toml:\n\
+        workbench-service -- ./services/workbench/service/Cargo.toml:\n\
         \trustls\n\
-        switchboard-service -- ./docker/switchboard-service/Cargo.toml:\n\
+        switchboard-service -- ./services/switchboard/service/Cargo.toml:\n\
         \trustls\n\
         \tserde\n\
         \n\
@@ -250,12 +250,12 @@ fn parse_machete_output_reads_one_finding_per_crate_block() {
         vec![
             MacheteFinding {
                 package: "workbench-service".to_string(),
-                manifest: "./docker/workbench-service/Cargo.toml".to_string(),
+                manifest: "./services/workbench/service/Cargo.toml".to_string(),
                 unused: vec!["rustls".to_string()],
             },
             MacheteFinding {
                 package: "switchboard-service".to_string(),
-                manifest: "./docker/switchboard-service/Cargo.toml".to_string(),
+                manifest: "./services/switchboard/service/Cargo.toml".to_string(),
                 unused: vec!["rustls".to_string(), "serde".to_string()],
             },
         ]

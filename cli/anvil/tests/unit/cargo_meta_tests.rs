@@ -34,7 +34,7 @@ fn publish_disabled_is_false_when_restricted_to_specific_registries() {
 
 #[quench_test::test]
 fn relative_dir_strips_the_workspace_root_regardless_of_nesting_depth() {
-    // Forge's own convention: packages nested under docker/<service>/.
+    // Forge's own convention: packages nested under services/<name>/service/.
     let nested = package(None);
     assert_eq!(
         nested.relative_dir(Path::new("/workspace")).unwrap(),

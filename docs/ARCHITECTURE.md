@@ -4,7 +4,7 @@ How the pieces documented in the [Home](./README.md) page fit together.
 
 ## The estate
 
-Forge runs eight long-running services (`docker/*`) built on [quench-http](https://github.com/lorehaven/quench/blob/master/docs/quench-http.md), each owning its own Postgres schema, plus a set of CLI tools that either drive those services or operate independently on the workspace/cluster. [Foreman](./cli/foreman.md) is what brings a chosen subset of the estate up locally, in dependency order, from one `foreman.toml`.
+Forge runs eight long-running services (`services/*/service`) built on [quench-http](https://github.com/lorehaven/quench/blob/master/docs/quench-http.md), each owning its own Postgres schema, plus a set of CLI tools that either drive those services or operate independently on the workspace/cluster. [Foreman](./cli/foreman.md) is what brings a chosen subset of the estate up locally, in dependency order, from one `foreman.toml`.
 
 ```
                      ┌───────────────────┐
@@ -47,7 +47,7 @@ Warehouse itself mounts three addressing schemes side by side behind one service
 
 ## Shared plumbing
 
-Every `docker/*` service is built on [Quench Starter](https://github.com/lorehaven/quench/blob/master/docs/quench-starter.md) (TLS/plain HTTP setup, base-path scoping, health checks, DB bootstrap) and renders its UI with [Quench Web](https://github.com/lorehaven/quench/blob/master/docs/quench-web.md) (a templating-engine-free `Element`/`PageBuilder` HTML builder). [Quench Cache](https://github.com/lorehaven/quench/blob/master/docs/quench-cache.md), [Quench Client](https://github.com/lorehaven/quench/blob/master/docs/quench-client.md), and [Quench Config](https://github.com/lorehaven/quench/blob/master/docs/quench-config.md) round out the shared layer — caching, authenticated HTTP calls between services, and config/env loading, respectively. [Quench Web Components](https://github.com/lorehaven/quench/blob/master/docs/quench-web-components.md) exists in that workspace but currently has no consumers; see its page for details. These libraries all live in the sibling [quench](https://github.com/lorehaven/quench) repository, pulled in from the `ennor` cargo registry.
+Every service is built on [Quench Starter](https://github.com/lorehaven/quench/blob/master/docs/quench-starter.md) (TLS/plain HTTP setup, base-path scoping, health checks, DB bootstrap) and renders its UI with [Quench Web](https://github.com/lorehaven/quench/blob/master/docs/quench-web.md) (a templating-engine-free `Element`/`PageBuilder` HTML builder). [Quench Cache](https://github.com/lorehaven/quench/blob/master/docs/quench-cache.md), [Quench Client](https://github.com/lorehaven/quench/blob/master/docs/quench-client.md), and [Quench Config](https://github.com/lorehaven/quench/blob/master/docs/quench-config.md) round out the shared layer — caching, authenticated HTTP calls between services, and config/env loading, respectively. [Quench Web Components](https://github.com/lorehaven/quench/blob/master/docs/quench-web-components.md) exists in that workspace but currently has no consumers; see its page for details. These libraries all live in the sibling [quench](https://github.com/lorehaven/quench) repository, pulled in from the `ennor` cargo registry.
 
 ## See also
 

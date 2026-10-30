@@ -5,14 +5,12 @@
 # checkout there itself (see executors/manifest.rs's WORKSPACE_PATH) - this
 # image only has to put the toolchain on PATH, not care where it runs.
 #
-# Unlike docker/Dockerfile.alpine's runtime images, this one keeps the full
+# Unlike images/Dockerfile.alpine's runtime images, this one keeps the full
 # Rust SDK on purpose: a CI job recompiles the workspace, it does not just run
 # an already-built binary.
 #
-# Lives outside docker/ on purpose: the workspace's `docker/*` member glob
-# (root Cargo.toml) expects every direct subdirectory of docker/ to be a
-# crate with its own Cargo.toml - a docker/images/ with none broke `cargo` for the
-# whole workspace, not just this image's own build.
+# Lives in images/ with the other Dockerfiles: it is a tool image, not a service, so it has no place under
+# services/ (and no crate to be a workspace member).
 #
 # glibc (Debian), not Alpine/musl: this image never ships anything, it only
 # runs CI checks, so there's no reason to pay musl's cost here. And it's a
@@ -77,7 +75,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 WORKDIR /usr/src/app
 COPY Cargo.toml Cargo.lock ./
 COPY cli ./cli
-COPY docker ./docker
+COPY services ./services
 COPY libs ./libs
 COPY tests ./tests
 

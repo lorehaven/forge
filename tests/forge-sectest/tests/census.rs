@@ -96,13 +96,10 @@ async fn the_census_matches_a_naive_count_of_route_attributes() {
         root.display()
     );
 
-    for entry in fs::read_dir(root.join("docker")).unwrap().flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let Some(service) = name.strip_suffix("-service") else {
-            continue;
-        };
+    for (service, dir) in forge_sectest::census::service_dirs(&root) {
+        let service = service.as_str();
         let mut naive = 0;
-        let mut stack = vec![entry.path().join("src")];
+        let mut stack = vec![dir.join("src")];
         while let Some(dir) = stack.pop() {
             for item in fs::read_dir(&dir).into_iter().flatten().flatten() {
                 let path = item.path();

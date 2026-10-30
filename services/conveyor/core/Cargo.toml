@@ -1,0 +1,28 @@
+[package]
+name = "conveyor-core"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+autotests = false
+
+# What Conveyor's API says and how a form is read: the records, the wire models, the drafts (a form's text checked into a body),
+# the project tree, the job graph, the formatting. No I/O, and it builds for the browser: the service and the client share it.
+[lib]
+name = "conveyor_core"
+path = "src/lib.rs"
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dependencies]
+quench-core = { workspace = true }
+quench-serde = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }

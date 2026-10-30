@@ -1,0 +1,7 @@
+.env
+*.pem
+*.sh
+storage/
+
+# Built by the image (or by hand for a local run): the browser client.
+/web/*.wasm

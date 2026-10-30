@@ -53,7 +53,7 @@ UI (`/ui`, HTMX-rendered, auth via Gatehouse SSO delegation — Sage itself has 
 
 ## Configuration
 
-Key environment variables (see `docker/sage-service/.env`):
+Key environment variables (see `services/sage/service/.env`):
 
 - `SWITCHBOARD_URL`, `CLIENT_SECRET_SAGE_SWITCHBOARD`, `GATEHOUSE_URL` — service-to-service auth toward Switchboard.
 - `SAGE_CAPABILITY_PROFILE` — `web_assistant` (default), `code_assistant`, or `cli_agent`.

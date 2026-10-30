@@ -1,5 +1,5 @@
 # OAuth clients for the BDD harness's own gatehouse instance - mirrors
-# docker/gatehouse-service/config/clients.toml, with redirect_uris pointed at
+# services/gatehouse/service/config/clients.toml, with redirect_uris pointed at
 # the fixed ports services.rs starts each service on. Secrets are read from
 # env the same way the real config does; services.rs sets matching
 # CLIENT_SECRET_* / GATEHOUSE_CLIENT_SECRET values on both sides.

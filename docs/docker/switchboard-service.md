@@ -49,7 +49,7 @@ Base path `/switchboard` in local dev; all API routes wrapped in `Auth` (JWT), w
 
 ## Configuration
 
-Key environment variables (see `docker/switchboard-service/.env`):
+Key environment variables (see `services/switchboard/service/.env`):
 
 - `VLLM_MANAGEMENT_MODE` — `native` (default), `kubernetes`/`k8s`, or `mock`.
 - `HF_ROOTS`, `GGUF_ROOTS` — colon-separated filesystem roots to scan (defaults `/mnt/dev/huggingface/hub`, `/mnt/dev/quantized`).

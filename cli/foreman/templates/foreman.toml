@@ -22,7 +22,7 @@ run_dir = ".run"          # pid files and logs, relative to this file
 database_url = "postgres://postgres:postgres@localhost:5432/postgres"
 # Values can also be lifted out of a dotenv file, so this config cannot drift
 # from what the services already expect:
-# jwt_secret = { env_file = "docker/api/.env", key = "JWT_SECRET", default = "dev-secret" }
+# jwt_secret = { env_file = "services/api/service/.env", key = "JWT_SECRET", default = "dev-secret" }
 
 # How a service's binary is produced, and where it lands. Services are launched
 # from the built binary rather than through `cargo run`, because `stop` needs a
@@ -62,7 +62,7 @@ scheme = "http"
 host = "localhost"
 health_path = "/health"
 start_timeout_secs = 30
-workdir = "docker/${package}"
+workdir = "services/${name}/service"
 env = { DATABASE_URL = "${database_url}", SERVER_ADDR = "0.0.0.0:${port}", RUST_LOG = "info" }
 
 # The order services are listed in is the order they start. `needs` is what a

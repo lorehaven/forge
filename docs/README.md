@@ -17,7 +17,7 @@ docs/
 │   ├── toolbox.md
 │   ├── warehouse-cli.md
 │   └── welder.md
-├── docker/                 # docker/* services
+├── docker/                 # one page per service (services/<name>/service)
 │   ├── conveyor-service.md
 │   ├── foundry-service.md
 │   ├── gantry-service.md
@@ -34,9 +34,9 @@ docs/
     └── forge-bdd.md
 ```
 
-Each page lives at the same path as the crate it documents (e.g. `docker/sage-service` → `docs/docker/sage-service.md`), so the doc to update is always predictable from the code you're touching. Every crate's own `README.md` is a short pointer into its page here — this tree is the actual documentation: descriptions, features, configuration, and CLI/REPL commands or API routes.
+Each page lives at the same path as the crate it documents (e.g. `services/sage/service` → `docs/docker/sage-service.md`), so the doc to update is always predictable from the code you're touching. Every crate's own `README.md` is a short pointer into its page here — this tree is the actual documentation: descriptions, features, configuration, and CLI/REPL commands or API routes.
 
-## Services (`docker/*`)
+## Services (`services/*/service`)
 
 Long-running quench-http services, each with its own Postgres schema, started locally via [Foreman](./cli/foreman.md).
 
@@ -68,7 +68,7 @@ Long-running quench-http services, each with its own Postgres schema, started lo
 - [Conveyor Pipeline](./libs/conveyor-pipeline.md) — `.conveyor.toml` parser/planner shared by Conveyor Service and Conveyor CLI
 - [Rivet Package](./libs/rivet-package.md) — the `.rivet` package format shared by Warehouse Service and Riveter
 
-The `quench-*` crates (auth, starter, web, web-components, db, cache, client, config, cli) that every `docker/*` service and several `cli/*` tools depend on now live in the sibling [quench](https://github.com/lorehaven/quench) repository and are pulled in from the `ennor` cargo registry like any other dependency — see that repo's own docs for per-crate reference.
+The `quench-*` crates (auth, starter, web, web-components, db, cache, client, config, cli) that every service and several `cli/*` tools depend on now live in the sibling [quench](https://github.com/lorehaven/quench) repository and are pulled in from the `ennor` cargo registry like any other dependency — see that repo's own docs for per-crate reference.
 
 ## Tests
 
@@ -150,7 +150,7 @@ declares the test modules, and the modules themselves live in `tests/unit/`,
 named after the file they cover:
 
 ```text
-docker/sage-service/
+services/sage/service/
 ├── src/tools/parser.rs
 └── tests/
     ├── unit.rs                       #[path = "unit/tools_parser_tests.rs"] mod …
@@ -169,12 +169,13 @@ services.
 .
 ├── cli/           # binaries: anvil, conveyor-cli, foreman, pulley, riveter,
 │                  #           toolbox, warehouse-cli, welder
-├── docker/        # services: conveyor, foundry, gantry, gatehouse, gauge,
-│                  #           sage, switchboard, warehouse, workbench (each its own image)
-├── services/      # quench fullstack services (same template each): hoist so far; docker/'s services join it
+├── services/      # one directory per service: <name>/service is its crate (conveyor, foundry, gantry,
+│                  #           gatehouse, gauge, sage, switchboard, warehouse, workbench, daybook, hoist);
+│                  #           an app's crates (core, app, desktop, ...) sit beside it
 ├── libs/          # shared crates: conveyor-pipeline, rivet-package
 ├── tests/         # forge-bdd, the cross-service Cucumber suite
-├── images/        # CI-only images: rust-builder, and gantry-runner (what Gantry's Jobs run)
+├── images/        # Dockerfiles: Dockerfile.alpine (every service image), Dockerfile.vllm.rocm, and the CI images
+│                  #           rust-builder and gantry-runner (what Gantry's Jobs run)
 ├── docs/          # this documentation tree
 └── foreman.toml   # what foreman starts locally, on which ports
 ```

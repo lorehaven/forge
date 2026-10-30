@@ -9,7 +9,7 @@ Feature: Docker Registry v2 authentication
   # guards every `/v2/*` path when docker auth is enabled: no bearer means a 401
   # carrying `WWW-Authenticate: Bearer realm=...`, which is how a client is told
   # to go and fetch a token. The authenticated push/pull paths are in
-  # docker.feature and in docker/warehouse-service's own tests.
+  # docker.feature and in services/warehouse/service's own tests.
 
   Background:
     Given warehouse API is available

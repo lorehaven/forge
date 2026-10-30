@@ -4,7 +4,7 @@
 //! by design. These scenarios therefore cover what no database can change: the
 //! UI shell, gatehouse delegation, which routes need a token, and the webhook
 //! endpoint's refusals. Everything that touches the queue is covered by
-//! `docker/conveyor-service/tests/integration`, against a real Postgres.
+//! `services/conveyor/service/tests/integration`, against a real Postgres.
 
 use crate::world::ForgeWorld;
 use quench_serde::json;
@@ -150,7 +150,7 @@ fn uuid_like() -> String {
 // looked up (its secret is per repository), and that lookup needs Postgres,
 // which this suite deliberately does not provide. So "no signature" / "bad
 // signature" cannot be exercised here - those twelve scenarios live in
-// `docker/conveyor-service/tests/integration/webhook_tests.rs`. What this suite
+// `services/conveyor/service/tests/integration/webhook_tests.rs`. What this suite
 // covers is everything the handler decides *before* the lookup: the provider,
 // the event type, the body's shape and the ref.
 

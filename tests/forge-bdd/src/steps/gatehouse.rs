@@ -956,7 +956,7 @@ async fn offers_control(world: &mut ForgeWorld, service: String) {
 // Registration and password reset
 //
 // `LoggingSender` never puts the link anywhere but gatehouse's own stdout
-// (`docker/gatehouse-service/src/email.rs`); `services::wait_for_gatehouse_log`
+// (`services/gatehouse/service/src/email.rs`); `services::wait_for_gatehouse_log`
 // is what lets these steps read it back the same way a developer would.
 // ---------------------------------------------------------------------------
 
@@ -1355,7 +1355,7 @@ async fn attempt_wrong_password(world: &mut ForgeWorld, username: String, times:
 }
 
 /// The JSON login endpoint's failure body is `{"error": "..."}` - see
-/// `docker/gatehouse-service/src/api/auth.rs`'s `LoginError`.
+/// `services/gatehouse/service/src/api/auth.rs`'s `LoginError`.
 #[then(expr = "the response body should report {string}")]
 async fn body_reports_error(world: &mut ForgeWorld, expected: String) {
     let error = world
@@ -1372,7 +1372,7 @@ async fn body_reports_error(world: &mut ForgeWorld, expected: String) {
 // ---------------------------------------------------------------------------
 
 /// A TOTP code for `secret` (base32, as `/ui/account/mfa/enroll` renders it) -
-/// the same RFC 6238 parameters `docker/gatehouse-service/src/mfa.rs` builds
+/// the same RFC 6238 parameters `services/gatehouse/service/src/mfa.rs` builds
 /// its own `Totp` with, so a code computed here is one gatehouse will accept.
 fn totp_code(secret: &str) -> String {
     quench_crypto::totp::Totp::from_base32(secret)

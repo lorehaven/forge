@@ -315,7 +315,7 @@ impl ForgeWorld {
 }
 
 /// Mints a real, JWKS-verifiable token by asking gatehouse's
-/// `POST /api/v1/test/token` (`docker/gatehouse-service/src/api/test_tokens.rs`,
+/// `POST /api/v1/test/token` (`services/gatehouse/service/src/api/test_tokens.rs`,
 /// enabled by `GATEHOUSE_TEST_MODE=true` - see `services.rs`) to sign one for
 /// an arbitrary subject/audience/scope. No user or session has to exist for
 /// this - the same shortcut the suite took when every service verified

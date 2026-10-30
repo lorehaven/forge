@@ -205,23 +205,31 @@ pub fn scan_dir(service: &str, source_dir: &Path) -> Vec<Route> {
     routes
 }
 
-/// Routes of every `docker/<name>-service` in a forge checkout (plus `extra_dirs`, e.g. the
+/// The service directories of a forge checkout: `(name, directory)` for every `services/<name>/service`, in name order.
+#[must_use]
+pub fn service_dirs(forge_root: &Path) -> Vec<(String, PathBuf)> {
+    let Ok(entries) = fs::read_dir(forge_root.join("services")) else {
+        return Vec::new();
+    };
+    let mut found: Vec<(String, PathBuf)> = entries
+        .flatten()
+        .filter_map(|e| {
+            let dir = e.path().join("service");
+            let name = e.file_name().to_str()?.to_string();
+            dir.join("Cargo.toml").is_file().then_some((name, dir))
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// Routes of every `services/<name>/service` in a forge checkout (plus `extra_dirs`, e.g. the
 /// quench-starter sources whose health/auth routes every service links in).
 #[must_use]
 pub fn scan_forge(forge_root: &Path, extra_dirs: &[PathBuf]) -> Vec<Route> {
     let mut routes = Vec::new();
-    let Ok(entries) = fs::read_dir(forge_root.join("docker")) else {
-        return routes;
-    };
-    let mut services: Vec<_> = entries.flatten().map(|e| e.path()).collect();
-    services.sort();
-    for dir in services {
-        let Some(name) = dir.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        let Some(service) = name.strip_suffix("-service") else {
-            continue;
-        };
+    for (service, dir) in service_dirs(forge_root) {
+        let service = service.as_str();
         let mut found = scan_dir(service, &dir.join("src"));
         for extra in extra_dirs {
             found.extend(scan_dir(service, extra));

@@ -88,7 +88,7 @@ pub fn app() -> View {
         })
     };
     let Daybook { view, deliver } = daybook(
-        requests,
+        Rc::clone(&requests),
         Setup {
             // The page's own server: the sign-in form is told so and the address field is left as it is.
             ask_server: false,
@@ -109,7 +109,70 @@ pub fn app() -> View {
     if has_session {
         c.start();
     }
-    view
+    framed(view, &requests)
+}
+
+/// The service's path prefix from the page's own path: `/daybook/ui` is `/daybook`.
+fn base_of(path: &str) -> String {
+    let at = path
+        .find("/ui/")
+        .or_else(|| path.strip_suffix("/ui").map(str::len));
+    at.map_or_else(String::new, |i| path[..i].trim_end_matches('/').to_string())
+}
+
+/// The languages of the top bar, the first is the fallback.
+const LANGUAGES: [&str; 5] = ["en-US", "de-DE", "es-ES", "fr-FR", "pl-PL"];
+
+const LOCALES: [(&str, &str); 5] = [
+    ("en-US", include_str!("../i18n/en-US.ftl")),
+    ("de-DE", include_str!("../i18n/de-DE.ftl")),
+    ("es-ES", include_str!("../i18n/es-ES.ftl")),
+    ("fr-FR", include_str!("../i18n/fr-FR.ftl")),
+    ("pl-PL", include_str!("../i18n/pl-PL.ftl")),
+];
+
+/// The app inside forge's frame: the brand over the lists on wide screens, and the top bar with the dashboard and home
+/// buttons, the language, the theme and the account menu (edit profile at gatehouse; signing out is the app's own, as
+/// its session is). The app's own texts are English for now; the bar speaks the person's language.
+fn framed(app: View, requests: &Rc<dyn Fn(Request)>) -> View {
+    use quench_ui::i18n::I18n;
+    use quench_ui::router::History;
+    let base = base_of(&quench_ui_web::BrowserHistory::new().location().path);
+    let language = env::storage_get("language").unwrap_or_else(|| "en-US".to_string());
+    let t = Rc::new(I18n::new(&LOCALES, &language).expect("the translations parse"));
+    let bar = forge_shell::Bar {
+        brand: forge_shell::Brand {
+            name: "Daybook",
+            icon: "list-check",
+        },
+        image: Some(format!("{base}/ui/assets/favicon.png")),
+        home: format!("{base}/ui"),
+        spa: false,
+        account: true,
+        brand_in_bar: true,
+        logout: String::new(),
+        dashboard: true,
+        on_logout: Some({
+            let requests = Rc::clone(requests);
+            Rc::new(move || requests(Request::Logout))
+        }),
+        languages: &LANGUAGES,
+        on_language: Rc::new(|code| env::storage_set("language", Some(code))),
+    };
+    let top = {
+        let (bar, t) = (bar.clone(), Rc::clone(&t));
+        View::dynamic(move || forge_shell::topbar(&bar, &t).into_view())
+    };
+    div()
+        .class("fui-app fui-client-web")
+        .child(
+            div()
+                .class("fui-side-fixed")
+                .child(forge_shell::brand_head(&bar)),
+        )
+        .child(top)
+        .child(app)
+        .into_view()
 }
 
 quench_ui_web::app!(app);

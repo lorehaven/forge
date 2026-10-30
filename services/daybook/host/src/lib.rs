@@ -416,14 +416,9 @@ impl Controller {
         }));
     }
 
-    /// The tasks changed: the widget now, the reminders once things have settled.
+    /// The tasks changed: the widget and the reminders once things have settled. Neither is done at once: both touch the
+    /// device (a file, calls to the system) and would hold up the screen at the moment the person tapped.
     fn changed(self: &Rc<Self>) {
-        let (data, now, zone) = (
-            self.state.borrow().data.clone(),
-            self.platform.now(),
-            self.platform.zone(),
-        );
-        self.platform.data_changed(&data, now, &zone);
         let generation = {
             let mut s = self.state.borrow_mut();
             s.generation += 1;

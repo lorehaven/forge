@@ -1,0 +1,30 @@
+[package]
+name = "workbench-app"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+
+# The screens: the projects, a project's board and one issue. The app does no I/O: it asks its host for the data and for
+# every change (`Request`) and is told what came (`Msg`), so the same screens run in the browser and in tests.
+[lib]
+name = "workbench_app"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+forge-shell = { workspace = true }
+quench-ui = { workspace = true }
+workbench-core = { workspace = true }
+
+[[test]]
+name = "screens"
+path = "tests/screens.rs"
+harness = false
+
+[dev-dependencies]
+quench-test = { workspace = true }

@@ -1,0 +1,91 @@
+# required
+header_label = Workbench
+footer_label = © 2026 Paweł Walus — Order of Devs
+locale_label = Language
+theme_label = Theme
+
+# ── Home ─────────────────────────────────────────────────────────────────────
+
+ui_header_home = Workbench
+ui_home_button = Home
+ui_home_title = Projects
+ui_home_no_projects = No projects yet.
+ui_home_new_project = New project
+ui_home_create_button = Create project
+
+# ── Board ────────────────────────────────────────────────────────────────────
+
+ui_board_new_issue = New issue
+ui_board_create_button = Create issue
+ui_board_back = ← Back to board
+ui_status_blocked = Blocked
+ui_status_todo = To do
+ui_status_in_progress = In progress
+ui_status_done = Done
+ui_status_rejected = Rejected
+
+# ── Issue ────────────────────────────────────────────────────────────────────
+
+ui_issue_save_button = Save
+ui_issue_comments = Comments
+ui_issue_empty_comments = No comments yet.
+ui_issue_add_comment_button = Add comment
+ui_issue_dependencies = Dependencies
+ui_issue_blocks = Blocks
+ui_issue_blocked_by = Blocked by
+ui_issue_relates_to = Relates to
+ui_issue_no_links = None
+ui_issue_add_link_button = Add link
+
+# ── Fields ───────────────────────────────────────────────────────────────────
+
+ui_field_key = Key
+ui_field_name = Name
+ui_field_description = Description
+ui_field_title = Title
+ui_field_kind = Kind
+ui_field_priority = Priority
+ui_field_assignee = Assignee
+ui_field_status = Status
+ui_field_comment_body = Comment
+ui_field_unassigned = Unassigned
+ui_assign_to_me = Assign to me
+ui_field_estimate = Estimate
+ui_field_link_target = Link to
+ui_field_link_kind = Type
+
+# ── Auth ─────────────────────────────────────────────────────────────────────
+
+ui_login_sign_in = Sign in
+ui_login_username = Username
+ui_login_password = Password
+ui_login_submit = Log in
+ui_login_invalid_credentials = Invalid credentials
+ui_logout = Log out
+ui_profile_edit = Edit profile
+ui_user_menu = User menu
+ui_menu_open = Open menu
+ui_menu_close = Close menu
+ui_theme_toggle = Toggle theme
+ui_close = Close
+ui_cancel = Cancel
+ui_nav_projects = Projects
+ui_issue_details = Details
+ui_dashboard_button = Services dashboard
+ui_theme_mode = Mode
+ui_theme_light = Light
+ui_theme_dark = Dark
+ui_theme_palette = Colour
+ui_palette_green = Green
+ui_palette_teal = Teal
+ui_palette_blue = Blue
+ui_palette_purple = Purple
+ui_palette_rose = Rose
+ui_palette_orange = Orange
+
+# ── Client ───────────────────────────────────────────────────────────────────
+
+ui_loading = Loading…
+ui_not_found = Nothing here.
+ui_sign_out = Sign out
+ui_remove = Remove

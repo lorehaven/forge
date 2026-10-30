@@ -3,7 +3,9 @@ body{margin:0;font-family:system-ui,sans-serif;background:#0b0b0b;color:#d4d4d4}
 .dbk-side{display:none;flex:none;width:280px;overflow-y:auto;border-right:1px solid #2a2a2a;padding:calc(.5rem + env(safe-area-inset-top)) .5rem .5rem}
 .dbk-main{flex:1;min-width:0;display:flex;flex-direction:column}
 .dbk-screen{flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
-.dbk-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto;padding:0 var(--q-space-4) env(safe-area-inset-bottom)}
+.dbk-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding:0 var(--q-space-4) env(safe-area-inset-bottom)}
+/* The list fills the screen and scrolls inside, so a pull below the last task starts a refresh as well. */
+.dbk-body>.q-ptr{flex:1;min-height:0}
 .dbk-menu{display:block}
 @media (min-width:840px){.dbk-side{display:block}.dbk-menu{display:none}}
 .dbk-signed-out .dbk-side{display:none}
@@ -89,3 +91,9 @@ h3{font-size:1.125rem;font-weight:500;margin:1rem 0 .5rem}
 .dbk-toast-problem{background:#4c1d2a;color:#fecdd3}
 .q-swipe-back{background:#7f1d1d}
 .q-swipe-front{z-index:1}
+
+/* Popups come in quickly: on a phone every frame of a full-screen transition costs, and 200 ms of them is what felt slow. */
+:root{--q-dur-base:110ms;--q-dur-fast:90ms}
+
+/* The refresh indicator is the round arrow of the refresh button, not a ring: it turns while the list reloads. */
+.q-ptr-indicator{border:0;background-color:transparent;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23818cf8' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 11a8 8 0 0 0-14.500-3M4 4v4h4M4 13a8 8 0 0 0 14.500 3M20 20v-4h-4'/%3E%3C/svg%3E");background-size:contain;background-repeat:no-repeat;background-position:center}

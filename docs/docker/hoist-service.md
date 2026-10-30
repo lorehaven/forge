@@ -2,7 +2,7 @@
 
 The public catalogue behind hoist's Public tab: the apps of **F-Droid**, **IzzyOnDroid** and **Aptoide** merged into one row per package, kept in Postgres, refreshed every hour and served to signed-in users. It replaces the standalone Entmoot service (same merge rules, same data; the API moved to `/hoist/v1` and the store from SQLite to Postgres).
 
-It lives in the hoist project, `services/hoist/service` (crate `hoist-service`), which is a member of forge's cargo workspace like every service, beside the app's crates (the project also builds the app for Android and the desktop; `anvil release` sees the service as a docker package, and the windowed desktop host, the Android surface and the browser server are left out of the images). The schema belongs to foundry's `hoist` module (`docker/foundry-service/migrations/hoist`).
+It lives in the hoist project, `services/hoist/service` (crate `hoist-service`), which is a member of forge's cargo workspace like every service, beside the app's crates (the project also builds the app for Android and the desktop; `anvil release` sees the service as a docker package, and the windowed desktop host, the Android surface and the browser server are left out of the images). The schema belongs to foundry's `hoist` module (`services/foundry/service/migrations/hoist`).
 
 ## API
 

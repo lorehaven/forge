@@ -1,0 +1,28 @@
+[package]
+name = "forge-shell"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+autotests = false
+
+# The frame forge's browser clients share: the top bar (dashboard and home buttons, language, theme, account menu), the
+# design tokens and the script that keeps theme and language in step with the cookies the other services use. It builds
+# for the browser (the bar) and for the server (the stylesheet and the script it serves).
+[lib]
+name = "forge_shell"
+path = "src/lib.rs"
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dependencies]
+quench-ui = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }

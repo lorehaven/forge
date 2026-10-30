@@ -1,0 +1,45 @@
+[package]
+name = "gauge-service"
+version = "0.2.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Gauge - host metrics dashboard fed by PCP and node_exporter"
+keywords = ["observability", "metrics", "tools"]
+categories = ["development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+autotests = false
+
+[lib]
+name = "gauge_service"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "gauge-service"
+path = "src/main.rs"
+
+[dependencies]
+forge-web = { workspace = true }
+gauge-core = { workspace = true }
+gauge-web = { workspace = true }
+quench-log = { workspace = true }
+quench-serde = { workspace = true }
+quench-core = { workspace = true }
+quench-auth = { workspace = true }
+quench-client = { workspace = true }
+quench-http = { workspace = true }
+quench-starter = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false

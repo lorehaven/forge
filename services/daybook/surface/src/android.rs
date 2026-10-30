@@ -1,6 +1,7 @@
 //! The platform of the Android program. The calls to the services run on the worker thread; reminders are the
 //! `notifications` plugin's (alarms that the system keeps and re-arms after a reboot).
 
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -51,6 +52,8 @@ pub fn pending_ids(answer: &Value) -> Vec<i32> {
 }
 
 pub struct Android {
+    /// The reminders last handed to the system, so that the next change sends only the difference.
+    armed: RefCell<Option<Vec<Reminder>>>,
     bridge: Bridge,
     worker: Rc<Worker>,
     remote: Arc<Remote>,
@@ -66,6 +69,7 @@ impl Android {
         store: Store,
     ) -> Self {
         Self {
+            armed: RefCell::new(None),
             bridge,
             worker,
             remote,
@@ -80,6 +84,26 @@ impl Platform for Android {
     }
 
     fn replace_reminders(&self, reminders: &[Reminder]) {
+        // After the first time only what differs from what was handed over goes to the system: a change to one task
+        // used to cancel and arm every reminder again, a call each, on the thread that draws the screen.
+        if let Some(last) = self.armed.replace(Some(reminders.to_vec())) {
+            for gone in last
+                .iter()
+                .filter(|r| !reminders.iter().any(|w| w.id == r.id))
+            {
+                self.bridge.call(
+                    "notifications",
+                    "cancel",
+                    object(&[("id", Value::from(i64::from(gone.id)))]),
+                    |_| {},
+                );
+            }
+            for r in reminders.iter().filter(|r| !last.contains(r)) {
+                self.bridge
+                    .call("notifications", "schedule", reminder_args(r), |_| {});
+            }
+            return;
+        }
         let (bridge, wanted) = (self.bridge.clone(), reminders.to_vec());
         self.bridge
             .call("notifications", "pending", Value::Null, move |answer| {

@@ -1,0 +1,5 @@
+.env
+*.pem
+*.sh
+docs/
+/web/*.wasm

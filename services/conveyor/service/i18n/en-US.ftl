@@ -1,0 +1,178 @@
+# required
+header_label = Conveyor
+footer_label = © 2026 Paweł Walus — Order of Devs
+locale_label = Language
+theme_label = Theme
+
+# ── Shell ────────────────────────────────────────────────────────────────────
+
+ui_header_home = Conveyor
+ui_home_button = Home
+ui_nav_credentials = Credentials
+ui_logout = Log out
+ui_profile_edit = Edit profile
+ui_user_menu = User menu
+
+# ── Home ─────────────────────────────────────────────────────────────────────
+
+ui_home_title = Pipelines
+ui_home_subtitle = Every build, from the commit that asked for it.
+
+ui_repos_title = Repositories
+ui_repos_empty = No repositories are registered yet.
+
+ui_runs_title = Recent runs
+ui_runs_empty = Nothing has run yet.
+ui_runs_view_all = View all pipelines
+
+ui_project_subtitle = Repositories and pipelines under this node.
+ui_project_not_found = No such project.
+
+# ── Pipelines ────────────────────────────────────────────────────────────────
+
+ui_pipelines_title = All pipelines
+ui_pipelines_subtitle = Every run, newest first.
+ui_pager_prev = Previous
+ui_pager_next = Next
+ui_pager_page = Page {$page} of {$total}
+
+# ── Runs ─────────────────────────────────────────────────────────────────────
+
+ui_col_status = Status
+ui_col_repository = Repository
+ui_col_ref = Ref
+ui_col_commit = Commit
+ui_col_trigger = Trigger
+ui_col_when = When
+ui_col_provider = Provider
+ui_col_branch = Default branch
+ui_col_state = State
+ui_col_checks = Checks
+ui_col_actions = Actions
+ui_repo_enabled = Enabled
+ui_repo_disabled = Disabled
+ui_repo_run_now = Run now
+ui_chip_not_run = Not run yet
+ui_run_not_found = No such run.
+ui_run_reason = Why it ended
+ui_meta_trigger = Trigger
+ui_meta_queued = Queued
+ui_meta_duration = Duration
+ui_meta_attempt = Attempt
+ui_artifacts_title = Artifacts
+ui_log_loading = Loading…
+ui_log_raw_tooltip = Open raw log
+ui_log_copy_tooltip = Copy log
+ui_run_restart = Restart
+ui_job_reused = Reused from an earlier run
+
+# ── Scan ─────────────────────────────────────────────────────────────────────
+
+ui_scan_subtitle = Lint, unused dependencies, known vulnerabilities and test coverage, from the most recent run.
+ui_scan_lint_title = Lint
+ui_scan_machete_title = Unused dependencies
+ui_scan_audit_title = Vulnerabilities
+ui_scan_coverage_title = Test coverage
+ui_scan_tests_title = Tests
+ui_scan_security_title = Security
+ui_meta_stages = Stages
+ui_launch_link = Run with parameters
+ui_launch_subtitle = Start a manual run limited to the stages you tick. A ticked stage runs even if its own condition would leave it out of an ordinary run.
+ui_launch_ref = Branch or tag (the default branch if empty)
+ui_launch_stages = Stages
+ui_launch_normally_skipped = normally left out of a run
+ui_launch_none_known = No stage is known yet - this repository has not run. Name them below.
+ui_launch_extra = Other stages (comma separated)
+ui_launch_submit = Run selected stages
+ui_launch_err_none = Select at least one stage.
+ui_launch_err_failed = The run could not be started.
+ui_launch_no_access = Starting a run needs write access to the repository's project.
+ui_scan_tests_report_open = Open the full report
+ui_scan_tests_report_download = Download the report
+ui_scan_no_runs = This repository has not run yet.
+ui_scan_no_checks = The most recent run did not run lint, machete, audit or coverage. Add `anvil lint`, `anvil machete`, `anvil audit` or a `cargo llvm-cov` step in .conveyor.toml to see them here.
+ui_scan_repo_not_found = No such repository.
+ui_scan_back = Back to overview
+ui_scan_clean = Nothing found.
+
+# ── Status ───────────────────────────────────────────────────────────────────
+
+ui_status_queued = Queued
+ui_status_running = Running
+ui_status_success = Passed
+ui_status_failed = Failed
+ui_status_cancelled = Cancelled
+ui_status_skipped = Skipped
+
+# ── Repositories admin ──────────────────────────────────────────────────────
+
+ui_repos_manage = Manage repositories
+ui_repos_back = Back to repositories
+ui_repos_back_home = Back to home
+ui_repos_add_title = Add a repository
+ui_repos_owner = Owner
+ui_repos_name = Name
+ui_repos_clone_url = Clone URL
+ui_repos_branch = Default branch
+ui_repos_project = Project
+ui_repos_provider = Provider
+ui_repos_create = Register repository
+ui_repos_save = Save changes
+ui_repos_edit = Edit
+ui_repos_view_only = You do not have write access to this repository's project; these fields are read-only.
+ui_repos_delete_title = Danger zone
+ui_repos_delete_hint = Removing a repository deletes its run history. This cannot be undone.
+ui_repos_delete = Delete repository
+ui_repos_not_found = No such repository.
+ui_repos_ok_created = Repository registered.
+ui_repos_ok_saved = Changes saved.
+ui_repos_ok_deleted = Repository deleted.
+ui_repos_err_owner_name_empty = Owner and name are required.
+ui_repos_err_project_required = Choose a project for this repository.
+ui_repos_err_bad_clone_url = That clone URL is not valid.
+ui_repos_err_forbidden = You do not have write access to that project.
+ui_repos_err_not_found = No such repository.
+ui_repos_err_write_failed = That could not be saved. It may already exist.
+
+# ── Credentials ──────────────────────────────────────────────────────────────
+
+ui_credentials_title = Credentials
+ui_credentials_empty = No credentials visible to you.
+
+# Following a repository or project's run results
+ui_follow_start = Follow
+ui_follow_stop = Following - click to stop
+ui_follow_projects_title = Follow projects
+ui_follow_projects_hint = Run results for every repository under a project you follow are emailed to you: failures, and the first success after one. Choose which kinds of message you get, and whether you get them at all, on your gatehouse account page.
+ui_follow_ok_followed = You now follow this.
+ui_follow_ok_unfollowed = You no longer follow this.
+ui_follow_err_failed = That could not be changed. Try again.
+ui_menu_open = Open menu
+ui_menu_close = Close menu
+ui_theme_toggle = Toggle theme
+ui_close = Close
+ui_cancel = Cancel
+ui_dashboard_button = Services dashboard
+ui_nav_pipelines = Pipelines
+ui_theme_mode = Mode
+ui_theme_light = Light
+ui_theme_dark = Dark
+ui_theme_palette = Colour
+ui_palette_green = Green
+ui_palette_teal = Teal
+ui_palette_blue = Blue
+ui_palette_purple = Purple
+ui_palette_rose = Rose
+ui_palette_orange = Orange
+ui_findings_title = Scanner findings
+ui_findings_apply = Apply
+ui_findings_none = Nothing at the selected levels.
+
+# ── Browser client ───────────────────────────────────────────────────────────
+
+ui_loading = Loading…
+ui_not_found = There is nothing here.
+ui_session_ended = Your session ended.
+ui_sign_in = Sign in
+ui_unknown_repo = unknown repository
+ui_job_did_not_run = this job did not run

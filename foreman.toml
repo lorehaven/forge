@@ -43,30 +43,30 @@ redis_url = "redis://localhost:6379"
 
 # Encrypts gatehouse's Ed25519 signing keys at rest (`auth.signing_keys`).
 # Nothing else needs it - relying parties verify against JWKS, never this.
-key_encryption_key = { env_file = "docker/gatehouse-service/.env", key = "GATEHOUSE_KEY_ENCRYPTION_KEY", default = "forge-local-dev-key-encryption-key" }
+key_encryption_key = { env_file = "services/gatehouse/service/.env", key = "GATEHOUSE_KEY_ENCRYPTION_KEY", default = "forge-local-dev-key-encryption-key" }
 
 # Signs warehouse's own Docker Registry v2 tokens - a protocol gatehouse has
 # no part in, so this never leaves warehouse.
-docker_token_secret = { env_file = "docker/warehouse-service/.env", key = "DOCKER_TOKEN_SECRET", default = "forge-local-dev-docker-token-secret" }
+docker_token_secret = { env_file = "services/warehouse/service/.env", key = "DOCKER_TOKEN_SECRET", default = "forge-local-dev-docker-token-secret" }
 
 # The interactive account.
-admin_user = { env_file = "docker/switchboard-service/.env", key = "SERVICE_USERNAME", default = "admin" }
-admin_password = { env_file = "docker/switchboard-service/.env", key = "SERVICE_PASSWORD", default = "password" }
+admin_user = { env_file = "services/switchboard/service/.env", key = "SERVICE_USERNAME", default = "admin" }
+admin_password = { env_file = "services/switchboard/service/.env", key = "SERVICE_PASSWORD", default = "password" }
 
-# One OAuth client secret per relying party (`docker/gatehouse-service/config/clients.toml`),
+# One OAuth client secret per relying party (`services/gatehouse/service/config/clients.toml`),
 # read out of each service's own .env so the realm cannot quietly diverge from
 # what the service already expects - the same reasoning `admin_user`/`admin_password`
 # above already follow. `client_secret_sage_switchboard` is sage's machine identity toward
 # switchboard (`client_credentials`), not a relying-party login client.
-client_secret_sage = { env_file = "docker/sage-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-sage" }
-client_secret_switchboard = { env_file = "docker/switchboard-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-switchboard" }
-client_secret_warehouse = { env_file = "docker/warehouse-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-warehouse" }
-client_secret_conveyor = { env_file = "docker/conveyor-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-conveyor" }
-client_secret_gantry = { env_file = "docker/gantry-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-gantry" }
-client_secret_gantry_warehouse = { env_file = "docker/gantry-service/.env", key = "CLIENT_SECRET_GANTRY_WAREHOUSE", default = "forge-local-dev-secret-gantry-warehouse" }
-client_secret_gauge = { env_file = "docker/gauge-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-gauge" }
-client_secret_workbench = { env_file = "docker/workbench-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-workbench" }
-client_secret_sage_switchboard = { env_file = "docker/sage-service/.env", key = "CLIENT_SECRET_SAGE_SWITCHBOARD", default = "forge-local-dev-secret-sage-switchboard" }
+client_secret_sage = { env_file = "services/sage/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-sage" }
+client_secret_switchboard = { env_file = "services/switchboard/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-switchboard" }
+client_secret_warehouse = { env_file = "services/warehouse/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-warehouse" }
+client_secret_conveyor = { env_file = "services/conveyor/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-conveyor" }
+client_secret_gantry = { env_file = "services/gantry/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-gantry" }
+client_secret_gantry_warehouse = { env_file = "services/gantry/service/.env", key = "CLIENT_SECRET_GANTRY_WAREHOUSE", default = "forge-local-dev-secret-gantry-warehouse" }
+client_secret_gauge = { env_file = "services/gauge/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-gauge" }
+client_secret_workbench = { env_file = "services/workbench/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-workbench" }
+client_secret_sage_switchboard = { env_file = "services/sage/service/.env", key = "CLIENT_SECRET_SAGE_SWITCHBOARD", default = "forge-local-dev-secret-sage-switchboard" }
 
 [build]
 command = ["cargo", "build", "-q", "--all-features", "--package", "${package}"]
@@ -121,12 +121,20 @@ selection = "subset-only"
 env = { DATABASE_URL = "${database_url}" }
 command = [
   "${project_root}/target/debug/foundry-service",
-  "--catalog", "${project_root}/docker/foundry-service/migrations",
-  "--config", "${project_root}/docker/foundry-service/config/install.toml",
+  "--catalog", "${project_root}/services/foundry/service/migrations",
+  "--config", "${project_root}/services/foundry/service/config/install.toml",
   "${selection}",
   "apply",
 ]
 done = "database ready"
+
+# The browser clients: each service with a `web` crate serves its module from web/app.wasm (the image builds it the same
+# way). Runs before a start with the other `migrate` tasks, and by hand as `foreman run web`.
+[tasks.web]
+role = "migrate"
+description = "building the browser clients"
+command = ["bash", "scripts/web.sh"]
+done = "browser clients built"
 
 # Local test data: extra users with a spread of permission sets, workbench
 # projects/issues, conveyor repos/runs/jobs, and sage projects/conversations -
@@ -162,8 +170,8 @@ build = ["cargo", "build", "-q", "--package", "foundry-service"]
 env = { DATABASE_URL = "${database_url}" }
 command = [
   "${project_root}/target/debug/foundry-service",
-  "--catalog", "${project_root}/docker/foundry-service/migrations",
-  "--config", "${project_root}/docker/foundry-service/config/install.toml",
+  "--catalog", "${project_root}/services/foundry/service/migrations",
+  "--config", "${project_root}/services/foundry/service/config/install.toml",
   "reset",
   "--yes",
 ]
@@ -223,7 +231,7 @@ host = "localhost"
 health_path = "/health"
 start_timeout_secs = 30
 stop_timeout_secs = 4
-workdir = "docker/${package}"
+workdir = "services/${name}/service"
 cert_files = ["cert.pem", "key.pem"]
 
 [defaults.env]
@@ -264,7 +272,7 @@ needs = []
 # Gatehouse is the destination, not a client of itself - it has its own
 # native login form rather than redirecting anywhere.
 unset = ["GATEHOUSE_URL", "GATEHOUSE_CLIENT_ID"]
-cert_from = "docker/warehouse-service"
+cert_from = "services/warehouse/service"
 
 [services.env]
 AUTH_BOOTSTRAP = "true"
@@ -283,7 +291,7 @@ CLIENT_SECRET_GAUGE = "${client_secret_gauge}"
 CLIENT_SECRET_GANTRY_WAREHOUSE = "${client_secret_gantry_warehouse}"
 CLIENT_SECRET_SAGE_SWITCHBOARD = "${client_secret_sage_switchboard}"
 # Not SERVICE_AUDIENCES: gatehouse derives the realm's audience list from its
-# permission catalog now (docker/gatehouse-service/config/permissions.toml),
+# permission catalog now (services/gatehouse/service/config/permissions.toml),
 # so that one file is what adding a service means editing - see the catalog's
 # own comments. Every other service still reads SERVICE_AUDIENCES normally for
 # its own, single-service default.
@@ -315,9 +323,14 @@ package = "switchboard-service"
 port = 7443
 base_path = "/switchboard"
 needs = ["gatehouse"]
+cert_from = "services/warehouse/service"
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_switchboard}"
+# Switchboard keeps a dev certificate of its own in its directory, which the browser has no exception for: serve the
+# estate's shared one, as every other service does.
+SERVER_CERT_PATH = "${project_root}/services/warehouse/service/cert.pem"
+SERVER_KEY_PATH = "${project_root}/services/warehouse/service/key.pem"
 
 # vLLM instances are switchboard's children, not foreman's: killing switchboard
 # orphans them, and they keep the GPU and their ports. Ask switchboard to stop
@@ -374,7 +387,7 @@ package = "conveyor-service"
 port = 9443
 base_path = "/conveyor"
 needs = ["gatehouse"]
-cert_from = "docker/warehouse-service"
+cert_from = "services/warehouse/service"
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_conveyor}"
@@ -385,7 +398,7 @@ package = "workbench-service"
 port = 10443
 base_path = "/workbench"
 needs = ["gatehouse"]
-cert_from = "docker/warehouse-service"
+cert_from = "services/warehouse/service"
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_workbench}"
@@ -396,8 +409,10 @@ package = "daybook-service"
 port = 12443
 base_path = "/daybook"
 needs = ["gatehouse"]
-workdir = "services/daybook/service"
-cert_from = "docker/warehouse-service"
+cert_from = "services/warehouse/service"
+
+[services.env]
+SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:12080"
 
 # Hoist's public catalogue (F-Droid, IzzyOnDroid and Aptoide merged), in services/hoist beside the app. The first
 # refresh fetches the three upstream stores over the network; HOIST_APTOIDE_PAGES=5 keeps a local one short.
@@ -407,11 +422,11 @@ package = "hoist-service"
 port = 14443
 base_path = "/hoist"
 needs = ["gatehouse"]
-workdir = "services/hoist/service"
-cert_from = "docker/warehouse-service"
+cert_from = "services/warehouse/service"
 
 [services.env]
 DB_SCHEMA = "hoist"
+SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:14080"
 HOIST_APTOIDE_PAGES = "5"
 
 # Gantry reads Warehouse and the cluster rather than depending on the services it manages, so the realm
@@ -422,13 +437,13 @@ package = "gantry-service"
 port = 11443
 base_path = "/gantry"
 needs = ["gatehouse"]
-cert_from = "docker/warehouse-service"
+cert_from = "services/warehouse/service"
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_gantry}"
 SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:11080"
 
-# Gauge reads the PCP / node_exporter endpoints listed in docker/gauge-service/config/targets.toml and keeps
+# Gauge reads the PCP / node_exporter endpoints listed in services/gauge/service/config/targets.toml and keeps
 # no state, so the realm is all it waits for.
 [[services]]
 name = "gauge"
@@ -436,7 +451,7 @@ package = "gauge-service"
 port = 13443
 base_path = "/gauge"
 needs = ["gatehouse"]
-cert_from = "docker/warehouse-service"
+cert_from = "services/warehouse/service"
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_gauge}"

@@ -1,0 +1,305 @@
+//! Shared setup for the tests that need a real Postgres.
+//!
+//! They are skipped unless `CONVEYOR_TEST_DATABASE_URL` is set, the way the
+//! estate skips its Redis-backed cache tests. Point it at a throwaway database:
+//! every test truncates conveyor's tables before it runs.
+//!
+//! ```bash
+//! docker run --rm -d --name conveyor-test-pg -e POSTGRES_PASSWORD=postgres \
+//!     -p 55432:5432 pgvector/pgvector:pg18
+//! cargo run -p foundry-service -- apply \
+//!     --catalog services/foundry/service/migrations \
+//!     --database-url postgres://postgres:postgres@localhost:55432/postgres \
+//!     --install conveyor
+//! CONVEYOR_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/postgres \
+//!     cargo test -p conveyor-service
+//! ```
+
+#![allow(dead_code)]
+
+use conveyor_service::domain::{Provider, Repo};
+use conveyor_service::scheduler::projects::{self, NewProject};
+use conveyor_service::scheduler::repos::{self, NewRepo};
+use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
+use quench_db::prelude::{Database, Db};
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, Uri};
+use quench_http::request::Request;
+use std::path::Path;
+use std::process::Command;
+use std::sync::{Arc, OnceLock};
+use tokio::sync::{Mutex, MutexGuard};
+
+// ---------------------------------------------------------------------------
+// HTTP-layer helpers, shared by every `routers_*_tests.rs` file in this
+// directory - `discover_and_mount` + a hand-built `quench_http::request::Request`,
+// same convention used across every already-migrated service this session
+// (sage/workbench/gatehouse/switchboard).
+// ---------------------------------------------------------------------------
+
+/// Builds the app router plus a DI container carrying `db` and `jwt_config`.
+/// `register_routes()` calls are the caller's responsibility (each test module
+/// should call the `register_routes()` for whatever router tree it actually
+/// exercises before calling this, same as every other service's tests).
+pub async fn app(
+    db: Db,
+    jwt_config: JwtConfig,
+) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    let container = ContainerBuilder::new()
+        .provide(db)
+        .provide(jwt_config)
+        .build()
+        .await
+        .unwrap();
+    (
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
+    )
+}
+
+pub fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container.clone(),
+    )
+}
+
+pub fn json_req(
+    method: Method,
+    path: &str,
+    body: &quench_serde::Value,
+    container: &Arc<quench_http::di::Container>,
+) -> Request {
+    let mut headers = HeaderMap::new();
+    headers.insert("content-type", "application/json".parse().unwrap());
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        headers,
+        quench_http::body::InboundBody::from_bytes(Bytes::from(quench_serde::json::to_vec(body))),
+        container.clone(),
+    )
+}
+
+pub fn form_req(
+    method: Method,
+    path: &str,
+    pairs: &[(&str, &str)],
+    container: &Arc<quench_http::di::Container>,
+) -> Request {
+    let encoded = quench_serde::urlencoded::to_string(pairs).unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "content-type",
+        "application/x-www-form-urlencoded".parse().unwrap(),
+    );
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        headers,
+        quench_http::body::InboundBody::from_bytes(Bytes::from(encoded)),
+        container.clone(),
+    )
+}
+
+/// A request carrying a raw byte body and arbitrary headers - for webhook
+/// deliveries, which are authenticated by an HMAC signature header over the
+/// exact bytes sent rather than a parsed form/JSON body.
+pub fn raw_req(
+    method: Method,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: &[u8],
+    container: &Arc<quench_http::di::Container>,
+) -> Request {
+    let mut header_map = HeaderMap::new();
+    for (name, value) in headers {
+        header_map.insert(
+            quench_http::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+            value.parse().unwrap(),
+        );
+    }
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        header_map,
+        quench_http::body::InboundBody::from_bytes(Bytes::copy_from_slice(body)),
+        container.clone(),
+    )
+}
+
+pub async fn body_text(resp: quench_http::response::Response) -> String {
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8_lossy(&collected).into_owned()
+}
+
+pub async fn json_body(resp: quench_http::response::Response) -> quench_serde::Value {
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    quench_serde::json::from_slice(&collected).expect("valid json body")
+}
+
+/// Splits a response into its headers and text body, since `Response` only
+/// exposes headers via the consuming `into_inner()`.
+pub async fn parts(
+    resp: quench_http::response::Response,
+) -> (quench_http::http::HeaderMap, String) {
+    let parts = resp.into_inner();
+    let collected = parts.body.collect_limited(usize::MAX).await.expect("body");
+    (
+        parts.headers,
+        String::from_utf8_lossy(&collected).into_owned(),
+    )
+}
+
+pub fn location(headers: &quench_http::http::HeaderMap) -> String {
+    headers
+        .get("location")
+        .expect("a Location header")
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+/// The tests share one schema, so they take turns. Running them in parallel
+/// would have them claiming each other's runs - `claim_next` deliberately does
+/// not know which test queued what.
+fn lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+pub const TEST_USER: &str = "conveyor-tests";
+
+/// A connected database with conveyor's tables emptied, or `None` when no test
+/// database is configured.
+pub async fn database() -> Option<(Db, MutexGuard<'static, ()>)> {
+    let url = std::env::var("CONVEYOR_TEST_DATABASE_URL").ok()?;
+    if url.trim().is_empty() {
+        return None;
+    }
+
+    let guard = lock().lock().await;
+    let db = Db::connect(&url)
+        .await
+        .expect("connect to the test database");
+
+    // Cascades to runs, jobs, steps, logs and artifacts. `repos` first: it
+    // references `projects`, so truncating `projects` alone would fail the
+    // foreign key without also naming the table that points at it.
+    db.execute("TRUNCATE conveyor.repos, conveyor.projects, conveyor.runs CASCADE")
+        .await
+        .expect("truncate");
+    db.execute(&format!(
+        "INSERT INTO auth.users (username, password, roles) \
+         VALUES ('{TEST_USER}', 'x', '[]'::jsonb) ON CONFLICT DO NOTHING"
+    ))
+    .await
+    .expect("seed the test user");
+
+    Some((db, guard))
+}
+
+/// Printed once when the database tests are skipped, so a green run that tested
+/// nothing does not look like a green run that tested everything.
+pub fn skipped(test: &str) {
+    println!("skipping {test}: CONVEYOR_TEST_DATABASE_URL is not set");
+}
+
+pub async fn register_repo(db: &Db, name: &str, clone_url: &str) -> Repo {
+    let project = projects::create(
+        db,
+        &NewProject {
+            name: name.to_string(),
+            parent_id: None,
+        },
+    )
+    .await
+    .expect("create the project");
+
+    repos::create(
+        db,
+        &NewRepo {
+            provider: Provider::Generic,
+            owner: "tests".to_string(),
+            name: name.to_string(),
+            clone_url: clone_url.to_string(),
+            default_branch: "master".to_string(),
+            registered_by: TEST_USER.to_string(),
+            project_id: project.id,
+        },
+    )
+    .await
+    .expect("register the repository")
+}
+
+// ---------------------------------------------------------------------------
+// A repository to build
+// ---------------------------------------------------------------------------
+
+pub fn git(dir: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "conveyor tests")
+        .env("GIT_AUTHOR_EMAIL", "tests@example.invalid")
+        .env("GIT_COMMITTER_NAME", "conveyor tests")
+        .env("GIT_COMMITTER_EMAIL", "tests@example.invalid")
+        .output()
+        .unwrap_or_else(|e| panic!("git {args:?}: {e}"));
+
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+/// A repository carrying the given `.conveyor.toml`.
+pub struct Origin {
+    pub dir: quench_core::tmp::TempDir,
+    pub sha: String,
+}
+
+impl Origin {
+    pub fn with_pipeline(pipeline: &str) -> Self {
+        let dir = quench_core::tmp::TempDir::new().expect("temp dir");
+        git(dir.path(), &["init", "--quiet", "-b", "master"]);
+        std::fs::write(dir.path().join(".conveyor.toml"), pipeline).expect("write pipeline");
+        git(dir.path(), &["add", "-A"]);
+        git(dir.path(), &["commit", "--quiet", "-m", "pipeline"]);
+        let sha = git(dir.path(), &["rev-parse", "HEAD"]);
+        Self { dir, sha }
+    }
+
+    /// A repository with no pipeline at all.
+    pub fn bare() -> Self {
+        let dir = quench_core::tmp::TempDir::new().expect("temp dir");
+        git(dir.path(), &["init", "--quiet", "-b", "master"]);
+        std::fs::write(dir.path().join("README.md"), b"nothing here\n").expect("write");
+        git(dir.path(), &["add", "-A"]);
+        git(dir.path(), &["commit", "--quiet", "-m", "no pipeline"]);
+        let sha = git(dir.path(), &["rev-parse", "HEAD"]);
+        Self { dir, sha }
+    }
+
+    pub fn url(&self) -> String {
+        format!("file://{}", self.dir.path().display())
+    }
+}

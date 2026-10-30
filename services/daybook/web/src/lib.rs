@@ -12,12 +12,17 @@ pub use browser::app;
 pub fn stylesheet() -> String {
     use quench_style::theme::Theme;
     let mut css = String::new();
-    for (scheme, theme) in [("dark", Theme::DefaultDark), ("light", Theme::DefaultLight)] {
-        css.push_str(&format!(
-            "@media (prefers-color-scheme: {scheme}) {{\n{}\n}}\n",
-            Theme::theme(theme)
-        ));
-    }
+    // The theme follows the person's choice in forge's theme menu (`html[data-fui-theme]`, set by the shell script), dark
+    // until they pick light.
+    let dark = Theme::theme(Theme::DefaultDark);
+    css.push_str(&dark);
+    css.push('\n');
+    css.push_str(&dark.replace(":root", "html[data-fui-theme=\"dark\"]"));
+    css.push('\n');
+    css.push_str(
+        &Theme::theme(Theme::DefaultLight).replace(":root", "html[data-fui-theme=\"light\"]"),
+    );
+    css.push('\n');
     for sheet in [
         quench_style::tokens::stylesheet(),
         quench_style::mobile::stylesheet(),
@@ -27,6 +32,11 @@ pub fn stylesheet() -> String {
         css.push('\n');
     }
     css.push_str(daybook_app::STYLE);
+    css.push('\n');
+    css.push_str(FRAME);
     css
 }
 pub use platform::Web;
+
+/// What puts the app under forge's top bar and in its colours.
+const FRAME: &str = include_str!("../frame.css");

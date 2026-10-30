@@ -1,0 +1,60 @@
+:root{--wb-bg:var(--fui-bg);--wb-surface:var(--fui-surface);--wb-surface-2:var(--fui-surface-2);--wb-border:var(--fui-border);--wb-text:var(--fui-text);--wb-text-2:var(--fui-text-secondary);--wb-text-3:var(--fui-text-tertiary);--wb-brand:var(--fui-brand-500);--wb-blue:var(--fui-blue-500);--wb-amber:var(--fui-warning-500);--wb-red:var(--fui-error-500);--wb-notice-bg:var(--fui-error-soft-bg);--wb-notice-text:var(--fui-error-soft-text);--wb-notice-border:var(--fui-error-soft-border)}
+h1{margin:0;font-size:1.5rem}
+h3{margin:0;font-size:1rem}
+
+
+
+
+.wb-current{background:var(--wb-surface-2);color:var(--wb-text);font-weight:600}
+.wb-main{display:flex;flex-direction:column;width:100%;flex:1;min-width:0;padding:1.5rem;overflow:auto}
+.wb-page{display:flex;flex-direction:column;gap:1.25rem;width:100%}
+.wb-head{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.wb-muted{color:var(--wb-text-3);margin:0}
+.wb-empty{margin:3rem 0;text-align:center;color:var(--wb-text-3)}
+.wb-notice{margin:0 0 1rem;padding:.75rem 1rem;border-radius:.75rem;background:var(--wb-notice-bg);color:var(--wb-notice-text);border:1px solid var(--wb-notice-border)}
+.wb-error{margin:0;font-size:.875rem;color:var(--wb-red)}
+.wb-card{display:flex;flex-direction:column;gap:.75rem;padding:1.25rem;min-width:0;background:var(--wb-surface);border:1px solid var(--wb-border);border-radius:1rem}
+.wb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,18rem),1fr));gap:1.25rem}
+.wb-project:hover{border-color:var(--wb-brand)}
+.wb-btn{font:inherit;font-size:.875rem;padding:.5rem 1rem;color:var(--wb-text);background:var(--wb-surface);border:1px solid var(--wb-border);border-radius:.5rem;cursor:pointer}
+.wb-btn:hover{border-color:var(--wb-brand)}
+.wb-primary{color:#fff;background:var(--wb-brand);border-color:var(--wb-brand)}
+.wb-small{padding:.25rem .5rem;font-size:.8125rem}
+.wb-form{gap:1rem}
+.wb-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:1rem}
+.wb-field{display:flex;flex-direction:column;gap:.375rem;min-width:0}
+.wb-field label{font-size:.8125rem;font-weight:500;color:var(--wb-text-2)}
+.wb-input{font:inherit;font-size:.875rem;width:100%;box-sizing:border-box;padding:.5rem .625rem;color:var(--wb-text);background:var(--wb-surface);border:1px solid var(--wb-border);border-radius:.5rem}
+.wb-input:focus{outline:2px solid var(--wb-blue);outline-offset:-1px}
+.wb-area{min-height:5rem;resize:vertical}
+.wb-inline{display:flex;gap:.5rem;align-items:center}
+.wb-actions{display:flex;justify-content:flex-end;gap:.75rem}
+.wb-board{display:grid;grid-template-columns:repeat(5,minmax(12rem,1fr));gap:1rem;overflow-x:auto;align-items:start}
+.wb-column{display:flex;flex-direction:column;gap:.75rem;padding:.75rem;background:var(--wb-surface-2);border-radius:1rem;min-width:0}
+.wb-column-title{font-size:.8125rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--wb-text-3)}
+.wb-column-body{display:flex;flex-direction:column;gap:.75rem}
+.wb-ticket{gap:.5rem;padding:.875rem}
+.wb-key{font-size:.75rem;color:var(--wb-text-3)}
+.wb-ticket-title{font-weight:600;overflow-wrap:anywhere}
+.wb-meta{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.75rem;color:var(--wb-text-2)}
+.wb-badge{display:inline-block;padding:.0625rem .5rem;border-radius:999px;font-size:.75rem;background:var(--wb-surface-2);color:var(--wb-text-2)}
+.wb-red{background:var(--fui-error-soft-bg);color:var(--fui-error-soft-text)}
+.wb-amber{background:var(--fui-warning-soft-bg);color:var(--fui-warning-soft-text)}
+.wb-green{background:var(--fui-success-soft-bg);color:var(--fui-success-soft-text)}
+.wb-blue{background:var(--fui-blue-soft-bg);color:var(--fui-blue-soft-text)}
+.wb-crumbs{display:flex;gap:.5rem;font-size:.875rem;color:var(--wb-text-3)}
+.wb-subtitle{font-size:.8125rem;font-weight:600;color:var(--wb-text-2);margin-bottom:.25rem}
+.wb-link-section{display:flex;flex-direction:column}
+.wb-link-list{display:flex;flex-direction:column;gap:.375rem}
+.wb-link-row{display:flex;align-items:center;gap:.75rem}
+.wb-link-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.wb-thread{display:flex;flex-direction:column;gap:.75rem}
+.wb-comment{padding:.75rem;background:var(--wb-surface-2);border-radius:.75rem}
+.wb-comment-head{display:flex;justify-content:space-between;gap:.75rem;font-size:.8125rem}
+.wb-comment-body{margin:.375rem 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+@media (max-width:48rem){.wb-board{grid-template-columns:1fr}}
+
+.fui-app .wb-project,.fui-app .wb-ticket-title,.fui-app .wb-link-title{color:var(--fui-text)}
+.fui-app .wb-project:hover,.fui-app .wb-ticket-title:hover,.fui-app .wb-link-title:hover{text-decoration:none;color:var(--fui-brand-soft-text)}
+
+@media (min-width:1024px){.wb-board-page{flex:1}.wb-board-page .wb-board{flex:1;align-items:stretch;grid-template-columns:repeat(5,minmax(0,1fr))}.wb-board .wb-column-body{flex:1}}

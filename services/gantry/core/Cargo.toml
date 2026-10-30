@@ -1,0 +1,27 @@
+[package]
+name = "gantry-core"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+autotests = false
+
+# What Gantry's API says and how a form is read: the model (packages, resources, deployments, operations, plans), the request
+# bodies, the filters and the YAML draft. No I/O, and it builds for the browser: the service and the client share it.
+[lib]
+name = "gantry_core"
+path = "src/lib.rs"
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dependencies]
+quench-serde = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }

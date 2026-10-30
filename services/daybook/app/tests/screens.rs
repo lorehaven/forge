@@ -461,4 +461,34 @@ fn a_session_that_ended_shows_the_sign_in_again() {
     assert!(!r.text().contains("Milk"));
 }
 
+/// One task changing must not rebuild the list: with hundreds of tasks that made every tap slow and the screen jump.
+#[quench_test::test]
+fn changing_one_task_leaves_the_other_rows_alone() {
+    let tasks: Vec<Task> = (0..300)
+        .map(|i| task(&format!("t{i:03}"), &format!("Task {i}")))
+        .collect();
+    let (r, _asked, deliver, _mounted) = signed_in(tasks.clone());
+    let untouched = find(&r, "button", ("id", "task-t010"));
+    let build = r.ops().len();
+    r.clear_ops();
+
+    let mut changed = tasks;
+    changed[5].is_completed = true;
+    deliver(Msg::Data(Box::new(Data {
+        projects: vec![],
+        labels: vec![],
+        tasks: changed,
+    })));
+    assert_eq!(
+        find(&r, "button", ("id", "task-t010")),
+        untouched,
+        "the row of an untouched task is the same element"
+    );
+    let after = r.ops().len();
+    assert!(
+        after * 20 < build,
+        "one change took {after} operations against {build} to build the list"
+    );
+}
+
 quench_test::main!();

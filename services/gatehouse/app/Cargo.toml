@@ -1,0 +1,30 @@
+[package]
+name = "gatehouse-app"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+
+# The screens: sign-in and the public pages, the services dashboard, the account and the user administration. The app does no
+# I/O: it asks its host for the data (`Request`) and is told what came (`Msg`), so the same screens run in the browser and in tests.
+[lib]
+name = "gatehouse_app"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+forge-shell = { workspace = true }
+quench-ui = { workspace = true }
+gatehouse-core = { workspace = true }
+
+[[test]]
+name = "screens"
+path = "tests/screens.rs"
+harness = false
+
+[dev-dependencies]
+quench-test = { workspace = true }

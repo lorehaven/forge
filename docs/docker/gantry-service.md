@@ -1,6 +1,6 @@
 # Gantry Service
 
-Gantry installs, upgrades, stops, starts and swaps what runs in the cluster, from a UI and an API, as versioned [`.rivet` packages](../libs/rivet-package.md) from Warehouse. It does not touch a workload itself: it records what was asked, has a short-lived **runner Job** do the work with `riveter` and `kubectl`, and reads the outcome back. Binary and crate: `gantry-service` (`docker/gantry-service`), which also builds the `gantry-runner` program the Jobs run. Design and decisions: [`plans/GANTRY_SERVICE.md`](../../plans/GANTRY_SERVICE.md).
+Gantry installs, upgrades, stops, starts and swaps what runs in the cluster, from a UI and an API, as versioned [`.rivet` packages](../libs/rivet-package.md) from Warehouse. It does not touch a workload itself: it records what was asked, has a short-lived **runner Job** do the work with `riveter` and `kubectl`, and reads the outcome back. Binary and crate: `gantry-service` (`services/gantry/service`), which also builds the `gantry-runner` program the Jobs run. Design and decisions: [`plans/GANTRY_SERVICE.md`](../../plans/GANTRY_SERVICE.md).
 
 ## What it does
 
@@ -83,7 +83,7 @@ Everything that reaches outside the service is behind a trait and chosen by envi
 
 The default is the safe one: with nothing set a run is `none` + `dry-run`, and writing to a real cluster has to be said twice - `GANTRY_CLUSTER=kubeconfig` **and** `GANTRY_RUNNER=local`. `local` with anything but `kubeconfig` is refused (the fake cluster would report one thing while `kubectl` changed another), and `job` with no cluster is refused. Still required: Postgres (the `gantry` Foundry module) and Redis, like every service.
 
-**To click through it:** `docker/gantry-service/local/` has a `compose.yaml` that runs Postgres, Redis, the migration and the service (your built binaries, no image build) with `GANTRY_CLUSTER=none GANTRY_RUNNER=simulate`, a seeded cluster (inference up, training down) and demo packages. `docker compose up`, then <http://localhost:11443/gantry/ui/home>; its README lists what to try.
+**To click through it:** `services/gantry/service/local/` has a `compose.yaml` that runs Postgres, Redis, the migration and the service (your built binaries, no image build) with `GANTRY_CLUSTER=none GANTRY_RUNNER=simulate`, a seeded cluster (inference up, training down) and demo packages. `docker compose up`, then <http://localhost:11443/gantry/ui/home>; its README lists what to try.
 
 ```text
 SERVICE_AUTH_ENABLED=false BASE_PATH=/gantry ... DATABASE_URL=... \

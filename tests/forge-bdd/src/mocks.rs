@@ -51,7 +51,7 @@ impl Endpoint for Switchboard {
 
         // sage authenticates with a gatehouse-issued bearer token now
         // (client_credentials), not HTTP Basic - see
-        // `docker/sage-service/src/clients/switchboard.rs`.
+        // `services/sage/service/src/clients/switchboard.rs`.
         let has_auth = req
             .headers()
             .get("authorization")

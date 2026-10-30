@@ -44,6 +44,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
+name = "conveyor-app"
+version = "0.1.0"
+dependencies = [
+ "conveyor-core",
+ "forge-shell",
+ "quench-core",
+ "quench-test",
+ "quench-ui",
+]
+
+[[package]]
 name = "conveyor-cli"
 version = "0.3.28"
 dependencies = [
@@ -58,6 +69,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "conveyor-core"
+version = "0.1.0"
+dependencies = [
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
 name = "conveyor-pipeline"
 version = "0.2.1"
 dependencies = [
@@ -69,10 +89,12 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.6.39"
+version = "0.7.0"
 dependencies = [
+ "conveyor-core",
  "conveyor-pipeline",
- "forge-ui",
+ "conveyor-web",
+ "forge-web",
  "quench-auth",
  "quench-client",
  "quench-core",
@@ -85,9 +107,20 @@ dependencies = [
  "quench-serde",
  "quench-starter",
  "quench-test",
- "quench-web",
- "quench-web-components",
  "tokio",
+]
+
+[[package]]
+name = "conveyor-web"
+version = "0.1.0"
+dependencies = [
+ "conveyor-app",
+ "conveyor-core",
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-web",
 ]
 
 [[package]]
@@ -113,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "daybook-desktop"
-version = "0.1.1"
+version = "0.1.6"
 dependencies = [
  "daybook-app",
  "daybook-core",
@@ -155,13 +188,14 @@ dependencies = [
 
 [[package]]
 name = "daybook-service"
-version = "0.2.9"
+version = "0.3.0"
 dependencies = [
  "daybook-web",
+ "forge-web",
  "quench-auth",
+ "quench-client",
  "quench-core",
  "quench-db",
- "quench-fullstack",
  "quench-http",
  "quench-log",
  "quench-pg",
@@ -169,8 +203,6 @@ dependencies = [
  "quench-starter",
  "quench-test",
  "quench-tz",
- "quench-ui",
- "quench-ui-web",
  "tokio",
 ]
 
@@ -194,12 +226,13 @@ dependencies = [
 
 [[package]]
 name = "daybook-web"
-version = "0.1.0"
+version = "0.1.6"
 dependencies = [
  "daybook-app",
  "daybook-core",
  "daybook-host",
  "daybook-net",
+ "forge-shell",
  "quench-core",
  "quench-serde",
  "quench-style",
@@ -265,6 +298,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-shell"
+version = "0.1.0"
+dependencies = [
+ "quench-test",
+ "quench-ui",
+]
+
+[[package]]
 name = "forge-toolbox"
 version = "0.1.16"
 dependencies = [
@@ -282,6 +323,20 @@ dependencies = [
  "quench-starter",
  "quench-test",
  "quench-web",
+]
+
+[[package]]
+name = "forge-web"
+version = "0.1.0"
+dependencies = [
+ "forge-shell",
+ "quench-core",
+ "quench-fullstack",
+ "quench-http",
+ "quench-starter",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-web",
 ]
 
 [[package]]
@@ -366,10 +421,30 @@ dependencies = [
 ]
 
 [[package]]
-name = "gantry-service"
-version = "0.1.22"
+name = "gantry-app"
+version = "0.1.0"
 dependencies = [
- "forge-ui",
+ "forge-shell",
+ "gantry-core",
+ "quench-test",
+ "quench-ui",
+]
+
+[[package]]
+name = "gantry-core"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "gantry-service"
+version = "0.2.0"
+dependencies = [
+ "forge-web",
+ "gantry-core",
+ "gantry-web",
  "quench-auth",
  "quench-client",
  "quench-core",
@@ -381,9 +456,31 @@ dependencies = [
  "quench-serde",
  "quench-starter",
  "quench-test",
- "quench-web",
  "rivet-package",
  "tokio",
+]
+
+[[package]]
+name = "gantry-web"
+version = "0.1.0"
+dependencies = [
+ "gantry-app",
+ "gantry-core",
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-web",
+]
+
+[[package]]
+name = "gatehouse-app"
+version = "0.1.0"
+dependencies = [
+ "forge-shell",
+ "gatehouse-core",
+ "quench-test",
+ "quench-ui",
 ]
 
 [[package]]
@@ -407,10 +504,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "gatehouse-service"
-version = "0.3.28"
+name = "gatehouse-core"
+version = "0.1.0"
 dependencies = [
- "forge-ui",
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "gatehouse-service"
+version = "0.4.0"
+dependencies = [
+ "forge-web",
+ "gatehouse-core",
+ "gatehouse-web",
  "quench-auth",
  "quench-cache",
  "quench-config",
@@ -425,16 +532,47 @@ dependencies = [
  "quench-starter",
  "quench-test",
  "quench-tz",
- "quench-web",
- "quench-web-components",
  "tokio",
 ]
 
 [[package]]
-name = "gauge-service"
-version = "0.1.2"
+name = "gatehouse-web"
+version = "0.1.0"
 dependencies = [
- "forge-ui",
+ "gatehouse-app",
+ "gatehouse-core",
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-web",
+]
+
+[[package]]
+name = "gauge-app"
+version = "0.1.0"
+dependencies = [
+ "forge-shell",
+ "gauge-core",
+ "quench-test",
+ "quench-ui",
+]
+
+[[package]]
+name = "gauge-core"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "gauge-service"
+version = "0.2.0"
+dependencies = [
+ "forge-web",
+ "gauge-core",
+ "gauge-web",
  "quench-auth",
  "quench-client",
  "quench-core",
@@ -443,8 +581,19 @@ dependencies = [
  "quench-serde",
  "quench-starter",
  "quench-test",
- "quench-web",
  "tokio",
+]
+
+[[package]]
+name = "gauge-web"
+version = "0.1.0"
+dependencies = [
+ "gauge-app",
+ "gauge-core",
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-web",
 ]
 
 [[package]]
@@ -635,9 +784,9 @@ dependencies = [
 
 [[package]]
 name = "quench-android-surface"
-version = "0.1.3"
+version = "0.1.5"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "0b4e11c06471f7d609f74d71b551efef78cb20e9395726f706ad2bd168d13352"
+checksum = "14a80b70faef8af25164c3a3eb36e924caacd6acc86b21491ac53f6d76bdc134"
 dependencies = [
  "quench-raster",
  "quench-serde",
@@ -775,9 +924,9 @@ dependencies = [
 
 [[package]]
 name = "quench-css"
-version = "0.1.1"
+version = "0.1.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "8fca185aa66d5be7e86d630e43888d9e6a643f4f5fc9dece8c20fd4d2fcff729"
+checksum = "fb259083639e1c9105d5090fb07604f8dd5bf1d87b7722f1adc0621a5fbef295"
 
 [[package]]
 name = "quench-db"
@@ -907,9 +1056,9 @@ dependencies = [
 
 [[package]]
 name = "quench-layout"
-version = "0.1.3"
+version = "0.1.5"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "7862e9d0e10945310c02e328df3aa29469a667a3c415177f9f1dca9dbabde342"
+checksum = "81fe7577ce71aebf34fb126f6fd96e57e3ef6ec04f72b91d3c4333732f490ce2"
 dependencies = [
  "quench-css",
  "quench-text",
@@ -950,9 +1099,9 @@ dependencies = [
 
 [[package]]
 name = "quench-paint"
-version = "0.1.3"
+version = "0.1.5"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "6c6410d9aba5e2eaf4ab7677a103c33245fef12f33c240452f7758e94e028c1a"
+checksum = "30f27f49db5fd52c137a85a81469e656d44a3121335978e81c09468664e55925"
 dependencies = [
  "quench-css",
  "quench-layout",
@@ -1002,9 +1151,9 @@ checksum = "c7de9bcc6b01aa01763f66e893f3272a70d397d69b3fd5ad9227d8b9aa64af77"
 
 [[package]]
 name = "quench-raster"
-version = "0.1.2"
+version = "0.1.3"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "b2aa57a196bb5cef4a504f2d4718540c67eda5e1297fd9828609b138910e9b15"
+checksum = "825854eb148703e78698898248d915d726b7949cf69f963a3b5ab80cdef7adbc"
 
 [[package]]
 name = "quench-redis"
@@ -1189,9 +1338,9 @@ checksum = "3bb558fe80aeb0608a5bfbfe29e07a3c53a5de8a3bbb6d4d6f598b71765f4a98"
 
 [[package]]
 name = "quench-ui-native"
-version = "0.1.3"
+version = "0.1.5"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "87a18af5696d4c650f1a6196409429983d8741040954b5748f4dd407e4f2e3ea"
+checksum = "6558a88520a238c6c476b34e788ea016b4320abb1bf1a73f4a46a704df1eb63a"
 dependencies = [
  "quench-core",
  "quench-css",
@@ -1233,15 +1382,6 @@ checksum = "442f03ecf0cbd635e2165b9f6a648d366a1af14bc03f63f312f9167c9ec78474"
 dependencies = [
  "quench-core",
  "quench-style",
-]
-
-[[package]]
-name = "quench-web-components"
-version = "0.1.18"
-source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "2a594ee57f9cd2951b04374738ba0ba3af98d6508fad7016f41a0d6a733a03c2"
-dependencies = [
- "quench-web",
 ]
 
 [[package]]
@@ -1349,10 +1489,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "sage-service"
-version = "0.5.35"
+name = "sage-app"
+version = "0.1.0"
 dependencies = [
- "forge-ui",
+ "forge-shell",
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "sage-core",
+]
+
+[[package]]
+name = "sage-core"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "sage-service"
+version = "0.6.0"
+dependencies = [
+ "forge-web",
  "quench-auth",
  "quench-cache",
  "quench-client",
@@ -1369,8 +1528,22 @@ dependencies = [
  "quench-serde",
  "quench-starter",
  "quench-test",
- "quench-web",
+ "sage-core",
+ "sage-web",
  "tokio",
+]
+
+[[package]]
+name = "sage-web"
+version = "0.1.0"
+dependencies = [
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-web",
+ "sage-app",
+ "sage-core",
 ]
 
 [[package]]
@@ -1418,10 +1591,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
-name = "switchboard-service"
-version = "0.5.31"
+name = "switchboard-app"
+version = "0.1.0"
 dependencies = [
- "forge-ui",
+ "forge-shell",
+ "quench-test",
+ "quench-ui",
+ "switchboard-core",
+]
+
+[[package]]
+name = "switchboard-core"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "switchboard-service"
+version = "0.6.0"
+dependencies = [
+ "forge-web",
  "quench-auth",
  "quench-convert",
  "quench-core",
@@ -1433,9 +1624,21 @@ dependencies = [
  "quench-serde",
  "quench-starter",
  "quench-test",
- "quench-web",
- "quench-web-components",
+ "switchboard-web",
  "tokio",
+]
+
+[[package]]
+name = "switchboard-web"
+version = "0.1.0"
+dependencies = [
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-web",
+ "switchboard-app",
+ "switchboard-core",
 ]
 
 [[package]]
@@ -1490,6 +1693,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+name = "warehouse-app"
+version = "0.1.0"
+dependencies = [
+ "forge-shell",
+ "quench-test",
+ "quench-ui",
+ "warehouse-core",
+]
+
+[[package]]
 name = "warehouse-cli"
 version = "0.1.16"
 dependencies = [
@@ -1503,10 +1716,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "warehouse-service"
-version = "0.7.15"
+name = "warehouse-core"
+version = "0.1.0"
 dependencies = [
- "forge-ui",
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "warehouse-service"
+version = "0.8.0"
+dependencies = [
+ "forge-web",
  "quench-archive",
  "quench-auth",
  "quench-config",
@@ -1520,10 +1741,23 @@ dependencies = [
  "quench-serde",
  "quench-starter",
  "quench-test",
- "quench-web",
- "quench-web-components",
  "rivet-package",
  "tokio",
+ "warehouse-core",
+ "warehouse-web",
+]
+
+[[package]]
+name = "warehouse-web"
+version = "0.1.0"
+dependencies = [
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-web",
+ "warehouse-app",
+ "warehouse-core",
 ]
 
 [[package]]
@@ -1644,10 +1878,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
-name = "workbench-service"
-version = "0.2.25"
+name = "workbench-app"
+version = "0.1.0"
 dependencies = [
- "forge-ui",
+ "forge-shell",
+ "quench-test",
+ "quench-ui",
+ "workbench-core",
+]
+
+[[package]]
+name = "workbench-core"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "workbench-service"
+version = "0.3.0"
+dependencies = [
+ "forge-web",
  "quench-auth",
  "quench-core",
  "quench-db",
@@ -1657,8 +1909,22 @@ dependencies = [
  "quench-serde",
  "quench-starter",
  "quench-test",
- "quench-web",
  "tokio",
+ "workbench-core",
+ "workbench-web",
+]
+
+[[package]]
+name = "workbench-web"
+version = "0.1.0"
+dependencies = [
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-web",
+ "workbench-app",
+ "workbench-core",
 ]
 
 [[package]]

@@ -4,7 +4,7 @@
 //! in-memory store by design. These scenarios therefore cover what no
 //! database can change: the UI shell, gatehouse delegation, and which routes
 //! need a token. Everything that touches the tables is covered by
-//! `docker/workbench-service/tests/integration`, against a real Postgres.
+//! `services/workbench/service/tests/integration`, against a real Postgres.
 
 use crate::world::ForgeWorld;
 use quench_test_bdd::{given, when};

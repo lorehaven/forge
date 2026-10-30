@@ -1,6 +1,6 @@
 # Workbench Service
 
-Workbench is Forge's task-management service: a Jira/YouTrack-shaped issue tracker — projects, issues (with sub-issue nesting), comments, labels and cross-issue links — with no local users of its own, delegating login entirely to Gatehouse. Binary and crate name: `workbench-service` (`docker/workbench-service`).
+Workbench is Forge's task-management service: a Jira/YouTrack-shaped issue tracker — projects, issues (with sub-issue nesting), comments, labels and cross-issue links — with no local users of its own, delegating login entirely to Gatehouse. Binary and crate name: `workbench-service` (`services/workbench/service`).
 
 ## Features
 

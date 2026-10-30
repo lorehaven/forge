@@ -271,7 +271,7 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
     // The package's own directory, relative to the workspace root - not an
     // anvil module name assumed to double as a path prefix, so this works
     // regardless of whether the workspace nests packages under a module
-    // directory (forge's own docker/<service>/ convention) or not.
+    // directory (forge's own services/<name>/service layout) or not.
     let metadata = cargo_meta::cargo_metadata()?;
     let workspace_root = cargo_meta::workspace_root(&metadata)?;
     let pkg = cargo_meta::workspace_packages(&metadata)?

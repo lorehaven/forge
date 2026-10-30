@@ -1,6 +1,6 @@
 # Foundry Service
 
-Foundry is the Forge estate's database initialization job: one place for every service's migrations, one command to install a chosen set of them at chosen versions. It is not a long-running server — it is a run-to-completion CLI, meant to run as a Kubernetes `Job` (or an init container) ahead of a rollout, or as a `foreman` task ahead of starting services locally. It exits `0` when the database matches the declared plan and non-zero otherwise. Binary and crate name: `foundry-service` (`docker/foundry-service`).
+Foundry is the Forge estate's database initialization job: one place for every service's migrations, one command to install a chosen set of them at chosen versions. It is not a long-running server — it is a run-to-completion CLI, meant to run as a Kubernetes `Job` (or an init container) ahead of a rollout, or as a `foreman` task ahead of starting services locally. It exits `0` when the database matches the declared plan and non-zero otherwise. Binary and crate name: `foundry-service` (`services/foundry/service`).
 
 ## Features
 
@@ -100,6 +100,6 @@ In local dev, `foreman` runs foundry as a `[tasks.foundry]` migrate step ahead o
 
 ## Testing
 
-No dedicated `tests/` directory in `docker/foundry-service` itself — the migration-resolution logic it wraps (`Catalog`, `MigrationPlan`, `MigrationRunner`) lives in and is tested by `libs/quench-db` (see `libs/quench-db/tests/catalog_plan.rs`). `foundry-service validate` and `plan` double as a manual smoke test against the real catalog.
+No dedicated `tests/` directory in `services/foundry/service` itself — the migration-resolution logic it wraps (`Catalog`, `MigrationPlan`, `MigrationRunner`) lives in and is tested by `libs/quench-db` (see `libs/quench-db/tests/catalog_plan.rs`). `foundry-service validate` and `plan` double as a manual smoke test against the real catalog.
 
 [Home](../README.md)

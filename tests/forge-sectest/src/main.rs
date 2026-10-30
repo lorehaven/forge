@@ -17,7 +17,7 @@ USAGE
   forge-sectest scan   --target NAME=URL [--target ...] [options]
 
 SCAN OPTIONS
-  --target NAME=URL     a running service (NAME is the docker/<NAME>-service directory name)
+  --target NAME=URL     a running service (NAME is the services/<NAME>/service directory name)
   --forge DIR           forge checkout to read routes from            [default: .]
   --quench DIR          quench checkout; adds quench-starter's shared routes  [default: found automatically]
   --token TOKEN         a valid bearer token, to test behaviour behind the auth wall

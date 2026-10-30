@@ -1,0 +1,101 @@
+/* Gatehouse's screens, written with the forge tokens: dark by default, light and the palettes follow the person's choice. */
+.gh-main{display:flex;flex-direction:column;width:100%;flex:1;min-width:0;padding:1.5rem;overflow:auto}
+.gh-top{display:contents}
+.gh-public #dashboard,.gh-public #home{display:none}
+.gh-page{display:flex;flex-direction:column;gap:1.25rem;width:100%}
+.gh-empty{margin:3rem 0;text-align:center;color:var(--fui-text-tertiary)}
+.gh-current{background:var(--fui-surface-2);color:var(--fui-text);font-weight:600}
+.gh-hint{color:var(--fui-text-tertiary);font-size:.875rem;margin:.25rem 0}
+a.gh-hint{display:block}
+.gh-mono{font-family:var(--fui-mono);font-size:.8125rem;word-break:break-all;background:var(--fui-bg-sunken);border:1px solid var(--fui-border);padding:.625rem .875rem;border-radius:var(--fui-radius-md);margin:0}
+.gh-notice{padding:.75rem 1rem;border-radius:var(--fui-radius-lg);margin:0 0 1rem;border:1px solid var(--fui-gray-soft-border);background:var(--fui-gray-soft-bg)}
+.gh-notice.ok{background:var(--fui-success-soft-bg);border-color:var(--fui-success-soft-border);color:var(--fui-success-soft-text)}
+.gh-notice.error{background:var(--fui-error-soft-bg);border-color:var(--fui-error-soft-border);color:var(--fui-error-soft-text)}
+.gh-form .gh-notice{margin:0;font-size:.875rem}
+
+/* the dashboard */
+.home-container{display:flex;flex-direction:column;gap:1.25rem;width:100%}
+.home-header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap}
+.home-header h3{margin:0;font-size:1.125rem;font-weight:600}
+.home-sections{display:flex;flex-direction:column;gap:2rem}
+.home-section{display:flex;flex-direction:column;gap:.75rem}
+.home-section-title{margin:0;font-size:.8125rem;font-weight:600;color:var(--fui-text-tertiary)}
+.home-subtitle{margin:0;color:var(--fui-text-tertiary)}
+.home-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,20rem),1fr));gap:1.25rem}
+.home-card{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1.25rem 1.5rem;background:var(--fui-surface);border:1px solid var(--fui-border);border-radius:var(--fui-radius-xl);box-shadow:var(--fui-shadow-xs);color:inherit !important;text-decoration:none !important;transition:border-color .15s,box-shadow .15s;min-width:0}
+.home-card:hover{border-color:var(--fui-brand-400);box-shadow:var(--fui-shadow-md)}
+.home-card-body{display:flex;flex-direction:column;gap:.25rem;min-width:0}
+.home-card-title{font-size:1rem;font-weight:600;color:var(--fui-text);overflow-wrap:anywhere}
+.home-card-desc{font-size:.875rem;color:var(--fui-text-tertiary)}
+.home-card-arrow{display:flex;color:var(--fui-text-tertiary);flex-shrink:0}
+.home-card-arrow .fui-ico{width:1.75rem;height:1.75rem}
+.home-card:hover .home-card-arrow{color:var(--fui-brand-soft-text)}
+.home-card-icon{width:2.75rem;height:2.75rem;border-radius:.625rem;flex:0 0 auto;display:block}
+.home-card-body{flex:1 1 auto}
+
+/* panels and forms */
+.admin-container{display:flex;flex-direction:column;gap:1.25rem;max-width:56rem;width:100%;margin:0 auto}
+.gh-panel{width:100%;background:var(--fui-surface);border:1px solid var(--fui-border);border-radius:var(--fui-radius-xl);box-shadow:var(--fui-shadow-xs);padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:.875rem;box-sizing:border-box}
+.gh-panel-title{font-size:1rem;font-weight:600;color:var(--fui-text)}
+.gh-meta{display:flex;flex-direction:column;gap:.75rem;min-width:0}
+.gh-auth{display:flex;justify-content:center;width:100%;padding-top:2rem}
+.gh-narrow{max-width:26rem}
+.gh-below{display:flex;justify-content:center;margin-top:1rem}
+.gh-form{display:flex;flex-direction:column;gap:.75rem;width:100%;padding:0}
+.gh-field{display:flex;flex-direction:column;gap:.375rem}
+.gh-field label,.gh-form>label{font-size:.875rem;font-weight:500;color:var(--fui-text-secondary)}
+.gh-input{font:inherit;font-size:.875rem;width:100%;box-sizing:border-box;min-height:2.75rem;padding:.5rem .75rem;color:var(--fui-text);background:var(--fui-surface);border:1px solid var(--fui-border-strong);border-radius:var(--fui-radius-md)}
+.gh-input:focus{outline:2px solid var(--fui-brand-500);outline-offset:-1px}
+.gh-btn{font:inherit;display:inline-flex;align-items:center;justify-content:center;min-height:2.5rem;padding:.5rem 1rem;font-size:.875rem;font-weight:600;color:var(--fui-text-secondary);background:var(--fui-surface);border:1px solid var(--fui-border-strong);border-radius:var(--fui-radius-md);cursor:pointer;text-decoration:none !important}
+.gh-btn:hover{background:var(--fui-surface-hover);color:var(--fui-text)}
+.gh-primary{align-self:stretch;min-height:2.75rem;background:var(--fui-brand-solid);border-color:var(--fui-brand-solid);color:#fff}
+.gh-primary:hover{background:var(--fui-brand-solid-hover);color:#fff}
+.gh-back{align-self:flex-start}
+.gh-danger{background:var(--fui-error-600);border-color:var(--fui-error-600);color:#fff}
+.gh-danger:hover{background:var(--fui-error-600);color:#fff;opacity:.9}
+.gh-row{display:flex;justify-content:space-between;align-items:center;gap:1rem;min-height:2.75rem}
+.gh-row>label{margin:0;font-size:.875rem;font-weight:500;color:var(--fui-text-secondary)}
+.gh-row>.gh-input,.gh-row>.gh-file{flex:0 1 60%;width:60%}
+.gh-row>input[type=checkbox]{flex:0 0 auto;width:1.25rem;height:1.25rem;accent-color:var(--fui-brand-600)}
+.gh-file{display:flex;position:relative}
+.gh-file-native{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.gh-file-button{display:flex;align-items:center;flex:0 0 auto;padding:0 1rem;font-size:.875rem;font-weight:600;cursor:pointer;color:var(--fui-text-secondary);background:var(--fui-surface-2);border:1px solid var(--fui-border-strong);border-right:0;border-radius:var(--fui-radius-md) 0 0 var(--fui-radius-md)}
+.gh-file-button:hover{background:var(--fui-surface-hover)}
+.gh-file-name{flex:1 1 auto;min-width:0;width:auto !important;border-radius:0 var(--fui-radius-md) var(--fui-radius-md) 0;cursor:default}
+.gh-avatar{border-radius:50%;object-fit:cover;width:4rem;height:4rem;border:1px solid var(--fui-border)}
+.gh-qr{display:flex;justify-content:center;margin:.5rem 0}
+.gh-qr img{background:#fff;padding:.5rem;border-radius:var(--fui-radius-md);max-width:100%}
+.gh-section-title{margin-top:.5rem;font-weight:600}
+.gh-check{display:flex;align-items:center;gap:.5rem}
+.gh-check label{margin:0;font-weight:400;font-size:.875rem}
+.gh-check input{width:auto;accent-color:var(--fui-brand-600)}
+.gh-status-row{display:flex;align-items:center;gap:.75rem;padding:.375rem 0;flex-wrap:wrap}
+.gh-status-row .gh-inline{margin-left:auto;width:auto}
+.gh-inline{display:inline-flex;flex-direction:row;width:auto}
+
+/* the user list and the grants */
+.gh-rows{display:flex;flex-direction:column}
+.gh-user-row{display:flex;align-items:center;gap:1rem;padding:.875rem 0;border-bottom:1px solid var(--fui-border);flex-wrap:wrap}
+.gh-user-row:last-child{border-bottom:0}
+.gh-user-main{display:flex;align-items:baseline;gap:.5rem;flex:1 1 14rem;min-width:0;flex-wrap:wrap}
+.gh-user-grants{flex:2 1 14rem;min-width:0;color:var(--fui-text-tertiary);font-size:.9rem;overflow-wrap:anywhere}
+.gh-username{font-weight:600}
+.gh-roles{color:var(--fui-text-tertiary);font-size:.85rem}
+.gh-you{padding:.0625rem .5rem;border-radius:999px;background:var(--fui-brand-soft-bg);color:var(--fui-brand-soft-text);font-size:.7rem;font-weight:600}
+.gh-grant-all{color:var(--fui-success-soft-text)}
+.gh-grant-none{color:var(--fui-text-disabled)}
+.gh-edit{margin-left:auto;white-space:nowrap}
+.gh-matrix{display:flex;flex-direction:column;gap:.5rem}
+.gh-matrix-row{display:grid;grid-template-columns:minmax(8rem,14rem) minmax(0,1fr);align-items:center;gap:.75rem}
+.gh-matrix-actions{display:flex;flex-wrap:wrap;gap:.5rem 1rem}
+.gh-service{overflow-wrap:anywhere}
+.gh-danger-panel{border-color:var(--fui-error-soft-border)}
+
+@media (max-width:639.98px){
+  .gh-main{padding:1rem}
+  .gh-row{flex-direction:column;align-items:stretch;gap:.375rem}
+  .gh-row>.gh-input,.gh-row>.gh-file{flex:1 1 auto;width:100%}
+  .gh-row>input[type=checkbox]{align-self:flex-start}
+  .gh-matrix-row{grid-template-columns:1fr;gap:.25rem}
+  .gh-edit{margin-left:0}
+}

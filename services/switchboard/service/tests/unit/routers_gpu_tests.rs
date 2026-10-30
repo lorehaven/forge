@@ -1,0 +1,75 @@
+//! `get_status` under `routers/gpu`.
+
+use quench_auth::domain::jwt::JwtConfig;
+use quench_core::async_trait;
+use quench_core::bytes::Bytes;
+use quench_http::body::InboundBody;
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
+use quench_http::request::Request;
+use quench_http::response::Response;
+use std::sync::Arc;
+use switchboard_service::routers::gpu::{get_status, wrap_auth};
+
+#[quench_test::test]
+async fn get_status_returns_gpu_info_as_json() {
+    let info = get_status().await.0;
+    // `GpuInfo` only derives `Serialize` (it's a broadcast payload, never
+    // deserialized elsewhere in this crate), so round-trip through JSON
+    // rather than asserting on struct fields directly.
+    let body: quench_serde::Value = quench_serde::to_value(&info);
+    assert!(
+        body.get("total_gb")
+            .and_then(quench_serde::Value::as_f64)
+            .is_some()
+    );
+    assert!(
+        body.get("free_gb")
+            .and_then(quench_serde::Value::as_f64)
+            .is_some()
+    );
+}
+
+struct AlwaysOk;
+
+#[async_trait]
+impl Endpoint for AlwaysOk {
+    async fn call(&self, _req: Request) -> Response {
+        Response::new(StatusCode::OK)
+    }
+}
+
+fn get(path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
+        Method::GET,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        InboundBody::from_bytes(Bytes::new()),
+        container.clone(),
+    )
+}
+
+#[quench_test::test]
+async fn wrap_auth_lets_matching_requests_through_when_auth_is_disabled() {
+    let container = Arc::new(ContainerBuilder::new().build().await.unwrap());
+    let app: Arc<dyn Endpoint> = Arc::new(AlwaysOk);
+    let app = wrap_auth(app, JwtConfig::for_tests(), "");
+
+    let resp = app.call(get("/api/v1/gpu/status", &container)).await;
+    assert!(resp.status().is_success());
+}
+
+#[quench_test::test]
+async fn wrap_auth_does_not_apply_outside_its_prefix() {
+    let mut config = JwtConfig::for_tests();
+    config.auth_enabled = true;
+    let container = Arc::new(ContainerBuilder::new().build().await.unwrap());
+    let app: Arc<dyn Endpoint> = Arc::new(AlwaysOk);
+    let app = wrap_auth(app, config, "");
+
+    // No token supplied, but `/health` doesn't start with `/api/v1/gpu`, so
+    // `Auth` never runs against it.
+    let resp = app.call(get("/health", &container)).await;
+    assert!(resp.status().is_success());
+}

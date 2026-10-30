@@ -1,0 +1,32 @@
+[package]
+name = "sage-app"
+autotests = false
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+
+# The screens: the chat with its sidebar, and the screen that waits for the models. The app does no I/O: it asks its host for the
+# data and for every change (`Request`) and is told what came (`Msg`), including the pieces of a streaming answer, so the same
+# screens run in the browser and in tests.
+[lib]
+name = "sage_app"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+forge-shell = { workspace = true }
+quench-ui = { workspace = true }
+sage-core = { workspace = true }
+
+[[test]]
+name = "screens"
+path = "tests/screens.rs"
+harness = false
+
+[dev-dependencies]
+quench-serde = { workspace = true }
+quench-test = { workspace = true }

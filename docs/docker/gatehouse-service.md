@@ -1,6 +1,6 @@
 # Gatehouse Service
 
-Gatehouse is the Forge estate's authentication service: one identity store, one login page, one session. Sage, switchboard, warehouse, conveyor and workbench verify the Ed25519-signed tokens gatehouse issues and never see a password or hold a user table of their own. It replaced a per-service `sage.users`/`switchboard.users`/`warehouse.users` split with a single `auth.users`, a shared Redis session store, and one login form (`gatehouse/ui/login`) every other service redirects a browser to. Binary and crate name: `gatehouse-service` (`docker/gatehouse-service`).
+Gatehouse is the Forge estate's authentication service: one identity store, one login page, one session. Sage, switchboard, warehouse, conveyor and workbench verify the Ed25519-signed tokens gatehouse issues and never see a password or hold a user table of their own. It replaced a per-service `sage.users`/`switchboard.users`/`warehouse.users` split with a single `auth.users`, a shared Redis session store, and one login form (`gatehouse/ui/login`) every other service redirects a browser to. Binary and crate name: `gatehouse-service` (`services/gatehouse/service`).
 
 ## Features
 
