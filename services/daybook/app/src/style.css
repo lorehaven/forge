@@ -166,3 +166,5 @@ h3{font-size:1.125rem;font-weight:600;margin:1rem 0 .5rem;color:var(--dbk-text)}
 
 /* The refresh indicator is the round arrow of the refresh button, not a ring: it turns while the list reloads. */
 .q-ptr-indicator{border:0;background-color:transparent;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2347cd89' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 11a8 8 0 0 0-14.500-3M4 4v4h4M4 13a8 8 0 0 0 14.500 3M20 20v-4h-4'/%3E%3C/svg%3E");background-size:contain;background-repeat:no-repeat;background-position:center}
+.dbk-more{display:block;margin:.75rem auto 6rem;min-height:44px;padding:0 1.25rem}
+.dbk-hint{min-height:0;margin:.25rem .25rem 0;font-size:.875rem;color:var(--dbk-brand-500)}.dbk-hint:empty{display:none}

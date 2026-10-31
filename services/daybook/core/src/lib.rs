@@ -4,6 +4,7 @@ pub mod calendar;
 pub mod data;
 pub mod draft;
 pub mod model;
+pub mod nlp;
 pub mod order;
 pub mod picker;
 pub mod protocol;

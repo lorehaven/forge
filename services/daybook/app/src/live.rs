@@ -64,6 +64,9 @@ enum Naming {
     Label(Label),
 }
 
+/// How many task rows are drawn before "Show more".
+const PAGE: usize = 20;
+
 type Inbox = Rc<std::cell::RefCell<Option<Rc<dyn Fn(Msg)>>>>;
 
 /// Builds the app. The views are built when they are mounted.
@@ -696,7 +699,22 @@ fn tasks_screen(s: &Screen) -> View {
             Rc::clone(&s.open_form),
             s.confirm.clone(),
         );
-        let (empty, items) = (shown.clone(), shown);
+        let (empty, items) = (shown.clone(), shown.clone());
+        // Every frame of a transition lays out the whole page, so a long list is shown a page at a time: the rows
+        // that are drawn are what a phone can afford, and the rest come with a tap.
+        let limit = create_signal(PAGE);
+        {
+            let (list, limit) = (s.list.clone(), limit.clone());
+            create_effect(move || {
+                let _ = list.get();
+                limit.set(PAGE);
+            });
+        }
+        let (more_count, more_limit, items_limit) = (shown.clone(), limit.clone(), limit.clone());
+        let items = create_memo(move || {
+            let n = items_limit.get();
+            items.with(|rows| rows.iter().take(n).cloned().collect::<Vec<Row>>())
+        });
         div()
             .class("dbk-rows")
             .child(View::show(
@@ -734,6 +752,34 @@ fn tasks_screen(s: &Screen) -> View {
                     .into_view()
                 },
             )))
+            .child(View::show(
+                {
+                    let (shown, limit) = (more_count.clone(), more_limit.clone());
+                    move || shown.with(Vec::len) > limit.get()
+                },
+                {
+                    let (shown, limit) = (more_count, more_limit);
+                    move || {
+                        let (shown, limit) = (shown.clone(), limit.clone());
+                        let label = {
+                            let (shown, limit) = (shown.clone(), limit.clone());
+                            move || {
+                                format!(
+                                    "Show more ({} left)",
+                                    shown.with(Vec::len).saturating_sub(limit.get())
+                                )
+                            }
+                        };
+                        button()
+                            .attr("type", "button")
+                            .attr("id", "show-more")
+                            .class("dbk-more")
+                            .text_fn(label)
+                            .on_click(move || limit.update(|n| *n += PAGE))
+                            .into_view()
+                    }
+                },
+            ))
             .into_view()
     };
     let refreshing = s.loading.clone();

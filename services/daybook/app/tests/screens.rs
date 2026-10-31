@@ -294,6 +294,38 @@ fn a_new_task_needs_a_title_and_is_sent_as_the_form_has_it() {
 }
 
 #[quench_test::test]
+fn a_date_written_in_the_title_becomes_the_due_date() {
+    let (r, asked, _deliver, _m) = signed_in(vec![]);
+    click(&r, "add-task");
+    tick(300.0);
+    type_into(&r, "task-title", "Pay rent nov 6 5pm");
+    assert!(present(&r, "p", ("id", "due-hint")));
+    assert!(r.text().contains("Due Fri 6 Nov"), "{}", r.text());
+    click(&r, "save-task");
+    let sent = asked.borrow().clone();
+    let [Request::Save { id: None, draft }] = sent.as_slice() else {
+        panic!("{sent:?}")
+    };
+    assert_eq!(draft.content, "Pay rent");
+    let due = draft.due().unwrap();
+    assert_eq!(due.date, date(2026, 11, 6));
+    assert_eq!(due.clock, Some((17, 0)));
+}
+
+#[quench_test::test]
+fn a_long_list_is_shown_a_page_at_a_time() {
+    let tasks: Vec<Task> = (0..60)
+        .map(|i| task(&format!("t{i}"), &format!("Task {i}")))
+        .collect();
+    let (r, _asked, _deliver, _m) = signed_in(tasks);
+    assert!(r.text().contains("Show more (40 left)"), "{}", r.text());
+    assert!(!r.text().contains("Task 30"));
+    click(&r, "show-more");
+    assert!(r.text().contains("Task 30"), "{}", r.text());
+    assert!(r.text().contains("Show more (20 left)"), "{}", r.text());
+}
+
+#[quench_test::test]
 fn a_refused_save_keeps_the_form_open_with_the_reason() {
     let (r, _asked, deliver, _m) = signed_in(vec![]);
     click(&r, "add-task");
@@ -486,7 +518,8 @@ fn changing_one_task_leaves_the_other_rows_alone() {
     );
     let after = r.ops().len();
     assert!(
-        after * 20 < build,
+        // The list is one page of rows, and a task checked off brings the next one into the page: that row is built.
+        after * 8 < build,
         "one change took {after} operations against {build} to build the list"
     );
 }

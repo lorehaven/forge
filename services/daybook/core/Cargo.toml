@@ -21,6 +21,11 @@ name = "unit"
 path = "tests/unit.rs"
 harness = false
 
+[[test]]
+name = "nlp"
+path = "tests/nlp.rs"
+harness = false
+
 [dependencies]
 quench-core = { workspace = true }
 quench-serde = { workspace = true }

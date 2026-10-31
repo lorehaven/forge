@@ -5,6 +5,7 @@
 use std::rc::Rc;
 
 use daybook_core::calendar::{at_local, clock_of, due_day, format_clock, format_due, today};
+use daybook_core::nlp::parse_due;
 use daybook_core::{
     Data, Draft, Due, ListRef, Mode, Preset, Recurrence, Remind, Request, Task, Unit,
 };
@@ -379,9 +380,15 @@ fn main_form(
         ctx.error.clone(),
     );
     let save = move || {
+        let (save_zone, save_clock) = (save_ctx.zone.clone(), Rc::clone(&save_ctx.clock));
         save_draft.update(|d| {
             d.content = save_title.value_untracked();
             d.description = save_notes.value_untracked();
+            // A date written in the title ("... nov 6 5pm") becomes the due date and leaves the title.
+            if let Some(found) = parse_due(&d.content, save_clock(), &save_zone) {
+                d.content = found.content;
+                d.set_due(found.due);
+            }
         });
         let d = save_draft.get_untracked();
         if !d.can_save() {
@@ -410,8 +417,23 @@ fn main_form(
     });
     let busy = ctx.saving.clone();
     let _ = go;
+    // What the title says about when, as it is typed.
+    let hint = {
+        let (title, zone, clock) = (title.clone(), zone.clone(), Rc::clone(&clock));
+        p().attr("id", "due-hint")
+            .attr("aria-live", "polite")
+            .class("dbk-hint")
+            .text_fn(move || {
+                let now = clock();
+                parse_due(&title.value(), now, &zone).map_or_else(String::new, |found| {
+                    let at = found.due.instant(&zone).unwrap_or_default();
+                    format!("Due {}", format_due(at, found.due.all_day(), now, &zone))
+                })
+            })
+    };
     div()
         .child(text_field("Task", title, "text", None))
+        .child(hint)
         .child(
             div()
                 .class("q-textfield")

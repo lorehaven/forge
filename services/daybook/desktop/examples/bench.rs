@@ -197,6 +197,14 @@ fn run(label: &str, css: &str, tasks: usize) {
             ms(t.elapsed())
         })
         .fold(f64::MAX, f64::min);
+    let layout_only = (0..n)
+        .map(|_| {
+            let t = std::time::Instant::now();
+            let _ = r.layout();
+            ms(t.elapsed())
+        })
+        .fold(f64::MAX, f64::min);
+    println!("   (layout alone {layout_only:.1} ms)");
     // One task checked off: new data in, then a frame.
     let (mut deliver_total, mut frame_total) = (0.0, 0.0);
     for i in 0..10_usize {
@@ -212,7 +220,9 @@ fn run(label: &str, css: &str, tasks: usize) {
     // The task form open: a dialog over the list, the frames of its coming in and a frame at rest.
     deliver(Msg::Data(Box::new(many(&zone, now, tasks))));
     r.render(&mut canvas);
-    let task = find(&r, r.root(), "task-t3").expect("task-t3");
+    let task = (0..tasks)
+        .find_map(|i| find(&r, r.root(), &format!("task-t{i}")))
+        .expect("a task on the page");
     let (x, y) = locate(&r, task, width, height).expect("on screen");
     r.pointer_down(x, y);
     r.pointer_up(x, y);
