@@ -560,10 +560,19 @@ fn the_manifest_is_a_database_and_the_old_text_file_is_read_once() {
     let store = forklift_net::Store::new(&dir);
     let loaded = store.manifest();
     assert_eq!(loaded.len(), 50);
-    assert_eq!(loaded.get("photos", "a000003").unwrap().remote, "photos/2023/IMG_3.jpg");
-    assert_eq!(loaded.get("photos", "a000004").unwrap().error, "no route to host\tand a tab");
+    assert_eq!(
+        loaded.get("photos", "a000003").unwrap().remote,
+        "photos/2023/IMG_3.jpg"
+    );
+    assert_eq!(
+        loaded.get("photos", "a000004").unwrap().error,
+        "no route to host\tand a tab"
+    );
     assert!(dir.join("manifest.db").exists());
-    assert!(!dir.join("manifest").exists(), "the text file was read and set aside");
+    assert!(
+        !dir.join("manifest").exists(),
+        "the text file was read and set aside"
+    );
     assert!(dir.join("manifest.imported").exists());
 
     // The database is now the manifest: the old file, if it came back, would not be read again.
@@ -573,7 +582,10 @@ fn the_manifest_is_a_database_and_the_old_text_file_is_read_once() {
     store.set_manifest(&edited);
     std::fs::write(dir.join("manifest"), old.to_text()).unwrap();
     let again = store.manifest();
-    assert_eq!(again.get("photos", "a000010").unwrap().status, forklift_core::Status::Done);
+    assert_eq!(
+        again.get("photos", "a000010").unwrap().status,
+        forklift_core::Status::Done
+    );
     assert_eq!(again.len(), 50);
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -589,17 +601,34 @@ fn a_save_writes_only_what_changed() {
 
     // The same manifest again: not a byte of the file changes.
     store.set_manifest(&manifest);
-    assert_eq!(std::fs::read(&db).unwrap(), first, "an unchanged manifest writes nothing");
+    assert_eq!(
+        std::fs::read(&db).unwrap(),
+        first,
+        "an unchanged manifest writes nothing"
+    );
 
     // One file sent: a few pages change, the rest of the file is as it was.
     manifest.start("photos", "f001500");
     manifest.done("photos", "f001500", "photos/2023/IMG_1500.jpg");
     store.set_manifest(&manifest);
     let second = std::fs::read(&db).unwrap();
-    assert_eq!(second.len(), first.len(), "no growth for one changed record");
-    let pages = |a: &[u8], b: &[u8]| a.chunks(4096).zip(b.chunks(4096)).filter(|(x, y)| x != y).count();
+    assert_eq!(
+        second.len(),
+        first.len(),
+        "no growth for one changed record"
+    );
+    let pages = |a: &[u8], b: &[u8]| {
+        a.chunks(4096)
+            .zip(b.chunks(4096))
+            .filter(|(x, y)| x != y)
+            .count()
+    };
     let changed = pages(&first, &second);
-    assert!((1..=6).contains(&changed), "{changed} of {} pages changed", first.len() / 4096);
+    assert!(
+        (1..=6).contains(&changed),
+        "{changed} of {} pages changed",
+        first.len() / 4096
+    );
 
     // A file that is no longer in the manifest is gone from the database.
     manifest.forget_category("photos");
@@ -621,7 +650,10 @@ fn the_counts_file_tells_the_android_host_what_waits() {
     }
     store.set_manifest(&manifest);
     let text = std::fs::read_to_string(dir.join("manifest.counts")).unwrap();
-    assert_eq!(text, "forklift-counts 1\npending 7\nuploading 1\nfailed 1\n");
+    assert_eq!(
+        text,
+        "forklift-counts 1\npending 7\nuploading 1\nfailed 1\n"
+    );
     // The text of an older manifest is counted into the same file when it is imported.
     let dir = temp("counts-legacy");
     std::fs::create_dir_all(&dir).unwrap();
@@ -647,7 +679,10 @@ fn a_big_library_round_trips() {
     store.set_manifest(&manifest);
     let back = store.manifest();
     assert_eq!(back, manifest);
-    assert_eq!(back.totals(None).pending + back.totals(None).uploading, manifest.totals(None).pending + manifest.totals(None).uploading);
+    assert_eq!(
+        back.totals(None).pending + back.totals(None).uploading,
+        manifest.totals(None).pending + manifest.totals(None).uploading
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -680,8 +715,14 @@ fn a_hundred_thousand_records_save_and_load_in_seconds() {
     assert_eq!(loaded.len(), 100_000);
     assert_eq!(loaded, manifest);
     // Generous bounds for a slow machine; the point is seconds, not minutes.
-    assert!(first_save < std::time::Duration::from_secs(60), "{first_save:?}");
-    assert!(small_save < std::time::Duration::from_secs(10), "{small_save:?}");
+    assert!(
+        first_save < std::time::Duration::from_secs(60),
+        "{first_save:?}"
+    );
+    assert!(
+        small_save < std::time::Duration::from_secs(10),
+        "{small_save:?}"
+    );
     assert!(load < std::time::Duration::from_secs(20), "{load:?}");
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -698,7 +739,11 @@ fn a_manifest_that_cannot_be_read_is_never_overwritten_by_an_empty_one() {
     std::fs::write(&db, &bytes).unwrap();
     assert_eq!(store.manifest().len(), 0, "nothing can be read");
     store.set_manifest(&forklift_core::Manifest::new());
-    assert_eq!(std::fs::read(&db).unwrap(), bytes, "and nothing was written over what is there");
+    assert_eq!(
+        std::fs::read(&db).unwrap(),
+        bytes,
+        "and nothing was written over what is there"
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -713,7 +758,11 @@ fn another_program_holding_the_database_for_a_moment_is_waited_for() {
         drop(held);
     });
     let started = std::time::Instant::now();
-    assert_eq!(store.manifest().len(), 10, "the read waited for the other program, then got the records");
+    assert_eq!(
+        store.manifest().len(),
+        10,
+        "the read waited for the other program, then got the records"
+    );
     assert!(started.elapsed() >= std::time::Duration::from_millis(250));
     release.join().unwrap();
     let _ = std::fs::remove_dir_all(dir);

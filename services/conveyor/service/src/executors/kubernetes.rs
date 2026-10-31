@@ -115,6 +115,24 @@ impl JobExecutor for KubernetesExecutor {
             });
         }
 
+        // Asked for, not allowed: refused before a Secret or a Job exists, saying what to turn on.
+        let privileged: Vec<&str> = spec
+            .services
+            .iter()
+            .filter(|service| service.privileged)
+            .map(|service| service.name.as_str())
+            .collect();
+        if !privileged.is_empty() && !self.settings.allow_privileged {
+            return Err(ExecError::Unsupported {
+                executor: "kubernetes",
+                what: format!(
+                    "run the privileged service(s) {} of job {}: this deployment does not allow privileged containers (set CONVEYOR_K8S_ALLOW_PRIVILEGED=true)",
+                    privileged.join(", "),
+                    spec.name
+                ),
+            });
+        }
+
         // Resolved before submitting, so a bad quote in step four isn't discovered mid-run.
         let mut commands = Vec::with_capacity(spec.steps.len());
         for step in &spec.steps {

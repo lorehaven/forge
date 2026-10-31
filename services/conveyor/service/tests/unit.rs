@@ -43,6 +43,8 @@ mod routers_api_routing_tests;
 mod routers_api_stream_tests;
 #[path = "unit/scan_tests.rs"]
 mod scan_tests;
+#[path = "unit/scheduler_privilege_tests.rs"]
+mod scheduler_privilege_tests;
 #[path = "unit/secrets_crypto_tests.rs"]
 mod secrets_crypto_tests;
 #[path = "unit/secrets_redact_tests.rs"]

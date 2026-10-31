@@ -87,3 +87,8 @@ fn positive_tolerates_surrounding_whitespace() {
     quench_core::env::set("CONVEYOR_TEST_PADDED", "  4  ");
     assert_eq!(positive("CONVEYOR_TEST_PADDED", 7), 4);
 }
+
+#[quench_test::test]
+fn nobody_may_run_a_privileged_service_until_repositories_are_named() {
+    assert!(ConveyorConfig::default().privileged_repos.is_empty());
+}

@@ -322,6 +322,11 @@ pub struct Service {
     pub args: Vec<String>,
     /// How to tell it is up. The steps do not start before it is.
     pub ready: Readiness,
+    /// Run the container privileged (a Docker-in-Docker daemon needs it). Off unless the pipeline says so, and even then
+    /// only where the deployment allows it: privileged means the container can do what the node can, so the executor
+    /// and the scheduler each have a say (`CONVEYOR_K8S_ALLOW_PRIVILEGED`, `CONVEYOR_PRIVILEGED_REPOS`), and a
+    /// pull request never gets it.
+    pub privileged: bool,
 }
 
 /// How a [`Service`] says it is ready for the steps.

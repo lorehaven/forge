@@ -196,11 +196,13 @@ pub fn build(
         init_containers.push(checkout);
     }
 
-    init_containers.extend(
-        spec.services
-            .iter()
-            .map(|service| service_container(service, settings.service_ready_timeout_secs)),
-    );
+    init_containers.extend(spec.services.iter().map(|service| {
+        service_container(
+            service,
+            settings.service_ready_timeout_secs,
+            settings.allow_privileged,
+        )
+    }));
     if !init_containers.is_empty() {
         pod["initContainers"] = json!(init_containers);
     }
@@ -247,12 +249,18 @@ const SERVICE_PROBE_TIMEOUT_SECS: u64 = 5;
 ///
 /// The environment is written into the pod as it is, not into the job's Secret: the steps container reads
 /// that Secret, and a service must not be handed what the steps are not (nor the steps what the service is).
-fn service_container(service: &Service, ready_timeout_secs: u64) -> Value {
+fn service_container(service: &Service, ready_timeout_secs: u64, allow_privileged: bool) -> Value {
     let mut container = json!({
         "name": service.name,
         "image": service.image,
         "restartPolicy": "Always",
-        "securityContext": hardened(),
+        // Privileged only where the pipeline asked and the deployment allows it. The steps container, the checkout
+        // and every other service stay hardened: the privilege is one container's, not the pod's.
+        "securityContext": if service.privileged && allow_privileged {
+            json!({ "privileged": true })
+        } else {
+            hardened()
+        },
     });
 
     if !service.env.is_empty() {
@@ -326,6 +334,10 @@ pub struct Settings {
     /// How long a pod gets to leave `Pending` (scheduling, image pulls) before the job is failed. A job
     /// with services is given `service_ready_timeout_secs` more.
     pub pod_start_timeout_secs: u64,
+    /// Whether a service that asks to be `privileged` is run so. Off unless the deployment turns it on
+    /// (`CONVEYOR_K8S_ALLOW_PRIVILEGED`): the container can do what the node can. With it off, [`build`] never
+    /// emits a privileged container and the executor refuses the job before anything is created.
+    pub allow_privileged: bool,
 }
 
 impl Settings {
@@ -350,6 +362,7 @@ impl Settings {
             pod_start_timeout_secs: quench_core::env::get_or("CONVEYOR_K8S_POD_START_SECS", "120")
                 .parse()
                 .unwrap_or(120),
+            allow_privileged: quench_core::env::is_or("CONVEYOR_K8S_ALLOW_PRIVILEGED", false),
         }
     }
 }
@@ -363,6 +376,7 @@ impl Default for Settings {
             ttl_seconds: 3600,
             service_ready_timeout_secs: 300,
             pod_start_timeout_secs: 120,
+            allow_privileged: false,
         }
     }
 }

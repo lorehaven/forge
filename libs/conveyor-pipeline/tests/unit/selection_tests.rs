@@ -132,3 +132,139 @@ fn names_are_trimmed_and_repeats_are_one_stage() {
         .unwrap();
     assert_eq!(only.stages.len(), 2);
 }
+
+/// The pipeline this repository actually runs.
+const FORGE: &str = include_str!("../../../../.conveyor.toml");
+
+fn will_run(spec: &conveyor_pipeline::PipelineSpec, event: &str, git_ref: &str) -> Vec<String> {
+    plan(spec, &EvalContext::new(event, git_ref, "abc"))
+        .into_iter()
+        .filter(|stage| stage.decision.will_run())
+        .map(|stage| spec.stages[stage.index].name.clone())
+        .collect()
+}
+
+#[quench_test::test]
+fn the_release_stages_of_forges_pipeline_never_run_by_themselves() {
+    let spec = parse(FORGE).unwrap();
+    for (event, git_ref) in [
+        ("push", "refs/heads/master"),
+        ("pull_request", "refs/heads/feature"),
+        ("manual", "master"),
+        ("schedule", "refs/heads/master"),
+    ] {
+        let running = will_run(&spec, event, git_ref);
+        assert!(
+            !running.iter().any(|s| s.starts_with("release")),
+            "{event} on {git_ref} ran {running:?}"
+        );
+    }
+    // Ordinary runs are what they were.
+    assert_eq!(
+        will_run(&spec, "push", "refs/heads/master"),
+        ["check", "build", "test"]
+    );
+    assert_eq!(
+        will_run(&spec, "schedule", "refs/heads/master"),
+        ["security"]
+    );
+}
+
+#[quench_test::test]
+fn naming_the_release_stages_runs_them_crates_first() {
+    let spec = parse(FORGE).unwrap();
+    let only = spec
+        .only(&names(&["release-artifacts", "release-crates"]))
+        .unwrap();
+    assert_eq!(
+        will_run(&only, "manual", "master"),
+        ["release-crates", "release-artifacts"],
+        "the artifacts follow the crates whatever order they are named in"
+    );
+    // With the tests of the same run first: release only after they pass.
+    let all = spec
+        .only(&names(&[
+            "check",
+            "build",
+            "test",
+            "release-crates",
+            "release-artifacts",
+        ]))
+        .unwrap();
+    let order: Vec<&str> = all.stages_in_order().map(|s| s.name.as_str()).collect();
+    assert_eq!(
+        order,
+        [
+            "check",
+            "build",
+            "test",
+            "release-crates",
+            "release-artifacts"
+        ]
+    );
+    // The crates alone, as a developer's `anvil release --all` would.
+    let crates = spec.only(&names(&["release-crates"])).unwrap();
+    assert_eq!(will_run(&crates, "manual", "master"), ["release-crates"]);
+}
+
+#[quench_test::test]
+fn the_release_jobs_ask_for_the_secrets_they_need() {
+    let spec = parse(FORGE).unwrap();
+    let job = |stage: &str| spec.stage(stage).unwrap().jobs[0].clone();
+    for stage in ["release-crates", "release-artifacts"] {
+        let secrets = &job(stage).secrets;
+        for needed in [
+            "RELEASE_GIT_TOKEN",
+            "ANVIL_APP_TOKEN",
+            "ANVIL_GATEHOUSE_URL",
+        ] {
+            assert!(
+                secrets.iter().any(|s| s == needed),
+                "{stage} lacks {needed}"
+            );
+        }
+    }
+    let artifacts = job("release-artifacts").secrets;
+    for needed in [
+        "QUENCH_KEYSTORE_PASSWORD",
+        "QUENCH_KEY_PASSWORD",
+        "HOIST_KEYSTORE_B64",
+        "DAYBOOK_KEYSTORE_B64",
+        "FORKLIFT_KEYSTORE_B64",
+    ] {
+        assert!(
+            artifacts.iter().any(|s| s == needed),
+            "artifacts lacks {needed}"
+        );
+    }
+}
+
+#[quench_test::test]
+fn the_crates_release_has_a_docker_daemon_and_only_that_container_is_privileged() {
+    let spec = parse(FORGE).unwrap();
+    let job = &spec.stage("release-crates").unwrap().jobs[0];
+    let privileged: Vec<&str> = job
+        .services
+        .iter()
+        .filter(|s| s.privileged)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert_eq!(privileged, ["dind"]);
+    assert_eq!(
+        job.env.get("DOCKER_HOST").map(String::as_str),
+        Some("tcp://127.0.0.1:2375")
+    );
+    for needed in ["DOCKER_REGISTRY_USER", "DOCKER_REGISTRY_PASSWORD"] {
+        assert!(job.secrets.iter().any(|s| s == needed), "lacks {needed}");
+    }
+    // No other job of the pipeline asks for a privileged container.
+    let others = spec
+        .stages
+        .iter()
+        .flat_map(|stage| &stage.jobs)
+        .filter(|j| j.name != "crates")
+        .flat_map(|j| &j.services)
+        .filter(|s| s.privileged)
+        .count();
+    assert_eq!(others, 0);
+}

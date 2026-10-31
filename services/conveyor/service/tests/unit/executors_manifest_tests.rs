@@ -456,6 +456,7 @@ fn postgres() -> conveyor_service::pipeline::Service {
         env: BTreeMap::from([("POSTGRES_PASSWORD".to_string(), "postgres".to_string())]),
         args: Vec::new(),
         ready: conveyor_service::pipeline::Readiness::Command("pg_isready -U postgres".to_string()),
+        privileged: false,
     }
 }
 
@@ -556,6 +557,7 @@ fn a_port_readiness_check_is_a_tcp_probe_and_publishes_the_port() {
         env: BTreeMap::new(),
         args: vec!["--save".to_string(), String::new()],
         ready: conveyor_service::pipeline::Readiness::Port(6379),
+        privileged: false,
     };
     let built = build(&with_services(vec![cache]));
     let service = &init_containers(&built)[1];
@@ -751,5 +753,76 @@ fn the_coverage_job_of_this_repository_becomes_a_pod_with_a_database_beside_its_
     assert!(
         apply < coverage,
         "the database is filled before the tests run"
+    );
+}
+
+fn dind(privileged: bool) -> conveyor_service::pipeline::Service {
+    conveyor_service::pipeline::Service {
+        name: "dind".to_string(),
+        image: "docker:dind".to_string(),
+        env: BTreeMap::from([("DOCKER_TLS_CERTDIR".to_string(), String::new())]),
+        args: Vec::new(),
+        ready: conveyor_service::pipeline::Readiness::Command("docker info".to_string()),
+        privileged,
+    }
+}
+
+fn build_allowing(spec: &JobSpec, allow_privileged: bool) -> manifest::Manifest {
+    let commands = spec
+        .steps
+        .iter()
+        .map(|step| conveyor_service::steps::argv(step).expect("resolves"))
+        .collect::<Vec<_>>();
+    manifest::build(
+        spec,
+        &commands,
+        "conveyor",
+        &Settings {
+            allow_privileged,
+            ..Settings::default()
+        },
+    )
+}
+
+#[quench_test::test]
+fn only_the_service_that_asked_is_privileged_and_only_where_the_deployment_allows_it() {
+    let job = with_services(vec![dind(true), postgres()]);
+
+    let allowed = build_allowing(&job, true);
+    let init = init_containers(&allowed);
+    let (checkout, dind_container, postgres_container) = (&init[0], &init[1], &init[2]);
+    assert_eq!(dind_container["name"], "dind");
+    assert_eq!(dind_container["securityContext"]["privileged"], true);
+    // Nothing else in the pod is: not the checkout, not another service, not the steps.
+    for hardened in [
+        checkout,
+        postgres_container,
+        &allowed.job["spec"]["template"]["spec"]["containers"][0],
+    ] {
+        assert!(
+            hardened["securityContext"].get("privileged").is_none(),
+            "{hardened}"
+        );
+        assert_eq!(
+            hardened["securityContext"]["allowPrivilegeEscalation"],
+            false
+        );
+    }
+
+    // The deployment says no: the request is not honoured, whatever the pipeline asked.
+    let refused = build_allowing(&job, false);
+    let init = init_containers(&refused);
+    assert!(init[1]["securityContext"].get("privileged").is_none());
+    assert_eq!(
+        init[1]["securityContext"]["allowPrivilegeEscalation"],
+        false
+    );
+
+    // A service that did not ask is never privileged, even where it is allowed.
+    let plain = build_allowing(&with_services(vec![dind(false)]), true);
+    assert!(
+        init_containers(&plain)[1]["securityContext"]
+            .get("privileged")
+            .is_none()
     );
 }

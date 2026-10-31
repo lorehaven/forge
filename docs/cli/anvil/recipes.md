@@ -53,6 +53,7 @@ credential-provider = ["cargo:token-from-stdout", "anvil", "registry-token"]
 anvil release --all --dry-run     # layers and what changed since each package's last tag
 anvil release --all               # prints the plan, asks "Proceed with release? (yes/no)"
 anvil release --all --yes         # the same without asking: what a pipeline runs
+anvil release --all --no-docker --yes   # crates only, for a machine with no Docker daemon
 ```
 
 Releases are idempotent per package: a package with no changes since its tag is "up to date" and skipped.

@@ -340,6 +340,49 @@ async fn a_job_is_refused_before_anything_reaches_the_cluster_when_it_cannot_run
 
 #[allow(clippy::await_holding_lock)]
 #[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_privileged_service_is_refused_before_the_cluster_is_asked_unless_the_deployment_allows_it()
+ {
+    let _env = env_lock();
+    let server = MockServer::start().await;
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let (workspace, _ws) = workspace();
+    let mut job = spec(two_steps());
+    job.services = vec![Service {
+        name: "dind".to_string(),
+        image: "docker:dind".to_string(),
+        env: BTreeMap::new(),
+        args: Vec::new(),
+        ready: Readiness::Command("docker info".to_string()),
+        privileged: true,
+    }];
+
+    // Not allowed (the default): nothing reaches the cluster, and the reason says what to turn on.
+    let executor = executor_for(&server, &dir);
+    let error = executor
+        .start(&job, &workspace)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("privileged service(s) dind")
+            && error.contains("CONVEYOR_K8S_ALLOW_PRIVILEGED"),
+        "{error}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+
+    // Allowed: the privilege check passes (this fake cluster serves nothing, so the start fails later and for
+    // another reason).
+    let executor = executor_with(&server, &dir, &[("CONVEYOR_K8S_ALLOW_PRIVILEGED", "true")]);
+    let error = executor
+        .start(&job, &workspace)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(!error.contains("privileged"), "{error}");
+}
+
+#[allow(clippy::await_holding_lock)]
+#[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_refusal_from_the_cluster_says_which_object_it_was() {
     let _env = env_lock();
     let server = MockServer::start().await;
@@ -547,6 +590,7 @@ fn postgres() -> Service {
         env: BTreeMap::from([("POSTGRES_PASSWORD".to_string(), "postgres".to_string())]),
         args: Vec::new(),
         ready: Readiness::Command("pg_isready -U postgres".to_string()),
+        privileged: false,
     }
 }
 

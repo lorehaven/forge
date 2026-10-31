@@ -18,7 +18,7 @@ fn default_token_name_mentions_the_host() {
 #[quench_test::test]
 fn registry_token_env_is_none_without_a_secret_file() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
-    let result = registry_token_env("ennor", dir.path(), |_| false).unwrap();
+    let result = registry_token_env("ennor", dir.path(), |_| None).unwrap();
     assert!(result.is_none());
 }
 
@@ -36,7 +36,7 @@ fn registry_token_env_defers_to_a_token_already_in_the_environment() {
     .unwrap();
     // The unreachable Gatehouse is never asked, because the env var wins.
     let result = registry_token_env("ennor", dir.path(), |name| {
-        name == "CARGO_REGISTRIES_ENNOR_TOKEN"
+        (name == "CARGO_REGISTRIES_ENNOR_TOKEN").then(|| "already".to_string())
     })
     .unwrap();
     assert!(result.is_none());
@@ -54,8 +54,22 @@ fn registry_token_env_reports_an_unreachable_gatehouse() {
         },
     )
     .unwrap();
-    let err = registry_token_env("ennor", dir.path(), |_| false).unwrap_err();
+    let err = registry_token_env("ennor", dir.path(), |_| None).unwrap_err();
     assert!(err.to_string().contains("access token"));
+}
+
+#[quench_test::test]
+fn registry_token_env_uses_the_ci_environment_when_there_is_no_secret_file() {
+    // A job has `ANVIL_APP_TOKEN` and `ANVIL_GATEHOUSE_URL` and no file: the publish must still get a token. The
+    // unreachable Gatehouse shows that the environment's credentials were used (they were exchanged).
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let env = |name: &str| match name {
+        "ANVIL_APP_TOKEN" => Some("lht_ci".to_string()),
+        "ANVIL_GATEHOUSE_URL" => Some("http://127.0.0.1:1".to_string()),
+        _ => None,
+    };
+    let err = registry_token_env("ennor", dir.path(), env).unwrap_err();
+    assert!(err.to_string().contains("access token"), "{err}");
 }
 
 #[quench_test::test]

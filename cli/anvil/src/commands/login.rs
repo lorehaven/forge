@@ -95,22 +95,23 @@ pub fn registry_token_var(registry: &str) -> String {
     )
 }
 
-/// The token variable to set on a `cargo` child process publishing to
-/// `registry`, from the stored application token.
+/// The token variable to set on a `cargo` child process publishing to `registry`.
 ///
-/// `None` when the user already provides a token for the registry through the
-/// environment, or has no secret file - Cargo then falls back to whatever it
-/// has configured, as before.
+/// It comes from the application token: the stored one, or - in a CI job with no secret file - `ANVIL_APP_TOKEN`
+/// and `ANVIL_GATEHOUSE_URL` (see [`credentials_from`]).
+///
+/// `None` when the environment already provides a token for the registry, or there are no credentials at all -
+/// Cargo then falls back to whatever it has configured, as before.
 pub fn registry_token_env(
     registry: &str,
     dir: &Path,
-    env_has: impl Fn(&str) -> bool,
+    env: impl Fn(&str) -> Option<String>,
 ) -> Result<Option<(String, String)>> {
     let var = registry_token_var(registry);
-    if env_has(&var) {
+    if env(&var).is_some() {
         return Ok(None);
     }
-    let Some(credentials) = gatehouse_auth::load(TOOL, dir)? else {
+    let Some(credentials) = credentials_from(dir, &env)? else {
         return Ok(None);
     };
     let token = exchange(&credentials)?;

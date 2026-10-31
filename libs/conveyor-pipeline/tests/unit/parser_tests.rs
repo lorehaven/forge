@@ -648,11 +648,42 @@ port  = 6379
             env: [("POSTGRES_PASSWORD".to_string(), "postgres".to_string())].into(),
             args: Vec::new(),
             ready: Readiness::Command("pg_isready -U postgres".into()),
+            privileged: false,
         }
     );
     assert_eq!(services[1].ready, Readiness::Port(6379));
     assert_eq!(services[1].args, ["--save", ""]);
     assert!(services[1].env.is_empty());
+}
+
+#[quench_test::test]
+fn a_service_is_privileged_only_when_it_says_so() {
+    let spec = parse(&with_services(
+        r#"
+[[stage.job.service]]
+name = "dind"
+image = "docker:dind"
+privileged = true
+env = { DOCKER_TLS_CERTDIR = "" }
+ready = "docker info"
+
+[[stage.job.service]]
+name = "cache"
+image = "redis"
+port = 6379
+"#,
+    ))
+    .expect("parses");
+    let services = &spec.stages[0].jobs[0].services;
+    assert!(services[0].privileged);
+    assert!(!services[1].privileged, "off unless asked for");
+    // Only a boolean: a string is a typo, not a yes.
+    assert!(
+        parse(&with_services(
+            "[[stage.job.service]]\nname = \"dind\"\nimage = \"docker:dind\"\nprivileged = \"yes\"\nready = \"true\"\n"
+        ))
+        .is_err()
+    );
 }
 
 #[quench_test::test]

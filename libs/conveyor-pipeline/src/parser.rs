@@ -433,6 +433,7 @@ fn parse_service(raw: RawService, earlier: &[Service]) -> Result<Service, String
         env: raw.env,
         args: raw.args,
         ready,
+        privileged: raw.privileged,
     })
 }
 
@@ -588,4 +589,6 @@ struct RawService {
     ready: Option<String>,
     #[serde(default)]
     port: Option<u16>,
+    #[serde(default)]
+    privileged: bool,
 }

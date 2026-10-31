@@ -270,6 +270,26 @@ fn docker_commands_report_what_cannot_be_done() {
 }
 
 #[quench_test::test]
+fn no_docker_releases_the_crates_and_touches_no_image() {
+    let w = Workspace::new();
+    w.configure(DOCKER_CONFIG);
+    let out = w.run(&["release", "--all", "--no-docker", "--yes"], "");
+    assert!(out.ok, "{}", out.text);
+    let calls = w.calls();
+    assert!(
+        !calls.iter().any(|c| c.starts_with("docker ")),
+        "no image is built or pushed: {calls:?}"
+    );
+    assert!(
+        calls
+            .iter()
+            .any(|c| c.starts_with("publish --registry test --package b")),
+        "the crate is published: {calls:?}"
+    );
+    assert!(!out.text.contains("docker release"), "{}", out.text);
+}
+
+#[quench_test::test]
 fn release_with_docker_packages_builds_tags_and_pushes_them() {
     let w = Workspace::new();
     w.configure(DOCKER_CONFIG);

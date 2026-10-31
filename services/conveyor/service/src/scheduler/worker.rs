@@ -694,6 +694,41 @@ impl Worker {
         }
     }
 
+    /// The repository's git credential for a job's checkout container, or none (a failure to read it is logged, not
+    /// fatal: the checkout then fails on its own, with the provider's words).
+    async fn job_credential(
+        &self,
+        repo: &Repo,
+    ) -> Option<crate::credentials::store::ResolvedCredential> {
+        credential_store::resolve(&self.db, self.credential_key.as_ref().as_ref(), repo)
+            .await
+            .unwrap_or_else(|error| {
+                quench_log::warn!("could not resolve a credential for {}: {error}", repo.id);
+                None
+            })
+    }
+
+    /// `Some(Failed)`, recorded, when the job asks for a privileged service its run or repository may not have.
+    async fn refuse_privileged(
+        &self,
+        run: &Run,
+        repo: &Repo,
+        job: &pipeline::Job,
+        row: &crate::domain::Job,
+    ) -> Result<Option<Status>, WorkerError> {
+        let Err(reason) = super::privilege::check(
+            &job.services,
+            run.trigger,
+            &repo.slug(),
+            &self.config.privileged_repos,
+        ) else {
+            return Ok(None);
+        };
+        queue::finish_job(&self.db, &row.id, Status::Failed, None, Some(&reason)).await?;
+        quench_log::warn!("job {} refused: {reason}", row.id);
+        Ok(Some(Status::Failed))
+    }
+
     /// Starts one job, watches it, and records everything it produced.
     async fn run_one_job(
         &self,
@@ -705,6 +740,11 @@ impl Worker {
         workspace: &Workspace,
     ) -> Result<Status, WorkerError> {
         queue::start_job(&self.db, &row.id).await?;
+
+        // Before anything is resolved or created: a refused job has seen no secret and started no container.
+        if let Some(refused) = self.refuse_privileged(run, repo, job, row).await? {
+            return Ok(refused);
+        }
 
         // A job sees a secret only if it named one. That is the whole access
         // model: everything else in the store is invisible to it.
@@ -727,13 +767,7 @@ impl Worker {
         };
 
         // Same credential `checkout()` uses - an off-machine executor's init container needs its own copy.
-        let credential =
-            credential_store::resolve(&self.db, self.credential_key.as_ref().as_ref(), repo)
-                .await
-                .unwrap_or_else(|error| {
-                    quench_log::warn!("could not resolve a credential for {}: {error}", repo.id);
-                    None
-                });
+        let credential = self.job_credential(repo).await;
 
         let mut redacted = secrets.values().cloned().collect::<Vec<_>>();
         if let Some(credential) = &credential {

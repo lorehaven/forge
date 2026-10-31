@@ -68,6 +68,10 @@ pub struct ConveyorConfig {
     /// pipeline uses `on.tag`.
     pub build_tags: bool,
 
+    /// The repositories (`owner/name`, or `*` for every one) whose pipelines may run a `privileged` service. Empty by
+    /// default: nobody. A pull request never may, whatever this says. See [`crate::scheduler::privilege`].
+    pub privileged_repos: Vec<String>,
+
     /// How many runs the front page's pipeline panel shows at once.
     pub home_recent_runs: usize,
 
@@ -89,6 +93,7 @@ impl Default for ConveyorConfig {
             claim_stale_after_secs: 300,
             allow_fork_pr: false,
             build_tags: false,
+            privileged_repos: Vec::new(),
             home_recent_runs: 5,
             home_max_runs_per_repo: 1,
             runs_page_size: 25,
@@ -125,6 +130,12 @@ impl ConveyorConfig {
             ),
             allow_fork_pr: quench_core::env::is_or("CONVEYOR_ALLOW_FORK_PR", false),
             build_tags: quench_core::env::is_or("CONVEYOR_BUILD_TAGS", defaults.build_tags),
+            privileged_repos: quench_core::env::get_or("CONVEYOR_PRIVILEGED_REPOS", "")
+                .split([',', ' '])
+                .map(str::trim)
+                .filter(|repo| !repo.is_empty())
+                .map(str::to_string)
+                .collect(),
             home_recent_runs: positive("CONVEYOR_HOME_RECENT_RUNS", defaults.home_recent_runs),
             home_max_runs_per_repo: positive(
                 "CONVEYOR_HOME_MAX_RUNS_PER_REPO",

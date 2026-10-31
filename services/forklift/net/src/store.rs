@@ -42,8 +42,7 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS items (
     PRIMARY KEY (category, local_id));
 CREATE INDEX IF NOT EXISTS items_status ON items (status, retry_at_ms)";
 
-const COLUMNS: &str =
-    "category, local_id, name, uri, size, modified_ms, status, attempts, retry_at_ms, error, remote, gone";
+const COLUMNS: &str = "category, local_id, name, uri, size, modified_ms, status, attempts, retry_at_ms, error, remote, gone";
 
 const fn status_word(status: Status) -> &'static str {
     match status {
@@ -103,7 +102,9 @@ fn item_from_row(row: &[Value]) -> Option<Item> {
 }
 
 fn read_items(conn: &mut Connection) -> Option<Vec<Item>> {
-    let rows = conn.query(&format!("SELECT {COLUMNS} FROM items"), &[]).ok()?;
+    let rows = conn
+        .query(&format!("SELECT {COLUMNS} FROM items"), &[])
+        .ok()?;
     // A record that does not read back means damage; losing it only means the next scan looks at the file again.
     Some(rows.rows.iter().filter_map(|r| item_from_row(r)).collect())
 }
@@ -116,7 +117,9 @@ fn persist(conn: &mut Connection, items: &[Item]) -> quench_sqlite::Result<()> {
             .into_iter()
             .map(|i| ((i.category.clone(), i.local_id.clone()), i))
             .collect();
-        let insert = format!("INSERT OR REPLACE INTO items ({COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        let insert = format!(
+            "INSERT OR REPLACE INTO items ({COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
         for item in items {
             let key = (item.category.clone(), item.local_id.clone());
             if stored.remove(&key).as_ref() != Some(item) {
@@ -284,12 +287,18 @@ impl Store {
         let empty = conn
             .query("SELECT count(*) FROM items", &[])
             .ok()
-            .and_then(|r| r.rows.first().and_then(|row| row.first().and_then(Value::as_integer)))
+            .and_then(|r| {
+                r.rows
+                    .first()
+                    .and_then(|row| row.first().and_then(Value::as_integer))
+            })
             == Some(0);
         if !empty {
             return;
         }
-        let Ok(text) = std::fs::read_to_string(&legacy) else { return };
+        let Ok(text) = std::fs::read_to_string(&legacy) else {
+            return;
+        };
         let items: Vec<Item> = Manifest::from_text(&text).items().cloned().collect();
         if persist(conn, &items).is_ok() {
             self.write_counts(&items);
@@ -329,8 +338,10 @@ impl Store {
     /// with its `fsync`, is another thread's): for the periodic save of a long run. A later
     /// [`set_manifest`](Self::set_manifest) is never overwritten by it.
     pub fn set_manifest_in_background(&self, manifest: &Manifest) {
-        let (items, number): (Vec<Item>, u64) =
-            (manifest.items().cloned().collect(), ASKED.fetch_add(1, Ordering::SeqCst) + 1);
+        let (items, number): (Vec<Item>, u64) = (
+            manifest.items().cloned().collect(),
+            ASKED.fetch_add(1, Ordering::SeqCst) + 1,
+        );
         let store = self.clone();
         *PENDING
             .lock()

@@ -503,6 +503,7 @@ async fn a_job_with_services_is_refused_because_there_is_no_pod_to_run_them_in()
         env: BTreeMap::new(),
         args: Vec::new(),
         ready: Readiness::Port(5432),
+        privileged: false,
     }];
 
     let error = executor

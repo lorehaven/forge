@@ -327,6 +327,14 @@ fn parse_release_yes_skips_the_question() {
     assert!(matches!(cli.command, Commands::Release { yes: true, .. }));
     let cli = Cli::parse_from(["anvil", "release", "--all"]);
     assert!(matches!(cli.command, Commands::Release { yes: false, .. }));
+    let cli = Cli::parse_from(["anvil", "release", "--all", "--no-docker"]);
+    assert!(matches!(
+        cli.command,
+        Commands::Release {
+            no_docker: true,
+            ..
+        }
+    ));
 }
 
 #[quench_test::test]

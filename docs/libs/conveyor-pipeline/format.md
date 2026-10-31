@@ -123,6 +123,18 @@ Containers that run beside the steps for the life of the job (a database for tes
 | `args` | array of string | `[]` | arguments for the image's entrypoint; empty keeps the image's own |
 | `ready` | string | | command run inside the service container; ready when it exits 0. Non-blank |
 | `port` | integer (u16) | | ready when this TCP port accepts connections; `0` is an error |
+| `privileged` | bool | `false` | run this container privileged (a `docker:dind` daemon needs it). Only a request: the deployment decides (below). Must be a boolean; `"yes"` is a parse error |
+
+**`privileged`** is the pipeline asking, and a repository's pipeline is not to be trusted with the node, so it takes two settings of the deployment (see the [Conveyor configuration](../../services/conveyor/configuration.md)) and a pull request never gets it: the executor must allow privileged containers (`CONVEYOR_K8S_ALLOW_PRIVILEGED`) and the repository must be named (`CONVEYOR_PRIVILEGED_REPOS`). A job that asks without being allowed fails before it starts, saying which setting is missing. Only that one container is privileged; the steps and the other containers stay as they were. A Docker daemon beside the steps looks like this:
+
+```toml
+[[stage.job.service]]
+name = "dind"
+image = "docker:dind"
+privileged = true
+env = { DOCKER_TLS_CERTDIR = "" }   # plain tcp on 2375, reached on localhost; the steps set DOCKER_HOST=tcp://127.0.0.1:2375
+ready = "docker info"
+```
 
 Exactly one of `ready` and `port` must be set. Errors are `service <n> of job '<job>' in stage '<stage>': <reason>` with reasons: `has an empty name`; `` `n` is not a valid name: ...``; `` `n` is a name the executor uses for its own containers; pick another``; `` `n` is declared twice on this job``; `` `n` has no image``; `` `n` has an environment variable with no name``; `` `n` has an empty `ready` command``; `` `n` has port 0``; `` `n` sets both `ready` and `port`; a service is ready by one or the other``; `` `n` says nothing about when it is ready: set `ready = "<command>"` or `port = <n>`, or the steps would start before it is up``.
 

@@ -1,6 +1,7 @@
 //! Getting from a queued run to a finished one.
 //! No `concurrency` module: the per-repo rule lives in the claim query + a partial unique index, so it holds across replicas.
 
+pub mod privilege;
 pub mod projects;
 pub mod queue;
 pub mod repos;

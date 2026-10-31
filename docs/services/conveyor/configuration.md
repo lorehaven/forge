@@ -19,6 +19,7 @@ Read once at start (`ConveyorConfig::load`). A positive-integer variable that is
 | `CONVEYOR_JOB_TIMEOUT_SECS` | positive integer | `3600` | Job timeout when the pipeline sets none. |
 | `CONVEYOR_CHECKOUT_TIMEOUT_SECS` | positive integer | `600` | Timeout of each git command of a checkout. |
 | `CONVEYOR_CLAIM_STALE_AFTER_SECS` | positive integer | `300` | A running run whose `claimed_at` is older is put back on the queue. Heartbeat is a third of it, the janitor runs at half (both at least 5 s). |
+| `CONVEYOR_PRIVILEGED_REPOS` | list | empty | The repositories (`owner/name`, separated by commas or spaces, or `*` for every one) whose pipelines may run a `privileged` service. Empty: none. A job that asks without being listed fails (`<repo> may not run the privileged service(s) ...`), and **a pull request never may**, listed or not: its pipeline is the contributor's, and a privileged container can do what the node can. Checked before the job's secrets are read or anything is started. The executor's own switch, `CONVEYOR_K8S_ALLOW_PRIVILEGED`, must be on as well. |
 | `CONVEYOR_ALLOW_FORK_PR` | bool | `false` | Build pull requests from forks. A warning is logged at start when this is on with the native executor. |
 | `CONVEYOR_BUILD_TAGS` | bool | `false` | Queue runs for tag pushes. |
 | `CONVEYOR_HOME_RECENT_RUNS` | positive integer | `5` | Runs on the front page. |
@@ -76,6 +77,7 @@ Used only with `CONVEYOR_EXECUTOR=kubernetes`. Integers that do not parse take t
 | `CONVEYOR_K8S_TTL_SECONDS` | `3600` | `ttlSecondsAfterFinished`. |
 | `CONVEYOR_K8S_POD_START_SECS` | `120` | How long a pod may stay `Pending`. |
 | `CONVEYOR_K8S_SERVICE_READY_SECS` | `300` | How long a job's services get to become ready; added to the pod start time for such a job. |
+| `CONVEYOR_K8S_ALLOW_PRIVILEGED` | `false` | Whether a service that asks to be `privileged` is run so. Off: such a job fails before anything is created (`this deployment does not allow privileged containers`). The namespace's Pod Security level must permit privileged pods as well. See also `CONVEYOR_PRIVILEGED_REPOS`. |
 
 The Kubernetes client is configured by `Client::infer` (in-cluster environment, else `KUBECONFIG`/`~/.kube/config`).
 

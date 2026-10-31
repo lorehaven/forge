@@ -79,10 +79,15 @@ pub fn release(
     all: bool,
     dry_run: bool,
     yes: bool,
+    no_docker: bool,
 ) -> Result<()> {
     let metadata = cargo_meta::cargo_metadata()?;
     let targets = resolve_release_targets(config, &metadata, package, all)?;
     let mut plan = build_release_plan(config, &metadata, &targets)?;
+    if no_docker {
+        // Nothing of a Docker package is built, pushed or tagged: not as a target, and not as a dependency of one.
+        plan.retain(|item| !matches!(item.kind, ReleaseKind::Docker));
+    }
     plan.sort_by(|a, b| (a.layer, &a.package).cmp(&(b.layer, &b.package)));
 
     // The full dependency-ordered graph - every target and its transitive
@@ -149,7 +154,7 @@ pub fn release(
                     if let Some((var, token)) = login::registry_token_env(
                         &config.release.registry,
                         &std::env::current_dir()?,
-                        |name| std::env::var_os(name).is_some(),
+                        |name| std::env::var(name).ok(),
                     )? {
                         cmd.env(var, token);
                     }

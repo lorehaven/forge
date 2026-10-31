@@ -95,6 +95,76 @@ image = "pgvector/pgvector:pg18"
 env   = { POSTGRES_PASSWORD = "postgres" }
 ready = "pg_isready -h 127.0.0.1 -U postgres"
 
+# ---------------------------------------------------------------- release (by hand)
+# Never started by a push, a pull request or the clock: no event is called `release`, so these stages are skipped in
+# every run. They are run by naming them, which clears their `when` ("run with parameters" in the UI, or
+#   conveyor run lorehaven/forge --stage release-crates,release-artifacts --wait
+# in the CLI); `needs` is kept between named stages, so the artifacts follow the crates. Add `check,build,test` to the
+# names to release only after the tests of the same run pass.
+#
+# Both stages commit and push to master (a raised version, tags), so each job first makes its checkout fit for it:
+# scripts/ci-release-prepare.sh (history, tags, a branch, a credential). Needs the conveyor secrets RELEASE_GIT_TOKEN
+# (write access to the repository; the repository registered with an https clone url) and ANVIL_APP_TOKEN with
+# ANVIL_GATEHOUSE_URL (the application that may publish: the registry and `warehouse:write`).
+#
+# release-crates: the libraries and command-line tools and the service images, as `anvil release --all` does on a
+# developer's machine. The images need a Docker daemon, which a job pod does not have, so the job asks for one as a
+# privileged `docker:dind` service beside its steps; the steps reach it on 127.0.0.1:2375. That is a privileged container,
+# which the deployment must allow for this repository (CONVEYOR_K8S_ALLOW_PRIVILEGED and CONVEYOR_PRIVILEGED_REPOS; a
+# pull request never gets one): without that the job fails at the start and says so. Needs the secrets
+# DOCKER_REGISTRY_USER and DOCKER_REGISTRY_PASSWORD besides the ones below; `--no-docker` leaves the images out.
+[[stage]]
+name  = "release-crates"
+when  = "event == 'release'"
+needs = ["test"]
+
+[[stage.job]]
+name    = "crates"
+image   = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL", "RELEASE_GIT_TOKEN", "DOCKER_REGISTRY_USER", "DOCKER_REGISTRY_PASSWORD"]
+timeout = 14400
+env     = { DOCKER_HOST = "tcp://127.0.0.1:2375", DOCKER_REGISTRIES = "ennor.ddns.net ossiriand.arda:8080", GIT_AUTHOR_NAME = "Conveyor release", GIT_AUTHOR_EMAIL = "conveyor@lorehaven.invalid", GIT_COMMITTER_NAME = "Conveyor release", GIT_COMMITTER_EMAIL = "conveyor@lorehaven.invalid" }
+steps = [
+  { run = "sh scripts/ci-release-prepare.sh" },
+  { run = "sh scripts/ci-docker-login.sh" },
+  { anvil = "release --all --yes" },
+]
+
+# The daemon. `DOCKER_TLS_CERTDIR` empty makes it listen on plain tcp 2375 (the pod's network is private to the job);
+# the second registry is the cluster's own, which speaks http.
+[[stage.job.service]]
+name       = "dind"
+image      = "docker:dind"
+privileged = true
+env        = { DOCKER_TLS_CERTDIR = "" }
+args       = ["--insecure-registry=ossiriand.arda:8080"]
+ready      = "docker -H tcp://127.0.0.1:2375 info"
+
+# release-artifacts: every program of `.anvil/artifacts.toml` (the apps, the desktop packages), each at the next version
+# if the warehouse already has this one (`anvil artifact release --all --yes`). The version commits are made here and
+# pushed by the last step. Needs the Android toolchain, so its own image (images/rust-android-builder), and the release
+# keys: the secrets HOIST_KEYSTORE_B64, DAYBOOK_KEYSTORE_B64 and FORKLIFT_KEYSTORE_B64 (the keystore files, base64) and
+# QUENCH_KEYSTORE_PASSWORD and QUENCH_KEY_PASSWORD. It takes master as it is after release-crates, not as it was when
+# the run started (RELEASE_REQUIRE_SHA=0).
+[[stage]]
+name  = "release-artifacts"
+when  = "event == 'release'"
+needs = ["release-crates"]
+
+[[stage.job]]
+name    = "artifacts"
+image   = "ossiriand.arda:8080/forge/ci/rust-android-builder:latest"
+secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL", "RELEASE_GIT_TOKEN", "QUENCH_KEYSTORE_PASSWORD", "QUENCH_KEY_PASSWORD", "HOIST_KEYSTORE_B64", "DAYBOOK_KEYSTORE_B64", "FORKLIFT_KEYSTORE_B64"]
+timeout = 10800
+env     = { RELEASE_REQUIRE_SHA = "0", GIT_AUTHOR_NAME = "Conveyor release", GIT_AUTHOR_EMAIL = "conveyor@lorehaven.invalid", GIT_COMMITTER_NAME = "Conveyor release", GIT_COMMITTER_EMAIL = "conveyor@lorehaven.invalid" }
+steps = [
+  { run = "sh scripts/ci-release-prepare.sh" },
+  { run = "sh scripts/ci-restore-keystores.sh" },
+  { anvil = "artifact release --all --yes" },
+  # `artifact release` commits a raised version and leaves the pushing to the pipeline.
+  { run = "git push origin HEAD:master" },
+]
+
 # ---------------------------------------------------------------- security (nightly)
 # Started by the clock (`on.schedule`), never by a push. One job, one report: supply-chain and static stages,
 # the scanner's self-test, and a live scan of the estate are quench-test cases written to target/security,

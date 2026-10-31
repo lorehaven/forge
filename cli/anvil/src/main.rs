@@ -74,7 +74,8 @@ fn main() -> Result<()> {
             package,
             dry_run,
             yes,
-        } => commands::release::release(&config, package, all, dry_run, yes)?,
+            no_docker,
+        } => commands::release::release(&config, package, all, dry_run, yes, no_docker)?,
         Commands::Run {
             package,
             serve,

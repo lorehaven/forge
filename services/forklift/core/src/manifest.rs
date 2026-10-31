@@ -178,7 +178,9 @@ impl Manifest {
     pub fn from_items(items: impl IntoIterator<Item = Item>) -> Self {
         let mut manifest = Self::new();
         for item in items {
-            manifest.items.insert(key(&item.category, &item.local_id), item);
+            manifest
+                .items
+                .insert(key(&item.category, &item.local_id), item);
         }
         manifest
     }

@@ -50,6 +50,47 @@ The whole plan is written to the `jobs` table before anything executes, so the r
 
 When `runs.stages` is set, the parsed spec is first reduced with `PipelineSpec::only`: the named stages are kept, **each with its own `when` cleared**, `needs` on stages that were not named are dropped, declaration order is kept. A job's own `when` still applies inside a ticked stage. An empty selection or an unknown name is `.conveyor.toml is not valid: ...` listing the available stages. This is how the nightly-only stage can be run by hand. A restart keeps the selection.
 
+### Releasing from a pipeline
+
+A release is a by-hand run of stages that no event starts. The repositories declare them with a `when` that nothing satisfies (`event == 'release'`) and run them by naming them, which clears the `when` (see above):
+
+```bash
+conveyor run lorehaven/quench --stage release --wait
+conveyor run lorehaven/forge --stage release-crates,release-artifacts --wait
+conveyor run lorehaven/forge --stage check,build,test,release-crates,release-artifacts --wait   # only after the tests pass
+```
+
+In the UI the same is "run with parameters" with the stages ticked. A push, a pull request, a manual run of the whole pipeline and the nightly run all skip them (the run page shows them as excluded by a `when`).
+
+* **quench `release`** (job `crates`): `anvil release --all --yes`.
+* **forge `release-crates`**: `anvil release --all --yes`, the crates and the service images. The images are built by a Docker daemon in a **privileged `docker:dind` service** of the job (see [Privileged services](#privileged-services)); the steps reach it on `tcp://127.0.0.1:2375` and `docker login` to the registries first (`scripts/ci-docker-login.sh`). **`release-artifacts`** (needs `release-crates`; its own image `rust-android-builder`): `anvil artifact release --all --yes`, then `git push origin HEAD:master` for the version commits it made.
+
+What they do to the repository: raise the patch version of every package that changed since its last tag, commit, push the commit and the tags, publish to the registry in dependency order, and (artifacts) upload the apps and packages to Warehouse, each program at the next version when Warehouse already has the current one. See [anvil release](../../cli/anvil/commands-release.md) and [artifact release](../../cli/anvil/commands-credentials.md#artifact-release).
+
+The job's own checkout cannot be released from (shallow, one commit, no tags, no branch, and its git credential belongs to the checkout container), so each release job begins with `scripts/ci-release-prepare.sh`: it adds the credential (`http.<host>/.extraheader`, from the secret `RELEASE_GIT_TOKEN`), fetches the history and the tags, and checks out the branch. By default it refuses to go on if the branch has moved since the run was queued (`RELEASE_REQUIRE_SHA=1`: what was tested is what is released); the artifacts job takes the branch as `release-crates` left it (`RELEASE_REQUIRE_SHA=0`).
+
+**Secrets to set** (repository or estate-wide, see [secrets](api.md#secrets)):
+
+| Secret | For |
+|---|---|
+| `DOCKER_REGISTRY_USER`, `DOCKER_REGISTRY_PASSWORD` | the account the images are pushed with (`scripts/ci-docker-login.sh` logs the job's CLI in to the hosts of `DOCKER_REGISTRIES` with them) |
+| `RELEASE_GIT_TOKEN` | a token that may push to the repository (and the repository must be registered with an https clone url) |
+| `ANVIL_APP_TOKEN`, `ANVIL_GATEHOUSE_URL` | the application that may publish to the registry (and `warehouse:write` for the artifacts); `anvil release` reads them when there is no secret file |
+| `QUENCH_KEYSTORE_PASSWORD`, `QUENCH_KEY_PASSWORD` | signing the APKs (forge artifacts) |
+| `HOIST_KEYSTORE_B64`, `DAYBOOK_KEYSTORE_B64`, `FORKLIFT_KEYSTORE_B64` | the release keystores (they are not in git), `base64 -w0 release.keystore`; `scripts/ci-restore-keystores.sh` writes them to `services/<name>/release.keystore` |
+
+**Images.** The jobs run `anvil`, so the `rust-builder` image must have the anvil that knows `release --yes` and `--no-docker`, and the Docker CLI it now installs (rebuild it after releasing anvil). `release-artifacts` needs `images/rust-android-builder` (JDK 21, the Android SDK and NDK, the Rust targets, `quench`), which has to be built and pushed to the registry first.
+
+### Privileged services
+
+A job pod has no Docker daemon, so a job that builds images asks for one as a service: `privileged = true` on a `docker:dind` entry ([format](../../libs/conveyor-pipeline/format.md#stagejobservice-sidecar-containers)). A privileged container can do what the node can, so it is the deployment, not the pipeline file, that decides:
+
+1. the Kubernetes executor must allow it: `CONVEYOR_K8S_ALLOW_PRIVILEGED=true` (the namespace's Pod Security level must permit privileged pods too);
+2. the repository must be named in `CONVEYOR_PRIVILEGED_REPOS` (`owner/name`, or `*`);
+3. the run must not be a pull request, whatever the settings say: its pipeline is the contributor's.
+
+The scheduler checks 2 and 3 before it reads the job's secrets or starts anything, and the executor checks 1 before it creates the Secret and the Job; a refusal fails the job with the reason as its error. Only the one service is privileged: the checkout, the steps and the other services keep `allowPrivilegeEscalation: false`. Everyone who can push to a listed repository's branches that the pipeline runs on can run a privileged container, so list only repositories whose writers you would let on the node.
+
 ## What a job sees
 
 Environment of every step, in order of precedence (later wins): conveyor's own variables, then the job's `env`, then the resolved secrets (so a pipeline cannot shadow a secret with a plain `env` entry):

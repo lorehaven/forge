@@ -176,7 +176,7 @@ Keys (names only):
 
 The file is created with mode `0600` on Unix (a plain write elsewhere). A later `login` rewrites `gatehouse_url` and `app_token` and keeps the other keys; `keystore-password` changes one key and leaves the rest. `login` also appends the secret path to `.gitignore` in the current directory unless it already has a line equal to that path, `.*.secret.toml` or `.*/secret.toml`.
 
-For CI without a file, `ANVIL_APP_TOKEN` and `ANVIL_GATEHOUSE_URL` replace `gatehouse_url`/`app_token` for `registry-token` and `artifact release`. (`release` itself uses the file only: `registry_token_env` calls `gatehouse_auth::load`; see the [report](../../_reports/cli.md).)
+For CI without a file, `ANVIL_APP_TOKEN` and `ANVIL_GATEHOUSE_URL` replace `gatehouse_url`/`app_token` for `registry-token` and `artifact release`. `release` (its `cargo publish`) reads the same variables when there is no file, so a CI job can publish.
 
 ## What `config check` reports
 

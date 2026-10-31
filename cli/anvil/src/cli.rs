@@ -176,6 +176,10 @@ pub enum Commands {
         /// Do not ask for confirmation (needed when nothing can answer, as in a pipeline)
         #[arg(short = 'y', long)]
         yes: bool,
+        /// Leave out the Docker packages (their images are built and pushed elsewhere): only crates are released.
+        /// For a job that has no Docker daemon
+        #[arg(long)]
+        no_docker: bool,
     },
     /// Build and run a package/binary
     Run {

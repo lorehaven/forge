@@ -29,6 +29,7 @@ fn every_anvil_command_is_accepted() {
         let args = match command {
             "docker" => "docker build -p thing".to_string(),
             "config" => "config check".to_string(),
+            "artifact" => "artifact list".to_string(),
             _ => command.to_string(),
         };
         assert!(
@@ -53,6 +54,30 @@ fn anvils_flags_are_not_validated() {
     // Clap already checks them, and a second copy of anvil's argument tables
     // here would be two definitions drifting apart.
     assert!(validate(&Step::Anvil("build --some-new-flag".to_string())).is_ok());
+}
+
+#[quench_test::test]
+fn the_artifact_release_a_pipeline_runs_is_accepted_and_a_mistyped_one_is_not() {
+    for args in [
+        "artifact release --all --yes",
+        "artifact release hoist --bump",
+        "artifact list",
+    ] {
+        assert!(
+            validate(&Step::Anvil(args.to_string())).is_ok(),
+            "anvil {args}"
+        );
+    }
+    let error = validate(&Step::Anvil("artifact relase --all".to_string())).expect_err("rejected");
+    let message = error.to_string();
+    assert!(
+        message.contains("relase") && message.contains("release"),
+        "{message}"
+    );
+    assert!(
+        validate(&Step::Anvil("artifact".to_string())).is_err(),
+        "a subcommand is needed"
+    );
 }
 
 #[quench_test::test]
