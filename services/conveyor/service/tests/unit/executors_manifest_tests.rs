@@ -744,7 +744,7 @@ fn the_coverage_job_of_this_repository_becomes_a_pod_with_a_database_beside_its_
 
     // the schema is applied before the tests, by the first step
     let script = steps["args"][0].as_str().expect("the steps script");
-    let apply = script.find("foundry-service").expect("the apply step");
+    let apply = script.find("-p foundry -- apply").expect("the apply step");
     let coverage = script
         .find("cargo llvm-cov --workspace")
         .expect("the coverage step");

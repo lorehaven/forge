@@ -68,7 +68,7 @@ image     = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
 secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL"]
 # The services' integration tests skip themselves unless their `<SERVICE>_TEST_DATABASE_URL` points at a
 # database with the module installed. This job gives them one: a Postgres beside the steps (below), which
-# `foundry-service apply` fills first. Without it they would not run here and their code would count as
+# `foundry apply` fills first. Without it they would not run here and their code would count as
 # uncovered. 127.0.0.1, not `localhost`: a name can resolve to ::1, which the database is not listening on.
 env       = { RUST_BACKTRACE = "1", CONVEYOR_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", DAYBOOK_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", FOUNDRY_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", GANTRY_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", GATEHOUSE_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", SAGE_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", WAREHOUSE_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", WORKBENCH_TEST_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres" }
 # `--lcov`/`--text` are separate report formats - one invocation can only
