@@ -1,0 +1,341 @@
+/* forge-ui design tokens - Untitled UI palette, type scale, radii and shadows.
+   Semantic tokens (--fui-*) are what components use; the raw scale only feeds them.
+   Theme is selected by html[data-fui-theme="dark|light"], kept in sync with quench's
+   `qtheme` cookie by the theme script. Dark is the default when the attribute is absent. */
+
+:root {
+  --fui-font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --fui-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  /* Untitled UI "gray modern" */
+  --fui-gray-25: #fcfcfd; --fui-gray-50: #f9fafb; --fui-gray-100: #f2f4f7; --fui-gray-200: #eaecf0;
+  --fui-gray-300: #d0d5dd; --fui-gray-400: #98a2b3; --fui-gray-500: #667085; --fui-gray-600: #475467;
+  --fui-gray-700: #344054; --fui-gray-800: #182230; --fui-gray-900: #101828; --fui-gray-950: #0c111d;
+
+  /* Brand: green by default; html[data-fui-palette] swaps the whole scale (see palettes below) */
+  --fui-brand-25: #f6fef9; --fui-brand-50: #ecfdf3; --fui-brand-100: #dcfae6; --fui-brand-200: #abefc6;
+  --fui-brand-300: #75e0a7; --fui-brand-400: #47cd89; --fui-brand-500: #17b26a; --fui-brand-600: #079455;
+  --fui-brand-700: #067647; --fui-brand-800: #085d3a; --fui-brand-900: #074d31;
+
+  --fui-error-50: #fef3f2; --fui-error-200: #fecdca; --fui-error-500: #f04438; --fui-error-600: #d92d20; --fui-error-700: #b42318;
+  --fui-warning-50: #fffaeb; --fui-warning-200: #fedf89; --fui-warning-500: #f79009; --fui-warning-600: #dc6803; --fui-warning-700: #b54708;
+  --fui-success-50: #ecfdf3; --fui-success-200: #abefc6; --fui-success-500: #17b26a; --fui-success-600: #079455; --fui-success-700: #067647;
+  --fui-blue-50: #eff8ff; --fui-blue-200: #b2ddff; --fui-blue-500: #2e90fa; --fui-blue-600: #1570ef; --fui-blue-700: #175cd3;
+
+  --fui-radius-xs: 4px; --fui-radius-sm: 6px; --fui-radius-md: 8px; --fui-radius-lg: 10px; --fui-radius-xl: 12px; --fui-radius-2xl: 16px;
+
+  --fui-sidebar-w: 18.5rem;
+  --fui-topbar-h: 4rem;
+  --fui-content-max: 80rem;
+  --fui-tap: 2.75rem; /* minimum touch target */
+}
+
+/* ---------- dark (default) ---------- */
+:root, html[data-fui-theme="dark"] {
+  color-scheme: dark;
+  --fui-bg: #0d0e10;
+  --fui-bg-sunken: #08090a;
+  --fui-surface: #141517;
+  --fui-surface-2: #1b1c1f;
+  --fui-surface-hover: #212326;
+  --fui-border: #232528;
+  --fui-border-strong: #36383d;
+  --fui-text: #f4f4f5;
+  --fui-text-secondary: #cecfd2;
+  --fui-text-tertiary: #94969c;
+  --fui-text-disabled: #61646c;
+  --fui-link: var(--fui-brand-300);
+  --fui-focus: color-mix(in srgb, var(--fui-brand-500) 35%, transparent);
+  --fui-brand-solid: var(--fui-brand-600);
+  --fui-brand-solid-hover: var(--fui-brand-500);
+  --fui-brand-soft-bg: color-mix(in srgb, var(--fui-brand-500) 16%, transparent);
+  --fui-brand-soft-text: var(--fui-brand-300);
+  --fui-error-soft-bg: rgba(240, 68, 56, 0.14);   --fui-error-soft-text: #fda29b;   --fui-error-soft-border: rgba(240, 68, 56, 0.35);
+  --fui-warning-soft-bg: rgba(247, 144, 9, 0.14);  --fui-warning-soft-text: #fec84b;  --fui-warning-soft-border: rgba(247, 144, 9, 0.35);
+  --fui-success-soft-bg: rgba(23, 178, 106, 0.14); --fui-success-soft-text: #75e0a7;  --fui-success-soft-border: rgba(23, 178, 106, 0.35);
+  --fui-blue-soft-bg: rgba(46, 144, 250, 0.14);    --fui-blue-soft-text: #84caff;     --fui-blue-soft-border: rgba(46, 144, 250, 0.35);
+  --fui-gray-soft-bg: rgba(255, 255, 255, 0.06);   --fui-gray-soft-text: #cecfd2;     --fui-gray-soft-border: rgba(255, 255, 255, 0.12);
+  --fui-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --fui-shadow-md: 0 4px 8px -2px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+  --fui-shadow-xl: 0 20px 24px -4px rgba(0, 0, 0, 0.55), 0 8px 8px -4px rgba(0, 0, 0, 0.4);
+  --fui-scrim: rgba(3, 4, 5, 0.72);
+
+  /* Legacy bridge: quench's scale runs 50 = strongest text ... 950 = page background. */
+  --bs-gray-50: #f7f7f8; --bs-gray-100: #ececee; --bs-gray-200: #d7d9dc; --bs-gray-300: #b4b7bd; --bs-gray-400: #8b8e96;
+  --bs-gray-500: #666a72; --bs-gray-600: #40434a; --bs-gray-700: #2a2c30; --bs-gray-800: #1b1c1f; --bs-gray-900: #141517; --bs-gray-950: #0d0e10;
+}
+
+/* ---------- light ---------- */
+html[data-fui-theme="light"] {
+  color-scheme: light;
+  --fui-bg: var(--fui-gray-50);
+  --fui-bg-sunken: var(--fui-gray-100);
+  --fui-surface: #ffffff;
+  --fui-surface-2: var(--fui-gray-50);
+  --fui-surface-hover: var(--fui-gray-50);
+  --fui-border: var(--fui-gray-200);
+  --fui-border-strong: var(--fui-gray-300);
+  --fui-text: var(--fui-gray-900);
+  --fui-text-secondary: var(--fui-gray-700);
+  --fui-text-tertiary: var(--fui-gray-500);
+  --fui-text-disabled: var(--fui-gray-400);
+  --fui-link: var(--fui-brand-700);
+  --fui-focus: color-mix(in srgb, var(--fui-brand-500) 28%, transparent);
+  --fui-brand-solid: var(--fui-brand-600);
+  --fui-brand-solid-hover: var(--fui-brand-700);
+  --fui-brand-soft-bg: var(--fui-brand-50);
+  --fui-brand-soft-text: var(--fui-brand-700);
+  --fui-error-soft-bg: var(--fui-error-50);     --fui-error-soft-text: var(--fui-error-700);     --fui-error-soft-border: var(--fui-error-200);
+  --fui-warning-soft-bg: var(--fui-warning-50); --fui-warning-soft-text: var(--fui-warning-700); --fui-warning-soft-border: var(--fui-warning-200);
+  --fui-success-soft-bg: var(--fui-success-50); --fui-success-soft-text: var(--fui-success-700); --fui-success-soft-border: var(--fui-success-200);
+  --fui-blue-soft-bg: var(--fui-blue-50);       --fui-blue-soft-text: var(--fui-blue-700);       --fui-blue-soft-border: var(--fui-blue-200);
+  --fui-gray-soft-bg: var(--fui-gray-50);       --fui-gray-soft-text: var(--fui-gray-700);       --fui-gray-soft-border: var(--fui-gray-200);
+  --fui-shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --fui-shadow-md: 0 4px 8px -2px rgba(16, 24, 40, 0.1), 0 2px 4px -2px rgba(16, 24, 40, 0.06);
+  --fui-shadow-xl: 0 20px 24px -4px rgba(16, 24, 40, 0.08), 0 8px 8px -4px rgba(16, 24, 40, 0.03);
+  --fui-scrim: rgba(12, 17, 29, 0.55);
+
+  --bs-gray-50: #101828; --bs-gray-100: #182230; --bs-gray-200: #344054; --bs-gray-300: #475467; --bs-gray-400: #667085;
+  --bs-gray-500: #98a2b3; --bs-gray-600: #d0d5dd; --bs-gray-700: #eaecf0; --bs-gray-800: #f2f4f7; --bs-gray-900: #f9fafb; --bs-gray-950: #ffffff;
+}
+
+/* quench's shell variables follow the semantic tokens so unmigrated markup matches */
+:root {
+  --q-shell-font: var(--fui-font);
+  --q-shell-text: var(--fui-text-secondary);
+  --q-shell-text-muted: var(--fui-text-tertiary);
+  --q-shell-accent: var(--fui-brand-600);
+  --q-shell-panel-radius: var(--fui-radius-md);
+  --q-shell-panel-border: 1px solid var(--fui-border);
+  --q-shell-panel-shadow: var(--fui-shadow-xs);
+  --q-shell-panel-bg: var(--fui-surface);
+  --q-shell-panel-bg-soft: var(--fui-bg);
+  --q-shell-panel-bg-strong: var(--fui-surface);
+  --bs-danger: var(--fui-error-600);
+  --bs-warning: var(--fui-warning-500);
+}
+
+/* ---------- palettes: brand scale only; modes above apply to every palette ---------- */
+html[data-fui-palette="green"] {
+  --fui-brand-25: #f6fef9; --fui-brand-50: #ecfdf3; --fui-brand-100: #dcfae6; --fui-brand-200: #abefc6;
+  --fui-brand-300: #75e0a7; --fui-brand-400: #47cd89; --fui-brand-500: #17b26a; --fui-brand-600: #079455;
+  --fui-brand-700: #067647; --fui-brand-800: #085d3a; --fui-brand-900: #074d31;
+}
+html[data-fui-palette="purple"] {
+  --fui-brand-25: #fcfaff; --fui-brand-50: #f9f5ff; --fui-brand-100: #f4ebff; --fui-brand-200: #e9d7fe;
+  --fui-brand-300: #d6bbfb; --fui-brand-400: #b692f6; --fui-brand-500: #9e77ed; --fui-brand-600: #7f56d9;
+  --fui-brand-700: #6941c6; --fui-brand-800: #53389e; --fui-brand-900: #42307d;
+}
+html[data-fui-palette="blue"] {
+  --fui-brand-25: #f5faff; --fui-brand-50: #eff8ff; --fui-brand-100: #d1e9ff; --fui-brand-200: #b2ddff;
+  --fui-brand-300: #84caff; --fui-brand-400: #53b1fd; --fui-brand-500: #2e90fa; --fui-brand-600: #1570ef;
+  --fui-brand-700: #175cd3; --fui-brand-800: #1849a9; --fui-brand-900: #194185;
+}
+html[data-fui-palette="teal"] {
+  --fui-brand-25: #f6fefc; --fui-brand-50: #f0fdf9; --fui-brand-100: #ccfbef; --fui-brand-200: #99f6e0;
+  --fui-brand-300: #5fe9d0; --fui-brand-400: #2ed3b7; --fui-brand-500: #15b79e; --fui-brand-600: #0e9384;
+  --fui-brand-700: #107569; --fui-brand-800: #125d56; --fui-brand-900: #134e48;
+}
+html[data-fui-palette="orange"] {
+  --fui-brand-25: #fefaf5; --fui-brand-50: #fff6ed; --fui-brand-100: #ffead5; --fui-brand-200: #fddcab;
+  --fui-brand-300: #feb273; --fui-brand-400: #fd853a; --fui-brand-500: #fb6514; --fui-brand-600: #ec4a0a;
+  --fui-brand-700: #c4320a; --fui-brand-800: #9c2a10; --fui-brand-900: #7e2410;
+}
+html[data-fui-palette="rose"] {
+  --fui-brand-25: #fff5f6; --fui-brand-50: #fff1f3; --fui-brand-100: #ffe4e8; --fui-brand-200: #fecdd6;
+  --fui-brand-300: #fea3b4; --fui-brand-400: #fd6f8e; --fui-brand-500: #f63d68; --fui-brand-600: #e31b54;
+  --fui-brand-700: #c01048; --fui-brand-800: #a11043; --fui-brand-900: #89123e;
+}
+
+// The forge look for a just-the-docs book: the design tokens of the forge services (light and dark mode, six colour
+// palettes, chosen by the same cookies), applied to the theme's pages. `anvil docs build` stages this as
+// `_sass/custom/custom.scss` unless the book brings its own. The tokens come first (forge-tokens.css, a copy of
+// forge-shell's) and are followed by these rules.
+
+html { color-scheme: dark; }
+html[data-fui-theme="light"] { color-scheme: light; }
+
+// A syntax colour for each mode, from the palette.
+:root, html[data-fui-theme="dark"] {
+  --docs-keyword: var(--fui-brand-300);
+  --docs-string: var(--fui-blue-200);
+  --docs-number: var(--fui-warning-200);
+  --docs-name: var(--fui-text-secondary);
+  --docs-comment: var(--fui-text-tertiary);
+  --docs-tag: var(--fui-success-200);
+  --docs-error: var(--fui-error-200);
+}
+html[data-fui-theme="light"] {
+  --docs-keyword: var(--fui-brand-700);
+  --docs-string: var(--fui-blue-700);
+  --docs-number: var(--fui-warning-700);
+  --docs-name: var(--fui-text-secondary);
+  --docs-comment: var(--fui-text-tertiary);
+  --docs-tag: var(--fui-success-700);
+  --docs-error: var(--fui-error-700);
+}
+
+// The theme (and the colour scheme a book asks for) has selectors of up to three classes; the doubled `:root` lifts
+// everything below to that, and these rules come last, so they win.
+:root:root {
+body {
+  background: var(--fui-bg);
+  color: var(--fui-text);
+  font-family: var(--fui-font);
+  font-size: 0.9375rem;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4, h5, h6, .text-delta { color: var(--fui-text); font-family: var(--fui-font); letter-spacing: -0.01em; }
+h1 { font-size: 2rem; font-weight: 600; }
+h2 { font-weight: 600; }
+a { color: var(--fui-link); }
+a:hover { color: var(--fui-brand-400); text-decoration: none; }
+hr { border-color: var(--fui-border); background: var(--fui-border); }
+:focus-visible { outline: 2px solid var(--fui-brand-500); outline-offset: 2px; }
+::selection { background: var(--fui-brand-soft-bg); }
+
+// ---- the sidebar: brand, then the book's navigation
+.side-bar {
+  background: var(--fui-surface);
+  border-right: 1px solid var(--fui-border);
+  border-bottom: 0;
+  @media (min-width: 50rem) { width: 17rem; }
+}
+.site-header { border-bottom: 1px solid var(--fui-border); height: var(--fui-topbar-h, 4rem); }
+.site-title { display: flex; align-items: center; gap: 0.625rem; color: var(--fui-text); font-size: 1.0625rem; font-weight: 600; text-decoration: none; }
+.site-title:hover { color: var(--fui-text); }
+.fui-brand-mark {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem;
+  border-radius: var(--fui-radius-md); background: var(--fui-brand-solid); color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), var(--fui-shadow-xs);
+}
+.fui-brand-mark svg { width: 1.2rem; height: 1.2rem; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.fui-brand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site-button { color: var(--fui-text-secondary); }
+.site-button svg { fill: currentColor; }
+
+.navigation-list, .nav-list { font-size: 0.9375rem; }
+.nav-list .nav-list-item .nav-list-link {
+  color: var(--fui-text-secondary); border-radius: var(--fui-radius-md); font-weight: 500;
+  transition: background-color 0.15s, color 0.15s;
+}
+.nav-list .nav-list-item .nav-list-link:hover { background: var(--fui-surface-hover); color: var(--fui-text); background-image: none; }
+.nav-list .nav-list-item .nav-list-link.active { background: var(--fui-surface-2); color: var(--fui-text); font-weight: 600; background-image: none; }
+.nav-list .nav-list-item.active > .nav-list-link { color: var(--fui-text); }
+.nav-list .nav-list-item .nav-list-expander { color: var(--fui-text-tertiary); border-radius: var(--fui-radius-md); }
+.nav-list .nav-list-item .nav-list-expander:hover { background: var(--fui-surface-hover); }
+.nav-list .nav-list-item .nav-list-expander svg { fill: currentColor; }
+.nav-list .nav-list-item .nav-list .nav-list-item { border-left: 1px solid var(--fui-border); }
+.nav-category { color: var(--fui-text-tertiary); }
+.site-footer { color: var(--fui-text-tertiary); border-top: 1px solid var(--fui-border); }
+
+// ---- the main column: header (search, theme), breadcrumbs, content
+.main { background: var(--fui-bg); }
+.main-header { background: var(--fui-bg); border-bottom: 1px solid var(--fui-border); height: var(--fui-topbar-h, 4rem); gap: 0.5rem; }
+.main-content-wrap { padding-top: 1rem; }
+.breadcrumb-nav { margin-top: 0; }
+.breadcrumb-nav-list-item { color: var(--fui-text-tertiary); }
+.breadcrumb-nav-list-item a { color: var(--fui-text-tertiary); }
+.breadcrumb-nav-list-item a:hover { color: var(--fui-text); }
+.breadcrumb-nav-list-item:not(:last-child)::after { color: var(--fui-text-disabled); }
+
+.search-input { background: var(--fui-surface); color: var(--fui-text); border-radius: var(--fui-radius-md); }
+.search-label .search-icon { color: var(--fui-text-tertiary); }
+.search-input::placeholder { color: var(--fui-text-tertiary); }
+.search-input-wrap { box-shadow: none; border: 1px solid var(--fui-border-strong); border-radius: var(--fui-radius-md); background: var(--fui-surface); }
+.search-input-wrap:focus-within { border-color: var(--fui-brand-400); box-shadow: 0 0 0 4px var(--fui-focus); }
+.search-results { background: var(--fui-surface); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-lg); box-shadow: var(--fui-shadow-xl); }
+.search-results-list-item, .search-result { color: var(--fui-text-secondary); }
+.search-result:hover, .search-result.active, .search-result:focus { background: var(--fui-surface-hover); }
+.search-result-title { color: var(--fui-text); }
+.search-result-doc-title, .search-result-previews, .search-result-preview { color: var(--fui-text-tertiary); }
+.search-result-rel-url { color: var(--fui-text-tertiary); }
+.search-no-result { color: var(--fui-text-tertiary); }
+
+// ---- content
+// Inline code (crate, type, function names) is a chip: a soft brand tint, a hairline border, a little padding.
+code, code.highlighter-rouge {
+  padding: 0.1em 0.45em; background: var(--fui-brand-soft-bg); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-sm);
+  color: var(--fui-brand-soft-text); font-family: var(--fui-mono); font-size: 0.85em; font-weight: 500; white-space: nowrap;
+}
+a code { color: inherit; }
+th code, td code { white-space: normal; }
+pre, div.highlighter-rouge, figure.highlight { background: var(--fui-bg-sunken); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-lg); box-shadow: none; }
+pre code, .highlight code { padding: 0; background: transparent; border: 0; border-radius: 0; color: var(--fui-text-secondary); font-weight: 400; white-space: pre; }
+.highlight, .highlight pre, .highlight .w { background: transparent; color: var(--fui-text-secondary); }
+.highlight .c, .highlight .ch, .highlight .cm, .highlight .cp, .highlight .cpf, .highlight .c1, .highlight .cs { color: var(--docs-comment); font-style: italic; }
+.highlight .k, .highlight .kc, .highlight .kd, .highlight .kn, .highlight .kp, .highlight .kr, .highlight .kt, .highlight .ow { color: var(--docs-keyword); }
+.highlight .s, .highlight .s1, .highlight .s2, .highlight .sa, .highlight .sb, .highlight .sc, .highlight .dl, .highlight .sd, .highlight .se, .highlight .sh, .highlight .si, .highlight .sx, .highlight .sr, .highlight .ss, .highlight .fm { color: var(--docs-string); }
+.highlight .m, .highlight .mb, .highlight .mf, .highlight .mh, .highlight .mi, .highlight .mo, .highlight .il, .highlight .l, .highlight .ld, .highlight .no { color: var(--docs-number); }
+.highlight .nt, .highlight .nb, .highlight .bp, .highlight .na, .highlight .nl, .highlight .nd, .highlight .nv, .highlight .vc, .highlight .vg, .highlight .vi, .highlight .vm { color: var(--docs-tag); }
+.highlight .n, .highlight .nx, .highlight .nf, .highlight .nc, .highlight .nn, .highlight .ne, .highlight .ni, .highlight .py, .highlight .p, .highlight .pm, .highlight .o { color: var(--docs-name); }
+.highlight .err, .highlight .gr { color: var(--docs-error); }
+.highlight .gd { color: var(--docs-error); }
+.highlight .gh, .highlight .gu { color: var(--docs-keyword); }
+.copy-code-button, .code-example { color: var(--fui-text-tertiary); }
+
+table { border-collapse: separate; border-spacing: 0; }
+.table-wrapper { background: var(--fui-surface); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-lg); box-shadow: var(--fui-shadow-xs); }
+th { background: var(--fui-surface-2); color: var(--fui-text); border-bottom: 1px solid var(--fui-border-strong); font-weight: 600; }
+th, td { border-bottom: 1px solid var(--fui-border); border-left: 0; }
+td { color: var(--fui-text-secondary); }
+tr:last-child td { border-bottom: 0; }
+blockquote { border-left: 3px solid var(--fui-brand-500); color: var(--fui-text-secondary); background: var(--fui-brand-soft-bg); border-radius: 0 var(--fui-radius-md) var(--fui-radius-md) 0; padding: 0.5rem 1rem; margin-left: 0; }
+.label, .label-blue, .label-green, .label-purple, .label-red, .label-yellow { border-radius: 999px; }
+.btn { color: var(--fui-text-secondary); background: var(--fui-surface); border: 1px solid var(--fui-border-strong); border-radius: var(--fui-radius-md); box-shadow: none; }
+.btn:hover { background: var(--fui-surface-hover); color: var(--fui-text); }
+.btn-primary { color: #fff; background: var(--fui-brand-solid); border-color: var(--fui-brand-solid); }
+.btn-primary:hover { background: var(--fui-brand-solid-hover); color: #fff; }
+.anchor-heading svg { fill: var(--fui-text-tertiary); }
+.text-grey-dk-000, .text-grey-dk-100, .text-grey-dk-200, .text-grey-dk-300, .text-grey-lt-000, .fs-2 { color: var(--fui-text-tertiary); }
+.callout, .note, .highlight-box { border-radius: var(--fui-radius-lg); }
+.toc-list a, .toc a { color: var(--fui-text-secondary); }
+.skip-to-main { background: var(--fui-surface); color: var(--fui-text); }
+
+// ---- the theme menu in the header (mode and colour), like the other services'
+.fui-dropdown { position: relative; }
+.fui-dropdown > summary { list-style: none; cursor: pointer; }
+.fui-dropdown > summary::-webkit-details-marker { display: none; }
+.fui-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; padding: 0;
+  border: 0; border-radius: var(--fui-radius-md); background: transparent; color: var(--fui-text-tertiary); cursor: pointer;
+}
+.fui-icon-btn:hover { background: var(--fui-surface-hover); color: var(--fui-text); }
+.fui-icon-btn svg { width: 1.2rem; height: 1.2rem; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.fui-dropdown-menu {
+  position: absolute; right: 0; top: calc(100% + 0.5rem); z-index: 40; min-width: 13rem; padding: 0.75rem;
+  display: flex; flex-direction: column; gap: 0.75rem; background: var(--fui-surface); border: 1px solid var(--fui-border);
+  border-radius: var(--fui-radius-lg); box-shadow: var(--fui-shadow-xl);
+}
+.fui-theme-label { margin-bottom: 0.375rem; color: var(--fui-text-tertiary); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.fui-theme-modes { display: flex; gap: 0.5rem; }
+.fui-theme-mode {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 0.375rem; padding: 0.375rem 0.5rem;
+  border: 1px solid var(--fui-border-strong); border-radius: var(--fui-radius-md); background: var(--fui-surface); color: var(--fui-text-secondary);
+  font: inherit; font-size: 0.8125rem; cursor: pointer;
+}
+.fui-theme-mode:hover { background: var(--fui-surface-hover); }
+.fui-theme-mode svg { width: 1rem; height: 1rem; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.fui-theme-palettes { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.fui-swatch { width: 1.5rem; height: 1.5rem; padding: 0; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.fui-swatch[data-fui-palette="green"] { background: #17b26a; }
+.fui-swatch[data-fui-palette="teal"] { background: #15b79e; }
+.fui-swatch[data-fui-palette="blue"] { background: #2e90fa; }
+.fui-swatch[data-fui-palette="purple"] { background: #9e77ed; }
+.fui-swatch[data-fui-palette="rose"] { background: #f63d68; }
+.fui-swatch[data-fui-palette="orange"] { background: #fb6514; }
+
+}
+
+// The chosen mode and colour in the menu.
+html[data-fui-theme="dark"] .fui-theme-mode[data-fui-mode="dark"], html[data-fui-theme="light"] .fui-theme-mode[data-fui-mode="light"] {
+  background: var(--fui-brand-soft-bg); border-color: var(--fui-brand-500); color: var(--fui-brand-soft-text);
+}
+html[data-fui-palette="green"] .fui-swatch[data-fui-palette="green"], html[data-fui-palette="teal"] .fui-swatch[data-fui-palette="teal"],
+html[data-fui-palette="blue"] .fui-swatch[data-fui-palette="blue"], html[data-fui-palette="purple"] .fui-swatch[data-fui-palette="purple"],
+html[data-fui-palette="rose"] .fui-swatch[data-fui-palette="rose"], html[data-fui-palette="orange"] .fui-swatch[data-fui-palette="orange"] {
+  border-color: var(--fui-text);
+}
+
+// Inside Lectern's frame: its top bar has the theme menu, and the book's header is just the search.
+html.fui-embedded .main-header .fui-dropdown { display: none; }

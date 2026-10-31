@@ -104,9 +104,15 @@ hr { border-color: var(--fui-border); background: var(--fui-border); }
 .search-no-result { color: var(--fui-text-tertiary); }
 
 // ---- content
-code { background: var(--fui-bg-sunken); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-sm); color: var(--fui-text); font-family: var(--fui-mono); font-size: 0.85em; }
+// Inline code (crate, type, function names) is a chip: a soft brand tint, a hairline border, a little padding.
+code, code.highlighter-rouge {
+  padding: 0.1em 0.45em; background: var(--fui-brand-soft-bg); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-sm);
+  color: var(--fui-brand-soft-text); font-family: var(--fui-mono); font-size: 0.85em; font-weight: 500; white-space: nowrap;
+}
+a code { color: inherit; }
+th code, td code { white-space: normal; }
 pre, div.highlighter-rouge, figure.highlight { background: var(--fui-bg-sunken); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-lg); box-shadow: none; }
-pre code, .highlight code { background: transparent; border: 0; color: var(--fui-text-secondary); }
+pre code, .highlight code { padding: 0; background: transparent; border: 0; border-radius: 0; color: var(--fui-text-secondary); font-weight: 400; white-space: pre; }
 .highlight, .highlight pre, .highlight .w { background: transparent; color: var(--fui-text-secondary); }
 .highlight .c, .highlight .ch, .highlight .cm, .highlight .cp, .highlight .cpf, .highlight .c1, .highlight .cs { color: var(--docs-comment); font-style: italic; }
 .highlight .k, .highlight .kc, .highlight .kd, .highlight .kn, .highlight .kp, .highlight .kr, .highlight .kt, .highlight .ow { color: var(--docs-keyword); }

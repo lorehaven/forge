@@ -1,0 +1,10 @@
+source "https://rubygems.org"
+
+# GitHub's built-in Pages build pins Jekyll 3.10, which ignores `render_with_liquid` (Jekyll 4);
+# the docs are built by .github/workflows/docs.yml with these gems instead. `anvil docs build` uses its own Jekyll.
+gem "jekyll", "~> 4.3"
+gem "jekyll-remote-theme"
+gem "jekyll-relative-links"
+gem "jekyll-seo-tag"
+gem "jekyll-include-cache"
+gem "webrick"
