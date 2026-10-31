@@ -21,7 +21,7 @@ Gatehouse is the Forge estate's authentication service: one identity store (`aut
 
 | | |
 |---|---|
-| Local (foreman) | package `gatehouse`, port `5443`, `base_path = "/gatehouse"`, `needs = []`; HTTP redirect listener on `5080`; borrows warehouse's dev certificate. Foreman unsets `GATEHOUSE_URL` and `GATEHOUSE_CLIENT_ID` for it |
+| Local (foreman) | package `gatehouse`, port `5443`, `base_path = "/gatehouse"`, `needs = []`; HTTP redirect listener on `5080`; uses the estate's dev certificate (`certs/`). Foreman unsets `GATEHOUSE_URL` and `GATEHOUSE_CLIENT_ID` for it |
 | Cluster | `forge` overlay of `homecloud`: Deployment `gatehouse`, image `ossiriand.arda:8080/forge/gatehouse/gatehouse:<version>`, Service port 80, ingress path `/gatehouse` on `ennor.ddns.net`; see [operations](operations.md) |
 | Base path | `BASE_PATH` (default `/`; `/gatehouse` in both setups above) |
 | Listeners | `SERVER_ADDR` (default `0.0.0.0:443`) with TLS when `SERVER_CERT_PATH`/`SERVER_KEY_PATH` (default `cert.pem`/`key.pem`) exist, plus an HTTP to HTTPS redirect on `SERVER_HTTP_REDIRECT_ADDR` (default `0.0.0.0:80`); otherwise plain HTTP on `SERVER_ADDR` |

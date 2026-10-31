@@ -321,3 +321,21 @@ fn run_pre_stop_hooks_runs_the_configured_shell_command_for_a_running_service() 
 
     run_pre_stop_hooks(&estate, "web").unwrap();
 }
+
+#[quench_test::test]
+fn relative_to_climbs_out_of_one_directory_and_down_into_another() {
+    let from = Path::new("/p/services/hoist/service");
+    let target = Path::new("/p/services/warehouse/service/cert.pem");
+    assert_eq!(
+        relative_to(from, target),
+        Path::new("../../warehouse/service/cert.pem")
+    );
+}
+
+#[quench_test::test]
+fn relative_to_keeps_the_target_when_the_paths_share_no_root() {
+    assert_eq!(
+        relative_to(Path::new("a/b"), Path::new("/c/d")),
+        Path::new("/c/d")
+    );
+}

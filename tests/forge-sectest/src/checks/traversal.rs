@@ -5,7 +5,6 @@
 //! backslash). The router, the handler and the filesystem layer must all agree it is just a name.
 //! A second pass asks for files that should never be served at all.
 
-use super::leak_marker;
 use crate::census::{Piece, render};
 use crate::finding::{Finding, Severity};
 use crate::scan::Ctx;
@@ -59,7 +58,7 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
                 else {
                     continue;
                 };
-                if let Some((severity, what)) = leak_marker(&reply.body)
+                if let Some((severity, what)) = reply.leak()
                     && severity == Severity::Critical
                 {
                     findings.push(Finding::new(

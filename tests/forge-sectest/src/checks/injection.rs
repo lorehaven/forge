@@ -4,7 +4,6 @@
 //! route. The questions are always the same: did the handler crash, did it say too much, did it
 //! echo markup back unescaped?
 
-use super::leak_marker;
 use crate::finding::{Finding, Severity};
 use crate::scan::Ctx;
 use crate::wire::{Probe, Target};
@@ -53,7 +52,7 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
                 ),
             ));
         }
-        if let Some((severity, what)) = leak_marker(&reply.body) {
+        if let Some((severity, what)) = reply.leak() {
             findings.push(Finding::new(
                 severity,
                 "injection",
@@ -99,7 +98,7 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
                     format!("{label} produced {} (unhandled input)", reply.status),
                 ));
             }
-            if let Some((severity, what)) = leak_marker(&reply.body) {
+            if let Some((severity, what)) = reply.leak() {
                 findings.push(Finding::new(
                     severity,
                     "injection",

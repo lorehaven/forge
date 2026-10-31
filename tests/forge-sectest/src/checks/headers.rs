@@ -1,7 +1,6 @@
 //! Response hardening: security headers, cookie flags, information disclosure, `TRACE`, and Host
 //! header handling. Sampled from a few unauthenticated responses per service; one finding per issue.
 
-use super::leak_marker;
 use crate::finding::{Finding, Severity};
 use crate::scan::Ctx;
 use crate::wire::{Probe, Reply, Target};
@@ -28,7 +27,7 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
     if let Some(reply) = ctx
         .send(target, &Probe::new("GET", "/sectest-no-such-route-7f3a"))
         .await
-        && let Some((severity, what)) = leak_marker(&reply.body)
+        && let Some((severity, what)) = reply.leak()
     {
         issues.insert((severity, format!("the 404 page leaks {what}")));
     }

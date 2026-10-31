@@ -184,6 +184,29 @@ impl Reply {
             .collect()
     }
 
+    /// Whether the body is text. A binary body (a WebAssembly module, an image, a font) is decoded lossily and
+    /// can contain any marker by chance: the wasm client carries the string "panicked at" in its panic handler.
+    #[must_use]
+    pub fn is_text(&self) -> bool {
+        let Some(kind) = self.header("content-type") else {
+            return true;
+        };
+        let kind = kind.to_ascii_lowercase();
+        !(kind.starts_with("application/wasm")
+            || kind.starts_with("application/octet-stream")
+            || ["image/", "font/", "audio/", "video/"]
+                .iter()
+                .any(|p| kind.starts_with(p)))
+    }
+
+    /// What the body gives away (a stack trace, a path, a key), looked for in text bodies only.
+    #[must_use]
+    pub fn leak(&self) -> Option<(crate::finding::Severity, &'static str)> {
+        self.is_text()
+            .then(|| crate::checks::leak_marker(&self.body))
+            .flatten()
+    }
+
     #[must_use]
     pub fn is_html(&self) -> bool {
         self.header("content-type")

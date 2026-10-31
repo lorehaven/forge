@@ -426,3 +426,20 @@ async fn an_unreachable_target_is_an_error_not_a_clean_report() {
 }
 
 quench_test::main!();
+
+#[quench_test::test]
+fn a_binary_body_is_not_searched_for_leaks() {
+    use forge_sectest::wire::Reply;
+    use std::time::Duration;
+    let reply = |content_type: &str| Reply {
+        status: 200,
+        headers: vec![("content-type".to_string(), content_type.to_string())],
+        body: "...panicked at...".to_string(),
+        elapsed: Duration::ZERO,
+    };
+    assert!(reply("text/html").leak().is_some());
+    assert!(reply("application/json").leak().is_some());
+    // The wasm client carries its panic handler's text; it is not a response that leaks.
+    assert!(reply("application/wasm").leak().is_none());
+    assert!(reply("image/png").leak().is_none());
+}

@@ -223,9 +223,9 @@ done = "gantry-runner pushed"
 # dotenvy will not do the other way round - values already in the environment
 # win.
 #
-# Services run from their own directory: that is where their .env, TLS
-# certificate, i18n bundle and static assets live, and every one of those paths
-# is resolved relative to the working directory.
+# Services run from their own directory: that is where their .env, i18n bundle
+# and static assets live, and every one of those paths is resolved relative to
+# the working directory.
 [defaults]
 scheme = "https"
 host = "localhost"
@@ -233,13 +233,16 @@ health_path = "/health"
 start_timeout_secs = 30
 stop_timeout_secs = 4
 workdir = "services/${name}/service"
-cert_files = ["cert.pem", "key.pem"]
 
 [defaults.env]
 DATABASE_URL = "${database_url}"
 SERVICE_AUTH_ENABLED = "true"
 AUTH_DB_SCHEMA = "auth"
 SERVER_ADDR = "0.0.0.0:${port}"
+# One dev certificate for the whole estate (certs/, see certs/README.md): the whole estate speaks HTTPS and a Secure
+# cookie set by one service has to be readable by the next.
+SERVER_CERT_PATH = "${project_root}/certs/cert.pem"
+SERVER_KEY_PATH = "${project_root}/certs/key.pem"
 BASE_PATH = "${base_path}"
 SERVICE_NAME = "${name}"
 REDIS_URL = "${redis_url}"
@@ -261,9 +264,7 @@ GATEHOUSE_TLS_VERIFY = "false"
 # switchboard because it checks switchboard at startup.
 
 # Gatehouse owns the realm: it is the only service that seeds users and the only
-# one that mints tokens for the whole estate. It ships no dev certificate of its
-# own, so it borrows warehouse's - the whole estate speaks HTTPS and the Secure
-# realm cookie behaves the same everywhere.
+# one that mints tokens for the whole estate.
 [[services]]
 name = "gatehouse"
 package = "gatehouse"
@@ -273,7 +274,6 @@ needs = []
 # Gatehouse is the destination, not a client of itself - it has its own
 # native login form rather than redirecting anywhere.
 unset = ["GATEHOUSE_URL", "GATEHOUSE_CLIENT_ID"]
-cert_from = "services/warehouse/service"
 
 [services.env]
 AUTH_BOOTSTRAP = "true"
@@ -328,14 +328,9 @@ package = "switchboard"
 port = 7443
 base_path = "/switchboard"
 needs = ["gatehouse"]
-cert_from = "services/warehouse/service"
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_switchboard}"
-# Switchboard keeps a dev certificate of its own in its directory, which the browser has no exception for: serve the
-# estate's shared one, as every other service does.
-SERVER_CERT_PATH = "${project_root}/services/warehouse/service/cert.pem"
-SERVER_KEY_PATH = "${project_root}/services/warehouse/service/key.pem"
 
 # vLLM instances are switchboard's children, not foreman's: killing switchboard
 # orphans them, and they keep the GPU and their ports. Ask switchboard to stop
@@ -392,7 +387,6 @@ package = "conveyor"
 port = 9443
 base_path = "/conveyor"
 needs = ["gatehouse"]
-cert_from = "services/warehouse/service"
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_conveyor}"
@@ -403,7 +397,6 @@ package = "workbench"
 port = 10443
 base_path = "/workbench"
 needs = ["gatehouse"]
-cert_from = "services/warehouse/service"
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_workbench}"
@@ -414,7 +407,6 @@ package = "daybook"
 port = 12443
 base_path = "/daybook"
 needs = ["gatehouse"]
-cert_from = "services/warehouse/service"
 
 [services.env]
 SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:12080"
@@ -427,7 +419,6 @@ package = "hoist"
 port = 14443
 base_path = "/hoist"
 needs = ["gatehouse"]
-cert_from = "services/warehouse/service"
 
 [services.env]
 DB_SCHEMA = "hoist"
@@ -442,7 +433,6 @@ package = "gantry"
 port = 11443
 base_path = "/gantry"
 needs = ["gatehouse"]
-cert_from = "services/warehouse/service"
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_gantry}"
@@ -457,7 +447,6 @@ package = "gauge"
 port = 13443
 base_path = "/gauge"
 needs = ["gatehouse"]
-cert_from = "services/warehouse/service"
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_gauge}"
@@ -474,7 +463,6 @@ base_path = "/lectern"
 needs = ["gatehouse", "warehouse"]
 # No database: nothing of its own in the schema catalogue to apply.
 schema = false
-cert_from = "services/warehouse/service"
 
 [services.env]
 WAREHOUSE_URL = "https://localhost:6443/warehouse"

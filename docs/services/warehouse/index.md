@@ -21,7 +21,7 @@ Warehouse is the Forge estate's storage service. One address serves a Cargo regi
 
 | | |
 |---|---|
-| Local (foreman) | package `warehouse`, port `6443`, `base_path = "/warehouse"`, `needs = ["gatehouse"]`; env `GATEHOUSE_CLIENT_SECRET`, `DOCKER_TOKEN_SECRET`. Its `cert.pem`/`key.pem` are the estate's shared development certificate |
+| Local (foreman) | package `warehouse`, port `6443`, `base_path = "/warehouse"`, `needs = ["gatehouse"]`; env `GATEHOUSE_CLIENT_SECRET`, `DOCKER_TOKEN_SECRET`. The estate's shared development certificate is in `certs/` |
 | Cluster | `forge` overlay of `homecloud`: Deployment `warehouse`, image `ossiriand.arda:8080/forge/warehouse/warehouse:<version>`, Service port 80; see [operations](operations.md) |
 | Base path | `BASE_PATH` (default `/`). The Docker routes `/v2/*` and `/token` are **always at the server root**, whatever the base path |
 | Listeners | as every service: `SERVER_ADDR` (default `0.0.0.0:443`) with TLS when the certificate exists, plus the HTTP redirect on `SERVER_HTTP_REDIRECT_ADDR` (default `0.0.0.0:80`) |

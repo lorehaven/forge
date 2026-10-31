@@ -1,7 +1,7 @@
 //! Building, starting, watching and stopping the services themselves.
 
 use quench_core::{Context, Result, bail};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::estate::{Estate, Resolved};
@@ -46,12 +46,33 @@ pub fn ensure_cert(estate: &Estate, name: &str) -> Result<()> {
         // Replace rather than fail: a dangling link from a previous checkout is
         // exactly the case this has to recover from.
         let _ = std::fs::remove_file(&link);
-        std::os::unix::fs::symlink(source_dir.join(file), &link)
+        // Relative, so the link survives a clone made anywhere else (and the security gate accepts it).
+        let target = relative_to(&resolved.workdir, &source_dir.join(file));
+        std::os::unix::fs::symlink(target, &link)
             .with_context(|| format!("linking {}", link.display()))?;
     }
 
     ui::info(name, format!("linked the dev certificate from {source}"));
     Ok(())
+}
+
+/// `target` as a path from the directory `from`, both absolute: `../../warehouse/service/cert.pem`.
+/// Falls back to `target` itself when they share no root.
+pub fn relative_to(from: &Path, target: &Path) -> PathBuf {
+    let from: Vec<_> = from.components().collect();
+    let to: Vec<_> = target.components().collect();
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    if common == 0 {
+        return target.to_path_buf();
+    }
+    let mut out = PathBuf::new();
+    for _ in common..from.len() {
+        out.push("..");
+    }
+    for part in &to[common..] {
+        out.push(part);
+    }
+    out
 }
 
 pub fn build(service: &Resolved, root: &Path) -> Result<()> {

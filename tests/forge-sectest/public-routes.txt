@@ -8,12 +8,19 @@
 #
 # By design: /health*, swagger-ui and the root redirect on every service, gatehouse's login/registration/
 # password-reset pages and /.well-known/jwks.json, and each UI's /ui/status.
+# The browser client's files, /ui/assets/*: the page needs them before anyone has signed in and they carry no
+# data. Gatehouse's /ui/unsubscribe: the link in a notification mail, which a person opens without a session.
 conveyor GET /
 conveyor GET /health
 conveyor GET /health/live
 conveyor GET /health/ready
 conveyor GET /swagger-ui
 conveyor GET /swagger-ui/
+conveyor GET /ui/assets/app.css
+conveyor GET /ui/assets/app.wasm
+conveyor GET /ui/assets/favicon.png
+conveyor GET /ui/assets/quench.js
+conveyor GET /ui/assets/shell.js
 conveyor GET /ui/status
 daybook GET /
 daybook GET /health
@@ -21,12 +28,22 @@ daybook GET /health/live
 daybook GET /health/ready
 daybook GET /swagger-ui
 daybook GET /swagger-ui/
+daybook GET /ui/assets/app.css
+daybook GET /ui/assets/app.wasm
+daybook GET /ui/assets/favicon.png
+daybook GET /ui/assets/quench.js
+daybook GET /ui/assets/shell.js
 gantry GET /
 gantry GET /health
 gantry GET /health/live
 gantry GET /health/ready
 gantry GET /swagger-ui
 gantry GET /swagger-ui/
+gantry GET /ui/assets/app.css
+gantry GET /ui/assets/app.wasm
+gantry GET /ui/assets/favicon.png
+gantry GET /ui/assets/quench.js
+gantry GET /ui/assets/shell.js
 gantry GET /ui/status
 gatehouse GET /
 gatehouse GET /.well-known/jwks.json
@@ -35,6 +52,11 @@ gatehouse GET /health/live
 gatehouse GET /health/ready
 gatehouse GET /swagger-ui
 gatehouse GET /swagger-ui/
+gatehouse GET /ui/assets/app.css
+gatehouse GET /ui/assets/app.wasm
+gatehouse GET /ui/assets/favicon.png
+gatehouse GET /ui/assets/quench.js
+gatehouse GET /ui/assets/shell.js
 gatehouse GET /ui/forgot-password
 gatehouse GET /ui/forgot-password/
 gatehouse GET /ui/login
@@ -44,12 +66,23 @@ gatehouse GET /ui/register/
 gatehouse GET /ui/resend-verification
 gatehouse GET /ui/resend-verification/
 gatehouse GET /ui/status
+gatehouse GET /ui/unsubscribe
+gauge GET /ui/assets/app.css
+gauge GET /ui/assets/app.wasm
+gauge GET /ui/assets/favicon.png
+gauge GET /ui/assets/quench.js
+gauge GET /ui/assets/shell.js
 sage GET /
 sage GET /health
 sage GET /health/live
 sage GET /health/ready
 sage GET /swagger-ui
 sage GET /swagger-ui/
+sage GET /ui/assets/app.css
+sage GET /ui/assets/app.wasm
+sage GET /ui/assets/favicon.png
+sage GET /ui/assets/quench.js
+sage GET /ui/assets/shell.js
 sage GET /ui/status
 switchboard GET /
 switchboard GET /health
@@ -57,6 +90,11 @@ switchboard GET /health/live
 switchboard GET /health/ready
 switchboard GET /swagger-ui
 switchboard GET /swagger-ui/
+switchboard GET /ui/assets/app.css
+switchboard GET /ui/assets/app.wasm
+switchboard GET /ui/assets/favicon.png
+switchboard GET /ui/assets/quench.js
+switchboard GET /ui/assets/shell.js
 switchboard GET /ui/status
 warehouse GET /
 warehouse GET /health
@@ -64,6 +102,11 @@ warehouse GET /health/live
 warehouse GET /health/ready
 warehouse GET /swagger-ui
 warehouse GET /swagger-ui/
+warehouse GET /ui/assets/app.css
+warehouse GET /ui/assets/app.wasm
+warehouse GET /ui/assets/favicon.png
+warehouse GET /ui/assets/quench.js
+warehouse GET /ui/assets/shell.js
 warehouse GET /ui/status
 workbench GET /
 workbench GET /health
@@ -71,4 +114,9 @@ workbench GET /health/live
 workbench GET /health/ready
 workbench GET /swagger-ui
 workbench GET /swagger-ui/
+workbench GET /ui/assets/app.css
+workbench GET /ui/assets/app.wasm
+workbench GET /ui/assets/favicon.png
+workbench GET /ui/assets/quench.js
+workbench GET /ui/assets/shell.js
 workbench GET /ui/status

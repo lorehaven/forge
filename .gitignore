@@ -30,3 +30,6 @@ plans/
 docs/_site/
 docs/.jekyll-cache/
 docs/Gemfile.lock
+
+# The estate's shared dev certificate (certs/README.md)
+/certs/*.pem

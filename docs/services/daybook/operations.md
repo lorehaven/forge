@@ -14,7 +14,7 @@ Build, run, release and test Daybook. Nothing here contacts the cluster.
 foreman start daybook      # brings up gatehouse (needs), installs schemas through foundry, builds the wasm client, starts daybook
 ```
 
-`foreman.toml` entry: service `daybook`, package `daybook`, port 12443, `base_path = "/daybook"`, `needs = ["gatehouse"]`, `cert_from = "services/warehouse/service"`, env `SERVER_HTTP_REDIRECT_ADDR=0.0.0.0:12080`. The browser client is at `https://localhost:12443/daybook/ui` (gatehouse's `DAYBOOK_UI_URL`).
+`foreman.toml` entry: service `daybook`, package `daybook`, port 12443, `base_path = "/daybook"`, `needs = ["gatehouse"]`, env `SERVER_HTTP_REDIRECT_ADDR=0.0.0.0:12080`. The browser client is at `https://localhost:12443/daybook/ui` (gatehouse's `DAYBOOK_UI_URL`).
 
 Build the browser module by hand:
 

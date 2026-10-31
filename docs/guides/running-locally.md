@@ -46,7 +46,7 @@ Postgres is `postgres`/`postgres`, database `postgres`. Redis holds the sessions
 
 ## Services
 
-All services run with `workdir = services/<name>/service` (their `.env`, certificate, `i18n`, `web` and `config` are resolved relative to it), scheme `https`, host `localhost`, health path `/health`, start timeout 30 s, stop timeout 4 s, and the certificate pair `cert.pem`/`key.pem`.
+All services run with `workdir = services/<name>/service` (their `.env`, `i18n`, `web` and `config` are resolved relative to it), scheme `https`, host `localhost`, health path `/health`, start timeout 30 s, stop timeout 4 s, and the shared certificate pair from `certs/` (`SERVER_CERT_PATH`, `SERVER_KEY_PATH`).
 
 | Service | Package | HTTPS port | HTTP redirect | `BASE_PATH` | `needs` |
 |---|---|---|---|---|---|
@@ -140,4 +140,4 @@ cd services/gantry/service/local && docker compose up
 
 ## The native apps against a local estate
 
-The shared dev certificate is issued for `registry.local`, not `localhost` (the reason for `GATEHOUSE_TLS_VERIFY=false` above). How the Daybook, Hoist and Forklift apps are pointed at a local Gatehouse is on their pages.
+The shared dev certificate lives in `certs/` (`cert.pem` and `key.pem`, not committed; see `certs/README.md`) and foreman gives every service its path in `SERVER_CERT_PATH` and `SERVER_KEY_PATH`. It is issued for `registry.local`, not `localhost` (the reason for `GATEHOUSE_TLS_VERIFY=false` above). How the Daybook, Hoist and Forklift apps are pointed at a local Gatehouse is on their pages.

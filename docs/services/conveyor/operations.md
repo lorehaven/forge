@@ -9,7 +9,7 @@ Run, deploy, observe and test conveyor. Nothing here contacts a real service; co
 
 ## Run it locally
 
-Under foreman (`foreman.toml`: package `conveyor`, port 9443, base path `/conveyor`, needs gatehouse, certificate borrowed from `services/warehouse/service`, `GATEHOUSE_CLIENT_SECRET` from `client_secret_conveyor`):
+Under foreman (`foreman.toml`: package `conveyor`, port 9443, base path `/conveyor`, needs gatehouse, the estate's dev certificate from `certs/`, `GATEHOUSE_CLIENT_SECRET` from `client_secret_conveyor`):
 
 ```bash
 foreman start conveyor      # builds conveyor-service, starts postgres and redis, installs the schema, starts gatehouse and conveyor
