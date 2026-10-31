@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "anvil"
-version = "0.4.29"
+version = "0.4.30"
 dependencies = [
  "gatehouse-auth",
  "quench-archive",
@@ -47,7 +47,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "conveyor"
-version = "0.7.5"
+version = "0.7.6"
 dependencies = [
  "conveyor-core",
  "conveyor-pipeline",
@@ -81,7 +81,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-cli"
-version = "0.3.29"
+version = "0.3.30"
 dependencies = [
  "conveyor-pipeline",
  "quench-args",
@@ -104,7 +104,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-pipeline"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "quench-core",
  "quench-serde",
@@ -1456,7 +1456,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.4.16"
+version = "0.4.17"
 dependencies = [
  "conveyor-pipeline",
  "gatehouse-auth",
