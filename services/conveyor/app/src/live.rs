@@ -122,6 +122,12 @@ pub enum Msg {
         stderr: bool,
         line: String,
     },
+    /// Several lines of a job's log at once, as `(stderr, line)`: one change for the screen however many arrived, so a log
+    /// of thousands of lines does not redraw its whole list once per line.
+    LogLines {
+        job: String,
+        lines: Vec<(bool, String)>,
+    },
     /// The log is complete.
     LogDone {
         job: String,
@@ -323,6 +329,9 @@ fn receive(state: &State, router: &Router, base: &str, m: Msg) {
         Msg::Findings { repo, found } => state.findings.set(Some((repo, found.map(|f| *f)))),
         Msg::LogLine { job, stderr, line } => state.logs.update(|logs| {
             logs.entry(job).or_default().lines.push((stderr, line));
+        }),
+        Msg::LogLines { job, lines } => state.logs.update(|logs| {
+            logs.entry(job).or_default().lines.extend(lines);
         }),
         Msg::LogDone { job } => state.logs.update(|logs| {
             logs.entry(job).or_default().done = true;

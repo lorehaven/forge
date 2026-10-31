@@ -9,7 +9,7 @@ use quench_core::time::Time;
 use quench_ui::prelude::*;
 use quench_ui::router::History;
 use quench_ui_web::browser as env;
-use quench_ui_web::{BrowserHistory, EventSource, SseEvent, spawn};
+use quench_ui_web::{BrowserHistory, EventSource, SseEvent, sleep, spawn};
 
 use crate::client::{Boxed, Client, HttpRequest, HttpResponse, Transport, base_of};
 
@@ -51,6 +51,51 @@ fn deliver(slot: &Inbox, msg: Msg) {
     }
 }
 
+/// How long lines are gathered before the screen is told. A finished job's log arrives all at once, thousands of lines in
+/// the first moments; telling the screen per line redraws the whole list each time, which is quadratic in the length.
+const LOG_BATCH_MS: u32 = 50;
+
+/// Lines that arrived and were not yet handed to the screen, and whether a hand-over is already waiting on the timer.
+#[derive(Default)]
+struct Pending {
+    lines: Vec<(bool, String)>,
+    scheduled: bool,
+}
+
+/// Hands over what has gathered, as one message.
+fn flush(slot: &Inbox, pending: &Rc<RefCell<Pending>>, job: &str) {
+    let lines = {
+        let mut p = pending.borrow_mut();
+        p.scheduled = false;
+        std::mem::take(&mut p.lines)
+    };
+    if !lines.is_empty() {
+        deliver(
+            slot,
+            Msg::LogLines {
+                job: job.to_string(),
+                lines,
+            },
+        );
+    }
+}
+
+/// Keeps `line` for the next hand-over, starting the timer for it when none is running.
+fn gather(slot: &Inbox, pending: &Rc<RefCell<Pending>>, job: &str, stderr: bool, line: String) {
+    let start = {
+        let mut p = pending.borrow_mut();
+        p.lines.push((stderr, line));
+        !std::mem::replace(&mut p.scheduled, true)
+    };
+    if start {
+        let (slot, pending, job) = (Rc::clone(slot), Rc::clone(pending), job.to_string());
+        spawn(async move {
+            sleep(LOG_BATCH_MS).await;
+            flush(&slot, &pending, &job);
+        });
+    }
+}
+
 /// Reads a job's log as server-sent events: `stdout`/`stderr` lines, then `done` (which also ends the stream, so the browser
 /// does not reconnect and read the log a second time).
 fn stream_log(base: &str, job: String, slot: Inbox, streams: &Streams) {
@@ -64,6 +109,7 @@ fn stream_log(base: &str, job: String, slot: Inbox, streams: &Streams) {
     ));
     streams.borrow_mut().insert(job.clone(), Rc::clone(&source));
     let streams = Rc::clone(streams);
+    let pending: Rc<RefCell<Pending>> = Rc::default();
     spawn(async move {
         while let Some(event) = source.next().await {
             match event {
@@ -72,28 +118,16 @@ fn stream_log(base: &str, job: String, slot: Inbox, streams: &Streams) {
                         source.close();
                         break;
                     }
-                    "lagged" => deliver(
-                        &slot,
-                        Msg::LogLine {
-                            job: job.clone(),
-                            stderr: true,
-                            line: data,
-                        },
-                    ),
-                    other => deliver(
-                        &slot,
-                        Msg::LogLine {
-                            job: job.clone(),
-                            stderr: other == "stderr",
-                            line: data,
-                        },
-                    ),
+                    "lagged" => gather(&slot, &pending, &job, true, data),
+                    other => gather(&slot, &pending, &job, other == "stderr", data),
                 },
                 SseEvent::Open | SseEvent::Reconnecting => {}
                 SseEvent::Closed => break,
             }
         }
         streams.borrow_mut().remove(&job);
+        // What is still waiting on the timer goes first, so the end never overtakes the last lines.
+        flush(&slot, &pending, &job);
         deliver(&slot, Msg::LogDone { job });
     });
 }

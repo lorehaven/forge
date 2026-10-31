@@ -510,11 +510,20 @@ fn opening_a_job_streams_its_log_once_and_lines_arrive_in_order() {
             line: line.into(),
         });
     }
+    l.send(Msg::LogLines {
+        job: "j2".into(),
+        lines: vec![(false, "Finished dev".into()), (false, "Running tests".into())],
+    });
     let log = find(&l.r, "div", ("id", "log-j2"));
     let text = l.r.text_of(log);
     assert!(
         text.find("Compiling x") < text.find("error: boom"),
         "{text}"
+    );
+    assert!(
+        text.find("error: boom") < text.find("Finished dev")
+            && text.find("Finished dev") < text.find("Running tests"),
+        "a batch lands after what came before it, in order: {text}"
     );
     let spans = l.r.find_by_attr("class", "cv-log-line cv-log-stderr");
     assert_eq!(spans.len(), 1);

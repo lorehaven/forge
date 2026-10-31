@@ -209,7 +209,7 @@ fn test_the_estates_own_config_needs_only_one_dockerfile() {
     }
 
     assert_eq!(
-        module.package_overrides["conveyor-service"]
+        module.package_overrides["conveyor"]
             .build_args
             .get("RUNTIME_PACKAGES")
             .map(String::as_str),
@@ -217,7 +217,7 @@ fn test_the_estates_own_config_needs_only_one_dockerfile() {
         "conveyor checks out a commit before it can read its pipeline"
     );
     assert_eq!(
-        module.package_overrides["foundry-service"]
+        module.package_overrides["foundry"]
             .build_args
             .get("RESOURCE_DIR")
             .map(String::as_str),

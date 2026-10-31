@@ -612,8 +612,8 @@ fn build_release_plan_against_the_real_workspace_never_panics_and_is_read_only()
     for package in [
         "forge-toolbox",
         "conveyor-pipeline",
-        "foundry-service",
-        "workbench-service",
+        "foundry",
+        "workbench",
     ] {
         let plan = build_release_plan(&config, &metadata, &[package.to_string()]).unwrap();
         for item in &plan {
