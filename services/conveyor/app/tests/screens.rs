@@ -512,7 +512,10 @@ fn opening_a_job_streams_its_log_once_and_lines_arrive_in_order() {
     }
     l.send(Msg::LogLines {
         job: "j2".into(),
-        lines: vec![(false, "Finished dev".into()), (false, "Running tests".into())],
+        lines: vec![
+            (false, "Finished dev".into()),
+            (false, "Running tests".into()),
+        ],
     });
     let log = find(&l.r, "div", ("id", "log-j2"));
     let text = l.r.text_of(log);

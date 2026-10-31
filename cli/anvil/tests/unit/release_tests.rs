@@ -609,12 +609,7 @@ fn build_release_plan_against_the_real_workspace_never_panics_and_is_read_only()
     // branches: whichever combination of "never tagged" / "tagged with no
     // changes since" / "tagged with changes since" each happens to be in
     // right now, without this test needing to know or assume which.
-    for package in [
-        "forge-toolbox",
-        "conveyor-pipeline",
-        "foundry",
-        "workbench",
-    ] {
+    for package in ["forge-toolbox", "conveyor-pipeline", "foundry", "workbench"] {
         let plan = build_release_plan(&config, &metadata, &[package.to_string()]).unwrap();
         for item in &plan {
             assert!(!item.package.is_empty());
