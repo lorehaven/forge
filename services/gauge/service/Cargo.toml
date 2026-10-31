@@ -1,6 +1,6 @@
 [package]
 name = "gauge"
-version = "0.2.4"
+version = "0.2.5"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Gauge - host metrics dashboard fed by PCP and node_exporter"
