@@ -182,18 +182,21 @@ done = "database rebuilt; `foreman` starts the estate"
 # Images
 # ---------------------------------------------------------------------------
 #
-# The two images the pipelines run in (`images/`): rust-builder, which every `.conveyor.toml` job uses, and
-# gantry-runner, which a Gantry Job runs. Run by hand, `foreman run <name>`:
+# The images the pipelines run in (`images/`): rust-builder, which every `.conveyor.toml` job uses;
+# rust-android-builder, which the `release-artifacts` stage uses to build the apps (it is rust-builder plus the JDK,
+# the Android SDK and NDK and `quench`); and gantry-runner, which a Gantry Job runs. Run by hand, `foreman run <name>`:
 #
 #   foreman run build-rust-builder       build it locally
 #   foreman run publish-rust-builder     build it, then push it to the registry
+#   foreman run build-rust-android-builder     likewise for the Android builder (publish rust-builder first:
+#   foreman run publish-rust-android-builder   it is built on the registry's copy)
 #   foreman run build-gantry-runner      likewise for the runner
 #   foreman run publish-gantry-runner
 #
-# Pushing needs `docker login ossiriand.arda:8080` first. Both images compile this workspace, so the
+# Pushing needs `docker login ossiriand.arda:8080` first. The images compile this workspace or install its tools, so the
 # registry's crate token is passed as a build argument when ENNOR_TOKEN is set in the environment (see
 # scripts/image.sh; the crates are public to read otherwise). The runner is tagged with Gantry's version, because the service names the
-# image and the two are released together; rust-builder is `latest`.
+# image and the two are released together; the builders are `latest`.
 
 [tasks.build-rust-builder]
 description = "building images/rust-builder"
@@ -204,6 +207,16 @@ done = "rust-builder built"
 description = "building and pushing images/rust-builder"
 command = ["bash", "scripts/image.sh", "rust-builder", "publish"]
 done = "rust-builder pushed"
+
+[tasks.build-rust-android-builder]
+description = "building images/rust-android-builder"
+command = ["bash", "scripts/image.sh", "rust-android-builder", "build"]
+done = "rust-android-builder built"
+
+[tasks.publish-rust-android-builder]
+description = "building and pushing images/rust-android-builder"
+command = ["bash", "scripts/image.sh", "rust-android-builder", "publish"]
+done = "rust-android-builder pushed"
 
 [tasks.build-gantry-runner]
 description = "building images/gantry-runner"

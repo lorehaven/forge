@@ -6,9 +6,10 @@
 # no packers: quench writes the archives itself.
 #
 # UNVERIFIED: written to match the toolchain on the development machine (SDK platform 36, build-tools 36, NDK 28+,
-# JDK 21, Gradle from the project's wrapper); it has not been built. Build it from the repository root:
-#   docker build -f images/rust-android-builder/Dockerfile \
-#     --build-arg CARGO_REGISTRIES_ENNOR_TOKEN=... -t ossiriand.arda:8080/forge/ci/rust-android-builder:latest .
+# JDK 21, Gradle from the project's wrapper); it has not been built. Build it from the repository root with
+#   foreman run build-rust-android-builder      (or publish-rust-android-builder to push it too)
+# which is scripts/image.sh: it passes ENNOR_TOKEN as the registry's crate token and tags the image
+#   ossiriand.arda:8080/forge/ci/rust-android-builder:latest
 #
 # Gradle downloads its own distribution and the Android Gradle plugin on the first build in a job, so the pod needs
 # network access to services.gradle.org and Google's Maven repository; nothing is baked in to avoid that.

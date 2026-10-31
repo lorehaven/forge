@@ -20,7 +20,7 @@ foreman logs sage        follow one service's log
 foreman db               postgres + the schema catalog, no services
 foreman reset            drop every schema foundry owns and reinstall (dev only)
 foreman test [service]   run every BDD suite, or one (cucumber flags: --tags, --name)
-foreman run <task>       run a task by hand (web, build-rust-builder, publish-rust-builder, build-gantry-runner, publish-gantry-runner)
+foreman run <task>       run a task by hand (web, build-rust-builder, publish-rust-builder, build-rust-android-builder, publish-rust-android-builder, build-gantry-runner, publish-gantry-runner)
 ```
 
 Services are built with `cargo build -q --all-features --package ${package}` and launched from `target/debug/${package}`, not through `anvil run`, so that foreman holds a real PID per service. Naming services starts a subset: only those packages are built and Foundry installs only their schemas (`--install <service>` per name). What a service cannot start without comes with it (`needs`).
@@ -42,7 +42,7 @@ Postgres is `postgres`/`postgres`, database `postgres`. Redis holds the sessions
 | `web` | migrate | `bash scripts/web.sh`: builds every `services/<n>/web` crate for `wasm32-unknown-unknown` (`--profile wasm`) and copies it to `services/<n>/service/web/app.wasm`. |
 | `seed` | migrate | Applies every `testdata/*.sql` through `docker exec -i postgres psql` (extra users with a spread of permissions, workbench, conveyor and sage demo data). Idempotent (`ON CONFLICT DO NOTHING`); files for a schema that is not installed skip themselves. |
 | `reset` | reset | `foundry-service ... reset --yes` after stopping the services. |
-| `build-rust-builder`, `publish-rust-builder`, `build-gantry-runner`, `publish-gantry-runner` | by hand | `scripts/image.sh <image> build|publish`. See [Deployment](deployment.md). |
+| `build-rust-builder`, `publish-rust-builder`, `build-rust-android-builder`, `publish-rust-android-builder`, `build-gantry-runner`, `publish-gantry-runner` | by hand | `scripts/image.sh <image> build|publish`. See [Deployment](deployment.md). |
 
 ## Services
 

@@ -3,6 +3,7 @@
 # `publish-*` tasks call this):
 #
 #   scripts/image.sh rust-builder build
+#   scripts/image.sh rust-android-builder publish
 #   scripts/image.sh gantry-runner publish
 #
 # The registry's crate token is passed as a build argument when ENNOR_TOKEN is set; pushing needs
@@ -11,18 +12,20 @@ set -euo pipefail
 
 registry="ossiriand.arda:8080/forge"
 root="$(cd "$(dirname "$0")/.." && pwd)"
-name="${1:?image name: rust-builder or gantry-runner}"
+name="${1:?image name: rust-builder, rust-android-builder or gantry-runner}"
 action="${2:?build or publish}"
 
 case "$name" in
   rust-builder) tag="$registry/ci/rust-builder:latest" ;;
+  # Built on rust-builder (its ARG BASE, pulled from the registry): publish rust-builder first.
+  rust-android-builder) tag="$registry/ci/rust-android-builder:latest" ;;
   gantry-runner)
     # Tagged with Gantry's version: the service names the image and the two are released together.
     version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/services/gantry/service/Cargo.toml" | head -1)"
     [ -n "$version" ] || { echo "cannot read gantry-service's version" >&2; exit 1; }
     tag="$registry/gantry/runner:$version"
     ;;
-  *) echo "unknown image '$name' (rust-builder, gantry-runner)" >&2; exit 2 ;;
+  *) echo "unknown image '$name' (rust-builder, rust-android-builder, gantry-runner)" >&2; exit 2 ;;
 esac
 case "$action" in build | publish) ;; *) echo "unknown action '$action' (build, publish)" >&2; exit 2 ;; esac
 
