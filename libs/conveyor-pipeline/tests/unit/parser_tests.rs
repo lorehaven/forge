@@ -819,7 +819,7 @@ fn this_repositorys_own_pipeline_parses_and_gives_the_coverage_job_a_database() 
     // the schema is installed before the tests run
     let first = coverage.steps.first().expect("steps").command().to_string();
     assert!(
-        first.contains("foundry-service") && first.contains("apply"),
+        first.contains("-p foundry") && first.contains("apply"),
         "{first}"
     );
     for module in [
