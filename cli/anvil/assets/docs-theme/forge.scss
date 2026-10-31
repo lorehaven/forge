@@ -129,7 +129,7 @@ table { border-collapse: separate; border-spacing: 0; }
 .table-wrapper { background: var(--fui-surface); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-lg); box-shadow: var(--fui-shadow-xs); }
 th { background: var(--fui-surface-2); color: var(--fui-text); border-bottom: 1px solid var(--fui-border-strong); font-weight: 600; }
 th, td { border-bottom: 1px solid var(--fui-border); border-left: 0; }
-td { color: var(--fui-text-secondary); }
+td { background: var(--fui-surface); color: var(--fui-text-secondary); }
 tr:last-child td { border-bottom: 0; }
 blockquote { border-left: 3px solid var(--fui-brand-500); color: var(--fui-text-secondary); background: var(--fui-brand-soft-bg); border-radius: 0 var(--fui-radius-md) var(--fui-radius-md) 0; padding: 0.5rem 1rem; margin-left: 0; }
 .label, .label-blue, .label-green, .label-purple, .label-red, .label-yellow { border-radius: 999px; }
