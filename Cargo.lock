@@ -359,7 +359,7 @@ dependencies = [
 
 [[package]]
 name = "forklift-desktop"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "forklift-app",
  "forklift-core",
