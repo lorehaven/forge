@@ -13,7 +13,7 @@ foreman start warehouse    # needs gatehouse (foreman starts it first); https://
 
 `foreman.toml`: `port = 6443`, `base_path = "/warehouse"`, `needs = ["gatehouse"]`, `GATEHOUSE_CLIENT_SECRET` and `DOCKER_TOKEN_SECRET` from the estate's shared development secrets. The browser client must be built first (`scripts/web.sh`: `services/warehouse/service/web/app.wasm`). Feature flags and storage paths are not set by foreman: set `FEATURE_*`, `FILE_STORAGES`, `DYNAMIC_STORAGE_ROOT` in `services/warehouse/service/.env` (never commit it). `service/run-debug.sh` and `generate_certs.sh` are helper scripts in the service directory.
 
-Tests: `cargo test -p warehouse-service` (unit tests under `tests/unit/`, aggregated by `tests/unit.rs`); `tests/pg_storage.rs` and `tests/ui_api_pg.rs` need Postgres (`WAREHOUSE_TEST_DATABASE_URL`, module installed with `foundry-service apply --install warehouse`) and skip otherwise.
+Tests: `cargo test -p warehouse` (unit tests under `tests/unit/`, aggregated by `tests/unit.rs`); `tests/pg_storage.rs` and `tests/ui_api_pg.rs` need Postgres (`WAREHOUSE_TEST_DATABASE_URL`, module installed with `foundry-service apply --install warehouse`) and skip otherwise.
 
 ## Run in the cluster
 
@@ -29,7 +29,7 @@ Overlay `homecloud/overlays/forge`, directory `warehouse/`:
 
 Probes: readiness `GET /warehouse/health/ready` (initial delay 5 s, period 5 s), liveness `GET /warehouse/health/live` (initial delay 20 s, period 10 s). Readiness is withheld until `<GATEHOUSE_URL>/health/ready` answers 2xx (checked every second). Note the ingress does not route `/warehouse/health`, `/warehouse/files`-style paths outside the listed prefixes; probes bypass the ingress.
 
-Image: `anvil docker` module `warehouse-service` (`images/Dockerfile.alpine`, `RESOURCE_DIR=web`, `WASM_PACKAGE=warehouse-web`), pushed to `ossiriand.arda:8080/forge` and `ennor.ddns.net/forge`.
+Image: `anvil docker` module `warehouse` (`images/Dockerfile.alpine`, `RESOURCE_DIR=web`, `WASM_PACKAGE=warehouse-web`), pushed to `ossiriand.arda:8080/forge` and `ennor.ddns.net/forge`.
 
 ## Health and logging
 

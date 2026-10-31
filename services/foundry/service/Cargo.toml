@@ -1,5 +1,5 @@
 [package]
-name = "foundry-service"
+name = "foundry"
 version = "0.2.36"
 edition = { workspace = true }
 authors = { workspace = true }

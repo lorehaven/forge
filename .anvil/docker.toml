@@ -5,48 +5,48 @@ cargo_registry = "ennor"
 [docker.modules.docker]
 dockerfile = "images/Dockerfile.alpine"
 packages = [
-    "warehouse-service",
-    "switchboard-service",
-    "sage-service",
-    "foundry-service",
-    "gatehouse-service",
-    "conveyor-service",
-    "workbench-service",
-    "gantry-service",
-    "daybook-service",
-    "gauge-service",
-    "hoist-service",
-    "lectern-service",
+    "warehouse",
+    "switchboard",
+    "sage",
+    "foundry",
+    "gatehouse",
+    "conveyor",
+    "workbench",
+    "gantry",
+    "daybook",
+    "gauge",
+    "hoist",
+    "lectern",
 ]
 
-[docker.modules.docker.conveyor-service]
+[docker.modules.docker.conveyor]
 module_name = "conveyor"
 image_name = "conveyor"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The browser client: the image builds `conveyor-web` and ships it in `web/` (the service serves it at /ui).
 build_args = { RUNTIME_PACKAGES = "git", RESOURCE_DIR = "web", WASM_PACKAGE = "conveyor-web" }
 
-[docker.modules.docker.gatehouse-service]
+[docker.modules.docker.gatehouse]
 module_name = "gatehouse"
 image_name = "gatehouse"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The browser client: the image builds `gatehouse-web` and ships it in `web/` (the service serves it at /ui).
 build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "gatehouse-web" }
 
-[docker.modules.docker.foundry-service]
+[docker.modules.docker.foundry]
 module_name = "foundry"
 image_name = "foundry"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 build_args = { RESOURCE_DIR = "migrations", RUN_AS = "999:999" }
 
-[docker.modules.docker.sage-service]
+[docker.modules.docker.sage]
 module_name = "sage"
 image_name = "sage"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The browser client: the image builds `sage-web` and ships it in `web/` (the service serves it at /ui).
 build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "sage-web" }
 
-[docker.modules.docker.switchboard-service]
+[docker.modules.docker.switchboard]
 module_name = "switchboard"
 image_name = "switchboard"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
@@ -54,49 +54,49 @@ registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The browser client: the image builds `switchboard-web` and ships it in `web/` (the service serves it at /ui).
 build_args = { RUN_AS = "999:999", RESOURCE_DIR = "web", WASM_PACKAGE = "switchboard-web" }
 
-[docker.modules.docker.warehouse-service]
+[docker.modules.docker.warehouse]
 module_name = "warehouse"
 image_name = "warehouse"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The browser client: the image builds `warehouse-web` and ships it in `web/` (the service serves it at /ui).
 build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "warehouse-web" }
 
-[docker.modules.docker.gantry-service]
+[docker.modules.docker.gantry]
 module_name = "gantry"
 image_name = "gantry"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The browser client: the image builds `gantry-web` and ships it in `web/` (the service serves it at /ui).
 build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "gantry-web" }
 
-[docker.modules.docker.gauge-service]
+[docker.modules.docker.gauge]
 module_name = "gauge"
 image_name = "gauge"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The browser client: the image builds `gauge-web` and ships it in `web/` (the service serves it at /ui).
 build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "gauge-web" }
 
-[docker.modules.docker.daybook-service]
+[docker.modules.docker.daybook]
 module_name = "daybook"
 image_name = "daybook"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The browser client: the image builds `daybook-web` and ships it in `web/` (the service serves it at /ui).
 build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "daybook-web" }
 
-[docker.modules.docker.hoist-service]
+[docker.modules.docker.hoist]
 module_name = "hoist"
 image_name = "hoist"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The service has no translations of its own; the image still wants a directory beside `config`.
 build_args = { RESOURCE_DIR = "config" }
 
-[docker.modules.docker.workbench-service]
+[docker.modules.docker.workbench]
 module_name = "workbench"
 image_name = "workbench"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The browser client: the image builds `workbench-web` and ships it in `web/` (the service serves it at /ui).
 build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "workbench-web" }
 
-[docker.modules.docker.lectern-service]
+[docker.modules.docker.lectern]
 module_name = "lectern"
 image_name = "lectern"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]

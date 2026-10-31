@@ -101,6 +101,8 @@ impl Fixture {
     }
 
     async fn build(&self, package: &str) {
+        // The package is the project's name; the binary and the directory keep the `-service` suffix.
+        let package = package.strip_suffix("-service").unwrap_or(package);
         println!("Building {package}...");
         let status = Command::new("cargo")
             .arg("build")

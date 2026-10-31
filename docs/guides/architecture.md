@@ -61,11 +61,11 @@ Every service that has a UI follows one layout (see [The browser-client pattern]
 
 Exceptions found in `cargo metadata`:
 
-* `conveyor-service` also depends on `conveyor-pipeline`; `gantry-service` and `warehouse-service` on `rivet-package`.
+* `conveyor` also depends on `conveyor-pipeline`; `gantry` and `warehouse` on `rivet-package`.
 * `switchboard-service` has no direct edge to `switchboard-core`.
-* `daybook-service` depends on `daybook-web` and `forge-web` only; `daybook-app` depends on `daybook-core` only (the frame comes from `daybook-web`, which depends on `forge-shell`).
-* `hoist-service` and `foundry-service` depend on no workspace crate.
-* `gatehouse-service` has `gatehouse-core` and `gatehouse-web`.
+* `daybook` depends on `daybook-web` and `forge-web` only; `daybook-app` depends on `daybook-core` only (the frame comes from `daybook-web`, which depends on `forge-shell`).
+* `hoist` and `foundry` depend on no workspace crate.
+* `gatehouse` has `gatehouse-core` and `gatehouse-web`.
 
 ## Native apps
 
@@ -92,8 +92,8 @@ Edges: `daybook-host -> daybook-core, daybook-net`; `forklift-host -> forklift-a
 | `forge-ui` | 0.1.0 | top bar pieces and Untitled UI tokens for the older server-rendered pages (no dependents now) |
 | `gatehouse-auth` | 0.1.7 | application-token credentials for the CLI tools (used by `anvil`, `riveter`) |
 | `gatehouse-client` | 0.1.0 | blocking client session for gatehouse (used by the native apps) |
-| `conveyor-pipeline` | 0.2.1 | the pipeline language; shared by `conveyor-service` and `conveyor-cli` |
-| `rivet-package` | 0.1.6 | the `.rivet` package format; shared by `warehouse-service`, `gantry-service`, `riveter` |
+| `conveyor-pipeline` | 0.2.1 | the pipeline language; shared by `conveyor` and `conveyor-cli` |
+| `rivet-package` | 0.1.6 | the `.rivet` package format; shared by `warehouse`, `gantry`, `riveter` |
 
 ## The estate
 

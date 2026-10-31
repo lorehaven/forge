@@ -32,7 +32,7 @@ Edges taken from the `Cargo.toml` files:
 | `daybook-desktop` | `daybook-core`, `daybook-host[native]`, `daybook-net[client]`, `quench-core`, `quench-tz`; feature `window` (default) adds `daybook-app`, `quench-desktop-native`, `quench-style`, `quench-ui`, `quench-ui-native` |
 | `daybook-surface` | `daybook-app`, `daybook-core`, `daybook-host[native]`, `daybook-net[client]`, `quench-android-surface`, `quench-core`, `quench-serde`, `quench-style`, `quench-tz`, `quench-ui`, `quench-ui-native` |
 | `daybook-web` | `daybook-app`, `daybook-core`, `daybook-host` (default features off by workspace entry), `daybook-net` (same), `forge-shell`, `quench-core`, `quench-serde`, `quench-style`, `quench-tz`, `quench-ui`, `quench-ui-web` |
-| `daybook-service` | `daybook-web`, `forge-web`, `quench-auth`, `quench-client`, `quench-core`, `quench-db`, `quench-http`, `quench-log`, `quench-pg`, `quench-serde`, `quench-starter`, `quench-tz`, `tokio` |
+| `daybook` | `daybook-web`, `forge-web`, `quench-auth`, `quench-client`, `quench-core`, `quench-db`, `quench-http`, `quench-log`, `quench-pg`, `quench-serde`, `quench-starter`, `quench-tz`, `tokio` |
 
 The service does not depend on `daybook-core`: it has its own domain types (`domain::task`, `project`, `label`, `recurrence`). The wire format is the contract between the two.
 

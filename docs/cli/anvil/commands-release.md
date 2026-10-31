@@ -122,6 +122,6 @@ A package is found by searching `[docker.modules.*].packages`; an unknown one fa
 If `[docker].cargo_registry = "<name>"` is set, anvil adds `--build-arg CARGO_REGISTRIES_<NAME>_INDEX=<index>` and `..._TOKEN=<token>` (each only if found). Index: env `CARGO_REGISTRIES_<NAME>_INDEX`, else `[docker].cargo_registry_index`, else `[registries.<name>] index` in `$CARGO_HOME/config.toml`. Token: env `CARGO_REGISTRIES_<NAME>_TOKEN`, else `[registries.<name>] token` in that file. The token ends up as a build argument; use a build that does not persist it.
 
 ```bash
-anvil docker build -p hoist-service
+anvil docker build -p hoist
 anvil docker release-all
 ```

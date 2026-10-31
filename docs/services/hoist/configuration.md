@@ -25,7 +25,7 @@ Test-only: `HOIST_TEST_DATABASE_URL` (a throwaway database with the `hoist` modu
 
 Feature flags: none. Secrets: none of the service's own (the realm settings are shared).
 
-In `foreman.toml` the service is `hoist`: package `hoist-service`, port `14443`, `base_path = "/hoist"`, `needs = ["gatehouse"]`, env `DB_SCHEMA=hoist`, `SERVER_HTTP_REDIRECT_ADDR=0.0.0.0:14080`, `HOIST_APTOIDE_PAGES=5`.
+In `foreman.toml` the service is `hoist`: package `hoist`, port `14443`, `base_path = "/hoist"`, `needs = ["gatehouse"]`, env `DB_SCHEMA=hoist`, `SERVER_HTTP_REDIRECT_ADDR=0.0.0.0:14080`, `HOIST_APTOIDE_PAGES=5`.
 
 ## The apps
 

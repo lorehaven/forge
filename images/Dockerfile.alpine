@@ -106,7 +106,7 @@ WORKDIR /app
 # own layer - it doubled the binary, about 30MB an image, for a metadata change.
 COPY --from=builder --chown=999:999 /usr/src/app/${RESOURCES_PATH}/config ./config
 COPY --from=builder --chown=999:999 /usr/src/app/${RESOURCES_PATH}/${RESOURCE_DIR} ./${RESOURCE_DIR}
-COPY --from=builder --chown=999:999 /usr/src/app/target/x86_64-unknown-linux-musl/release/${PROJECT_NAME} ./service
+COPY --from=builder --chown=999:999 /usr/src/app/target/x86_64-unknown-linux-musl/release/${PROJECT_NAME}-service ./service
 
 USER ${RUN_AS}
 

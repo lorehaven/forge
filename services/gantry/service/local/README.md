@@ -9,7 +9,7 @@ each have a 1.1.0 in `packages/`, so there is something to upgrade to.
 
 ## Example
 ```text
-cargo build -p gantry-service -p foundry-service      # workspace root
+cargo build -p gantry -p foundry      # workspace root
 services/gantry/service/local/pack.sh                   # needs riveter on PATH (or RIVETER=...)
 cd services/gantry/service/local && docker compose up
 ```

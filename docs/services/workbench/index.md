@@ -14,7 +14,7 @@ Workbench is the estate's issue tracker: projects, issues with a fixed five-stat
 | `workbench-core` | `services/workbench/core` | 0.1.0 | Wire model (`Project`, `Issue`, `Comment`, `RelatedIssues`, `User`, `Me`, create/update bodies), form drafts (`ProjectDraft`, `IssueDraft`, `CommentDraft`, `LinkDraft`), board logic (`columns`, `moved`, `status_key`, `short_time`). No I/O. |
 | `workbench-app` | `services/workbench/app` | 0.1.0 | Screens and the `Request`/`Msg` protocol (`quench-ui`). |
 | `workbench-web` | `services/workbench/web` | 0.1.0 | `wasm32` module: `Client::execute` turns requests into API calls over a `Transport`; `fetch` transport. |
-| `workbench-service` | `services/workbench/service` | 0.3.2 | The server: API, SSO routes, page and asset routes. Binary `workbench-service`. |
+| `workbench` | `services/workbench/service` | 0.3.2 | The server: API, SSO routes, page and asset routes. Binary `workbench-service`. |
 
 The foundry module `workbench` 0.1.0 (schema `workbench`) owns the tables.
 

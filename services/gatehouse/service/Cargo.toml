@@ -1,5 +1,5 @@
 [package]
-name = "gatehouse-service"
+name = "gatehouse"
 version = "0.4.5"
 edition = { workspace = true }
 authors = { workspace = true }

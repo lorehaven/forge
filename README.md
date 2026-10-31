@@ -55,20 +55,20 @@ Every member has a README in its directory. Services also hold `core`, `app` and
 
 | Member | Description | Docs |
 | --- | --- | --- |
-| [`gatehouse-service`](./services/gatehouse/service/) | One login, one identity store | [📖](./docs/services/gatehouse/index.md) |
-| [`warehouse-service`](./services/warehouse/service/) | Docker and Cargo registries, files, artifacts, `.rivet` packages | [📖](./docs/services/warehouse/index.md) |
-| [`conveyor-service`](./services/conveyor/service/) | CI/CD: webhooks, pipelines and runs | [📖](./docs/services/conveyor/index.md) |
-| [`gantry-service`](./services/gantry/service/) | Installs, upgrades and swaps what runs in the cluster | [📖](./docs/services/gantry/index.md) |
-| [`foundry-service`](./services/foundry/service/) | Database initialisation from the migration catalog | [📖](./docs/services/foundry/index.md) |
-| [`sage-service`](./services/sage/service/) | AI workspace | [📖](./docs/services/sage/index.md) |
-| [`switchboard-service`](./services/switchboard/service/) | Models registry and vLLM instances | [📖](./docs/services/switchboard/index.md) |
-| [`workbench-service`](./services/workbench/service/) | Projects, boards and issues | [📖](./docs/services/workbench/index.md) |
-| [`gauge-service`](./services/gauge/service/) | Host metrics dashboard | [📖](./docs/services/gauge/index.md) |
-| [`lectern-service`](./services/lectern/service/) | Public documentation viewer | [📖](./docs/services/lectern/index.md) |
+| [`gatehouse`](./services/gatehouse/service/) | One login, one identity store | [📖](./docs/services/gatehouse/index.md) |
+| [`warehouse`](./services/warehouse/service/) | Docker and Cargo registries, files, artifacts, `.rivet` packages | [📖](./docs/services/warehouse/index.md) |
+| [`conveyor`](./services/conveyor/service/) | CI/CD: webhooks, pipelines and runs | [📖](./docs/services/conveyor/index.md) |
+| [`gantry`](./services/gantry/service/) | Installs, upgrades and swaps what runs in the cluster | [📖](./docs/services/gantry/index.md) |
+| [`foundry`](./services/foundry/service/) | Database initialisation from the migration catalog | [📖](./docs/services/foundry/index.md) |
+| [`sage`](./services/sage/service/) | AI workspace | [📖](./docs/services/sage/index.md) |
+| [`switchboard`](./services/switchboard/service/) | Models registry and vLLM instances | [📖](./docs/services/switchboard/index.md) |
+| [`workbench`](./services/workbench/service/) | Projects, boards and issues | [📖](./docs/services/workbench/index.md) |
+| [`gauge`](./services/gauge/service/) | Host metrics dashboard | [📖](./docs/services/gauge/index.md) |
+| [`lectern`](./services/lectern/service/) | Public documentation viewer | [📖](./docs/services/lectern/index.md) |
 | [`daybook`](./services/daybook/) | Tasks and lists: service, Android, desktop and browser | [📖](./docs/services/daybook/index.md) |
 | [`forklift`](./services/forklift/) | Photo, video and folder backup to Warehouse | [📖](./docs/services/forklift/index.md) |
-| [`hoist`](./services/hoist/) | App installer and updater | [📖](./docs/services/hoist/index.md) |
-| [`hoist-service`](./services/hoist/service/) | Hoist's public app catalogue | [📖](./docs/services/hoist/index.md) |
+| [`hoist` (app)](./services/hoist/) | App installer and updater | [📖](./docs/services/hoist/index.md) |
+| [`hoist` (catalogue service)](./services/hoist/service/) | Hoist's public app catalogue | [📖](./docs/services/hoist/index.md) |
 
 ### Testing
 

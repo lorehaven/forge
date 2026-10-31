@@ -11,7 +11,7 @@ Lectern shows the documentation books of the estate to anyone who opens its addr
 
 | Crate | Path | Version | Role |
 |---|---|---|---|
-| `lectern-service` | `services/lectern/service` | 0.1.0 | The server: reading the storage, unpacking releases, serving pages. Binary `lectern-service`. |
+| `lectern` | `services/lectern/service` | 0.1.0 | The server: reading the storage, unpacking releases, serving pages. Binary `lectern-service`. |
 
 There is no `core`, `app` or `web` crate and no WebAssembly client: the pages of a book are the book's own (a Jekyll site with the just-the-docs theme), and the one page Lectern draws, the list of books at `/`, is rendered by the server. It wears the same frame as the other services (below).
 

@@ -14,7 +14,7 @@ Sage is the estate's LLM chat service. A conversation is a tree of messages; a t
 | `sage-core` | `services/sage/core` | 0.1.0 | Wire model (`ConversationView`, `MessageNode`, `FileInfo`, `ModelsView`, bodies), the stream events (`StreamEvent`, `EVENT_NAMES`), form drafts (`MessageDraft`, `ProjectDraft`), the Markdown renderer. No I/O. |
 | `sage-app` | `services/sage/app` | 0.1.0 | Screens and the `Request`/`Msg` protocol. |
 | `sage-web` | `services/sage/web` | 0.1.0 | `wasm32` module: `Client::execute`, the `fetch` transport, `EventSource` for turns. |
-| `sage-service` | `services/sage/service` | 0.6.3 | The server. Binary `sage-service`. |
+| `sage` | `services/sage/service` | 0.6.3 | The server. Binary `sage-service`. |
 
 The foundry module `sage` 0.2.0 (schema `sage`) owns the tables.
 

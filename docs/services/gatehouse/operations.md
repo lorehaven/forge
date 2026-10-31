@@ -13,7 +13,7 @@ foreman start gatehouse   # (or: foreman gatehouse) package gatehouse-service on
 
 `foreman.toml` entry: `port = 5443`, `base_path = "/gatehouse"`, `needs = []`, `unset = ["GATEHOUSE_URL", "GATEHOUSE_CLIENT_ID"]`, `cert_from = "services/warehouse/service"`. It sets `AUTH_BOOTSTRAP=true`, `SERVICE_USERNAME`/`SERVICE_PASSWORD` (from the switchboard `.env` or the development defaults), `GATEHOUSE_KEY_ENCRYPTION_KEY`, one `CLIENT_SECRET_*` per client, `AUTH_REDIRECT_HOSTS` for the other local ports, `SERVER_HTTP_REDIRECT_ADDR=0.0.0.0:5080`, the `<NAME>_UI_URL` of every local service, and (shared by all services) `REDIS_URL`, `RUST_LOG`, `DATABASE_URL` for foreman's local Postgres container. The browser client must be built first (`scripts/web.sh` builds every `services/*/web` crate to `services/<name>/service/web/app.wasm`; foreman runs it before a start). Without `app.wasm` the page routes answer `404` with `the browser client is not installed on this server`.
 
-Tests: `cargo test -p gatehouse-service` (unit tests in `tests/unit/*.rs`, aggregated by `tests/unit.rs`; `tests/pg_models.rs` needs a Postgres reachable through `GATEHOUSE_TEST_DATABASE_URL` with the `gatehouse` module installed by `foundry-service apply --install gatehouse`, and skips itself otherwise). `foreman test` runs the workspace suites with the local infrastructure (flags are passed through). The BDD features are in `tests/forge-bdd/features/gatehouse/`.
+Tests: `cargo test -p gatehouse` (unit tests in `tests/unit/*.rs`, aggregated by `tests/unit.rs`; `tests/pg_models.rs` needs a Postgres reachable through `GATEHOUSE_TEST_DATABASE_URL` with the `gatehouse` module installed by `foundry-service apply --install gatehouse`, and skips itself otherwise). `foreman test` runs the workspace suites with the local infrastructure (flags are passed through). The BDD features are in `tests/forge-bdd/features/gatehouse/`.
 
 ## Run in the cluster
 
@@ -31,7 +31,7 @@ Overlay `homecloud/overlays/forge` (package `forge`), directory `gatehouse/`:
 
 Probes: readiness `GET /gatehouse/health/ready` (initial delay 3 s, period 5 s), liveness `GET /gatehouse/health/live` (initial delay 15 s, period 10 s), both port 80. Values from `overlays/forge/values.yaml`: `SERVICE_AUTH_ENABLED=true`, `ACCESS_TOKEN_TTL_SECS=900`, `REFRESH_TOKEN_TTL_SECS=2592000` (30 days), `AUTH_REDIRECT_HOSTS=https://ennor.ddns.net`, `LOG_SKIP_PREFIXES=/gatehouse/ui,/gatehouse/health`, SMTP through the in-cluster Stalwart (`465`, `implicit`, certificate name `ennor.ddns.net`), `MAIL_FROM=noreply@ennor.ddns.net`. While Gatehouse is down existing sessions keep working at the relying parties (they read the cache store) but nobody can log in or refresh.
 
-Image: built by `anvil docker` module `gatehouse-service` (`images/Dockerfile.alpine`, build args `RESOURCE_DIR=web`, `WASM_PACKAGE=gatehouse-web`); pushed to `ossiriand.arda:8080/forge` and `ennor.ddns.net/forge`.
+Image: built by `anvil docker` module `gatehouse` (`images/Dockerfile.alpine`, build args `RESOURCE_DIR=web`, `WASM_PACKAGE=gatehouse-web`); pushed to `ossiriand.arda:8080/forge` and `ennor.ddns.net/forge`.
 
 Deploy order: the foundry Job (`auth` and `gatehouse` modules) must finish before a Gatehouse that reads a new table starts; Redis must exist.
 

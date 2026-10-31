@@ -5,9 +5,9 @@
 //!
 //! ```bash
 //! docker run --rm -d --name gauge-test-pg -e POSTGRES_PASSWORD=postgres -p 55433:5432 postgres:18-alpine
-//! cargo run -p foundry-service -- apply --catalog services/foundry/service/migrations \
+//! cargo run -p foundry -- apply --catalog services/foundry/service/migrations \
 //!     --database-url postgres://postgres:postgres@localhost:55433/postgres --install gauge
-//! GAUGE_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55433/postgres cargo test -p gauge-service
+//! GAUGE_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55433/postgres cargo test -p gauge
 //! ```
 
 use gauge_core::Range;

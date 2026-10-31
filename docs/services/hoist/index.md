@@ -18,7 +18,7 @@ All crates live under `services/hoist/` and are members of the Forge workspace.
 | `hoist-app` | 0.1.0 | The screens (`quench-ui`); `crate-type = ["cdylib", "rlib"]`. |
 | `hoist-desktop` | 0.1.7 | The Linux program `hoist`: Wayland window, worker thread, `--check`. Its version is the app's version (`.anvil/hoist.toml`: `version_file = "desktop/Cargo.toml"`). |
 | `hoist-surface` | 0.1.0 | The Android program (binary `hoist_surface`, shipped as `libquench_surface.so`): the same screens drawn by the native renderer, and `--check`. |
-| `hoist-service` | 0.1.1 | The public catalogue HTTP service (library `hoist_service`, binary `hoist-service`). |
+| `hoist` | 0.1.1 | The public catalogue HTTP service (library `hoist_service`, binary `hoist-service`). |
 | `android/` | - | Gradle project (`dev.lorehaven.hoist`): host, `packages` plugin, update job. |
 
 Package id (Android application id, Linux id, registry program): `dev.lorehaven.hoist`.

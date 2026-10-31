@@ -51,10 +51,10 @@ Run one against a throwaway database:
 
 ```bash
 docker run --rm -d --name pg-test -e POSTGRES_PASSWORD=postgres -p 5432:5432 pgvector/pgvector:pg18
-cargo run -q -p foundry-service -- apply --catalog services/foundry/service/migrations \
+cargo run -q -p foundry -- apply --catalog services/foundry/service/migrations \
     --database-url postgres://postgres:postgres@127.0.0.1:5432/postgres --install daybook
 DAYBOOK_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres \
-    cargo test -p daybook-service --test integration
+    cargo test -p daybook --test integration
 docker stop pg-test
 ```
 
@@ -170,7 +170,7 @@ The `coverage` job gives the integration tests a database so their code is count
 
 ```toml
 steps = [
-  { run = "cargo run -q -p foundry-service -- apply --catalog services/foundry/service/migrations --database-url postgres://postgres:postgres@127.0.0.1:5432/postgres --install conveyor --install daybook --install gantry --install gatehouse --install sage --install switchboard --install warehouse --install workbench" },
+  { run = "cargo run -q -p foundry -- apply --catalog services/foundry/service/migrations --database-url postgres://postgres:postgres@127.0.0.1:5432/postgres --install conveyor --install daybook --install gantry --install gatehouse --install sage --install switchboard --install warehouse --install workbench" },
   { run = "cargo llvm-cov --workspace --no-report" },
   { run = "cargo llvm-cov report --lcov --output-path lcov.info" },
   { run = "cargo llvm-cov report" },

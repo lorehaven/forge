@@ -34,4 +34,4 @@ Limits: 25 MiB per file, 50 files per scope, prompt budgets from the instance's 
 
 ## Tests
 
-`cargo test -p sage-core -p sage-app -p sage-web -p sage-service`. Unit tests in `service/tests/unit/` (routers, grounding, clients, files, tools, startup), `core/tests/unit`, `app/tests/screens.rs`, `web/tests/unit.rs`. Integration tests need Postgres with the module installed and `SAGE_TEST_DATABASE_URL`. The notes `service/docs/TESTING_GUIDE.md` and `QUICK_TEST_REFERENCE.md` describe older manual test flows; their `/ui/chat/*` HTMX requests no longer exist.
+`cargo test -p sage-core -p sage-app -p sage-web -p sage`. Unit tests in `service/tests/unit/` (routers, grounding, clients, files, tools, startup), `core/tests/unit`, `app/tests/screens.rs`, `web/tests/unit.rs`. Integration tests need Postgres with the module installed and `SAGE_TEST_DATABASE_URL`. The notes `service/docs/TESTING_GUIDE.md` and `QUICK_TEST_REFERENCE.md` describe older manual test flows; their `/ui/chat/*` HTMX requests no longer exist.

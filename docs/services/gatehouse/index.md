@@ -12,7 +12,7 @@ Gatehouse is the Forge estate's authentication service: one identity store (`aut
 
 | Crate | Path | Version | Role |
 |---|---|---|---|
-| `gatehouse-service` | `services/gatehouse/service` | 0.4.2 | the server (binary `gatehouse-service`, library `gatehouse_service`) |
+| `gatehouse` | `services/gatehouse/service` | 0.4.2 | the server (binary `gatehouse-service`, library `gatehouse_service`) |
 | `gatehouse-core` | `services/gatehouse/core` | 0.1.0 | the wire model of the page API, notices and form drafts; shared by service and client |
 | `gatehouse-app` | `services/gatehouse/app` | 0.1.0 | the screens (no I/O): sign-in, dashboard, account, administration |
 | `gatehouse-web` | `services/gatehouse/web` | 0.1.0 | the browser module (`cdylib`) that runs the app over `fetch` |
@@ -21,7 +21,7 @@ Gatehouse is the Forge estate's authentication service: one identity store (`aut
 
 | | |
 |---|---|
-| Local (foreman) | package `gatehouse-service`, port `5443`, `base_path = "/gatehouse"`, `needs = []`; HTTP redirect listener on `5080`; borrows warehouse's dev certificate. Foreman unsets `GATEHOUSE_URL` and `GATEHOUSE_CLIENT_ID` for it |
+| Local (foreman) | package `gatehouse`, port `5443`, `base_path = "/gatehouse"`, `needs = []`; HTTP redirect listener on `5080`; borrows warehouse's dev certificate. Foreman unsets `GATEHOUSE_URL` and `GATEHOUSE_CLIENT_ID` for it |
 | Cluster | `forge` overlay of `homecloud`: Deployment `gatehouse`, image `ossiriand.arda:8080/forge/gatehouse/gatehouse:<version>`, Service port 80, ingress path `/gatehouse` on `ennor.ddns.net`; see [operations](operations.md) |
 | Base path | `BASE_PATH` (default `/`; `/gatehouse` in both setups above) |
 | Listeners | `SERVER_ADDR` (default `0.0.0.0:443`) with TLS when `SERVER_CERT_PATH`/`SERVER_KEY_PATH` (default `cert.pem`/`key.pem`) exist, plus an HTTP to HTTPS redirect on `SERVER_HTTP_REDIRECT_ADDR` (default `0.0.0.0:80`); otherwise plain HTTP on `SERVER_ADDR` |

@@ -21,7 +21,7 @@ All live under `services/daybook/` and are members of the Forge workspace. The c
 | `daybook-desktop` | 0.1.9 | Linux window (Wayland), `notify-send` reminders. Binary `daybook`. |
 | `daybook-surface` | 0.1.0 | Android program, built as `libquench_surface.so`; `--widget` refreshes the widget with no window. |
 | `daybook-web` | 0.1.6 | The browser build (wasm `cdylib`) over `fetch`. |
-| `daybook-service` | 0.3.2 | The HTTP service: API at `/api/v1`, browser client at `/ui`, sign-in forwarding at `/auth`. |
+| `daybook` | 0.3.2 | The HTTP service: API at `/api/v1`, browser client at `/ui`, sign-in forwarding at `/auth`. |
 
 Plus the Gradle project `android/` (package `dev.lorehaven.daybook`). See [Architecture](architecture.md).
 

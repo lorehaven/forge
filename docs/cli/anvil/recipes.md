@@ -61,9 +61,9 @@ Releases are idempotent per package: a package with no changes since its tag is 
 Configure `[docker.modules.*]` and `[docker]` (see [Configuration](configuration.md)), then:
 
 ```bash
-anvil docker build -p hoist-service        # local build only
-anvil docker release -p hoist-service      # build + tag + push
-anvil release -p hoist-service             # bump patch, commit, push, docker release, tag
+anvil docker build -p hoist        # local build only
+anvil docker release -p hoist      # build + tag + push
+anvil release -p hoist             # bump patch, commit, push, docker release, tag
 ```
 
 ## Publish an app to the warehouse
@@ -89,6 +89,6 @@ See [Documentation commands](commands-docs.md).
 ## Develop with auto-restart
 
 ```bash
-anvil run -p hoist-service --serve
+anvil run -p hoist --serve
 # r = rebuild now, R = toggle auto-rebuild, q = quit
 ```

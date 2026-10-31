@@ -7,7 +7,7 @@ has_children: true
 
 Foundry installs the Forge database schemas. It has no HTTP server and no UI: `foundry-service` is a run-to-completion command that reads a catalog of versioned migration modules, resolves the modules you ask for and their dependencies, applies the outstanding migrations in dependency order and exits. It runs as a Kubernetes Job (or init container) before a rollout, as a `foreman` task before the services start, and as a step of the coverage pipeline.
 
-* Crate: `foundry-service` 0.2.35 (`services/foundry/service`), binary `foundry-service` (clap name `foundry`), library `foundry_service` (the `config` module only).
+* Crate: `foundry` 0.2.35 (`services/foundry/service`), binary `foundry-service` (clap name `foundry`), library `foundry_service` (the `config` module only).
 * The engine is not in this repository's service: `Catalog`, `MigrationPlan` and `MigrationRunner` come from `quench-db` (see the Quench book).
 * Dependencies of the crate: `quench-args`, `quench-cli`, `quench-core`, `quench-db`, `quench-log`, `quench-serde`, `tokio`; dev: `quench-test`.
 * Needs Postgres for every command except `validate`. Needs no other service.

@@ -1,5 +1,5 @@
 [package]
-name = "gantry-service"
+name = "gantry"
 version = "0.2.3"
 edition = { workspace = true }
 authors = { workspace = true }

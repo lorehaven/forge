@@ -14,7 +14,7 @@ Switchboard is the only service of the estate that starts and stops vLLM. It dis
 | `switchboard-core` | `services/switchboard/core` | 0.1.0 | Wire model (`Gpu`, `Capabilities`, `Model`, `Estimate`, `Instance`, `ModelFilters`, `LaunchBody`), form drafts (`FilterDraft`, `LaunchDraft`) and the fit arithmetic (`fit.rs`). No I/O. |
 | `switchboard-app` | `services/switchboard/app` | 0.1.0 | Screens and the `Request`/`Msg` protocol. |
 | `switchboard-web` | `services/switchboard/web` | 0.1.0 | `wasm32` module and `Client::execute`. |
-| `switchboard-service` | `services/switchboard/service` | 0.6.2 | The server and the engines. Binary `switchboard-service`. |
+| `switchboard` | `services/switchboard/service` | 0.6.2 | The server and the engines. Binary `switchboard-service`. |
 
 The foundry module `switchboard` 0.2.0 (schema `switchboard`) owns two tables.
 

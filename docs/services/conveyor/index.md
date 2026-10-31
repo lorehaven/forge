@@ -14,7 +14,7 @@ All under `services/conveyor/`, members of the Forge workspace.
 
 | Crate | Version | Role |
 |---|---|---|
-| `conveyor-service` | 0.7.3 | The HTTP service and the workers. Library `conveyor_service`, binary `conveyor-service`. Depends on `conveyor-pipeline` (the parser), `conveyor-core`, `conveyor-web`, `forge-web`, `quench-pg`, `quench-crypto`, `quench-auth`, `quench-k8s` and the platform crates. |
+| `conveyor` | 0.7.3 | The HTTP service and the workers. Library `conveyor_service`, binary `conveyor-service`. Depends on `conveyor-pipeline` (the parser), `conveyor-core`, `conveyor-web`, `forge-web`, `quench-pg`, `quench-crypto`, `quench-auth`, `quench-k8s` and the platform crates. |
 | `conveyor-core` | 0.1.0 | No I/O; builds for the browser. The API's wire models (`Access`, `RunsPage`, `RunDetail`, `ScanReport`, ...), the records (`Project`, `Repo`, `Run`, `Job`, `Artifact`, `Status`, `Trigger`, `Provider`), the form drafts, the project tree, the job graph, formatting. |
 | `conveyor-app` | 0.1.0 | The screens (`quench-ui`). Does no I/O: it emits `Request` values and consumes `Msg` values. |
 | `conveyor-web` | 0.1.0 | The wasm build of the app over `fetch` and `EventSource`. |

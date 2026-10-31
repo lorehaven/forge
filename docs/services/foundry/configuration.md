@@ -47,4 +47,4 @@ The shipped file installs `conveyor`, `daybook`, `gantry`, `gatehouse`, `hoist`,
 
 ## Build and image
 
-The image is built from `images/Dockerfile.alpine` with `RESOURCE_DIR=migrations` and `RUN_AS=999:999` (`.anvil/docker.toml`, module `foundry-service`, image `foundry`).
+The image is built from `images/Dockerfile.alpine` with `RESOURCE_DIR=migrations` and `RUN_AS=999:999` (`.anvil/docker.toml`, module `foundry`, image `foundry`).

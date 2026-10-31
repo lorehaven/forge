@@ -16,9 +16,9 @@ foreman start hoist   # https://localhost:14443/hoist
 
 The first refresh fetches the three upstream stores over the network; `HOIST_APTOIDE_PAGES=5` keeps a local crawl short. Readiness does not wait for the first refresh, so the API can answer with an empty catalogue for a while.
 
-Tests: `cargo test -p hoist-service`. Integration tests are in `service/tests/integration.rs`, unit tests (`merge_tests`, `connectors_tests`) in `service/tests/unit/`; see [configuration](configuration.md) for the test variables.
+Tests: `cargo test -p hoist`. Integration tests are in `service/tests/integration.rs`, unit tests (`merge_tests`, `connectors_tests`) in `service/tests/unit/`; see [configuration](configuration.md) for the test variables.
 
-Image: docker package `hoist-service` in `.anvil/docker.toml` (`module_name = "hoist"`, `image_name = "hoist"`, registries `ossiriand.arda:8080/forge` and `ennor.ddns.net/forge`, `build_args = { RESOURCE_DIR = "config" }`; the service has no translations but the image wants the directory). Release with `anvil release`. The deployment is the `hoist` overlay under `homecloud/overlays/forge/`.
+Image: docker package `hoist` in `.anvil/docker.toml` (`module_name = "hoist"`, `image_name = "hoist"`, registries `ossiriand.arda:8080/forge` and `ennor.ddns.net/forge`, `build_args = { RESOURCE_DIR = "config" }`; the service has no translations but the image wants the directory). Release with `anvil release`. The deployment is the `hoist` overlay under `homecloud/overlays/forge/`.
 
 Failure modes: every source failing leaves the old catalogue in place (logged `every source failed; keeping the catalogue as it is`); one failing source counts as empty and its apps vanish from the next catalogue; in-memory database gives `503`.
 

@@ -7,12 +7,12 @@
 //! ```bash
 //! docker run --rm -d --name conveyor-test-pg -e POSTGRES_PASSWORD=postgres \
 //!     -p 55432:5432 pgvector/pgvector:pg18
-//! cargo run -p foundry-service -- apply \
+//! cargo run -p foundry -- apply \
 //!     --catalog services/foundry/service/migrations \
 //!     --database-url postgres://postgres:postgres@localhost:55432/postgres \
 //!     --install conveyor
 //! CONVEYOR_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/postgres \
-//!     cargo test -p conveyor-service
+//!     cargo test -p conveyor
 //! ```
 
 #![allow(dead_code)]

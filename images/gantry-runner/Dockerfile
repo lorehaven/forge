@@ -34,7 +34,7 @@ COPY tests ./tests
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --target x86_64-unknown-linux-musl -p riveter -p gantry-service --bin riveter --bin gantry-runner
+    cargo build --release --target x86_64-unknown-linux-musl -p riveter -p gantry --bin riveter --bin gantry-runner
 
 FROM alpine:3.22
 

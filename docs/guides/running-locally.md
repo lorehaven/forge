@@ -132,7 +132,7 @@ With nothing set a run is `none` + `dry-run`. A write to a real cluster must be 
 The click-through environment is `services/gantry/service/local/`: `compose.yaml` (Postgres `pgvector/pgvector:pg18`, Redis, a `migrate` container running `foundry-service --install gantry apply`, and the service from your built `target/debug` binaries on `127.0.0.1:11443`), `pack.sh` (builds the demo `.rivet` packages `ml` and `media`, 1.0.0 and 1.1.0, with `riveter`), and `seed.json`. The compose file sets `SERVICE_AUTH_ENABLED=false`, `BASE_PATH=/gantry`, plain HTTP (`SERVER_CERT_PATH=/nonexistent`), `GANTRY_CLUSTER=none`, `GANTRY_RUNNER=simulate`, `GANTRY_FAKE_CLUSTER=/app/local/seed.json`, `GANTRY_PACKAGES_DIR=/app/local/packages`.
 
 ```bash
-cargo build -p gantry-service -p foundry-service
+cargo build -p gantry -p foundry
 services/gantry/service/local/pack.sh
 cd services/gantry/service/local && docker compose up
 # then http://localhost:11443/gantry/ui/home

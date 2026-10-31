@@ -46,6 +46,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
+name = "conveyor"
+version = "0.7.4"
+dependencies = [
+ "conveyor-core",
+ "conveyor-pipeline",
+ "conveyor-web",
+ "forge-web",
+ "quench-auth",
+ "quench-client",
+ "quench-core",
+ "quench-crypto",
+ "quench-db",
+ "quench-http",
+ "quench-k8s",
+ "quench-log",
+ "quench-pg",
+ "quench-serde",
+ "quench-starter",
+ "quench-test",
+ "tokio",
+]
+
+[[package]]
 name = "conveyor-app"
 version = "0.1.0"
 dependencies = [
@@ -90,29 +113,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "conveyor-service"
-version = "0.7.4"
-dependencies = [
- "conveyor-core",
- "conveyor-pipeline",
- "conveyor-web",
- "forge-web",
- "quench-auth",
- "quench-client",
- "quench-core",
- "quench-crypto",
- "quench-db",
- "quench-http",
- "quench-k8s",
- "quench-log",
- "quench-pg",
- "quench-serde",
- "quench-starter",
- "quench-test",
- "tokio",
-]
-
-[[package]]
 name = "conveyor-web"
 version = "0.1.0"
 dependencies = [
@@ -123,6 +123,26 @@ dependencies = [
  "quench-test",
  "quench-ui",
  "quench-ui-web",
+]
+
+[[package]]
+name = "daybook"
+version = "0.3.3"
+dependencies = [
+ "daybook-web",
+ "forge-web",
+ "quench-auth",
+ "quench-client",
+ "quench-core",
+ "quench-db",
+ "quench-http",
+ "quench-log",
+ "quench-pg",
+ "quench-serde",
+ "quench-starter",
+ "quench-test",
+ "quench-tz",
+ "tokio",
 ]
 
 [[package]]
@@ -186,26 +206,6 @@ dependencies = [
  "gatehouse-client",
  "quench-serde",
  "quench-test",
-]
-
-[[package]]
-name = "daybook-service"
-version = "0.3.3"
-dependencies = [
- "daybook-web",
- "forge-web",
- "quench-auth",
- "quench-client",
- "quench-core",
- "quench-db",
- "quench-http",
- "quench-log",
- "quench-pg",
- "quench-serde",
- "quench-starter",
- "quench-test",
- "quench-tz",
- "tokio",
 ]
 
 [[package]]
@@ -409,7 +409,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "foundry-service"
+name = "foundry"
 version = "0.2.36"
 dependencies = [
  "quench-args",
@@ -419,6 +419,28 @@ dependencies = [
  "quench-log",
  "quench-serde",
  "quench-test",
+ "tokio",
+]
+
+[[package]]
+name = "gantry"
+version = "0.2.3"
+dependencies = [
+ "forge-web",
+ "gantry-core",
+ "gantry-web",
+ "quench-auth",
+ "quench-client",
+ "quench-core",
+ "quench-db",
+ "quench-http",
+ "quench-k8s",
+ "quench-log",
+ "quench-pg",
+ "quench-serde",
+ "quench-starter",
+ "quench-test",
+ "rivet-package",
  "tokio",
 ]
 
@@ -441,28 +463,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gantry-service"
-version = "0.2.3"
-dependencies = [
- "forge-web",
- "gantry-core",
- "gantry-web",
- "quench-auth",
- "quench-client",
- "quench-core",
- "quench-db",
- "quench-http",
- "quench-k8s",
- "quench-log",
- "quench-pg",
- "quench-serde",
- "quench-starter",
- "quench-test",
- "rivet-package",
- "tokio",
-]
-
-[[package]]
 name = "gantry-web"
 version = "0.1.0"
 dependencies = [
@@ -473,6 +473,30 @@ dependencies = [
  "quench-test",
  "quench-ui",
  "quench-ui-web",
+]
+
+[[package]]
+name = "gatehouse"
+version = "0.4.5"
+dependencies = [
+ "forge-web",
+ "gatehouse-core",
+ "gatehouse-web",
+ "quench-auth",
+ "quench-cache",
+ "quench-config",
+ "quench-core",
+ "quench-crypto",
+ "quench-db",
+ "quench-http",
+ "quench-log",
+ "quench-mail",
+ "quench-qr",
+ "quench-serde",
+ "quench-starter",
+ "quench-test",
+ "quench-tz",
+ "tokio",
 ]
 
 [[package]]
@@ -514,30 +538,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gatehouse-service"
-version = "0.4.5"
-dependencies = [
- "forge-web",
- "gatehouse-core",
- "gatehouse-web",
- "quench-auth",
- "quench-cache",
- "quench-config",
- "quench-core",
- "quench-crypto",
- "quench-db",
- "quench-http",
- "quench-log",
- "quench-mail",
- "quench-qr",
- "quench-serde",
- "quench-starter",
- "quench-test",
- "quench-tz",
- "tokio",
-]
-
-[[package]]
 name = "gatehouse-web"
 version = "0.1.0"
 dependencies = [
@@ -548,6 +548,26 @@ dependencies = [
  "quench-test",
  "quench-ui",
  "quench-ui-web",
+]
+
+[[package]]
+name = "gauge"
+version = "0.2.4"
+dependencies = [
+ "forge-web",
+ "gauge-core",
+ "gauge-web",
+ "quench-auth",
+ "quench-client",
+ "quench-core",
+ "quench-db",
+ "quench-http",
+ "quench-log",
+ "quench-pg",
+ "quench-serde",
+ "quench-starter",
+ "quench-test",
+ "tokio",
 ]
 
 [[package]]
@@ -566,26 +586,6 @@ version = "0.1.0"
 dependencies = [
  "quench-serde",
  "quench-test",
-]
-
-[[package]]
-name = "gauge-service"
-version = "0.2.4"
-dependencies = [
- "forge-web",
- "gauge-core",
- "gauge-web",
- "quench-auth",
- "quench-client",
- "quench-core",
- "quench-db",
- "quench-http",
- "quench-log",
- "quench-pg",
- "quench-serde",
- "quench-starter",
- "quench-test",
- "tokio",
 ]
 
 [[package]]
@@ -620,6 +620,23 @@ dependencies = [
  "cfg-if",
  "libc",
  "r-efi",
+]
+
+[[package]]
+name = "hoist"
+version = "0.1.2"
+dependencies = [
+ "quench-auth",
+ "quench-client",
+ "quench-core",
+ "quench-db",
+ "quench-http",
+ "quench-log",
+ "quench-pg",
+ "quench-serde",
+ "quench-starter",
+ "quench-test",
+ "tokio",
 ]
 
 [[package]]
@@ -668,23 +685,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hoist-service"
-version = "0.1.2"
-dependencies = [
- "quench-auth",
- "quench-client",
- "quench-core",
- "quench-db",
- "quench-http",
- "quench-log",
- "quench-pg",
- "quench-serde",
- "quench-starter",
- "quench-test",
- "tokio",
-]
-
-[[package]]
 name = "hoist-surface"
 version = "0.1.0"
 dependencies = [
@@ -698,7 +698,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lectern-service"
+name = "lectern"
 version = "0.1.0"
 dependencies = [
  "forge-shell",
@@ -1510,26 +1510,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sage-app"
-version = "0.1.0"
-dependencies = [
- "forge-shell",
- "quench-serde",
- "quench-test",
- "quench-ui",
- "sage-core",
-]
-
-[[package]]
-name = "sage-core"
-version = "0.1.0"
-dependencies = [
- "quench-serde",
- "quench-test",
-]
-
-[[package]]
-name = "sage-service"
+name = "sage"
 version = "0.6.4"
 dependencies = [
  "forge-web",
@@ -1552,6 +1533,25 @@ dependencies = [
  "sage-core",
  "sage-web",
  "tokio",
+]
+
+[[package]]
+name = "sage-app"
+version = "0.1.0"
+dependencies = [
+ "forge-shell",
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "sage-core",
+]
+
+[[package]]
+name = "sage-core"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
 ]
 
 [[package]]
@@ -1612,25 +1612,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
-name = "switchboard-app"
-version = "0.1.0"
-dependencies = [
- "forge-shell",
- "quench-test",
- "quench-ui",
- "switchboard-core",
-]
-
-[[package]]
-name = "switchboard-core"
-version = "0.1.0"
-dependencies = [
- "quench-serde",
- "quench-test",
-]
-
-[[package]]
-name = "switchboard-service"
+name = "switchboard"
 version = "0.6.3"
 dependencies = [
  "forge-web",
@@ -1647,6 +1629,24 @@ dependencies = [
  "quench-test",
  "switchboard-web",
  "tokio",
+]
+
+[[package]]
+name = "switchboard-app"
+version = "0.1.0"
+dependencies = [
+ "forge-shell",
+ "quench-test",
+ "quench-ui",
+ "switchboard-core",
+]
+
+[[package]]
+name = "switchboard-core"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
 ]
 
 [[package]]
@@ -1714,6 +1714,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+name = "warehouse"
+version = "0.8.4"
+dependencies = [
+ "forge-web",
+ "quench-archive",
+ "quench-auth",
+ "quench-config",
+ "quench-convert",
+ "quench-core",
+ "quench-crypto",
+ "quench-db",
+ "quench-http",
+ "quench-log",
+ "quench-pg",
+ "quench-serde",
+ "quench-starter",
+ "quench-test",
+ "rivet-package",
+ "tokio",
+ "warehouse-core",
+ "warehouse-web",
+]
+
+[[package]]
 name = "warehouse-app"
 version = "0.1.0"
 dependencies = [
@@ -1742,30 +1766,6 @@ version = "0.1.0"
 dependencies = [
  "quench-serde",
  "quench-test",
-]
-
-[[package]]
-name = "warehouse-service"
-version = "0.8.4"
-dependencies = [
- "forge-web",
- "quench-archive",
- "quench-auth",
- "quench-config",
- "quench-convert",
- "quench-core",
- "quench-crypto",
- "quench-db",
- "quench-http",
- "quench-log",
- "quench-pg",
- "quench-serde",
- "quench-starter",
- "quench-test",
- "rivet-package",
- "tokio",
- "warehouse-core",
- "warehouse-web",
 ]
 
 [[package]]
@@ -1899,25 +1899,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
-name = "workbench-app"
-version = "0.1.0"
-dependencies = [
- "forge-shell",
- "quench-test",
- "quench-ui",
- "workbench-core",
-]
-
-[[package]]
-name = "workbench-core"
-version = "0.1.0"
-dependencies = [
- "quench-serde",
- "quench-test",
-]
-
-[[package]]
-name = "workbench-service"
+name = "workbench"
 version = "0.3.3"
 dependencies = [
  "forge-web",
@@ -1933,6 +1915,24 @@ dependencies = [
  "tokio",
  "workbench-core",
  "workbench-web",
+]
+
+[[package]]
+name = "workbench-app"
+version = "0.1.0"
+dependencies = [
+ "forge-shell",
+ "quench-test",
+ "quench-ui",
+ "workbench-core",
+]
+
+[[package]]
+name = "workbench-core"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
 ]
 
 [[package]]

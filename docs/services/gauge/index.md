@@ -14,7 +14,7 @@ Gauge is the host metrics dashboard of the estate. It polls the PCP (`pmproxy`) 
 | `gauge-core` | `services/gauge/core` | 0.1.0 | Wire model (`HostSummary`, `HostCard`, `HostDetail`, `HostHistory`, `DiskForecast`, `AlertEvent`, `Point`, `View`, `Range`), unit formatting, chart geometry, the disk forecast fit, alert thresholds. No I/O. |
 | `gauge-app` | `services/gauge/app` | 0.1.0 | Screens and the `Request`/`Msg` protocol (`quench-ui`). |
 | `gauge-web` | `services/gauge/web` | 0.1.0 | `wasm32` module: `fetch` transport, `Request` to URL mapping, `Msg` from the answer. |
-| `gauge-service` | `services/gauge/service` | 0.2.3 | The server: collector, store, history, API, SSO and page routes. Binary `gauge-service`. |
+| `gauge` | `services/gauge/service` | 0.2.3 | The server: collector, store, history, API, SSO and page routes. Binary `gauge-service`. |
 
 The foundry catalog module `gauge` (0.4.0, schema `gauge`) owns the tables.
 

@@ -8,12 +8,12 @@
 //! ```bash
 //! docker run --rm -d --name workbench-test-pg -e POSTGRES_PASSWORD=postgres \
 //!     -p 55432:5432 pgvector/pgvector:pg18
-//! cargo run -p foundry-service -- apply \
+//! cargo run -p foundry -- apply \
 //!     --catalog services/foundry/service/migrations \
 //!     --database-url postgres://postgres:postgres@localhost:55432/postgres \
 //!     --install workbench
 //! WORKBENCH_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/postgres \
-//!     cargo test -p workbench-service
+//!     cargo test -p workbench
 //! ```
 
 #![allow(dead_code)]

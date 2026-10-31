@@ -1,5 +1,5 @@
 [package]
-name = "gauge-service"
+name = "gauge"
 version = "0.2.4"
 edition = { workspace = true }
 authors = { workspace = true }

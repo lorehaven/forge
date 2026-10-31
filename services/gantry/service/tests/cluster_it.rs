@@ -6,7 +6,7 @@
 //! kubectl -n gantry-it create serviceaccount gantry-runner
 //! kubectl -n gantry-it create secret generic gantry-runner-credentials
 //! GANTRY_IT_NAMESPACE=gantry-it GANTRY_IT_IMAGE=rancher/mirrored-pause:3.6 \
-//!     cargo test -p gantry-service --test cluster_it -- --ignored
+//!     cargo test -p gantry --test cluster_it -- --ignored
 //! ```
 //!
 //! The image has no `gantry-runner` in it, so the Job's pod cannot start - which is the point: the API

@@ -1,5 +1,5 @@
 [package]
-name = "warehouse-service"
+name = "warehouse"
 version = "0.8.4"
 edition = { workspace = true }
 authors = { workspace = true }

@@ -5,7 +5,7 @@
 //! LIVE_SMTP_HOST=192.168.0.9 LIVE_SMTP_TLS_SERVER_NAME=ennor.ddns.net \
 //! LIVE_SMTP_USERNAME=noreply@ennor.ddns.net LIVE_SMTP_PASSWORD=... \
 //! LIVE_MAIL_FROM=noreply@ennor.ddns.net LIVE_SMTP_TO=admin@ennor.ddns.net \
-//!   cargo test -p gatehouse-service --test unit live -- --ignored --nocapture
+//!   cargo test -p gatehouse --test unit live -- --ignored --nocapture
 //! ```
 
 use gatehouse_service::email::{Recipient, Sender, SmtpConfig, SmtpSender};

@@ -14,7 +14,7 @@ All under `services/gantry/`.
 
 | Crate | Version | Role |
 |---|---|---|
-| `gantry-service` | 0.2.2 | The HTTP service, the reconciler, the planner, the cluster and registry adapters. Library `gantry_service`; binaries `gantry-service` and `gantry-runner` (what a runner Job runs; it ships in the runner image beside `riveter` and `kubectl`). |
+| `gantry` | 0.2.2 | The HTTP service, the reconciler, the planner, the cluster and registry adapters. Library `gantry_service`; binaries `gantry-service` and `gantry-runner` (what a runner Job runs; it ships in the runner image beside `riveter` and `kubectl`). |
 | `gantry-core` | 0.1.0 | No I/O. The wire models the client reads (`Group`, `Row`, `DeploymentView`, `Operation`, `StoredPlan`, `TargetView`, ...), the request bodies, the resource filter and the YAML edit draft. |
 | `gantry-app` | 0.1.0 | The screens (`quench-ui`). Does no I/O: `Request` out, `Msg` in. |
 | `gantry-web` | 0.1.0 | The wasm build over `fetch`. |

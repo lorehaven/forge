@@ -2,7 +2,7 @@
 The estate's AI workspace service.
 
 ## What it is
-`sage-service` is the chat workspace: conversations with streaming answers, grounded in documents, over models served by vLLM and managed by Switchboard.
+`sage` is the chat workspace: conversations with streaming answers, grounded in documents, over models served by vLLM and managed by Switchboard.
 
 ## Use cases
 - Chat with the estate's models.

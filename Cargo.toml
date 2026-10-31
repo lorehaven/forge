@@ -153,7 +153,7 @@ hoist-app = { path = "services/hoist/app" }
 hoist-core = { path = "services/hoist/core" }
 hoist-desktop = { path = "services/hoist/desktop" }
 hoist-net = { path = "services/hoist/net" }
-hoist-service = { path = "services/hoist/service" }
+hoist = { path = "services/hoist/service" }
 rivet-package = { path = "libs/rivet-package", registry = "ennor", version = "0.1.0" }
 tokio = { version = "1.54", features = ["full"] }
 

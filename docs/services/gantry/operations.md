@@ -30,7 +30,7 @@ Postgres (the `gantry` foundry module) and Redis are required in every mode. Und
 ### The demo (`services/gantry/service/local/`)
 
 ```bash
-cargo build -p gantry-service -p foundry-service      # workspace root
+cargo build -p gantry -p foundry      # workspace root
 services/gantry/service/local/pack.sh                   # builds the demo .rivet packages; needs riveter on PATH or RIVETER=...
 cd services/gantry/service/local && docker compose up
 ```
@@ -51,7 +51,7 @@ Everything in the file becomes part of its package's **catalog**: what the simul
 
 ## In the cluster
 
-* Image: `anvil docker` module `gantry-service` (`.anvil/docker.toml`): image name `gantry`, registries `ossiriand.arda:8080/forge` and `ennor.ddns.net/forge`, build arguments `RESOURCE_DIR=web`, `WASM_PACKAGE=gantry-web`.
+* Image: `anvil docker` module `gantry` (`.anvil/docker.toml`): image name `gantry`, registries `ossiriand.arda:8080/forge` and `ennor.ddns.net/forge`, build arguments `RESOURCE_DIR=web`, `WASM_PACKAGE=gantry-web`.
 * The runner image is separate: `images/gantry-runner/Dockerfile` builds `riveter` and `gantry-runner` (musl) from this workspace plus `kubectl` into an alpine image. `foreman run build-gantry-runner` / `publish-gantry-runner` (`scripts/image.sh gantry-runner build|publish`); tag `ossiriand.arda:8080/forge/gantry/runner:<gantry-service version>` (the service names the image, the two are released together). The registry token for the crate registry is passed as a build argument when `ENNOR_TOKEN` is set; pushing needs `docker login ossiriand.arda:8080`. *Note:* the guides report that the estate overlay's `GANTRY_RUNNER_IMAGE` can lag the service version.
 * The estate overlay (`homecloud`, package `forge`, directory `gantry/`): ConfigMap, Secret, Deployment, Service, Ingress, a Role, a ServiceAccount and `runner-credentials.yaml.j2`. The Secret `gantry-age-key` (file `age.key`) is the one thing not in git: `kubectl -n forge create secret generic gantry-age-key --from-file=age.key=$HOME/.config/riveter/age.key`.
 * Probes: readiness `GET /gantry/health/ready`, liveness `GET /gantry/health/live`.

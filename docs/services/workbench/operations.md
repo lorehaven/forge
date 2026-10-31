@@ -11,7 +11,7 @@ nav_order: 4
 
 ## Cluster
 
-Image `workbench` from `images/Dockerfile.alpine` (see `.anvil/docker.toml`, module `workbench-service`: build args `RESOURCE_DIR=web`, `WASM_PACKAGE=workbench-web`). Run foundry first (`--install workbench`). Needs Gatehouse reachable, Postgres, optionally Redis. Health: `/health`, `/health/live`, `/health/ready` ([Common service runtime](../common-runtime.md)); ready after Gatehouse's `/health/ready` answers.
+Image `workbench` from `images/Dockerfile.alpine` (see `.anvil/docker.toml`, module `workbench`: build args `RESOURCE_DIR=web`, `WASM_PACKAGE=workbench-web`). Run foundry first (`--install workbench`). Needs Gatehouse reachable, Postgres, optionally Redis. Health: `/health`, `/health/live`, `/health/ready` ([Common service runtime](../common-runtime.md)); ready after Gatehouse's `/health/ready` answers.
 
 ## Failure modes
 
@@ -29,4 +29,4 @@ Limits: none beyond the pool size; lists are not paginated; no rate limiting.
 
 ## Tests
 
-`cargo test -p workbench-core -p workbench-app -p workbench-web -p workbench-service`. Unit: `service/tests/unit/{authz_tests,authz_request_tests,client_tests}.rs`, `core/tests/unit`, `web/tests/unit.rs` (stand-in transport), `app/tests/screens.rs` (`TestRenderer`). Integration (`service/tests/integration/{project,issue,comment_and_label,realm_users,routers_api}_tests.rs`) need Postgres with the module installed and `WORKBENCH_TEST_DATABASE_URL`; they skip without it. `scripts/docs-check.py workbench` checks `openapi.yaml` against the route macros.
+`cargo test -p workbench-core -p workbench-app -p workbench-web -p workbench`. Unit: `service/tests/unit/{authz_tests,authz_request_tests,client_tests}.rs`, `core/tests/unit`, `web/tests/unit.rs` (stand-in transport), `app/tests/screens.rs` (`TestRenderer`). Integration (`service/tests/integration/{project,issue,comment_and_label,realm_users,routers_api}_tests.rs`) need Postgres with the module installed and `WORKBENCH_TEST_DATABASE_URL`; they skip without it. `scripts/docs-check.py workbench` checks `openapi.yaml` against the route macros.

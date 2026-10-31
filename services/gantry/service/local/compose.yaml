@@ -2,7 +2,7 @@
 # runner simulated in memory. Click through targets, deployments (stop A, start B, swap), plans and
 # operations; nothing here can touch a Kubernetes cluster.
 #
-#   cargo build -p gantry-service -p foundry-service     # from the workspace root, once
+#   cargo build -p gantry -p foundry     # from the workspace root, once
 #   ./pack.sh                                            # demo packages (needs riveter on PATH or RIVETER=)
 #   docker compose up
 #   open http://localhost:11443/gantry/ui/home

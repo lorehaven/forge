@@ -71,7 +71,7 @@ client_secret_sage_switchboard = { env_file = "services/sage/service/.env", key 
 
 [build]
 command = ["cargo", "build", "-q", "--all-features", "--package", "${package}"]
-binary = "target/debug/${package}"
+binary = "target/debug/${package}-service"
 
 # ---------------------------------------------------------------------------
 # What the estate sits on
@@ -266,7 +266,7 @@ GATEHOUSE_TLS_VERIFY = "false"
 # realm cookie behaves the same everywhere.
 [[services]]
 name = "gatehouse"
-package = "gatehouse-service"
+package = "gatehouse"
 port = 5443
 base_path = "/gatehouse"
 needs = []
@@ -311,7 +311,7 @@ DAYBOOK_UI_URL = "https://localhost:12443/daybook/ui"
 
 [[services]]
 name = "warehouse"
-package = "warehouse-service"
+package = "warehouse"
 port = 6443
 base_path = "/warehouse"
 needs = ["gatehouse"]
@@ -324,7 +324,7 @@ FILE_STORAGES = "artifacts=${project_root}/target/estate/artifacts;docs=${projec
 
 [[services]]
 name = "switchboard"
-package = "switchboard-service"
+package = "switchboard"
 port = 7443
 base_path = "/switchboard"
 needs = ["gatehouse"]
@@ -365,7 +365,7 @@ done
 
 [[services]]
 name = "sage"
-package = "sage-service"
+package = "sage"
 port = 8443
 base_path = "/sage"
 needs = ["gatehouse", "switchboard"]
@@ -388,7 +388,7 @@ env = { SAGE_DEFAULT_MODELS = "[]" }
 
 [[services]]
 name = "conveyor"
-package = "conveyor-service"
+package = "conveyor"
 port = 9443
 base_path = "/conveyor"
 needs = ["gatehouse"]
@@ -399,7 +399,7 @@ GATEHOUSE_CLIENT_SECRET = "${client_secret_conveyor}"
 
 [[services]]
 name = "workbench"
-package = "workbench-service"
+package = "workbench"
 port = 10443
 base_path = "/workbench"
 needs = ["gatehouse"]
@@ -410,7 +410,7 @@ GATEHOUSE_CLIENT_SECRET = "${client_secret_workbench}"
 
 [[services]]
 name = "daybook"
-package = "daybook-service"
+package = "daybook"
 port = 12443
 base_path = "/daybook"
 needs = ["gatehouse"]
@@ -423,7 +423,7 @@ SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:12080"
 # refresh fetches the three upstream stores over the network; HOIST_APTOIDE_PAGES=5 keeps a local one short.
 [[services]]
 name = "hoist"
-package = "hoist-service"
+package = "hoist"
 port = 14443
 base_path = "/hoist"
 needs = ["gatehouse"]
@@ -438,7 +438,7 @@ HOIST_APTOIDE_PAGES = "5"
 # is all it waits for.
 [[services]]
 name = "gantry"
-package = "gantry-service"
+package = "gantry"
 port = 11443
 base_path = "/gantry"
 needs = ["gatehouse"]
@@ -453,7 +453,7 @@ SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:11080"
 # database, so the realm is all it waits for.
 [[services]]
 name = "gauge"
-package = "gauge-service"
+package = "gauge"
 port = 13443
 base_path = "/gauge"
 needs = ["gatehouse"]
@@ -468,7 +468,7 @@ SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:13080"
 # `FILE_STORAGES=docs=<dir>` to have somewhere to release to.
 [[services]]
 name = "lectern"
-package = "lectern-service"
+package = "lectern"
 port = 15443
 base_path = "/lectern"
 needs = ["gatehouse", "warehouse"]

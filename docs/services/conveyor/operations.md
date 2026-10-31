@@ -9,7 +9,7 @@ Run, deploy, observe and test conveyor. Nothing here contacts a real service; co
 
 ## Run it locally
 
-Under foreman (`foreman.toml`: package `conveyor-service`, port 9443, base path `/conveyor`, needs gatehouse, certificate borrowed from `services/warehouse/service`, `GATEHOUSE_CLIENT_SECRET` from `client_secret_conveyor`):
+Under foreman (`foreman.toml`: package `conveyor`, port 9443, base path `/conveyor`, needs gatehouse, certificate borrowed from `services/warehouse/service`, `GATEHOUSE_CLIENT_SECRET` from `client_secret_conveyor`):
 
 ```bash
 foreman start conveyor      # builds conveyor-service, starts postgres and redis, installs the schema, starts gatehouse and conveyor
@@ -25,7 +25,7 @@ The [conveyor-cli](../../cli/conveyor-cli/index.md) tool wraps these calls; the 
 
 ## In the cluster
 
-* Image: `anvil docker` module `conveyor-service` (`.anvil/docker.toml`): image name `conveyor`, registries `ossiriand.arda:8080/forge` and `ennor.ddns.net/forge`, build arguments `RUNTIME_PACKAGES=git`, `RESOURCE_DIR=web`, `WASM_PACKAGE=conveyor-web`. The container listens on 80 behind the ingress path `/conveyor`.
+* Image: `anvil docker` module `conveyor` (`.anvil/docker.toml`): image name `conveyor`, registries `ossiriand.arda:8080/forge` and `ennor.ddns.net/forge`, build arguments `RUNTIME_PACKAGES=git`, `RESOURCE_DIR=web`, `WASM_PACKAGE=conveyor-web`. The container listens on 80 behind the ingress path `/conveyor`.
 * The estate overlay (`homecloud`, package `forge`, directory `conveyor/`): ConfigMap `conveyor-config`, Secret `conveyor-secret`, Deployment (`replicas: 1`, `strategy: Recreate`), Service, Ingress, and `role.yaml.j2` (the Role that lets conveyor's service account manage Jobs, pods, pod logs and Secrets for the `kubernetes` executor). Names and values are in that repository, not here.
 * Probes: readiness `GET /conveyor/health/ready`, liveness `GET /conveyor/health/live`.
 * Replicas: several replicas can share one database; the claim uses `FOR UPDATE SKIP LOCKED` and the per-repository index. Live log streaming only works against the replica running the job; a load balancer in front must therefore keep a viewer on one replica or accept that the stream shows the stored log until the job ends.
@@ -77,8 +77,8 @@ Logging: `quench-log` (`RUST_LOG`, `LOG_DIR`, daily files `app.<date>.log`). Not
 `services/conveyor/service/tests/`: `unit` (no database: config, status machine, executors including the manifest builder and the native executor with real processes, providers, secret sealing and redaction, scan parsing, the SSE frames, the API's authorisation) and `integration` (Postgres: queue, scheduler, worker with the mock executor, schedules, routers, notifications, webhooks). Both use the custom harness (`harness = false`). The integration suite is skipped unless `CONVEYOR_TEST_DATABASE_URL` is set to a throwaway Postgres (never the foreman container):
 
 ```bash
-CONVEYOR_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/postgres cargo test -p conveyor-service --test integration
-cargo test -p conveyor-service --test unit
+CONVEYOR_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/postgres cargo test -p conveyor --test integration
+cargo test -p conveyor --test unit
 cargo test -p conveyor-core -p conveyor-app -p conveyor-web
 ```
 

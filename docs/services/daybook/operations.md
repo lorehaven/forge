@@ -14,7 +14,7 @@ Build, run, release and test Daybook. Nothing here contacts the cluster.
 foreman start daybook      # brings up gatehouse (needs), installs schemas through foundry, builds the wasm client, starts daybook
 ```
 
-`foreman.toml` entry: service `daybook`, package `daybook-service`, port 12443, `base_path = "/daybook"`, `needs = ["gatehouse"]`, `cert_from = "services/warehouse/service"`, env `SERVER_HTTP_REDIRECT_ADDR=0.0.0.0:12080`. The browser client is at `https://localhost:12443/daybook/ui` (gatehouse's `DAYBOOK_UI_URL`).
+`foreman.toml` entry: service `daybook`, package `daybook`, port 12443, `base_path = "/daybook"`, `needs = ["gatehouse"]`, `cert_from = "services/warehouse/service"`, env `SERVER_HTTP_REDIRECT_ADDR=0.0.0.0:12080`. The browser client is at `https://localhost:12443/daybook/ui` (gatehouse's `DAYBOOK_UI_URL`).
 
 Build the browser module by hand:
 
@@ -73,9 +73,9 @@ Raise the `daybook-desktop` version first; a versionCode must grow with every re
 
 | Suite | Command | Notes |
 |---|---|---|
-| service unit | `cargo test -p daybook-service --test unit` | 16 tests |
-| recurrence arithmetic | `cargo test -p daybook-service --test recurrence` | 28 tests, pure |
-| service integration | `DAYBOOK_TEST_DATABASE_URL=<url> cargo test -p daybook-service --test integration` | skipped (prints "skipping ...") unless the variable names a throwaway Postgres with the foundry `daybook` module installed; 27 test functions incl. helpers |
+| service unit | `cargo test -p daybook --test unit` | 16 tests |
+| recurrence arithmetic | `cargo test -p daybook --test recurrence` | 28 tests, pure |
+| service integration | `DAYBOOK_TEST_DATABASE_URL=<url> cargo test -p daybook --test integration` | skipped (prints "skipping ...") unless the variable names a throwaway Postgres with the foundry `daybook` module installed; 27 test functions incl. helpers |
 | core, net, host, app, desktop, surface, web | `cargo test -p daybook-core` etc. | each has one `harness = false` test target: `unit`, `controller` (host), `screens` (app) |
 | end to end | `cargo run -p forge-bdd -- --service daybook` | starts gatehouse and daybook, features under `tests/forge-bdd/features/daybook` |
 

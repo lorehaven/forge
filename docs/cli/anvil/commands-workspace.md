@@ -211,5 +211,5 @@ Hotkeys (terminal raw mode; ignored when stdin is not a terminal):
 Status lines: `starting serve mode (watch + rebuild)`, `hotkeys: 'r' rebuild, 'R' auto-rebuild, 'q'/'Q'/'e'/'E' quit`, `detected file change. rebuilding...`, `run process exited with status <s>. waiting for file changes...`.
 
 ```bash
-anvil run -p hoist-service --serve --watch-interval-ms 500
+anvil run -p hoist --serve --watch-interval-ms 500
 ```

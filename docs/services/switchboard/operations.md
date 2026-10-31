@@ -33,4 +33,4 @@ Image `switchboard` (`.anvil/docker.toml`: `RUN_AS=999:999`, `RESOURCE_DIR=web`,
 
 ## Tests
 
-Unit tests under `service/tests/unit/` (one file per module: `routers_vllm_*_tests.rs` including a mocked Kubernetes engine, `routers_models_*_tests.rs`, `routers_ui_pages_tests.rs`, `client_tests.rs`), `core/tests/unit/{fit,model,draft}_tests.rs`, `web/tests/unit.rs`, `app/tests/screens.rs`. Run `cargo test -p switchboard-core -p switchboard-app -p switchboard-web -p switchboard-service`.
+Unit tests under `service/tests/unit/` (one file per module: `routers_vllm_*_tests.rs` including a mocked Kubernetes engine, `routers_models_*_tests.rs`, `routers_ui_pages_tests.rs`, `client_tests.rs`), `core/tests/unit/{fit,model,draft}_tests.rs`, `web/tests/unit.rs`, `app/tests/screens.rs`. Run `cargo test -p switchboard-core -p switchboard-app -p switchboard-web -p switchboard`.
