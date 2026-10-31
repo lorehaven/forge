@@ -73,7 +73,10 @@ fn lint_and_format_run_clippy_and_rustfmt() {
 #[quench_test::test]
 fn test_commands_choose_the_runner_and_scope() {
     let w = Workspace::new();
-    assert_eq!(calls_of(&w, &["test", "--all"]), ["test --no-fail-fast --workspace"]);
+    assert_eq!(
+        calls_of(&w, &["test", "--all"]),
+        ["test --no-fail-fast --workspace"]
+    );
     assert_eq!(
         calls_of(&w, &["test", "-p", "a", "some_test"]),
         ["test --no-fail-fast --package a some_test"]

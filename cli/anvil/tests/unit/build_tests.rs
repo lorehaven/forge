@@ -59,7 +59,14 @@ fn test_args_package_and_name_filter() {
 fn test_args_ignored_and_list_go_after_a_separator() {
     assert_eq!(
         test_args(true, None, None, true, true, false),
-        vec!["test", "--no-fail-fast", "--workspace", "--", "--ignored", "--list"]
+        vec![
+            "test",
+            "--no-fail-fast",
+            "--workspace",
+            "--",
+            "--ignored",
+            "--list"
+        ]
     );
 }
 
