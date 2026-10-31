@@ -73,22 +73,22 @@ fn lint_and_format_run_clippy_and_rustfmt() {
 #[quench_test::test]
 fn test_commands_choose_the_runner_and_scope() {
     let w = Workspace::new();
-    assert_eq!(calls_of(&w, &["test", "--all"]), ["test --workspace"]);
+    assert_eq!(calls_of(&w, &["test", "--all"]), ["test --no-fail-fast --workspace"]);
     assert_eq!(
         calls_of(&w, &["test", "-p", "a", "some_test"]),
-        ["test --package a some_test"]
+        ["test --no-fail-fast --package a some_test"]
     );
     assert_eq!(
         calls_of(&w, &["test", "--all", "--ignored"]),
-        ["test --workspace -- --ignored"]
+        ["test --no-fail-fast --workspace -- --ignored"]
     );
     assert_eq!(
         calls_of(&w, &["test", "--all", "--list"]),
-        ["test --workspace -- --list"]
+        ["test --no-fail-fast --workspace -- --list"]
     );
     assert_eq!(
         calls_of(&w, &["test", "--all", "--json"]),
-        ["+nightly test --workspace -- -Z unstable-options --format json"]
+        ["+nightly test --no-fail-fast --workspace -- -Z unstable-options --format json"]
     );
     assert_eq!(
         calls_of(&w, &["nextest", "--all"]),

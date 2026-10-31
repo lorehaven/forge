@@ -43,7 +43,7 @@ fn build_args_includes_all_features_and_release_flags() {
 fn test_args_plain_workspace_run() {
     assert_eq!(
         test_args(false, None, None, false, false, false),
-        vec!["test", "--workspace"]
+        vec!["test", "--no-fail-fast", "--workspace"]
     );
 }
 
@@ -51,7 +51,7 @@ fn test_args_plain_workspace_run() {
 fn test_args_package_and_name_filter() {
     assert_eq!(
         test_args(false, Some("anvil"), Some("my_test"), false, false, false),
-        vec!["test", "--package", "anvil", "my_test"]
+        vec!["test", "--no-fail-fast", "--package", "anvil", "my_test"]
     );
 }
 
@@ -59,7 +59,7 @@ fn test_args_package_and_name_filter() {
 fn test_args_ignored_and_list_go_after_a_separator() {
     assert_eq!(
         test_args(true, None, None, true, true, false),
-        vec!["test", "--workspace", "--", "--ignored", "--list"]
+        vec!["test", "--no-fail-fast", "--workspace", "--", "--ignored", "--list"]
     );
 }
 
@@ -76,6 +76,7 @@ fn test_args_json_runs_under_nightly_with_unstable_format_flags() {
         vec![
             "+nightly",
             "test",
+            "--no-fail-fast",
             "--workspace",
             "--",
             "-Z",
@@ -94,6 +95,7 @@ fn test_args_json_combines_with_ignored() {
         vec![
             "+nightly",
             "test",
+            "--no-fail-fast",
             "--workspace",
             "--",
             "--ignored",

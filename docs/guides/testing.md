@@ -171,7 +171,7 @@ The `coverage` job gives the integration tests a database so their code is count
 ```toml
 steps = [
   { run = "cargo run -q -p foundry -- apply --catalog services/foundry/service/migrations --database-url postgres://postgres:postgres@127.0.0.1:5432/postgres --install conveyor --install daybook --install gantry --install gatehouse --install sage --install switchboard --install warehouse --install workbench" },
-  { run = "cargo llvm-cov --workspace --no-report" },
+  { run = "cargo llvm-cov --workspace --no-fail-fast --no-report" },
   { run = "cargo llvm-cov report --lcov --output-path lcov.info" },
   { run = "cargo llvm-cov report" },
 ]

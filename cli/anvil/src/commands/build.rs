@@ -68,6 +68,9 @@ pub fn test_args(
         args.push("+nightly".to_string());
     }
     args.push("test".to_string());
+    // Run every test binary even when one fails: without it cargo stops at the first failing binary, so a run reports
+    // one broken crate at a time and the crates after it are never tried.
+    args.push("--no-fail-fast".to_string());
 
     if all || package.is_none() {
         args.push("--workspace".to_string());
