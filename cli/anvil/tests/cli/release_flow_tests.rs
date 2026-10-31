@@ -56,6 +56,27 @@ fn a_first_release_publishes_in_dependency_order_and_tags_what_it_shipped() {
 }
 
 #[quench_test::test]
+fn yes_releases_without_asking_and_without_any_input() {
+    let w = Workspace::new();
+    // Standard input is closed and nothing is asked: what a pipeline runs.
+    let out = w.run(&["release", "--all", "--yes"], "");
+    assert!(out.ok, "{}", out.text);
+    assert!(!out.text.contains("Proceed with release?"), "{}", out.text);
+    assert_eq!(w.tags(), ["a-v0.1.0", "b-v0.1.0"]);
+    let published = w
+        .cargo_calls()
+        .iter()
+        .filter(|c| c.starts_with("publish"))
+        .count();
+    assert_eq!(published, 2);
+    // And the same short flag.
+    w.change_crate_a();
+    let again = w.run(&["release", "--all", "-y"], "");
+    assert!(again.ok, "{}", again.text);
+    assert_eq!(w.tags(), ["a-v0.1.0", "a-v0.1.1", "b-v0.1.0", "b-v0.1.1"]);
+}
+
+#[quench_test::test]
 fn a_changed_package_is_bumped_committed_built_published_and_tagged() {
     let w = Workspace::new();
     assert!(w.run(&["release", "--all"], "yes\n").ok);
@@ -113,12 +134,10 @@ fn a_release_can_be_declined_or_limited_to_one_package() {
         "{}",
         declined.text
     );
+    // No answer at all (standard input closed, as in a pipeline) is not a "no": it fails, saying what to pass, so a
+    // pipeline never reports a release that did not happen.
     let eof = w.run(&["release", "--all"], "");
-    assert!(
-        eof.ok && eof.text.contains("Release cancelled."),
-        "{}",
-        eof.text
-    );
+    assert!(!eof.ok && eof.text.contains("pass --yes"), "{}", eof.text);
     assert!(w.tags().is_empty() && w.cargo_calls().is_empty());
 
     let one = w.run(&["release", "--package", "a"], "y\n");

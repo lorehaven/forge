@@ -73,7 +73,8 @@ fn main() -> Result<()> {
             all,
             package,
             dry_run,
-        } => commands::release::release(&config, package, all, dry_run)?,
+            yes,
+        } => commands::release::release(&config, package, all, dry_run, yes)?,
         Commands::Run {
             package,
             serve,
@@ -171,20 +172,32 @@ fn artifact(config: &config::Config, command: ArtifactCommands) -> Result<()> {
     match command {
         ArtifactCommands::Release {
             name,
+            all,
+            yes,
+            bump,
+            no_bump,
             target,
             dry_run,
             allow_dirty,
             skip_existing,
-        } => commands::artifact::release(
-            config,
-            &name,
-            &commands::artifact::Options {
+        } => {
+            let options = commands::artifact::Options {
                 target,
                 dry_run,
                 allow_dirty,
                 skip_existing,
-            },
-        ),
+                // One program: only when asked for. Every program: unless told not to.
+                bump: if all { !no_bump } else { bump },
+                ..commands::artifact::Options::default()
+            };
+            match name {
+                Some(name) => commands::artifact::release(config, &name, &options),
+                None if all => commands::artifact::release_all(config, &options, yes),
+                None => quench_core::bail!(
+                    "name a program (see `anvil artifact list`) or pass --all to release every one"
+                ),
+            }
+        }
         ArtifactCommands::List => commands::artifact::list(config, &mut std::io::stdout()),
     }
 }

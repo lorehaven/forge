@@ -173,6 +173,9 @@ pub enum Commands {
         /// Preview what would be released without changing files or publishing
         #[arg(long)]
         dry_run: bool,
+        /// Do not ask for confirmation (needed when nothing can answer, as in a pipeline)
+        #[arg(short = 'y', long)]
+        yes: bool,
     },
     /// Build and run a package/binary
     Run {
@@ -240,8 +243,23 @@ pub enum Commands {
 pub enum ArtifactCommands {
     /// Build every target of a program (or one with --target) and publish it to the warehouse
     Release {
-        /// The program, as named under [artifacts.programs] in the configuration
-        name: String,
+        /// The program, as named under [artifacts.programs] in the configuration (or --all)
+        #[arg(conflicts_with = "all")]
+        name: Option<String>,
+        /// Release every program of [artifacts.programs], each with all its targets, in name order
+        #[arg(long)]
+        all: bool,
+        /// Do not ask for confirmation (needed with --all when nothing can answer, as in a pipeline)
+        #[arg(short = 'y', long)]
+        yes: bool,
+        /// A program whose version is already in the warehouse for every build gets its patch version raised
+        /// (in `version_file`, committed) and is released as the new version; one that is not there yet is
+        /// released as it is. On by default with --all
+        #[arg(long, conflicts_with = "no_bump")]
+        bump: bool,
+        /// With --all: do not raise versions (a version the warehouse already has is an error)
+        #[arg(long)]
+        no_bump: bool,
         /// Only this target (`android`, `linux`, ...)
         #[arg(long)]
         target: Option<String>,

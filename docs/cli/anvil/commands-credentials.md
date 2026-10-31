@@ -90,7 +90,7 @@ Error: 4 error(s) in the configuration
 ## anvil artifact
 
 ```text
-anvil artifact release <NAME> [--target <T>] [--dry-run] [--allow-dirty] [--skip-existing]
+anvil artifact release (<NAME> | --all [-y | --yes]) [--target <T>] [--dry-run] [--allow-dirty] [--skip-existing] [--bump | --no-bump]
 anvil artifact list
 ```
 
@@ -108,7 +108,11 @@ hoist (dev.lorehaven.hoist)
 
 | Argument/flag | Meaning |
 |---|---|
-| `<NAME>` | Program key under `[artifacts.programs]`. Unknown: `no artifact <name> in the anvil configuration (known: a, b)` (verified). |
+| `<NAME>` | Program key under `[artifacts.programs]`. Unknown: `no artifact <name> in the anvil configuration (known: a, b)` (verified). Conflicts with `--all`; without either: `name a program (see anvil artifact list) or pass --all to release every one`. |
+| `--all` | Every program of `[artifacts.programs]`, each with all its targets, in name order, stopping at the first that fails (the error names it: `releasing <name>`). Prints `N program(s): a, b`, asks once for confirmation (`Proceed with the release? (yes/no)`; a dry run does not ask) and, unlike a single program, looks after versions (see below). No programs configured is an error. |
+| `-y`, `--yes` | With `--all`: do not ask. With no answer at all (standard input closed) the question is an error, not a "no": `pass --yes to release without asking`. |
+| `--bump` | Look after the version (below). On by default with `--all`. |
+| `--no-bump` | With `--all`: do not touch versions; a version the warehouse has is a `409` error as before. Conflicts with `--bump`. |
 | `--target <T>` | Only the target whose `name` (default: its `platform`) is `T`. `--target image` releases only the program's `image`. No match: `no target <T>: this program has x, y`. |
 | `--dry-run` | Build everything, check the files, send nothing; no token is requested. |
 | `--allow-dirty` | Release with uncommitted changes (the commit is printed as `<hash>-dirty`). |
@@ -127,3 +131,15 @@ Steps:
 Upload request: `PUT {warehouse_url}/api/v1/artifacts/{program}/{platform}/{version_code}?[format=..&][arch=..&]version_name=..&[label=..&]filename=..` (query values percent-encoded), `Authorization: Bearer <token>`, `Content-Type: application/vnd.android.package-archive` for APK/Android, else `application/octet-stream`. Responses: `201` prints `[label] published`; `409` is an error (`... is already published, and versions are immutable: raise the version (or --skip-existing to leave this one)`) unless `--skip-existing` (`already published, skipped`); `401`/`403` say `anvil login --scope warehouse:write`; anything else `publish failed: HTTP <status> <body>`; a connection failure `the warehouse could not be reached: <error>`.
 
 Builds run sequentially and a failure stops the release; a release that stopped half-way is finished by running it again with `--skip-existing`.
+
+### Looking after the version (`--bump`, and `--all`)
+
+Versions are immutable in the warehouse, so a release of a version it already has can only be a new version. With `--bump` (default under `--all`) anvil first asks the warehouse what it holds: `GET {warehouse_url}/api/v1/artifacts/{program}` with the same bearer token (the token is requested even for a dry run). Per program it compares the targets it would build, as `(platform, format, version_code)` (a target without `format` on Android counts as `apk`; yanked builds count, they still hold the version), with the list:
+
+| The warehouse holds | Then |
+|---|---|
+| none of the builds at this `version_code` | the version is released as it is |
+| all of them | the patch version is raised (`0.1.3` -> `0.1.4`) in `version_file` (its `[package]`, else its `[workspace.package]` version), the working tree must be clean first (else the usual `uncommitted changes` error, before anything is edited), `Cargo.lock` is refreshed (`cargo update --workspace --offline`), and the file and the lock are committed as `release: <name> <version>` when `dir` is in a git repository; then the builds run with the new version. **The commit is not pushed**: pushing is for whoever runs this (a pipeline does it once at the end). |
+| some of them (a release that stopped half way) | the version stays; the builds that are there are not built again (`[android] already in the warehouse, not built again`), the others are sent, and a `409` is skipped as with `--skip-existing` |
+
+A dry run with a raised version prints `<name> <from>: the warehouse has every build of it; a real run would release <to> (nothing is built or changed now)` and builds nothing for that program. If the warehouse cannot be asked (any status but `200`): `<name>: the warehouse could not say which versions it holds (HTTP <n>)...`; run without `--bump` to manage the version yourself. A version that is not `MAJOR.MINOR.PATCH` cannot be raised and is an error.

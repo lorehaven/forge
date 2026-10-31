@@ -73,7 +73,13 @@ pub struct ReleasePlanItem {
     pub needs_release: bool,
 }
 
-pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: bool) -> Result<()> {
+pub fn release(
+    config: &Config,
+    package: Option<String>,
+    all: bool,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
     let metadata = cargo_meta::cargo_metadata()?;
     let targets = resolve_release_targets(config, &metadata, package, all)?;
     let mut plan = build_release_plan(config, &metadata, &targets)?;
@@ -103,7 +109,7 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
     print_dry_run_plan_with_layers(&plan);
 
     // Ask for confirmation before proceeding
-    if !confirm_release()? {
+    if !confirm_release(yes)? {
         println!("Release cancelled.");
         return Ok(());
     }
@@ -732,14 +738,19 @@ pub fn set_manifest_version(path: &Path, version: &str) -> Result<()> {
 /// kept. `None` when there is no `[package]` table with a `version` key.
 #[must_use]
 pub fn with_package_version(manifest: &str, version: &str) -> Option<String> {
+    with_table_version(manifest, "[package]", version)
+}
+
+/// Like [`with_package_version`] for the `version` key of any one table (`[workspace.package]`, say).
+#[must_use]
+pub fn with_table_version(manifest: &str, table: &str, version: &str) -> Option<String> {
     let mut in_package = false;
     let mut out = String::with_capacity(manifest.len() + 8);
     let mut done = false;
     for line in manifest.split_inclusive('\n') {
         let trimmed = line.trim_start();
         if trimmed.starts_with('[') {
-            in_package =
-                trimmed.trim_end().split('#').next().map(str::trim_end) == Some("[package]");
+            in_package = trimmed.trim_end().split('#').next().map(str::trim_end) == Some(table);
         } else if in_package
             && !done
             && let Some(rest) = trimmed.strip_prefix("version")
@@ -1127,12 +1138,22 @@ pub fn print_dry_run_plan_with_layers(plan: &[ReleasePlanItem]) {
     }
 }
 
-fn confirm_release() -> Result<bool> {
+/// Asks whether to go on. With `yes` it does not ask. An answer can be piped in; but when there is no answer at all
+/// (standard input is closed, as in a pipeline that gives none) it must not count as "no" quietly: the release
+/// would be reported as done when it did not happen. It says what to pass instead.
+fn confirm_release(yes: bool) -> Result<bool> {
+    if yes {
+        return Ok(true);
+    }
     print!("Proceed with release? (yes/no): ");
     io::stdout().flush()?;
 
     let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
+    if io::stdin().read_line(&mut input)? == 0 {
+        quench_core::bail!(
+            "no answer to the confirmation (standard input is closed): pass --yes to release without asking"
+        );
+    }
 
     Ok(input.trim().eq_ignore_ascii_case("yes") || input.trim().eq_ignore_ascii_case("y"))
 }

@@ -52,6 +52,7 @@ credential-provider = ["cargo:token-from-stdout", "anvil", "registry-token"]
 ```bash
 anvil release --all --dry-run     # layers and what changed since each package's last tag
 anvil release --all               # prints the plan, asks "Proceed with release? (yes/no)"
+anvil release --all --yes         # the same without asking: what a pipeline runs
 ```
 
 Releases are idempotent per package: a package with no changes since its tag is "up to date" and skipped.
@@ -73,6 +74,8 @@ anvil artifact list
 anvil artifact release hoist --dry-run
 anvil artifact release hoist --target android
 anvil artifact release hoist --skip-existing   # re-run after a partial failure
+anvil artifact release hoist --bump            # raise the patch version first if the warehouse has this one
+anvil artifact release --all --yes             # every program, versions looked after, no question asked
 ```
 
 ## Check, build and publish the documentation

@@ -35,6 +35,10 @@ pub type Answer = (u16, String);
 
 /// What `anvil artifact release` was asked.
 #[derive(Debug, Clone, Default)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each is a flag of the command, with its own meaning"
+)]
 pub struct Options {
     /// A target by name (`android`, `linux`, ...); every one when empty.
     pub target: Option<String>,
@@ -44,6 +48,11 @@ pub struct Options {
     pub allow_dirty: bool,
     /// A version the warehouse already has is skipped, not an error (to finish a release that stopped half way).
     pub skip_existing: bool,
+    /// Manage the version: see [`decide`]. A program whose version the warehouse has for every build is released
+    /// as the next patch version; one it has for some builds is finished; one it does not have is released as it is.
+    pub bump: bool,
+    /// Builds the warehouse is known to hold already (set when finishing a release): they are not built again.
+    pub have: Published,
 }
 
 /// `0.1.3` as `1003`, `1.2.3` as `1002003`: the number a store wants for a release.
@@ -257,6 +266,10 @@ fn select<'a>(
 ///
 /// # Errors
 /// An unknown program or target, a dirty tree, a failed build, a missing file, a refusal from the warehouse.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one release is one sequence: check, build and send each target, then the image"
+)]
 pub fn release_with(
     config: &Config,
     root: &Path,
@@ -311,6 +324,14 @@ pub fn release_with(
     let mut token_value: Option<String> = None;
     for target in targets {
         let label = target_name(target);
+        if options
+            .have
+            .iter()
+            .any(|(p, f, c)| *p == target.platform && f == format_of(target) && *c == code)
+        {
+            writeln!(out, "[{label}] already in the warehouse, not built again")?;
+            continue;
+        }
         writeln!(out, "[{label}] building: {}", target.build.join(" "))?;
         run_build(&dir, target, &program.program, &version_name, code)?;
         let file = dir.join(expand(&target.file, &program.program, &version_name, code));
@@ -419,6 +440,335 @@ fn release_service_image(
     Ok(())
 }
 
+/// A build the warehouse holds: `(platform, format, version_code)`.
+pub type Published = Vec<(String, String, u32)>;
+
+/// What the warehouse says about a program's builds: the answer to `GET .../api/v1/artifacts/{program}`.
+///
+/// # Errors
+/// The text is not the list the warehouse sends.
+pub fn parse_published(text: &str) -> Result<Published> {
+    let value: Value = quench_serde::json::from_str(text)
+        .context("the warehouse's list of versions is not JSON")?;
+    let Value::Array(items) = value else {
+        bail!("the warehouse's list of versions is not a list");
+    };
+    Ok(items
+        .iter()
+        .filter_map(|item| {
+            Some((
+                item.get("platform")?.as_str()?.to_string(),
+                item.get("format")?.as_str()?.to_string(),
+                u32::try_from(item.get("version_code")?.as_i64()?).ok()?,
+            ))
+        })
+        .collect())
+}
+
+/// What the version of a program is to do before a release.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Version {
+    /// Not in the warehouse: release it as it is.
+    Keep,
+    /// Some builds are there and some are not (a release that stopped half way): send what is missing.
+    Finish,
+    /// Every build is there: raise the patch version.
+    Bump { from: String, to: String },
+}
+
+/// The format a target is published under: the one it says, else `apk` for Android.
+fn format_of(target: &ArtifactTarget) -> &str {
+    target
+        .format
+        .as_deref()
+        .unwrap_or(if target.platform == "android" {
+            "apk"
+        } else {
+            ""
+        })
+}
+
+/// Decides what to do with the version of `program` given what the warehouse holds. Versions are immutable there,
+/// so a version that is fully published can only be released as a new one.
+///
+/// # Errors
+/// The version is not `MAJOR.MINOR.PATCH` (and so cannot be raised).
+pub fn decide(
+    program: &ArtifactProgram,
+    version: &str,
+    published: &Published,
+    only: Option<&str>,
+) -> Result<Version> {
+    let code = version_code(version);
+    let targets = select(program, only).unwrap_or_default();
+    if targets.is_empty() {
+        return Ok(Version::Keep);
+    }
+    let there = targets
+        .iter()
+        .filter(|t| {
+            published
+                .iter()
+                .any(|(p, f, c)| *p == t.platform && f == format_of(t) && *c == code)
+        })
+        .count();
+    Ok(if there == 0 {
+        Version::Keep
+    } else if there < targets.len() {
+        Version::Finish
+    } else {
+        Version::Bump {
+            from: version.to_string(),
+            to: crate::commands::release::bump_patch(version)?,
+        }
+    })
+}
+
+/// Writes `version` into the `version_file` of a program (its `[package]`, else its `[workspace.package]`).
+///
+/// # Errors
+/// The file cannot be read or written, or has no version to replace.
+pub fn set_version(path: &Path, version: &str) -> Result<()> {
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let release = crate::commands::release::with_table_version;
+    let updated = release(&text, "[package]", version)
+        .or_else(|| release(&text, "[workspace.package]", version))
+        .with_context(|| format!("{} has no version to raise", path.display()))?;
+    std::fs::write(path, updated).with_context(|| format!("writing {}", path.display()))
+}
+
+/// Commits the raised version (and the `Cargo.lock` that follows it) in the repository `dir` is in. `Ok(false)`
+/// when `dir` is not in one.
+fn commit_version(dir: &Path, file: &Path, message: &str) -> Result<bool> {
+    let git = |args: &[&str]| -> Result<String> {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .context("running git")?;
+        if !out.status.success() {
+            bail!(
+                "git {} failed: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let Ok(top) = git(&["rev-parse", "--show-toplevel"]) else {
+        return Ok(false);
+    };
+    // The lock file follows the version once cargo has looked at the workspace again.
+    let _ = Command::new("cargo")
+        .args(["update", "--workspace", "--offline"])
+        .current_dir(dir)
+        .output();
+    let mut paths = vec![file.to_path_buf()];
+    let lock = PathBuf::from(top.trim()).join("Cargo.lock");
+    if lock.is_file()
+        && !git(&["status", "--porcelain", "--", &lock.to_string_lossy()])?
+            .trim()
+            .is_empty()
+    {
+        paths.push(lock);
+    }
+    let names: Vec<String> = paths
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    let mut add = vec!["add", "--"];
+    add.extend(names.iter().map(String::as_str));
+    git(&add)?;
+    let mut commit = vec!["commit", "-m", message, "--"];
+    commit.extend(names.iter().map(String::as_str));
+    git(&commit)?;
+    Ok(true)
+}
+
+/// Asks the warehouse which builds of a program it holds, over the real network.
+pub fn list_published(url: &str, token: &str) -> Result<Answer> {
+    let response = match quench_client::blocking::Client::new()
+        .get(url)
+        .bearer_auth(token)
+        .send()
+    {
+        Ok(response) => response,
+        Err(e) => bail!("the warehouse could not be reached: {e}"),
+    };
+    let status = response.status().as_u16();
+    Ok((status, response.text().unwrap_or_default()))
+}
+
+/// The address of a program's list of builds.
+#[must_use]
+pub fn list_url(warehouse: &str, program: &str) -> String {
+    format!(
+        "{}/api/v1/artifacts/{}",
+        warehouse.trim_end_matches('/'),
+        encode(program)
+    )
+}
+
+/// Releases one program with its version looked after: see [`Options::bump`]. The transport is the caller's.
+///
+/// # Errors
+/// What [`release_with`] says, and a warehouse that cannot say what it holds.
+#[allow(clippy::too_many_arguments)]
+pub fn release_managed(
+    config: &Config,
+    root: &Path,
+    name: &str,
+    options: &Options,
+    out: &mut dyn Write,
+    token: &dyn Fn() -> Result<String>,
+    put: &dyn Fn(&Upload) -> Result<Answer>,
+    list: &dyn Fn(&str, &str) -> Result<Answer>,
+) -> Result<()> {
+    if !options.bump {
+        return release_with(config, root, name, options, out, token, put);
+    }
+    let program = config
+        .artifacts
+        .programs
+        .get(name)
+        .with_context(|| format!("no artifact `{name}` in the anvil configuration"))?;
+    let warehouse = config
+        .artifacts
+        .warehouse_url
+        .as_deref()
+        .filter(|u| !u.is_empty())
+        .context("no warehouse: set `warehouse_url` under [artifacts] in .anvil.toml or .anvil/")?;
+    let dir = root.join(program.dir.as_deref().unwrap_or("."));
+    let version_file = dir.join(&program.version_file);
+    let version = read_version(&version_file)?;
+    let (status, body) = list(&list_url(warehouse, &program.program), &token()?)?;
+    if status != 200 {
+        bail!(
+            "{name}: the warehouse could not say which versions it holds (HTTP {status}); it is needed to look after the version, or leave that to yourself without --bump"
+        );
+    }
+    let published = parse_published(&body)?;
+    match decide(program, &version, &published, options.target.as_deref())? {
+        Version::Keep => release_with(config, root, name, options, out, token, put),
+        Version::Finish => {
+            writeln!(
+                out,
+                "{name} {version}: some builds are in the warehouse, the others are sent now (a release that stopped half way)"
+            )?;
+            let finish = Options {
+                skip_existing: true,
+                have: published,
+                ..options.clone()
+            };
+            release_with(config, root, name, &finish, out, token, put)
+        }
+        Version::Bump { from, to } => {
+            if options.dry_run {
+                writeln!(
+                    out,
+                    "{name} {from}: the warehouse has every build of it; a real run would release {to} (nothing is built or changed now)"
+                )?;
+                return Ok(());
+            }
+            // Do not raise a version on a tree that could not be released anyway.
+            commit(&dir, options.allow_dirty)?;
+            set_version(&version_file, &to)?;
+            let committed = commit_version(&dir, &version_file, &format!("release: {name} {to}"))?;
+            writeln!(
+                out,
+                "{name} {from}: the warehouse has every build of it; raised to {to}{}",
+                if committed { " and committed" } else { "" }
+            )?;
+            release_with(config, root, name, options, out, token, put)
+        }
+    }
+}
+
+/// Releases every program of the configuration, each looked after by [`release_managed`], in name order. Stops at
+/// the first that fails. `confirm` is asked once, unless `yes`.
+///
+/// # Errors
+/// No programs, a refused confirmation that cannot be asked, or the first program that fails.
+#[allow(clippy::too_many_arguments)]
+pub fn release_all_with(
+    config: &Config,
+    root: &Path,
+    options: &Options,
+    yes: bool,
+    out: &mut dyn Write,
+    confirm: &dyn Fn() -> Result<bool>,
+    token: &dyn Fn() -> Result<String>,
+    put: &dyn Fn(&Upload) -> Result<Answer>,
+    list: &dyn Fn(&str, &str) -> Result<Answer>,
+) -> Result<()> {
+    let names: Vec<&String> = config.artifacts.programs.keys().collect();
+    if names.is_empty() {
+        bail!("no artifacts: add [artifacts.programs.<name>] to .anvil.toml or a file in .anvil/");
+    }
+    writeln!(
+        out,
+        "{} program(s): {}{}",
+        names.len(),
+        names
+            .iter()
+            .map(|n| n.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
+        if options.dry_run { " (dry run)" } else { "" }
+    )?;
+    if !yes && !options.dry_run && !confirm()? {
+        writeln!(out, "Release cancelled.")?;
+        return Ok(());
+    }
+    for name in names {
+        writeln!(out, "\n== {name}")?;
+        release_managed(config, root, name, options, out, token, put, list)
+            .with_context(|| format!("releasing {name}"))?;
+    }
+    Ok(())
+}
+
+/// `anvil artifact release --all`.
+///
+/// # Errors
+/// See [`release_all_with`].
+pub fn release_all(config: &Config, options: &Options, yes: bool) -> Result<()> {
+    let root = std::env::current_dir().context("finding the working directory")?;
+    let token_root = root.clone();
+    release_all_with(
+        config,
+        &root,
+        options,
+        yes,
+        &mut std::io::stdout(),
+        &|| {
+            print!("Proceed with the release? (yes/no): ");
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            if std::io::stdin().read_line(&mut input)? == 0 {
+                bail!(
+                    "no answer to the confirmation (standard input is closed): pass --yes to release without asking"
+                );
+            }
+            Ok(matches!(
+                input.trim().to_ascii_lowercase().as_str(),
+                "yes" | "y"
+            ))
+        },
+        &move || token(&token_root),
+        &send,
+        &list_published,
+    )
+}
+
+/// The login anvil keeps, as the bare token the warehouse is sent.
+fn token(root: &Path) -> Result<String> {
+    let bearer = crate::commands::login::registry_token(root, |n| std::env::var(n).ok())?;
+    Ok(bearer.trim_start_matches("Bearer ").to_string())
+}
+
 /// Sends one file with a bearer token, over the real network.
 pub fn send(upload: &Upload) -> Result<Answer> {
     let sent = quench_client::blocking::Client::new()
@@ -442,19 +792,16 @@ pub fn send(upload: &Upload) -> Result<Answer> {
 pub fn release(config: &Config, name: &str, options: &Options) -> Result<()> {
     let root = std::env::current_dir().context("finding the working directory")?;
     let token_root = root.clone();
-    release_with(
+    release_managed(
         config,
         &root,
         name,
         options,
         &mut std::io::stdout(),
-        &move || {
-            // `Bearer <token>` as Cargo wants it; the warehouse is sent the bare token.
-            let bearer =
-                crate::commands::login::registry_token(&token_root, |n| std::env::var(n).ok())?;
-            Ok(bearer.trim_start_matches("Bearer ").to_string())
-        },
+        // `Bearer <token>` as Cargo wants it; the warehouse is sent the bare token.
+        &move || token(&token_root),
         &send,
+        &list_published,
     )
 }
 

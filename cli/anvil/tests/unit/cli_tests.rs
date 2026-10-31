@@ -270,6 +270,7 @@ fn parse_release_supports_package_flag() {
             all,
             package,
             dry_run,
+            ..
         } => {
             assert!(!all);
             assert_eq!(package.as_deref(), Some("ferrous"));
@@ -287,6 +288,7 @@ fn parse_release_supports_all_flag() {
             all,
             package,
             dry_run,
+            ..
         } => {
             assert!(all);
             assert!(package.is_none());
@@ -304,6 +306,7 @@ fn parse_release_supports_dry_run_flag() {
             all,
             package,
             dry_run,
+            ..
         } => {
             assert!(all);
             assert!(package.is_none());
@@ -311,4 +314,62 @@ fn parse_release_supports_dry_run_flag() {
         }
         _ => panic!("expected release command"),
     }
+}
+
+#[quench_test::test]
+fn parse_release_yes_skips_the_question() {
+    let cli = Cli::parse_from(["anvil", "release", "--all", "--yes"]);
+    match cli.command {
+        Commands::Release { all, yes, .. } => assert!(all && yes),
+        _ => panic!("expected release command"),
+    }
+    let cli = Cli::parse_from(["anvil", "release", "--all", "-y"]);
+    assert!(matches!(cli.command, Commands::Release { yes: true, .. }));
+    let cli = Cli::parse_from(["anvil", "release", "--all"]);
+    assert!(matches!(cli.command, Commands::Release { yes: false, .. }));
+}
+
+#[quench_test::test]
+fn parse_artifact_release_takes_a_program_or_all() {
+    use anvil::cli::ArtifactCommands;
+    let artifact = |args: &[&str]| {
+        let mut full = vec!["anvil", "artifact", "release"];
+        full.extend_from_slice(args);
+        match Cli::try_parse_from(full).map(|c| c.command) {
+            Ok(Commands::Artifact {
+                command:
+                    ArtifactCommands::Release {
+                        name,
+                        all,
+                        yes,
+                        bump,
+                        no_bump,
+                        ..
+                    },
+            }) => Some((name, all, yes, bump, no_bump)),
+            _ => None,
+        }
+    };
+    assert_eq!(
+        artifact(&["hoist"]),
+        Some((Some("hoist".to_string()), false, false, false, false))
+    );
+    assert_eq!(
+        artifact(&["--all", "--yes"]),
+        Some((None, true, true, false, false))
+    );
+    assert_eq!(
+        artifact(&["--all", "-y", "--no-bump"]),
+        Some((None, true, true, false, true))
+    );
+    assert_eq!(
+        artifact(&["hoist", "--bump"]),
+        Some((Some("hoist".to_string()), false, false, true, false))
+    );
+    assert_eq!(
+        artifact(&["hoist", "--all"]),
+        None,
+        "a program and --all together are refused"
+    );
+    assert_eq!(artifact(&["--bump", "--no-bump", "--all"]), None);
 }

@@ -30,7 +30,7 @@ anvil install --all
 ## anvil release
 
 ```text
-anvil release [--all | -p, --package <PACKAGE>] [--dry-run]
+anvil release [--all | -p, --package <PACKAGE>] [--dry-run] [-y | --yes]
 ```
 
 | Flag | Meaning |
@@ -38,6 +38,7 @@ anvil release [--all | -p, --package <PACKAGE>] [--dry-run]
 | `--all` | Release every package in `[release].packages` plus every package of every `[docker.modules.*]`. Conflicts with `--package`. (The `--help` text says `[publish].packages`; the configuration key is `[release].packages`.) |
 | `-p`, `--package <PACKAGE>` | One package. Must be a workspace member (`Package '<p>' is not a workspace member`). |
 | `--dry-run` | Print the plan and stop. |
+| `-y`, `--yes` | Do not ask `Proceed with release? (yes/no)`. For a pipeline: the answer can also be piped in (`yes`/`y`), but **with no answer at all** (standard input closed) the release fails with `no answer to the confirmation (standard input is closed): pass --yes to release without asking`, so a pipeline never reports a release that did not happen. |
 
 Without either flag the package whose directory is the current directory is used, or the only workspace package; otherwise `Could not determine release target. Use --package <name> or --all`. With `--all` and nothing configured: `No release packages configured. Set [release].packages and/or [docker.modules.*].packages in .anvil.toml or .anvil/`; a configured name that is not a member: `Configured release package '<p>' is not a workspace member`.
 

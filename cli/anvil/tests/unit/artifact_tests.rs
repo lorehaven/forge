@@ -2,7 +2,8 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use anvil::commands::artifact::{
-    Options, Upload, expand, read_version, release_with, upload_url, version_code,
+    Options, Upload, Version, decide, expand, list_url, parse_published, read_version,
+    release_all_with, release_managed, release_with, set_version, upload_url, version_code,
 };
 use anvil::config::Config;
 
@@ -447,4 +448,485 @@ fn a_service_image_is_released_with_the_same_version_or_alone() {
         !out.contains("[image]"),
         "a named target leaves the image alone: {out}"
     );
+}
+
+// ---- version management and --all
+
+const BOTH: &str = r#"[{"program":"dev.lorehaven.hoist","platform":"android","format":"apk","version_code":1003,"yanked":false},
+{"program":"dev.lorehaven.hoist","platform":"linux","format":"deb","version_code":1003,"yanked":true},
+{"program":"dev.lorehaven.hoist","platform":"android","format":"apk","version_code":1002}]"#;
+const ANDROID_ONLY: &str = r#"[{"platform":"android","format":"apk","version_code":1003}]"#;
+
+/// A git repository with the project committed, so a raised version can be committed too.
+fn repository(label: &str, version: &str) -> (PathBuf, Config) {
+    let (dir, config) = project(label, version);
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.name", "anvil test"]);
+    git(&["config", "user.email", "anvil@test.invalid"]);
+    git(&["config", "commit.gpgsign", "false"]);
+    std::fs::write(dir.join(".gitignore"), "dist/\n").unwrap();
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "init"]);
+    (dir, config)
+}
+
+fn git_out(dir: &Path, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// Runs `release_managed` against a stand-in warehouse holding `listed`; returns the result, the output, what was sent
+/// and how many times the warehouse was asked what it holds.
+fn managed(
+    config: &Config,
+    root: &Path,
+    options: &Options,
+    listed: (u16, &str),
+) -> (Result<(), String>, String, Vec<Upload>, usize) {
+    let sent: Sent = RefCell::default();
+    let asked = RefCell::new(0_usize);
+    let mut out = Vec::new();
+    let result = release_managed(
+        config,
+        root,
+        "hoist",
+        options,
+        &mut out,
+        &|| Ok("short-lived".to_string()),
+        &|upload| {
+            sent.borrow_mut().push(upload.clone());
+            Ok((201, String::new()))
+        },
+        &|url, token| {
+            assert_eq!(
+                url,
+                "https://warehouse.example/warehouse/api/v1/artifacts/dev.lorehaven.hoist"
+            );
+            assert_eq!(token, "short-lived");
+            *asked.borrow_mut() += 1;
+            Ok((listed.0, listed.1.to_string()))
+        },
+    )
+    .map_err(|e| e.to_string());
+    (
+        result,
+        String::from_utf8(out).unwrap(),
+        sent.into_inner(),
+        asked.into_inner(),
+    )
+}
+
+fn bump() -> Options {
+    Options {
+        bump: true,
+        ..Options::default()
+    }
+}
+
+#[quench_test::test]
+fn the_warehouses_list_is_read_and_a_wrong_answer_is_said() {
+    let published = parse_published(BOTH).unwrap();
+    assert_eq!(published.len(), 3);
+    assert!(
+        published.contains(&("linux".to_string(), "deb".to_string(), 1003)),
+        "yanked ones count: they still hold the version"
+    );
+    assert!(parse_published("[]").unwrap().is_empty());
+    assert!(parse_published("not json").is_err());
+    assert!(parse_published("{}").is_err());
+    assert_eq!(
+        list_url("https://w.example/warehouse/", "dev.lorehaven.hoist"),
+        "https://w.example/warehouse/api/v1/artifacts/dev.lorehaven.hoist"
+    );
+}
+
+#[quench_test::test]
+fn the_version_is_kept_finished_or_raised_by_what_the_warehouse_holds() {
+    let (_, config) = project("decide", "0.1.3");
+    let program = &config.artifacts.programs["hoist"];
+    let held = |list: &[(&str, &str, u32)]| -> Vec<(String, String, u32)> {
+        list.iter()
+            .map(|(p, f, c)| ((*p).into(), (*f).into(), *c))
+            .collect()
+    };
+    assert_eq!(
+        decide(program, "0.1.3", &held(&[]), None).unwrap(),
+        Version::Keep
+    );
+    assert_eq!(
+        decide(
+            program,
+            "0.1.3",
+            &held(&[("android", "apk", 1002), ("linux", "deb", 1002)]),
+            None
+        )
+        .unwrap(),
+        Version::Keep,
+        "older versions say nothing about this one"
+    );
+    assert_eq!(
+        decide(program, "0.1.3", &held(&[("android", "apk", 1003)]), None).unwrap(),
+        Version::Finish
+    );
+    let bumped = |from: &str, to: &str| Version::Bump {
+        from: from.into(),
+        to: to.into(),
+    };
+    assert_eq!(
+        decide(
+            program,
+            "0.1.3",
+            &held(&[("android", "apk", 1003), ("linux", "deb", 1003)]),
+            None
+        )
+        .unwrap(),
+        bumped("0.1.3", "0.1.4")
+    );
+    assert_eq!(
+        decide(
+            program,
+            "0.1.9",
+            &held(&[("android", "apk", 1009), ("linux", "deb", 1009)]),
+            None
+        )
+        .unwrap(),
+        bumped("0.1.9", "0.1.10")
+    );
+    // A format that is not the one the target ships does not count.
+    assert_eq!(
+        decide(
+            program,
+            "0.1.3",
+            &held(&[("android", "apk", 1003), ("linux", "rpm", 1003)]),
+            None
+        )
+        .unwrap(),
+        Version::Finish
+    );
+    // Asking for one target: only that one decides.
+    assert_eq!(
+        decide(
+            program,
+            "0.1.3",
+            &held(&[("android", "apk", 1003)]),
+            Some("android")
+        )
+        .unwrap(),
+        bumped("0.1.3", "0.1.4")
+    );
+    assert!(
+        decide(
+            program,
+            "nightly",
+            &held(&[("android", "apk", 0), ("linux", "deb", 0)]),
+            None
+        )
+        .is_err()
+    );
+}
+
+#[quench_test::test]
+fn a_version_is_raised_in_the_file_it_lives_in() {
+    let dir = temp("set-version");
+    let file = dir.join("Cargo.toml");
+    std::fs::write(
+        &file,
+        "[package]\nname = \"x\"\nversion = \"0.1.3\" # the app\n[dependencies]\nversion = \"9\"\n",
+    )
+    .unwrap();
+    set_version(&file, "0.1.4").unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "[package]\nname = \"x\"\nversion = \"0.1.4\" # the app\n[dependencies]\nversion = \"9\"\n"
+    );
+    std::fs::write(&file, "[workspace.package]\nversion = \"1.2.3\"\n").unwrap();
+    set_version(&file, "1.2.4").unwrap();
+    assert_eq!(read_version(&file).unwrap(), "1.2.4");
+    std::fs::write(&file, "[package]\nname = \"x\"\n").unwrap();
+    assert!(set_version(&file, "0.0.1").is_err());
+}
+
+#[quench_test::test]
+fn without_bump_the_warehouse_is_not_asked_and_nothing_changes() {
+    let (dir, config) = project("no-bump", "0.1.3");
+    let (result, out, sent, asked) = managed(&config, &dir, &Options::default(), (200, BOTH));
+    result.unwrap();
+    assert_eq!((sent.len(), asked), (2, 0), "{out}");
+}
+
+#[quench_test::test]
+fn a_version_the_warehouse_does_not_have_is_released_as_it_is() {
+    let (dir, config) = repository("keep", "0.1.3");
+    let (result, out, sent, asked) = managed(&config, &dir, &bump(), (200, "[]"));
+    result.unwrap();
+    assert_eq!((sent.len(), asked), (2, 1), "{out}");
+    assert!(sent[0].url.contains("/android/1003?"), "{}", sent[0].url);
+    assert_eq!(read_version(&dir.join("Cargo.toml")).unwrap(), "0.1.3");
+    assert_eq!(
+        git_out(&dir, &["log", "--format=%s"]),
+        "init",
+        "no commit for a version that was not raised"
+    );
+}
+
+#[quench_test::test]
+fn a_version_the_warehouse_has_is_raised_committed_and_released_as_the_new_one() {
+    let (dir, config) = repository("raise", "0.1.3");
+    let (result, out, sent, asked) = managed(&config, &dir, &bump(), (200, BOTH));
+    result.unwrap();
+    assert_eq!(asked, 1);
+    assert_eq!(sent.len(), 2, "{out}");
+    assert!(
+        sent[0].url.contains("/android/1004?") && sent[0].url.contains("version_name=0.1.4"),
+        "{}",
+        sent[0].url
+    );
+    assert!(sent[1].url.contains("/linux/1004?"), "{}", sent[1].url);
+    assert!(out.contains("raised to 0.1.4 and committed"), "{out}");
+    assert_eq!(read_version(&dir.join("Cargo.toml")).unwrap(), "0.1.4");
+    assert_eq!(
+        git_out(&dir, &["log", "-1", "--format=%s"]),
+        "release: hoist 0.1.4"
+    );
+    assert_eq!(
+        git_out(&dir, &["status", "--porcelain"]),
+        "",
+        "the tree is clean: the build can be traced to the commit"
+    );
+    // The build saw the new version, not the old one.
+    assert_eq!(
+        std::fs::read_to_string(dir.join("dist/hoist-0.1.4-1004.apk")).unwrap(),
+        "code=1004"
+    );
+}
+
+#[quench_test::test]
+fn a_dry_run_says_what_a_real_run_would_raise_and_changes_nothing() {
+    let (dir, config) = repository("raise-dry", "0.1.3");
+    let options = Options {
+        dry_run: true,
+        ..bump()
+    };
+    let (result, out, sent, _) = managed(&config, &dir, &options, (200, BOTH));
+    result.unwrap();
+    assert!(sent.is_empty());
+    assert!(out.contains("would release 0.1.4"), "{out}");
+    assert_eq!(read_version(&dir.join("Cargo.toml")).unwrap(), "0.1.3");
+    assert!(!dir.join("dist").exists(), "nothing was built");
+    assert_eq!(git_out(&dir, &["status", "--porcelain"]), "");
+}
+
+#[quench_test::test]
+fn a_release_that_stopped_half_way_sends_only_what_is_missing() {
+    let (dir, config) = repository("finish", "0.1.3");
+    let (result, out, sent, _) = managed(&config, &dir, &bump(), (200, ANDROID_ONLY));
+    result.unwrap();
+    assert_eq!(sent.len(), 1, "{out}");
+    assert!(sent[0].url.contains("/linux/1003?"), "{}", sent[0].url);
+    assert!(
+        out.contains("the others are sent now")
+            && out.contains("[android] already in the warehouse, not built again"),
+        "{out}"
+    );
+    assert!(
+        !dir.join("dist/hoist-0.1.3-1003.apk").exists(),
+        "the APK that is there was not built again"
+    );
+    assert_eq!(read_version(&dir.join("Cargo.toml")).unwrap(), "0.1.3");
+}
+
+#[quench_test::test]
+fn a_dirty_tree_stops_before_the_version_is_touched() {
+    let (dir, config) = repository("raise-dirty", "0.1.3");
+    std::fs::write(dir.join("notes.txt"), "uncommitted").unwrap();
+    let (result, _, sent, _) = managed(&config, &dir, &bump(), (200, BOTH));
+    let why = result.unwrap_err();
+    assert!(
+        why.contains("uncommitted changes") && sent.is_empty(),
+        "{why}"
+    );
+    assert_eq!(read_version(&dir.join("Cargo.toml")).unwrap(), "0.1.3");
+}
+
+#[quench_test::test]
+fn a_warehouse_that_cannot_say_what_it_holds_stops_the_release() {
+    let (dir, config) = repository("list-fails", "0.1.3");
+    let (result, _, sent, _) = managed(&config, &dir, &bump(), (403, "no"));
+    let why = result.unwrap_err();
+    assert!(
+        why.contains("could not say which versions") && why.contains("403") && sent.is_empty(),
+        "{why}"
+    );
+}
+
+#[quench_test::test]
+fn a_version_is_raised_even_where_there_is_no_repository() {
+    let (dir, config) = project("raise-no-git", "0.1.3");
+    let (result, out, sent, _) = managed(&config, &dir, &bump(), (200, BOTH));
+    result.unwrap();
+    assert_eq!(sent.len(), 2, "{out}");
+    assert!(
+        out.contains("raised to 0.1.4") && !out.contains("committed"),
+        "{out}"
+    );
+    assert_eq!(read_version(&dir.join("Cargo.toml")).unwrap(), "0.1.4");
+}
+
+fn two_programs(label: &str) -> (PathBuf, Config) {
+    let (dir, mut config) = repository(label, "0.1.3");
+    let second: Config = quench_serde::toml::from_str(
+        r#"
+[artifacts]
+[artifacts.programs.daybook]
+program = "dev.lorehaven.daybook"
+version_file = "Cargo.toml"
+
+[[artifacts.programs.daybook.targets]]
+platform = "android"
+format = "apk"
+build = ["sh", "-c", "mkdir -p dist && printf d > dist/daybook-${version_name}.apk"]
+file = "dist/daybook-${version_name}.apk"
+"#,
+    )
+    .unwrap();
+    config.artifacts.programs.extend(second.artifacts.programs);
+    (dir, config)
+}
+
+fn all(
+    config: &Config,
+    root: &Path,
+    options: &Options,
+    yes: bool,
+    confirm: bool,
+    fail_on: Option<&str>,
+) -> (Result<(), String>, String, Vec<Upload>, usize) {
+    let sent: Sent = RefCell::default();
+    let asked = RefCell::new(0_usize);
+    let mut out = Vec::new();
+    let result = release_all_with(
+        config,
+        root,
+        options,
+        yes,
+        &mut out,
+        &|| {
+            *asked.borrow_mut() += 1;
+            Ok(confirm)
+        },
+        &|| Ok("short-lived".to_string()),
+        &|upload| {
+            sent.borrow_mut().push(upload.clone());
+            if fail_on.is_some_and(|f| upload.url.contains(f)) {
+                return Ok((500, "boom".to_string()));
+            }
+            Ok((201, String::new()))
+        },
+        &|_, _| Ok((200, "[]".to_string())),
+    )
+    .map_err(|e| format!("{e:#}"));
+    (
+        result,
+        String::from_utf8(out).unwrap(),
+        sent.into_inner(),
+        asked.into_inner(),
+    )
+}
+
+#[quench_test::test]
+fn every_program_is_released_in_name_order_and_asked_about_once() {
+    let (dir, config) = two_programs("all");
+    let (result, out, sent, asked) = all(&config, &dir, &bump(), false, true, None);
+    result.unwrap();
+    assert_eq!(asked, 1, "one question for the whole release");
+    assert_eq!(sent.len(), 3, "{out}");
+    let programs: Vec<&str> = sent
+        .iter()
+        .map(|u| {
+            u.url
+                .split("/artifacts/")
+                .nth(1)
+                .unwrap()
+                .split('/')
+                .next()
+                .unwrap()
+        })
+        .collect();
+    assert_eq!(
+        programs,
+        [
+            "dev.lorehaven.daybook",
+            "dev.lorehaven.hoist",
+            "dev.lorehaven.hoist"
+        ],
+        "daybook before hoist"
+    );
+    assert!(out.contains("2 program(s): daybook, hoist"), "{out}");
+}
+
+#[quench_test::test]
+fn without_yes_a_no_releases_nothing_and_with_yes_nobody_is_asked() {
+    let (dir, config) = two_programs("all-confirm");
+    let (result, out, sent, asked) = all(&config, &dir, &bump(), false, false, None);
+    result.unwrap();
+    assert!(
+        sent.is_empty() && asked == 1 && out.contains("Release cancelled."),
+        "{out}"
+    );
+    let (result, _, sent, asked) = all(&config, &dir, &bump(), true, false, None);
+    result.unwrap();
+    assert_eq!((sent.len(), asked), (3, 0));
+}
+
+#[quench_test::test]
+fn the_first_program_that_fails_stops_the_rest_and_is_named() {
+    let (dir, config) = two_programs("all-fails");
+    let (result, _, sent, _) = all(&config, &dir, &bump(), true, true, Some("daybook"));
+    let why = result.unwrap_err();
+    assert!(
+        why.contains("releasing daybook") && why.contains("HTTP 500"),
+        "{why}"
+    );
+    assert_eq!(sent.len(), 1, "hoist was not started");
+}
+
+#[quench_test::test]
+fn a_dry_run_of_all_asks_nothing_and_sends_nothing() {
+    let (dir, config) = two_programs("all-dry");
+    let options = Options {
+        dry_run: true,
+        ..bump()
+    };
+    let (result, out, sent, asked) = all(&config, &dir, &options, false, false, None);
+    result.unwrap();
+    assert!(
+        sent.is_empty() && asked == 0 && out.contains("(dry run)"),
+        "{out}"
+    );
+}
+
+#[quench_test::test]
+fn no_programs_is_an_error_not_a_quiet_success() {
+    let (dir, mut config) = project("all-none", "0.1.3");
+    config.artifacts.programs.clear();
+    let (result, ..) = all(&config, &dir, &bump(), true, true, None);
+    assert!(result.unwrap_err().contains("no artifacts"));
 }
