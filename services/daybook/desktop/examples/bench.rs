@@ -237,6 +237,66 @@ fn run(label: &str, css: &str, tasks: usize) {
             ms(t.elapsed())
         })
         .fold(f64::MAX, f64::min);
+    // Typing in the title: each letter, then the frame that shows it.
+    let title = find(&r, r.root(), "task-title").expect("the title field");
+    let (x, y) = locate(&r, title, width, height).expect("title on screen");
+    {
+        let t = std::time::Instant::now();
+        r.render(&mut canvas);
+        println!("      before click: {:.1} ms; title at {x},{y}; focused {:?}", ms(t.elapsed()), r.focused());
+    }
+    if std::env::var("BENCH_CLICK").is_ok() {
+        r.pointer_down(x, y);
+        r.pointer_up(x, y);
+        r.tick();
+    }
+    println!("      focus is {:?}, tag {:?} id {:?}", r.focused(), r.focused().and_then(|n| r.tag(n)), r.focused().and_then(|n| r.attr(n, "id")));
+    let probe = |label: &str, r: &NativeRenderer, canvas: &mut Canvas<Vec<u8>>| {
+        let t = std::time::Instant::now();
+        r.render(canvas);
+        println!("      {label}: {:.1} ms", ms(t.elapsed()));
+    };
+    probe("focused, empty, animations pending", &r, &mut canvas);
+    r.advance_animations(std::time::Duration::from_millis(400));
+    r.tick();
+    probe("focused, empty, animations done", &r, &mut canvas);
+    probe("again", &r, &mut canvas);
+    println!("      focused now {:?}, text_field_focused {}", r.focused(), r.text_field_focused());
+    if std::env::var("BENCH_DUMP").is_ok() {
+        fn dump(b: &quench_layout::LayoutBox, depth: usize, names: &std::collections::HashMap<usize, (Option<String>, Option<String>)>) {
+            let area = b.width * b.height;
+            if std::env::var("BENCH_ALL").is_ok() || area > 100_000.0 || !b.style.shadows.is_empty() {
+                println!("      {:depth$}{:?} {:?} {}x{} at {},{} shadows {} opacity {} border {:?} z {:?} pos {:?}", "", names.get(&b.key).map(|n| &n.0), names.get(&b.key).map(|n| &n.1), b.width, b.height, b.x, b.y, b.style.shadows.len(), b.style.opacity, b.border, b.style.z_index, b.style.position);
+            }
+            for c in &b.children { dump(c, depth + 1, names); }
+        }
+        let mut all = Vec::new();
+        descendants(&r, r.root(), &mut all);
+        let names: std::collections::HashMap<usize, (Option<String>, Option<String>)> = all
+            .iter()
+            .filter_map(|n| format!("{n:?}").trim_start_matches("NodeId(").trim_end_matches(')').parse().ok().map(|k: usize| (k, (r.tag(*n), r.attr(*n, "class")))))
+            .collect();
+        dump(&r.layout(), 0, &names);
+    }
+    if std::env::var("BENCH_SPIN").is_ok() {
+        for _ in 0..8 {
+            r.render(&mut canvas);
+        }
+    }
+    let mut typing = Vec::new();
+    for c in "Pay the rent tomorrow at 5pm".chars() {
+        let t = std::time::Instant::now();
+        r.text(&c.to_string());
+        let a = ms(t.elapsed());
+        r.tick();
+        let b = ms(t.elapsed()) - a;
+        if tasks == 7 { let l = std::time::Instant::now(); let _ = r.layout(); println!("      layout after key {:.1}", ms(l.elapsed())); }
+        r.render(&mut canvas);
+        typing.push(ms(t.elapsed()));
+        if tasks == 7 { println!("      text {a:.1} tick {b:.1} render {:.1}", ms(t.elapsed()) - a - b); }
+    }
+    let typing_avg = typing.iter().sum::<f64>() / typing.len() as f64;
+    println!("   (typing: {typing_avg:.1} ms per letter, worst {:.1})", typing.iter().cloned().fold(0.0, f64::max));
     println!(
         "{label:>14} {tasks:>4} tasks: first data {:6.1} ms | frame {frame:6.1} ms | change: update {:6.1} ms + frame {:6.1} ms | dialog frame {dialog:6.1} ms",
         ms(first),
@@ -249,7 +309,7 @@ fn main() {
     let custom = std::env::args()
         .nth(1)
         .map(|p| std::fs::read_to_string(p).unwrap());
-    for tasks in [7, 30, 60] {
+    for tasks in std::env::var("BENCH_TASKS").ok().and_then(|v| v.parse().ok()).map_or(vec![7, 30, 60], |n| vec![n]) {
         run("style.css", daybook_app::STYLE, tasks);
         if let Some(css) = &custom {
             run("custom", css, tasks);

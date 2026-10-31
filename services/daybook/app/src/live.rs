@@ -348,14 +348,18 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         })
     };
     let shell_class = {
-        let signed = signed_in.clone();
+        let (signed, covered) = (signed_in.clone(), form_open.clone());
         move || {
-            if signed.get() {
-                "dbk-shell"
-            } else {
-                "dbk-shell dbk-signed-out"
+            let mut class = String::from("dbk-shell");
+            if !signed.get() {
+                class.push_str(" dbk-signed-out");
             }
-            .to_string()
+            // The task form fills a phone's screen: the page under it is not drawn or laid out while it is open, so a
+            // keystroke does not pay for the list behind the field.
+            if covered.get() {
+                class.push_str(" dbk-covered");
+            }
+            class
         }
     };
     let side_when = signed_in.clone();
