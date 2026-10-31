@@ -9,7 +9,8 @@
 # By design: /health*, swagger-ui and the root redirect on every service, gatehouse's login/registration/
 # password-reset pages and /.well-known/jwks.json, and each UI's /ui/status.
 # The browser client's files, /ui/assets/*: the page needs them before anyone has signed in and they carry no
-# data. Gatehouse's /ui/unsubscribe: the link in a notification mail, which a person opens without a session.
+# data. Daybook also serves its start page, /ui, without a session: the client signs in at gatehouse itself.
+# Gatehouse's /ui/unsubscribe: the link in a notification mail, which a person opens without a session.
 conveyor GET /
 conveyor GET /health
 conveyor GET /health/live
@@ -28,6 +29,7 @@ daybook GET /health/live
 daybook GET /health/ready
 daybook GET /swagger-ui
 daybook GET /swagger-ui/
+daybook GET /ui
 daybook GET /ui/assets/app.css
 daybook GET /ui/assets/app.wasm
 daybook GET /ui/assets/favicon.png
