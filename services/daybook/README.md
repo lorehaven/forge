@@ -1,8 +1,15 @@
 # Daybook
+Tasks, lists, labels and repeats, with reminders, on the phone, the desktop and in the browser.
 
-Tasks, lists, labels and repeats, with reminders. One set of screens for the phone (Android), the desktop (Linux) and the
-browser; the service that holds the tasks is in `service/`.
+## What it is
+Daybook is one set of screens for the phone (Android), the desktop (Linux) and the browser; the service that holds the tasks is in `service/`. The Flutter app it replaces is `mobile-apps/daybook`.
 
+## Use cases
+- Keep an inbox and custom lists, with due dates, labels and repeats.
+- Get reminders on Android (with a home-screen widget) and on Linux.
+- Use the same tasks from the browser at `/daybook/ui`.
+
+## Layout
 ```text
 service/   daybook-service: the API (tasks, lists, labels, repeats) at /daybook/api/v1, and the browser client at /daybook/ui
 core/      the logic with no I/O: tasks, due dates and their colours, the order, reminders, the task form's rules, the calendar,
@@ -16,10 +23,12 @@ android/   the Gradle project: reminders (notifications plugin), the home-screen
 web/       the browser build (wasm) over `fetch`; the service serves it from WEB_DIR
 ```
 
+## Build
 Build the browser module with `cargo build --target wasm32-unknown-unknown --profile wasm -p daybook-web` and put
 `target/wasm32-unknown-unknown/wasm/daybook_web.wasm` in the service's `WEB_DIR` (default `web`) as `app.wasm`.
 `cargo run -p daybook-desktop --example shots -- <dir>` draws the screens to PNG files with no window.
 
-Plan and checklist: `quench/docs/migration/daybook.md`. The Flutter app this replaces is `mobile-apps/daybook`.
+Plan and checklist: `quench/docs/migration/daybook.md`.
 
-The service's own documentation is `docs/services/daybook/index.md`.
+## Documentation
+Full documentation: [services/daybook](../../docs/services/daybook/index.md)

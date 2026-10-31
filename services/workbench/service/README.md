@@ -1,5 +1,12 @@
 # Workbench Service
+The estate's task management service.
 
-Forge's task management service — projects, issues, comments and labels, Jira/YouTrack-style.
+## What it is
+`workbench-service` keeps projects, boards and issues, with an API and the browser client that draws them.
 
-See [docs/services/workbench](../../../docs/services/workbench/index.md) for full documentation.
+## Use cases
+- Track work on a project board.
+- Link issues to the roadmap.
+
+## Documentation
+Full documentation: [services/workbench](../../../docs/services/workbench/index.md)

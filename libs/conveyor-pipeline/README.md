@@ -1,5 +1,16 @@
-# Conveyor Pipeline
+# conveyor-pipeline
+The Conveyor pipeline language: parsing, conditions and run planning.
 
-Parsing and planning engine for the `.conveyor.toml` pipeline language: turns a pipeline file plus a description of a run into an ordered, filtered plan of stages and jobs. Touches no network, database or filesystem — shared by `conveyor-service` and `conveyor-cli`'s `conveyor validate`.
+## What it is
+`conveyor-pipeline` parses the `.conveyor.toml` a commit carries, validates it, and for a described run (event, ref, commit) says which stages and jobs execute. It touches no network, database or filesystem, and is shared by `conveyor-service` and `conveyor-cli`.
 
-See [docs/libs/conveyor-pipeline](../../docs/libs/conveyor-pipeline/index.md) for full documentation.
+## Use cases
+- Validate a pipeline file offline.
+- Plan a run: which stages and jobs a push, tag or schedule triggers.
+- Evaluate job conditions.
+
+## Features
+- None.
+
+## Documentation
+Full documentation: [libs/conveyor-pipeline](../../docs/libs/conveyor-pipeline/index.md)

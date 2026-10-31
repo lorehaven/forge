@@ -1,5 +1,13 @@
 # Warehouse Service
+The estate's storage service.
 
-Forge's storage service — a Cargo registry, a Docker Registry HTTP API v2, and plain named-directory file storage, mounted side by side behind one Actix Web app.
+## What it is
+`warehouse-service` is the Docker and Cargo registries, the `.rivet` package registry, file storages and application artifacts in one service. `/v2` and `/token` sit at the server root (registry protocol); everything else is under `BASE_PATH`.
 
-See [docs/services/warehouse](../../../docs/services/warehouse/index.md) for full documentation.
+## Use cases
+- Push and pull container images and crates.
+- Store and browse files.
+- Publish `.rivet` packages and app artifacts.
+
+## Documentation
+Full documentation: [services/warehouse](../../../docs/services/warehouse/index.md)

@@ -1,5 +1,13 @@
-# Rivet Package
+# rivet-package
+The `.rivet` package format.
 
-The `.rivet` package format: manifest parsing and validation, deterministic `tar.zst` packing, and safe inspection/unpacking. Touches no network or database — shared by `warehouse-service` (which validates publishes) and `riveter` (which builds and installs packages).
+## What it is
+`rivet-package` handles the manifest, deterministic `tar.zst` packing and safe inspection and unpacking of `.rivet` packages: a whole overlay, versioned and checksummed. It touches no network or database, and is shared by `warehouse-service` (which validates publishes) and `riveter` (which builds and installs packages).
 
-See [docs/libs/rivet-package](../../docs/libs/rivet-package/index.md) for full documentation.
+## Use cases
+- Pack an overlay into a reproducible archive.
+- Validate a manifest before publishing.
+- Unpack a package without trusting its paths.
+
+## Documentation
+Full documentation: [libs/rivet-package](../../docs/libs/rivet-package/index.md)

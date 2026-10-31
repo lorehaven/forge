@@ -1,5 +1,12 @@
 # Foundry Service
+Database initialisation from the Forge migration catalog.
 
-Forge's database initialization job — a catalog of independently versioned per-service migration modules, resolved and applied in dependency order by one command. It is a run-to-completion CLI, not a long-running server.
+## What it is
+`foundry-service` runs as a Kubernetes Job. It creates and migrates the databases of the other services from the Forge migration catalog, so each service finds its schema in place on start.
 
-See [docs/services/foundry](../../../docs/services/foundry/index.md) for full documentation.
+## Use cases
+- Initialise a fresh estate's databases.
+- Apply migrations before a service upgrade.
+
+## Documentation
+Full documentation: [services/foundry](../../../docs/services/foundry/index.md)

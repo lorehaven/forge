@@ -1,10 +1,13 @@
 # Running Gantry locally
+A local Gantry with real Postgres and Redis and a simulated cluster.
 
+## What it is
 Postgres and Redis are real; the cluster and the runner are simulated in memory, so nothing here can touch a
 Kubernetes cluster. The simulated cluster starts from `seed.json`: package `ml` at 1.0.0 with inference
 (Sage, Switchboard) **up** and training (the trainer) **down**, and `media` with one workload. `ml` and `media`
 each have a 1.1.0 in `packages/`, so there is something to upgrade to.
 
+## Example
 ```text
 cargo build -p gantry-service -p foundry-service      # workspace root
 services/gantry/service/local/pack.sh                   # needs riveter on PATH (or RIVETER=...)
@@ -27,3 +30,6 @@ Open <http://localhost:11443/gantry/ui/home>. One card per package; click one fo
 What this proves is the screens, the recording and the logic. It does not run `riveter` or `kubectl`;
 `GANTRY_RUNNER=local` against a scratch namespace (see `docs/services/gantry/operations.md`) does that. Packages are
 rebuilt by `pack.sh`; `*.rivet` files are not committed.
+
+## Documentation
+Full documentation: [services/gantry](../../../../docs/services/gantry/index.md)

@@ -1,9 +1,15 @@
 # forge-sectest
+Black-box security scanner for the forge services.
 
-Black-box security scanner for the forge services. It reads every route the services declare
-(`#[get("/...")]` and friends, ~480 today, including the shared `quench-starter` routes), then attacks
-each service from outside.
+## What it is
+`forge-sectest` reads every route the services declare (`#[get("/...")]` and friends, ~480 today, including the shared `quench-starter` routes), then attacks each service from outside: missing auth, forged tokens, path traversal, header and CORS mistakes, hostile input and HTTP request smuggling.
 
+## Use cases
+- Census the attack surface of the estate.
+- Scan a running estate (local stack, BDD harness, staging) and fail on new anonymous routes.
+- Run as the nightly security gate that Conveyor shows as the Security card.
+
+## Example
 ```sh
 # what is the attack surface?
 forge-sectest census --quench ../quench
@@ -13,7 +19,9 @@ forge-sectest scan --quench ../quench \
     --target warehouse=http://127.0.0.1:8080 --target gatehouse=http://127.0.0.1:8081
 ```
 
-## Checks
+## Details
+
+### Checks
 
 | check       | what it does                                                                                      |
 |-------------|---------------------------------------------------------------------------------------------------|
@@ -26,7 +34,7 @@ forge-sectest scan --quench ../quench \
 | `protocol`  | Raw-socket request smuggling (CL.TE, duplicate CL, obfuscated TE), bare LF, NUL, folding, oversized heads, pipelining after errors. `--slow` adds a slowloris hold. |
 | `throttle`  | `--active` only: a burst of wrong logins on every login-shaped route must hit a 429.             |
 
-## Public-route baseline
+### Public-route baseline
 
 The first run lists every anonymous route as a finding. Review them, then freeze the list:
 
@@ -37,7 +45,7 @@ forge-sectest scan --quench ../quench --target ... --write-baseline tests/forge-
 From then on a *new* anonymous route (a router someone forgot to wrap in `Auth`) fails the scan.
 `scripts/security.fish` picks the file up automatically.
 
-## Safety model
+### Safety model
 
 * **Read-only by default.** Mutating verbs, credential bursts and malformed write bodies need `--active`.
 * **Sentinel identifiers** (`00000000-...`, `0.0.0-sectest`) that cannot name real data.
@@ -49,14 +57,14 @@ From then on a *new* anonymous route (a router someone forgot to wrap in `Auth`)
 `--active` against anything that holds data you care about: run it against the BDD harness or a staging
 copy first. If a route turns out to be unprotected, the request that proved it has already been sent.
 
-## Trusting the scanner
+### Trusting the scanner
 
 `cargo test -p forge-sectest` runs the scanner against a deliberately vulnerable app (must flag
 every axis), a hardened app (must report nothing above `low`), a desync-prone raw server, and the real
 `quench-http` server (every protocol probe must be refused). The route census is cross-checked against an
 independent count of route attributes so a new attribute style cannot silently hide routes.
 
-## Limits
+### Limits
 
 * Not coverage-guided and not a replacement for review: it finds missing auth, bad parsing and leaks, not
   business-logic flaws. IDOR / cross-tenant authorisation needs two valid identities (`--token` runs the
@@ -65,7 +73,7 @@ independent count of route attributes so a new attribute style cannot silently h
   cannot distinguish "auth ran first" from "route missing".
 * Proxy in front? Protocol results then describe proxy + service together.
 
-## The nightly gate (what conveyor runs)
+### The nightly gate (what conveyor runs)
 
 `scripts/security.fish` and the `security` stage of `.conveyor.toml` run the scanner as a **test run**, so the
 result is a `quench-test` report conveyor shows as the Security card (see `docs/services/conveyor/scans.md`).

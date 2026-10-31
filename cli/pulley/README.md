@@ -1,5 +1,20 @@
-# Pulley
+# pulley
+Backup and sync jobs powered by rsync.
 
-Pulley is an interactive, REPL-based backup/sync tool built on `rsync`, configured through TOML files. Jobs are declared once, previewed with a dry run, and re-run from a persistent REPL session without re-typing flags. Jobs can also be listed and run non-interactively (`pulley list`, `pulley run <job_id>`), and pulley runs as a background service (`pulley daemon`, installable via `pulley service install`) that continuously syncs any job with an `interval` set.
+## What it is
+`pulley` runs rsync-backed jobs described in TOML: interactively (a small shell), once from the command line, continuously as a foreground daemon, or as a background service (systemd user unit, runit, or a Windows scheduled task). Jobs come from `~/.config/pulley/*.toml` and `*.pulley.toml` in the current directory.
 
-See [docs/cli/pulley](../../docs/cli/pulley/index.md) for full documentation.
+## Use cases
+- Keep folders backed up to another machine or disk.
+- Run a named job once (`pulley run <job>`).
+- Install the daemon as a user service (`pulley service install`).
+
+## Example
+```sh
+pulley list
+pulley run all
+pulley service install
+```
+
+## Documentation
+Full documentation: [cli/pulley](../../docs/cli/pulley/index.md)

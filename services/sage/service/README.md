@@ -1,5 +1,12 @@
 # Sage Service
+The estate's AI workspace service.
 
-Sage is Forge's AI workspace/chat service: an Actix Web application that gives users a browser-based chat UI (and a matching JSON API) backed by vLLM models served through Switchboard. It manages conversations organized into projects, supports tool-calling (web search, calculator, file operations, shell commands, code execution), and lets users upload files that are extracted, chunked, embedded into pgvector, and retrieved as RAG context to ground chat answers.
+## What it is
+`sage-service` is the chat workspace: conversations with streaming answers, grounded in documents, over models served by vLLM and managed by Switchboard.
 
-See [docs/services/sage](../../../docs/services/sage/index.md) for full documentation.
+## Use cases
+- Chat with the estate's models.
+- Ground answers in uploaded documents.
+
+## Documentation
+Full documentation: [services/sage](../../../docs/services/sage/index.md)

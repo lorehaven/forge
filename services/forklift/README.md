@@ -1,8 +1,15 @@
 # Forklift
+Backs up photos, videos and chosen folders to Warehouse.
 
-Backs up photos, videos and chosen folders to warehouse's dynamic storage (the successor of the Flutter app `mobile-apps/mathom`).
-A client of gatehouse and warehouse; there is no server of its own. Migration checklist: `quench/docs/migration/forklift.md`.
+## What it is
+Forklift backs up photos, videos and chosen folders to Warehouse's dynamic storage (the successor of the Flutter app `mobile-apps/mathom`). It is a client of Gatehouse and Warehouse; there is no server of its own. Migration checklist: `quench/docs/migration/forklift.md`.
 
+## Use cases
+- Back up a phone's photos and videos automatically.
+- Back up chosen folders from a computer, on a timer.
+- Restore files into the media library or their folders.
+
+## Layout
 ```text
 core/      the logic: the manifest, the scheduler, what to restore (no I/O)
 net/       gatehouse (through libs/gatehouse-client) and warehouse
@@ -12,6 +19,9 @@ surface/   the Android program (the window and `--backup`, over JSON lines to th
 desktop/   the Linux app (a Wayland window, and `forklift --backup`)
 android/   the Gradle project
 ```
+
+## Documentation
+Full documentation: [services/forklift](../../docs/services/forklift/index.md)
 
 ## On a phone
 

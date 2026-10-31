@@ -1,5 +1,13 @@
 # Gatehouse Service
+The Forge authentication service: one login, one identity store.
 
-Forge's authentication service — one identity store, one login page, one session. Sage, switchboard, warehouse and conveyor verify the Ed25519-signed tokens gatehouse issues and never see a password of their own.
+## What it is
+`gatehouse-service` is the estate's only login, token issuer and identity store. It serves sign-in, the services dashboard, account pages and user administration, and issues the tokens the other services verify through `quench-auth`.
 
-See [docs/services/gatehouse](../../../docs/services/gatehouse/index.md) for full documentation.
+## Use cases
+- Sign people in once for every service.
+- Mint and revoke application tokens for command-line tools.
+- Administer users and OAuth clients.
+
+## Documentation
+Full documentation: [services/gatehouse](../../../docs/services/gatehouse/index.md)
