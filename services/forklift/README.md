@@ -12,7 +12,7 @@ Forklift backs up photos, videos and chosen folders to Warehouse's dynamic stora
 ## Layout
 ```text
 core/      the logic: the manifest, the scheduler, what to restore (no I/O)
-net/       gatehouse (through libs/gatehouse-client) and warehouse
+net/       gatehouse (through libs/gatehouse-client), warehouse, and the Store (the manifest is a SQLite database)
 app/       the screens
 host/      the controller both hosts share, and the worker thread that talks to the servers
 surface/   the Android program (the window and `--backup`, over JSON lines to the Kotlin job service)

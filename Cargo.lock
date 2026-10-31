@@ -389,6 +389,7 @@ dependencies = [
  "forklift-core",
  "gatehouse-client",
  "quench-serde",
+ "quench-sqlite",
  "quench-test",
 ]
 
@@ -1223,6 +1224,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "quench-sqlite"
+version = "0.1.0"
+source = "sparse+https://ennor.ddns.net/warehouse/index/"
+checksum = "28918405c34566375ec91d119980fdfeaac862e087905ad9394855d5a3d76c72"
 
 [[package]]
 name = "quench-starter"

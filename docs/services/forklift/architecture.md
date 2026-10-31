@@ -7,7 +7,7 @@ nav_order: 6
 
 ```text
 forklift-core   manifest, engine, settings, snapshot, restore, remote_path       (no dependencies)
-forklift-net    Session (gatehouse-client), Store, RunLock                        forklift-core, gatehouse-client, quench-serde
+forklift-net    Session (gatehouse-client), Store, RunLock                        forklift-core, gatehouse-client, quench-serde, quench-sqlite
 forklift-app    screens + live::{Request, Msg, Setup}                              forklift-core, quench-ui
 forklift-host   Controller, Platform trait, Worker                                 forklift-app, forklift-core, forklift-net
 forklift-desktop  Linux platform, window, --backup                                 forklift-app/-core/-host/-net, quench-desktop-native, quench-style, quench-ui, quench-ui-native

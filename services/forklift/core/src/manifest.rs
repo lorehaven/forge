@@ -173,6 +173,16 @@ impl Manifest {
         Self::default()
     }
 
+    /// A manifest of these records (a later one with the same category and id replaces an earlier one).
+    #[must_use]
+    pub fn from_items(items: impl IntoIterator<Item = Item>) -> Self {
+        let mut manifest = Self::new();
+        for item in items {
+            manifest.items.insert(key(&item.category, &item.local_id), item);
+        }
+        manifest
+    }
+
     #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()

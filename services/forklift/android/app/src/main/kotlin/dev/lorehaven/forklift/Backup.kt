@@ -100,14 +100,8 @@ object Backup {
         )
         val dir = dataDir(context)
         val checked = File(dir, "checked").takeIf { it.exists() }?.readText()?.trim()?.toLongOrNull()
-        var waiting = 0
-        File(dir, "manifest").takeIf { it.exists() }?.useLines { lines ->
-            for (line in lines.drop(1)) {
-                when (line.split('\t').getOrNull(6)) {
-                    "pending", "uploading", "failed" -> waiting++
-                }
-            }
-        }
+        val (sending, failed) = counts(context)
+        val waiting = sending + failed
         val time = checked?.let { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it)) }
         val text = when {
             time == null -> "Waiting for the first look"
@@ -183,17 +177,42 @@ object Backup {
         requestStop()
     }
 
-    /** Whether files are waiting to be sent (read from the program's manifest: a quick look, no parsing of the rest). */
-    fun workWaiting(context: Context): Boolean {
-        val manifest = File(dataDir(context), "manifest")
-        if (!manifest.exists()) return false
-        return manifest.useLines { lines ->
-            lines.drop(1).any { line ->
-                val status = line.split('\t').getOrNull(6)
-                status == "pending" || status == "uploading"
+    /**
+     * How many files wait to be sent (pending or uploading) and how many failed: from `manifest.counts`, three lines
+     * of text the program writes with every save of its manifest (the manifest itself is a database only the program
+     * opens). Until the program has saved once after an upgrade, the old text manifest is read the old way.
+     */
+    private fun counts(context: Context): Pair<Int, Int> {
+        val dir = dataDir(context)
+        var sending = 0
+        var failed = 0
+        val summary = File(dir, "manifest.counts")
+        if (summary.exists()) {
+            summary.useLines { lines ->
+                for (line in lines) {
+                    val parts = line.split(' ')
+                    val n = parts.getOrNull(1)?.toIntOrNull() ?: continue
+                    when (parts[0]) {
+                        "pending", "uploading" -> sending += n
+                        "failed" -> failed += n
+                    }
+                }
+            }
+            return sending to failed
+        }
+        File(dir, "manifest").takeIf { it.exists() }?.useLines { lines ->
+            for (line in lines.drop(1)) {
+                when (line.split('\t').getOrNull(6)) {
+                    "pending", "uploading" -> sending++
+                    "failed" -> failed++
+                }
             }
         }
+        return sending to failed
     }
+
+    /** Whether files are waiting to be sent. */
+    fun workWaiting(context: Context): Boolean = counts(context).first > 0
 
     /**
      * The window is leaving the screen: with files still waiting, a foreground service takes the backup on (it has no

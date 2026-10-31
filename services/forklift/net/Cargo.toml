@@ -22,6 +22,7 @@ harness = false
 gatehouse-client = { workspace = true }
 forklift-core = { workspace = true }
 quench-serde = { workspace = true }
+quench-sqlite = { workspace = true }
 
 [dev-dependencies]
 quench-test = { workspace = true }

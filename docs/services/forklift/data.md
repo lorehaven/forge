@@ -5,50 +5,58 @@ grand_parent: Services
 nav_order: 2
 ---
 
-Everything is plain text in the [data directory](configuration.md#data-directory). `Store` writes a file to `<name>.tmp`, `sync_all`s it and renames it over the target, so a crash leaves the old or the new content; the `session` file is created with mode `0600`.
+The files are in the [data directory](configuration.md#data-directory). All but the manifest are plain text: `Store` writes a file to `<name>.tmp`, `sync_all`s it and renames it over the target, so a crash leaves the old or the new content; the `session` file is created with mode `0600`. The manifest is a SQLite database (see [the manifest database](#the-manifest-database)).
 
 | File | Content | Writer |
 |---|---|---|
 | `session` | The refresh token plus `\n` (trimmed on read). | `Store::set_token`; removed by `clear_token`. |
 | `settings` | [Settings file](#settings-file). | `Store::set_settings` |
-| `manifest` | [Manifest file](#manifest-file). | `Store::set_manifest` / `set_manifest_in_background` |
+| `manifest.db` | [The manifest database](#the-manifest-database). | `Store::set_manifest` / `set_manifest_in_background` |
+| `manifest.counts` | Three lines the Android host (Kotlin) reads without opening the database: `forklift-counts 1`, `pending N`, `uploading N`, `failed N` (four lines with the header). Written with every manifest save. | `Store` |
+| `manifest`, `manifest.imported` | The manifest of versions before the database, one text line per record. The first `Store::manifest()` that finds an empty database and this file reads it into the database and renames it to `manifest.imported`; it is never read again. | `Store` (import only) |
 | `snapshot` | [Snapshot file](#snapshot-file). | `Store::set_snapshot`; removed by `clear_snapshot` (on sign-out). |
 | `checked` | Epoch milliseconds of the last completed scan, decimal, no newline. | `set_checked_ms` |
 | `sync-<storage>` | The last change-feed id read for that storage, decimal. `<storage>` is passed through `sanitize`. Absent means 0. | `set_sync_cursor` |
 | `run.lock` | Empty. Held with an exclusive non-blocking file lock (`File::try_lock`) by whichever program has the backup. | `try_lock_run` |
 | `hidden` | Empty marker created by the Android host while the window is in the background (see [Android](android.md#who-sends-files)). | Kotlin `Backup.windowClosed` |
 
-Manifest writes are numbered: a write with a lower number than the last one written for that directory is skipped, so a slow background write cannot overwrite a newer one. `Store::manifest()` first waits for pending background writes, then reads the file and calls `Manifest::recover()` (files left `uploading` go back to `pending`).
+Manifest writes are numbered: a write with a lower number than the last one written for that directory is skipped, so a slow background write cannot overwrite a newer one. `Store::manifest()` first waits for pending background writes, then reads the database and calls `Manifest::recover()` (files left `uploading` go back to `pending`).
 
 ## Escaping
 
-Used in the manifest, settings and snapshot rows (`escape` / `unescape`): `\` becomes `\\`, TAB `\t`, LF `\n`, CR `\r`. When reading, `\t`, `\n`, `\r` are decoded; `\` followed by any other character yields that character; a trailing lone `\` stays `\`.
+Used in the settings and snapshot rows, and by the importer of the old text manifest (`escape` / `unescape`): `\` becomes `\\`, TAB `\t`, LF `\n`, CR `\r`. When reading, `\t`, `\n`, `\r` are decoded; `\` followed by any other character yields that character; a trailing lone `\` stays `\`.
 
-## Manifest file
+## The manifest database
 
-```text
-forklift-manifest 1
-<category>\t<local_id>\t<name>\t<uri>\t<size>\t<modified_ms>\t<status>\t<attempts>\t<retry_at_ms>\t<error>\t<remote>\t<gone>
+`manifest.db` is a SQLite 3 database file made and read by `quench-sqlite` (any `sqlite3` can open it for a look). One table, `items`, has a row per record:
+
+```sql
+CREATE TABLE items (
+    category TEXT NOT NULL, local_id TEXT NOT NULL, name TEXT NOT NULL, uri TEXT NOT NULL,
+    size INTEGER NOT NULL, modified_ms INTEGER NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL,
+    retry_at_ms INTEGER NOT NULL, error TEXT NOT NULL, remote TEXT NOT NULL, gone INTEGER NOT NULL,
+    PRIMARY KEY (category, local_id));
+CREATE INDEX items_status ON items (status, retry_at_ms);
 ```
 
-First line is the header (not checked on read: it is skipped). Then one line per record, in key order (`category`, 0x1F, `local_id`, sorted as strings). 12 tab-separated fields:
+| Column | Meaning |
+|---|---|
+| category | `photos`, `videos`, `custom:<slug>` |
+| local_id | what the source calls the file |
+| name, uri | file name; where to read it (a content URI on Android, a path on Linux) |
+| size, modified_ms | bytes; epoch milliseconds |
+| status | `pending`, `uploading`, `done`, `failed`, `too_large` |
+| attempts, retry_at_ms | tries so far; epoch ms, not before this (0 is "now") |
+| error | the last failure in words a person reads; empty when none |
+| remote | the remote path it was sent to; empty until first sent |
+| gone | `1` when the last scan did not find it on the device any more, else `0` |
 
-| # | Field | Format |
-|---|---|---|
-| 1 | category | escaped string (`photos`, `videos`, `custom:<slug>`) |
-| 2 | local_id | escaped string |
-| 3 | name | escaped string |
-| 4 | uri | escaped string (content URI on Android, path on Linux) |
-| 5 | size | unsigned decimal, bytes |
-| 6 | modified_ms | signed decimal, epoch milliseconds |
-| 7 | status | `pending`, `uploading`, `done`, `failed`, `too_large` |
-| 8 | attempts | unsigned decimal |
-| 9 | retry_at_ms | signed decimal, epoch ms; 0 is "now" |
-| 10 | error | escaped; empty when none |
-| 11 | remote | escaped; empty until first sent |
-| 12 | gone | `1` or `0` |
+The program keeps the whole manifest in memory (`Manifest`) and `Store` makes the database match it: a save reads the rows, compares, and writes only the records that are new or different and deletes those that are gone, in **one transaction**. A save of an unchanged manifest writes nothing. A crash leaves the manifest as it was before the save or as it is after, never half (`quench-sqlite` journals the pages it changes).
 
-Reading accepts 11 fields (older files, `gone` = false) or 12; any other line, or one whose numeric fields or status do not parse, is skipped. The Android host reads the file itself to look for work (`Backup.workWaiting` reads field 7 of each line after the header: `pending` or `uploading`; `Backup.updateStatus` counts `pending`, `uploading`, `failed`).
+* The file is opened for each read or save and closed again; an open takes an exclusive file lock. Another program holding it (the window and the background run both read the manifest) is waited for, up to 3 seconds. The right to *send files* is still the `run.lock`.
+* If the manifest cannot be read (the database is damaged, or busy for the whole 3 seconds), `Store::manifest()` returns an empty one **and marks the directory unreadable: nothing is saved there until a later read works**, so an empty manifest never replaces the real one.
+* A record that does not read back (a missing column, a status that is not one of the five) is skipped; the next scan looks at the file again.
+* `Backup.kt` does not open the database: it reads `manifest.counts` (and, until the first save after an upgrade, the old text `manifest`).
 
 Status lifecycle:
 

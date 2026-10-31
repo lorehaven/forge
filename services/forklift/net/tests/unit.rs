@@ -532,4 +532,191 @@ fn a_file_is_sent_and_fetched_with_a_token_the_caller_already_holds() {
     );
 }
 
+fn library(n: usize, prefix: &str) -> forklift_core::Manifest {
+    let mut m = forklift_core::Manifest::new();
+    let files: Vec<forklift_core::Found> = (0..n)
+        .map(|i| forklift_core::Found {
+            local_id: format!("{prefix}{i:06}"),
+            name: format!("IMG_{i}.jpg"),
+            uri: format!("content://media/external/images/media/{i}"),
+            size: 1_000 + i as u64,
+            modified_ms: 1_700_000_000_000 + i as i64,
+        })
+        .collect();
+    m.scan("photos", &files, false);
+    m
+}
+
+#[quench_test::test]
+fn the_manifest_is_a_database_and_the_old_text_file_is_read_once() {
+    let dir = temp("legacy");
+    let mut old = library(50, "a");
+    old.start("photos", "a000003");
+    old.done("photos", "a000003", "photos/2023/IMG_3.jpg");
+    old.failed("photos", "a000004", 1_000, "no route to host\tand a tab");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("manifest"), old.to_text()).unwrap();
+
+    let store = forklift_net::Store::new(&dir);
+    let loaded = store.manifest();
+    assert_eq!(loaded.len(), 50);
+    assert_eq!(loaded.get("photos", "a000003").unwrap().remote, "photos/2023/IMG_3.jpg");
+    assert_eq!(loaded.get("photos", "a000004").unwrap().error, "no route to host\tand a tab");
+    assert!(dir.join("manifest.db").exists());
+    assert!(!dir.join("manifest").exists(), "the text file was read and set aside");
+    assert!(dir.join("manifest.imported").exists());
+
+    // The database is now the manifest: the old file, if it came back, would not be read again.
+    let mut edited = loaded;
+    edited.start("photos", "a000010");
+    edited.done("photos", "a000010", "photos/2023/IMG_10.jpg");
+    store.set_manifest(&edited);
+    std::fs::write(dir.join("manifest"), old.to_text()).unwrap();
+    let again = store.manifest();
+    assert_eq!(again.get("photos", "a000010").unwrap().status, forklift_core::Status::Done);
+    assert_eq!(again.len(), 50);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[quench_test::test]
+fn a_save_writes_only_what_changed() {
+    let dir = temp("delta");
+    let store = forklift_net::Store::new(&dir);
+    let mut manifest = library(3_000, "f");
+    store.set_manifest(&manifest);
+    let db = dir.join("manifest.db");
+    let first = std::fs::read(&db).unwrap();
+
+    // The same manifest again: not a byte of the file changes.
+    store.set_manifest(&manifest);
+    assert_eq!(std::fs::read(&db).unwrap(), first, "an unchanged manifest writes nothing");
+
+    // One file sent: a few pages change, the rest of the file is as it was.
+    manifest.start("photos", "f001500");
+    manifest.done("photos", "f001500", "photos/2023/IMG_1500.jpg");
+    store.set_manifest(&manifest);
+    let second = std::fs::read(&db).unwrap();
+    assert_eq!(second.len(), first.len(), "no growth for one changed record");
+    let pages = |a: &[u8], b: &[u8]| a.chunks(4096).zip(b.chunks(4096)).filter(|(x, y)| x != y).count();
+    let changed = pages(&first, &second);
+    assert!((1..=6).contains(&changed), "{changed} of {} pages changed", first.len() / 4096);
+
+    // A file that is no longer in the manifest is gone from the database.
+    manifest.forget_category("photos");
+    store.set_manifest(&manifest);
+    assert_eq!(store.manifest().len(), 0);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[quench_test::test]
+fn the_counts_file_tells_the_android_host_what_waits() {
+    let dir = temp("counts");
+    let store = forklift_net::Store::new(&dir);
+    let mut manifest = library(10, "c");
+    manifest.start("photos", "c000001");
+    manifest.done("photos", "c000001", "photos/2023/IMG_1.jpg");
+    manifest.start("photos", "c000002");
+    for _ in 0..5 {
+        manifest.failed("photos", "c000003", 1_000, "no route");
+    }
+    store.set_manifest(&manifest);
+    let text = std::fs::read_to_string(dir.join("manifest.counts")).unwrap();
+    assert_eq!(text, "forklift-counts 1\npending 7\nuploading 1\nfailed 1\n");
+    // The text of an older manifest is counted into the same file when it is imported.
+    let dir = temp("counts-legacy");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("manifest"), library(4, "l").to_text()).unwrap();
+    assert_eq!(forklift_net::Store::new(&dir).manifest().len(), 4);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("manifest.counts")).unwrap(),
+        "forklift-counts 1\npending 4\nuploading 0\nfailed 0\n"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[quench_test::test]
+fn a_big_library_round_trips() {
+    let dir = temp("big");
+    let store = forklift_net::Store::new(&dir);
+    let mut manifest = library(20_000, "b");
+    for i in (0..20_000).step_by(7) {
+        let id = format!("b{i:06}");
+        manifest.start("photos", &id);
+        manifest.done("photos", &id, &format!("photos/2023/IMG_{i}.jpg"));
+    }
+    store.set_manifest(&manifest);
+    let back = store.manifest();
+    assert_eq!(back, manifest);
+    assert_eq!(back.totals(None).pending + back.totals(None).uploading, manifest.totals(None).pending + manifest.totals(None).uploading);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[quench_test::test]
+fn a_hundred_thousand_records_save_and_load_in_seconds() {
+    let dir = temp("hundred-thousand");
+    let store = forklift_net::Store::new(&dir);
+    let mut manifest = library(100_000, "h");
+    let t = std::time::Instant::now();
+    store.set_manifest(&manifest);
+    let first_save = t.elapsed();
+    let size = std::fs::metadata(dir.join("manifest.db")).unwrap().len();
+
+    for i in 0..100 {
+        let id = format!("h{:06}", i * 997);
+        manifest.start("photos", &id);
+        manifest.done("photos", &id, &format!("photos/2023/IMG_{i}.jpg"));
+    }
+    let t = std::time::Instant::now();
+    store.set_manifest(&manifest);
+    let small_save = t.elapsed();
+
+    let t = std::time::Instant::now();
+    let loaded = store.manifest();
+    let load = t.elapsed();
+    eprintln!(
+        "100,000 records: first save {first_save:?}, save of 100 changes {small_save:?}, load {load:?}, file {} MiB",
+        size / (1024 * 1024)
+    );
+    assert_eq!(loaded.len(), 100_000);
+    assert_eq!(loaded, manifest);
+    // Generous bounds for a slow machine; the point is seconds, not minutes.
+    assert!(first_save < std::time::Duration::from_secs(60), "{first_save:?}");
+    assert!(small_save < std::time::Duration::from_secs(10), "{small_save:?}");
+    assert!(load < std::time::Duration::from_secs(20), "{load:?}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[quench_test::test]
+fn a_manifest_that_cannot_be_read_is_never_overwritten_by_an_empty_one() {
+    let dir = temp("unreadable");
+    let store = forklift_net::Store::new(&dir);
+    store.set_manifest(&library(20, "u"));
+    // Damage: the first page is not a database header any more.
+    let db = dir.join("manifest.db");
+    let mut bytes = std::fs::read(&db).unwrap();
+    bytes[..16].copy_from_slice(b"not a database!!");
+    std::fs::write(&db, &bytes).unwrap();
+    assert_eq!(store.manifest().len(), 0, "nothing can be read");
+    store.set_manifest(&forklift_core::Manifest::new());
+    assert_eq!(std::fs::read(&db).unwrap(), bytes, "and nothing was written over what is there");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[quench_test::test]
+fn another_program_holding_the_database_for_a_moment_is_waited_for() {
+    let dir = temp("busy");
+    let store = forklift_net::Store::new(&dir);
+    store.set_manifest(&library(10, "w"));
+    let held = quench_sqlite::Connection::open(dir.join("manifest.db")).unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        drop(held);
+    });
+    let started = std::time::Instant::now();
+    assert_eq!(store.manifest().len(), 10, "the read waited for the other program, then got the records");
+    assert!(started.elapsed() >= std::time::Duration::from_millis(250));
+    release.join().unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 quench_test::main!();
