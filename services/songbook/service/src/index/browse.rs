@@ -155,7 +155,7 @@ impl Snapshot {
     }
 
     /// Albums of the followed artists with their tracklists. A song on several albums is listed on each; `total` and
-    /// `linked` count every matching track, `albums` holds the first `LIMIT`.
+    /// `linked` count each matching song once, `albums` holds the first `LIMIT` listed tracks.
     #[must_use]
     pub fn browse(&self, filter: &Filter) -> Browse {
         let needle = filter.q.to_lowercase();
@@ -175,8 +175,14 @@ impl Snapshot {
                     }
             })
             .collect();
-        let total = matching.len();
-        let linked = matching.iter().filter(|r| !r.url.is_empty()).count();
+        let songs: HashSet<i64> = matching.iter().map(|r| r.song).collect();
+        let total = songs.len();
+        let linked = matching
+            .iter()
+            .filter(|r| !r.url.is_empty())
+            .map(|r| r.song)
+            .collect::<HashSet<_>>()
+            .len();
         let mut albums: Vec<Album> = Vec::new();
         let mut at: HashMap<(&str, i64), usize> = HashMap::new();
         for row in matching.into_iter().take(LIMIT) {

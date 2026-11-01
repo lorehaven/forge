@@ -229,7 +229,8 @@ fn the_library_lists_albums_and_filters_tracks() {
             retag(db, &cmap)?;
 
             let all = browse::browse(db, &Filter::default())?;
-            assert_eq!((all.total, all.linked, all.shown), (3, 0, 3));
+            // three tracks listed, but one song is on two albums: two songs
+            assert_eq!((all.total, all.linked, all.shown), (2, 0, 3));
             assert_eq!(all.albums.len(), 2);
             assert_eq!(all.albums[0].album, "Ghetto Preacher");
             assert_eq!(all.albums[1].tracks[1].artists, "Nate Dogg, Snoop Dogg");
@@ -250,8 +251,9 @@ fn the_library_lists_albums_and_filters_tracks() {
                 },
             )?;
             assert_eq!(
-                by_genre.total, 3,
-                "the remastered song is tagged R&B through its second album, and is listed on both"
+                (by_genre.total, by_genre.shown),
+                (2, 3),
+                "the remastered song is tagged R&B through its second album, and is listed on both: two songs, three tracks"
             );
             let by_category = browse::browse(
                 db,
@@ -261,7 +263,7 @@ fn the_library_lists_albums_and_filters_tracks() {
                     ..Filter::default()
                 },
             )?;
-            assert_eq!(by_category.total, 3);
+            assert_eq!(by_category.total, 2);
             assert_eq!(
                 browse::browse(
                     db,
@@ -282,7 +284,7 @@ fn the_library_lists_albums_and_filters_tracks() {
                     ..Filter::default()
                 },
             )?;
-            assert_eq!((linked.total, linked.linked), (2, 2));
+            assert_eq!((linked.total, linked.linked), (1, 1), "one song, on two albums");
             assert!(linked.albums[0].tracks[0].manual && !linked.albums[0].tracks[0].official);
             assert_eq!(
                 browse::browse(
@@ -304,7 +306,7 @@ fn the_library_lists_albums_and_filters_tracks() {
                     }
                 )?
                 .total,
-                2,
+                1,
                 "linked, but not official"
             );
 
@@ -330,6 +332,15 @@ fn the_library_lists_albums_and_filters_tracks() {
                 (2, "American Rap")
             );
             assert_eq!(state.genres, vec!["R&B", "Rap/Hip Hop"]);
+            // The side panel and the library page count the same thing for an artist.
+            let selected = browse::browse(
+                db,
+                &Filter {
+                    artist: "Nate Dogg".into(),
+                    ..Filter::default()
+                },
+            )?;
+            assert_eq!(state.artists[0].tracks, selected.total);
             Ok(())
         })
         .unwrap();

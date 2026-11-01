@@ -31,7 +31,7 @@ pub struct ArtistRow {
     pub deezer_name: String,
     pub deezer_id: String,
     pub fans: String,
-    /// Songs in the index that this artist is on.
+    /// Songs of the artist's own discography (the albums found under them), each once: what the library page counts for them.
     pub tracks: u32,
     /// The last sync found this artist.
     pub synced: bool,
@@ -96,11 +96,11 @@ pub struct Album {
 /// What the library page shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Browse {
-    /// Tracks that match the filter (a song on three albums counts three times).
+    /// Songs that match the filter, each once (a song on three albums is listed three times but counts once).
     pub total: u32,
     /// Of those, the ones with a link.
     pub linked: u32,
-    /// How many are in `albums` (at most the limit).
+    /// How many tracks are listed in `albums` (at most the limit; a song on several albums is listed on each).
     pub shown: u32,
     pub albums: Vec<Album>,
 }

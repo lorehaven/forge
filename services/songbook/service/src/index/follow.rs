@@ -250,7 +250,10 @@ pub fn blacklist_add(db: &mut Connection, artist: &str, title: &str) -> Result<(
 pub fn artist_rows(db: &mut Connection) -> Result<Vec<ArtistRow>> {
     let counts: HashMap<String, i64> = db
         .query(
-            "SELECT a.listed_as, COUNT(*) FROM artists a JOIN song_artist sa ON sa.artist_id = a.id WHERE a.listed_as IS NOT NULL GROUP BY a.id",
+            // The songs of the artist's own discography (the albums found under them), each once: the number the
+            // library page shows when the artist is selected.
+            "SELECT o.listed_as, COUNT(DISTINCT sl.song_id) FROM albums al JOIN artists o ON o.id = al.owner_id \
+             JOIN song_album sl ON sl.album_id = al.id WHERE o.listed_as IS NOT NULL GROUP BY o.id",
             &[],
         )?
         .rows
