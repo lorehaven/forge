@@ -742,14 +742,20 @@ fn limit(field: &Field) -> Option<u32> {
 /// Starts a job with the options the screens hold.
 fn start(env: &Env, name: &str) {
     let m = &env.m;
-    let links = name == "youtube";
+    // The whole pipeline takes both limits: `limit` is the one of find links, `limit_download` the one of download.
+    let everything = name == "pipeline";
     (env.ask)(Request::StartJob(JobStart {
         name: name.to_string(),
         singles: m.singles.get_untracked(),
         artist: m.filter.get_untracked().artist,
-        limit: if links {
+        limit: if name == "youtube" || everything {
             limit(&m.limit_links)
         } else if name == "download" {
+            limit(&m.limit_download)
+        } else {
+            None
+        },
+        limit_download: if everything {
             limit(&m.limit_download)
         } else {
             None
@@ -757,7 +763,8 @@ fn start(env: &Env, name: &str) {
         top: limit(&m.top),
         per_artist: None,
         category: m.scope.value_untracked(),
-        retry_missing: m.retry.get_untracked(),
+        // The pipeline always looks again at songs that had no match.
+        retry_missing: m.retry.get_untracked() || everything,
     }));
 }
 
@@ -857,6 +864,20 @@ pub(crate) fn pipeline(env: &Env) -> View {
                         .into_view()
                 }
             }))
+            .child(
+                article()
+                    .attr("id", "run-everything")
+                    .class("sb-card sb-step")
+                    .child(h3().text(t.t("ui_run_all_title")))
+                    .child(p().text(t.t("ui_run_all_text")))
+                    .child(toolbar().child(job_button(
+                        &env,
+                        "pipeline",
+                        &t.t("ui_run_all"),
+                        "fui-btn-primary",
+                        Some(t.t("ui_run_all_hint")),
+                    ))),
+            )
             .child(
                 div()
                     .class("sb-steps")

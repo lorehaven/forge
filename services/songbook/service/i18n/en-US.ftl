@@ -113,6 +113,10 @@ ui_max_tracks = Max songs
 ui_max_all = all
 ui_step_download = Download & convert
 ui_step_download_text = Download the matched videos into the music folder, then convert them to audio in place.
+ui_run_all_title = Run everything
+ui_run_all_text = Sync the library, find links (trying again the songs that had no match), download and convert: the steps below, one after the other. It stops at the first step that fails. The options below (singles, the artist picked in the sidebar, the limits) apply.
+ui_run_all = Run everything
+ui_run_all_hint = Sync, find links, download and convert in one go
 ui_download = Download
 ui_convert = Convert
 

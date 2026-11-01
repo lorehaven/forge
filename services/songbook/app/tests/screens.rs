@@ -782,6 +782,43 @@ fn the_selected_artist_is_the_scope_of_the_pipeline() {
 }
 
 #[quench_test::test]
+fn running_everything_starts_the_pipeline_with_both_limits_and_retrying_the_misses() {
+    let l = started("/songbook/ui/pipeline");
+    l.expand();
+    l.click("div", ("data-artist", "Kartky")); // not a button: nothing happens
+    l.take();
+    l.click("button", ("id", "singles"));
+    l.type_into("limit-links", "40");
+    l.type_into("limit-download", "25");
+    l.click("button", ("id", "job-pipeline"));
+    let Some(Request::StartJob(j)) = l
+        .take()
+        .into_iter()
+        .find(|r| matches!(r, Request::StartJob(_)))
+    else {
+        panic!("no job")
+    };
+    assert_eq!(j.name, "pipeline");
+    assert!(
+        j.singles && j.retry_missing,
+        "retry_missing is not up to the toggle"
+    );
+    assert_eq!((j.limit, j.limit_download), (Some(40), Some(25)));
+    // off while a job runs, like the other buttons
+    l.send(Msg::Job(Job {
+        name: Some("pipeline".into()),
+        running: true,
+        error: None,
+        log: String::new(),
+        offset: 0,
+    }));
+    assert!(
+        l.r.attr(l.find("button", ("id", "job-pipeline")), "disabled")
+            .is_some()
+    );
+}
+
+#[quench_test::test]
 fn the_buttons_are_off_while_a_job_runs_and_a_second_start_is_said() {
     let l = started("/songbook/ui/pipeline");
     assert!(

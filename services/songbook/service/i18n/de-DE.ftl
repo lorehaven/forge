@@ -113,6 +113,10 @@ ui_max_tracks = Max. Titel
 ui_max_all = alle
 ui_step_download = Herunterladen & konvertieren
 ui_step_download_text = Die gefundenen Videos in den Musikordner laden und dort in Audio umwandeln.
+ui_run_all_title = Alles ausführen
+ui_run_all_text = Bibliothek synchronisieren, Links suchen (Titel ohne Treffer werden erneut versucht), herunterladen und konvertieren: die Schritte unten, nacheinander. Beim ersten fehlgeschlagenen Schritt wird gestoppt. Die Optionen unten (Singles, der links gewählte Künstler, die Limits) gelten.
+ui_run_all = Alles ausführen
+ui_run_all_hint = Synchronisieren, Links suchen, herunterladen und konvertieren in einem Durchgang
 ui_download = Herunterladen
 ui_convert = Konvertieren
 

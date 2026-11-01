@@ -216,7 +216,10 @@ pub struct RenameCategory {
     pub new_name: String,
 }
 
-/// `POST /jobs`: `name` is `sync`, `tags`, `similar`, `youtube`, `download` or `convert`.
+/// `POST /jobs`: `name` is `sync`, `tags`, `similar`, `youtube`, `download`, `convert` or `pipeline`.
+///
+/// `pipeline` is sync, find links (with the songs that had no match tried again), download and convert, one after the other
+/// in one job; it stops at the first step that fails.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobStart {
     pub name: String,
@@ -226,9 +229,12 @@ pub struct JobStart {
     /// youtube, download: only songs by this followed artist; empty for all.
     #[serde(default)]
     pub artist: String,
-    /// youtube, download: at most this many songs.
+    /// youtube, download: at most this many songs. (pipeline: the limit of find links.)
     #[serde(default)]
     pub limit: Option<u32>,
+    /// pipeline: at most this many songs downloaded; `limit` is for find links.
+    #[serde(default)]
+    pub limit_download: Option<u32>,
     /// similar: how many suggestions to keep (default 50).
     #[serde(default)]
     pub top: Option<u32>,

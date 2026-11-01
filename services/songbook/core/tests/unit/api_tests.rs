@@ -26,5 +26,5 @@ fn encoding_keeps_unreserved_characters() {
 fn a_job_start_reads_with_missing_fields() {
     let j: JobStart = quench_serde::json::from_str(r#"{"name":"sync"}"#).unwrap();
     assert_eq!(j.name, "sync");
-    assert!(!j.singles && j.limit.is_none());
+    assert!(!j.singles && j.limit.is_none() && j.limit_download.is_none());
 }

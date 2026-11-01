@@ -29,6 +29,7 @@ pub mod download;
 pub mod files;
 pub mod index;
 pub mod jobs;
+pub mod pipeline;
 pub mod routers;
 pub mod similar;
 pub mod sync;

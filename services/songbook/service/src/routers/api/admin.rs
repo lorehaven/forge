@@ -3,7 +3,7 @@
 use crate::app::App;
 use crate::index::{browse, follow, songs};
 use crate::routers::api::{json_error, ok};
-use crate::{convert, download, similar, sync, youtube};
+use crate::{convert, download, pipeline, similar, sync, youtube};
 use quench_http::prelude::{Inject, Json, Query, Response, get, http::StatusCode, post};
 use quench_serde::Deserialize;
 use songbook_core::{
@@ -182,7 +182,9 @@ pub async fn rename_category(
 
 #[post("/api/v1/admin/jobs")]
 pub async fn start_job(Inject(app): Inject<App>, Json(body): Json<JobStart>) -> Response {
-    let known = ["sync", "tags", "similar", "youtube", "download", "convert"];
+    let known = [
+        "sync", "tags", "similar", "youtube", "download", "convert", "pipeline",
+    ];
     if !known.contains(&body.name.as_str()) {
         return json_error(StatusCode::BAD_REQUEST, "unknown job");
     }
@@ -206,6 +208,7 @@ pub async fn start_job(Inject(app): Inject<App>, Json(body): Json<JobStart>) -> 
                 youtube::run(&worker, &body.artist, body.limit, body.retry_missing, &log).await
             }
             "download" => download::run(&worker, &body.artist, body.limit, 3, 5, &log).await,
+            "pipeline" => pipeline::run(&worker, &body, &log).await,
             _ => convert::run(&worker.config.data, true, &log).await,
         }
     });

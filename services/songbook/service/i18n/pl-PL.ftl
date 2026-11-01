@@ -115,6 +115,10 @@ ui_max_tracks = Maks. utworów
 ui_max_all = wszystkie
 ui_step_download = Pobieranie i konwersja
 ui_step_download_text = Pobierz dopasowane filmy do folderu z muzyką, potem przekonwertuj je na dźwięk w miejscu.
+ui_run_all_title = Uruchom wszystko
+ui_run_all_text = Synchronizuje bibliotekę, szuka linków (ponawiając utwory bez dopasowania), pobiera i konwertuje: kroki poniżej, jeden po drugim. Zatrzymuje się na pierwszym kroku, który się nie powiedzie. Obowiązują opcje poniżej (single, artysta wybrany z lewej, limity).
+ui_run_all = Uruchom wszystko
+ui_run_all_hint = Synchronizacja, szukanie linków, pobieranie i konwersja za jednym razem
 ui_download = Pobierz
 ui_convert = Konwertuj
 

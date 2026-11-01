@@ -113,6 +113,10 @@ ui_max_tracks = Máx. canciones
 ui_max_all = todas
 ui_step_download = Descargar y convertir
 ui_step_download_text = Descarga los vídeos encontrados en la carpeta de música y conviértelos a audio en el mismo sitio.
+ui_run_all_title = Ejecutar todo
+ui_run_all_text = Sincroniza la biblioteca, busca enlaces (vuelve a probar las canciones sin resultado), descarga y convierte: los pasos de abajo, uno tras otro. Se detiene en el primer paso que falla. Se aplican las opciones de abajo (sencillos, el artista elegido en el lateral, los límites).
+ui_run_all = Ejecutar todo
+ui_run_all_hint = Sincronizar, buscar enlaces, descargar y convertir de una vez
 ui_download = Descargar
 ui_convert = Convertir
 
