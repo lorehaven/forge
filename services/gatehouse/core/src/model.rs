@@ -28,7 +28,7 @@ impl ServiceCard {
 }
 
 /// The services whose icons the page serves (`/ui/assets/icons/<name>.png`).
-pub const ICONS: [&str; 10] = [
+pub const ICONS: [&str; 11] = [
     "conveyor",
     "daybook",
     "gantry",
@@ -36,6 +36,7 @@ pub const ICONS: [&str; 10] = [
     "hoist",
     "lectern",
     "sage",
+    "songbook",
     "switchboard",
     "warehouse",
     "workbench",
