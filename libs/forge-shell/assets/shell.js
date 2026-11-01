@@ -134,6 +134,19 @@
     });
   });
 
+  // A scrolling element marked `data-follow` (a log) stays at its end while it grows, until the reader scrolls up from the end;
+  // scrolling back down to the end makes it follow again. The attribute holds `end` or `free`.
+  document.addEventListener('scroll', function (e) {
+    var el = e.target;
+    if (!el || !el.hasAttribute || !el.hasAttribute('data-follow')) return;
+    el.setAttribute('data-follow', el.scrollHeight - el.scrollTop - el.clientHeight < 24 ? 'end' : 'free');
+  }, true);
+  function follow() {
+    document.querySelectorAll('[data-follow]:not([data-follow="free"])').forEach(function (el) { el.scrollTop = el.scrollHeight; });
+  }
+  new MutationObserver(follow).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  follow();
+
   var script = document.currentScript;
   var gatehouse =((script && script.getAttribute('data-gatehouse')) || '/gatehouse').replace(/\/+$/, '');
   function links() {

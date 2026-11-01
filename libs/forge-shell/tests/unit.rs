@@ -78,6 +78,9 @@ fn the_script_has_the_scroll_and_upload_hooks() {
     // scrolling to the element a dot names
     assert!(script.contains("[data-scroll-to]"));
     assert!(script.contains("scrollIntoView"));
+    // a log that grows stays at its end until the reader scrolls up
+    assert!(script.contains("[data-follow]"));
+    assert!(script.contains("el.scrollTop = el.scrollHeight"));
     // a chosen file goes to the service as multipart, and the result comes back through an input event
     for needle in [
         "data-upload-url",

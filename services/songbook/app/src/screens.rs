@@ -1173,26 +1173,28 @@ pub(crate) fn activity(env: &Env) -> View {
                 h3().attr("id", "status").text(text).into_view()
             })
         };
+        // One element that lives as long as the page, with the text changing inside it: a new element every poll would
+        // start at the top each time. `data-follow` keeps it at its end while the job writes, until the reader scrolls up.
         let log = {
             let env = env.clone();
-            View::dynamic(move || {
-                let log = env.m.log.get();
-                let job = env.m.job.get();
-                let mut text = if log.is_empty() && job.name.is_none() {
-                    env.t.t("ui_no_job")
-                } else {
-                    log
-                };
-                if let Some(why) = job.error {
-                    text.push_str("\nERROR: ");
-                    text.push_str(&why);
-                }
-                pre()
-                    .attr("id", "log")
-                    .class("sb-log")
-                    .text(text)
-                    .into_view()
-            })
+            pre()
+                .attr("id", "log")
+                .attr("data-follow", "")
+                .class("sb-log")
+                .text_fn(move || {
+                    let log = env.m.log.get();
+                    let job = env.m.job.get();
+                    let mut text = if log.is_empty() && job.name.is_none() {
+                        env.t.t("ui_no_job")
+                    } else {
+                        log
+                    };
+                    if let Some(why) = job.error {
+                        text.push_str("\nERROR: ");
+                        text.push_str(&why);
+                    }
+                    text
+                })
         };
         div()
             .attr("id", "page-activity")

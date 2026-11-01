@@ -829,6 +829,29 @@ fn the_job_is_polled_from_where_the_log_ends_and_faster_while_it_runs() {
 }
 
 #[quench_test::test]
+fn the_log_is_one_element_that_keeps_its_place_while_it_grows() {
+    let l = started("/songbook/ui/activity");
+    let job = |log: &str, offset: u64| {
+        Msg::Job(Job {
+            name: Some("sync".into()),
+            running: true,
+            error: None,
+            log: log.into(),
+            offset,
+        })
+    };
+    l.send(job("one\n", 4));
+    let before = l.find("pre", ("id", "log"));
+    l.send(job("two\n", 8));
+    l.send(job("", 8));
+    l.send(job("three\n", 14));
+    // A new element for every poll would start at the top each time: it has to stay the same one, and follow its end.
+    assert_eq!(l.find("pre", ("id", "log")), before);
+    assert_eq!(l.text_of("log"), "one\ntwo\nthree\n");
+    assert!(l.r.attr(before, "data-follow").is_some());
+}
+
+#[quench_test::test]
 fn the_activity_screen_gathers_the_log_and_starts_over_for_a_new_job() {
     let l = started("/songbook/ui/activity");
     assert_eq!(l.text_of("status"), "Idle");
