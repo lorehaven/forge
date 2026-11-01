@@ -5,7 +5,7 @@ use super::songs;
 use super::{Result, Value, int, int_at, placeholders, str_at, text};
 use quench_sqlite::Connection;
 use songbook_core::naming::album_key;
-use songbook_core::{Album, Browse, Filter, State, Track};
+use songbook_core::{Album, Browse, Filter, State, Stats, Track};
 use std::collections::{HashMap, HashSet};
 
 /// How many tracks the library page shows at most.
@@ -93,6 +93,11 @@ struct Row {
 pub struct Snapshot {
     rows: Vec<Row>,
     pub state: State,
+    /// `(file name without extension, has a YouTube link)` for every song, for the statistics.
+    files: Vec<(String, bool)>,
+    followed: u32,
+    credited: u32,
+    albums: u32,
 }
 
 impl Snapshot {
@@ -148,10 +153,52 @@ impl Snapshot {
                 }
             })
             .collect();
+        let count = |db: &mut Connection, table: &str| -> Result<u32> {
+            Ok(db
+                .query(&format!("SELECT COUNT(*) FROM {table}"), &[])?
+                .rows
+                .first()
+                .map_or(0, |r| int_at(r, 0)) as u32)
+        };
+        let files = db
+            .query("SELECT filename, yt_url FROM songs", &[])?
+            .rows
+            .iter()
+            .map(|r| (str_at(r, 0), !str_at(r, 1).is_empty()))
+            .collect();
         Ok(Self {
             rows,
             state: state(db)?,
+            files,
+            followed: count(db, "follows")?,
+            credited: count(db, "artists")?,
+            albums: count(db, "albums")?,
         })
+    }
+
+    /// The size of the library and how much of it is on disk, given the files in the audio folder (`files::file_index`).
+    #[must_use]
+    pub fn stats(&self, on_disk: &HashMap<String, Vec<String>>) -> Stats {
+        let downloaded = self
+            .files
+            .iter()
+            .filter(|(name, _)| on_disk.contains_key(name))
+            .count();
+        let missing = self.files.len() - downloaded;
+        let missing_linked = self
+            .files
+            .iter()
+            .filter(|(name, linked)| *linked && !on_disk.contains_key(name))
+            .count();
+        Stats {
+            artists: self.followed,
+            credited: self.credited,
+            albums: self.albums,
+            songs: self.files.len() as u32,
+            downloaded: downloaded as u32,
+            missing: missing as u32,
+            missing_linked: missing_linked as u32,
+        }
     }
 
     /// Albums of the followed artists with their tracklists. A song on several albums is listed on each; `total` and

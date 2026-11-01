@@ -50,6 +50,7 @@ All under `/api/v1/admin`, JSON, behind Gatehouse sign-in (`Auth`: bearer token 
 |---|---|---|
 | `GET /state` | | artists (with counts), categories, genres, suggestions |
 | `GET /browse` | `artist`, `category`, `genre`, `q`, `links` (`has` / `missing` / `unofficial`) | albums with tracklists; `total`, `linked`, `shown` (at most 300) |
+| `GET /stats` | | the numbers on the main page: artists (followed, and all credited), albums, songs, downloaded and missing (and how many of the missing have a link); the audio folder is looked at on every call |
 | `POST /link` | `{track_id, url}` (empty url clears) | `{updated}` |
 | `POST /albums/blacklist` | `{artist, album_id}` | `{removed}` |
 | `POST /artists/add` | `{items: [{name, id, category}]}` | `{added: [names]}` |
@@ -96,11 +97,19 @@ One job at a time, in the background, with its log kept in memory (the last 4 MB
 | `SERVICE_NAME` | `service` | the audience the token must carry (set `songbook`) |
 | `REDIS_URL` | none | shared session store; sessions are held in the process when unset |
 | `YTDLP_ARGS` | empty | extra options for every yt-dlp run, e.g. `--js-runtimes node` |
+| `YTDLP_UPDATE` | `true` | keep a current yt-dlp of the service's own in `$MUSIC_HOME/bin/yt-dlp` (see below); `false` uses the one on the `PATH` |
 | `RUST_LOG`, `LOG_*` | | logging, as for every quench service |
 
 Every other platform variable (`GATEHOUSE_TLS_VERIFY`, `AUTH_COOKIE_*`, ...) is the quench-starter / quench-auth one, listed in
 the [common service runtime](../../../docs/services/common-runtime.md). **`SERVICE_AUTH_ENABLED` defaults to `false`: set
 it to `true` in any deployment**, or `/api/v1` answers anyone.
+
+**yt-dlp is kept current by the service.** YouTube changes often enough that a yt-dlp a few months old is refused (`HTTP Error 403: Forbidden`
+on every download), and the copy a distribution puts in an image only ages: the one in the image got 403 on 12 of 12 sample links where a current
+one got all 12. So before Find links and Download (and so before the pipeline) the service downloads the official standalone build to
+`$MUSIC_HOME/bin/yt-dlp` (checked against the release's `SHA2-256SUMS`), and runs `yt-dlp -U` on it at most every 12 hours; the first lines of the log say
+what happened. The pod needs to reach `github.com`. If that fails the job goes on with the copy it has, or the `yt-dlp` on the `PATH`. A download
+stops after 5 refusals in a row (403) with a message, instead of working through the whole list: then it is the cookies (push fresh ones) or YouTube.
 
 The service needs `yt-dlp` (with a JavaScript runtime such as node, for YouTube's challenges), `ffmpeg` and `ffprobe` on the
 `PATH`; the image has them.

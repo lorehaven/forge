@@ -117,6 +117,14 @@ ui_run_all_title = Tout lancer
 ui_run_all_text = Synchronise la bibliothèque, cherche les liens (en réessayant les titres sans résultat), télécharge et convertit : les étapes ci-dessous, l’une après l’autre. Elle s’arrête à la première étape en échec. Les options ci-dessous (singles, l’artiste choisi à gauche, les limites) s’appliquent.
 ui_run_all = Tout lancer
 ui_run_all_hint = Synchroniser, chercher les liens, télécharger et convertir d’un coup
+ui_stat_artists = Artistes
+ui_stat_artists_sub = { $n } crédités au total
+ui_stat_albums = Albums
+ui_stat_songs = Titres
+ui_stat_downloaded = Téléchargés
+ui_stat_downloaded_sub = { $pct } % des titres
+ui_stat_missing = Manquants
+ui_stat_missing_sub = { $linked } avec un lien · { $unlinked } sans
 ui_download = Télécharger
 ui_convert = Convertir
 

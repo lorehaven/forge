@@ -347,6 +347,54 @@ fn the_library_lists_albums_and_filters_tracks() {
 }
 
 #[quench_test::test]
+fn the_statistics_count_the_library_and_what_is_on_disk() {
+    let dir = Scratch::new();
+    let index = index_in(&dir);
+    let (s1, _) = catalogue(&index);
+    let audio = dir.path().join("audio");
+    std::fs::create_dir_all(&audio).unwrap();
+    index
+        .with(|db| {
+            follow::add_follow(db, "Nate Dogg", "", "")?.unwrap();
+            browse::set_link(db, s1, "https://youtu.be/x")?.unwrap();
+            let snapshot = browse::Snapshot::load(db)?;
+            // nothing downloaded yet: both songs are missing, one of them has a link
+            let none = snapshot.stats(&songbook_service::files::file_index(&audio));
+            assert_eq!(
+                (none.artists, none.credited, none.albums, none.songs),
+                (1, 2, 2, 2)
+            );
+            assert_eq!(
+                (none.downloaded, none.missing, none.missing_linked),
+                (0, 2, 1)
+            );
+            // a file of the first song, in any format, and a half-done one of the second, which does not count
+            let name = db
+                .query(
+                    "SELECT filename FROM songs WHERE id = ?",
+                    &[songbook_service::index::int(s1)],
+                )?
+                .rows[0][0]
+                .as_text()
+                .unwrap()
+                .to_string();
+            std::fs::write(audio.join(format!("{name}.webm")), b"x").unwrap();
+            std::fs::write(
+                audio.join("Nate Dogg, Snoop Dogg - Never Leave Me Alone.mp3.part"),
+                b"x",
+            )
+            .unwrap();
+            let some = snapshot.stats(&songbook_service::files::file_index(&audio));
+            assert_eq!(
+                (some.downloaded, some.missing, some.missing_linked),
+                (1, 1, 0)
+            );
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[quench_test::test]
 fn a_blacklisted_album_leaves_with_its_other_editions_and_its_songs() {
     let dir = Scratch::new();
     let index = index_in(&dir);

@@ -1620,6 +1620,7 @@ dependencies = [
  "quench-auth",
  "quench-client",
  "quench-core",
+ "quench-crypto",
  "quench-http",
  "quench-log",
  "quench-serde",

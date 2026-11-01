@@ -43,6 +43,23 @@ pub async fn browse_library(Inject(app): Inject<App>, Query(filter): Query<Filte
     }
 }
 
+/// How big the library is and how much of it is on disk. The files are looked at on every call: they change without the
+/// index knowing (a download, a file put there by hand).
+#[get("/api/v1/admin/stats")]
+pub async fn stats(Inject(app): Inject<App>) -> Response {
+    let snapshot = match app.index.snapshot().await {
+        Ok(s) => s,
+        Err(e) => return server_error(e),
+    };
+    let data = app.config.data.clone();
+    match tokio::task::spawn_blocking(move || snapshot.stats(&crate::files::file_index(&data)))
+        .await
+    {
+        Ok(stats) => ok(&stats),
+        Err(e) => server_error(e),
+    }
+}
+
 #[post("/api/v1/admin/link")]
 pub async fn link(Inject(app): Inject<App>, Json(body): Json<LinkBody>) -> Response {
     if app.jobs.running() {
@@ -229,6 +246,7 @@ pub async fn job(Inject(app): Inject<App>, Query(query): Query<From>) -> Respons
 pub fn register_routes() {
     let _ = state as fn(_) -> _;
     let _ = browse_library as fn(_, _) -> _;
+    let _ = stats as fn(_) -> _;
     let _ = link as fn(_, _) -> _;
     let _ = blacklist as fn(_, _) -> _;
     let _ = add_artists as fn(_, _) -> _;

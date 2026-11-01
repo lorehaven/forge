@@ -285,6 +285,40 @@ fn the_categories_start_folded_and_fold_again() {
 }
 
 #[quench_test::test]
+fn the_library_opens_with_the_statistics_of_the_whole_collection() {
+    let l = started("/songbook/ui/library");
+    assert!(!l.has("stats"), "nothing to show before the numbers come");
+    l.send(Msg::Stats(songbook_core::Stats {
+        artists: 61,
+        credited: 2122,
+        albums: 679,
+        songs: 8395,
+        downloaded: 8141,
+        missing: 254,
+        missing_linked: 4,
+    }));
+    assert_eq!(l.text_of("stat-artists"), "Artists612122 credited in all");
+    assert_eq!(l.text_of("stat-albums"), "Albums679");
+    assert_eq!(l.text_of("stat-songs"), "Songs8395");
+    assert_eq!(
+        l.text_of("stat-downloaded"),
+        "Downloaded814197% of the songs"
+    );
+    assert_eq!(
+        l.text_of("stat-missing"),
+        "Missing2544 with a link · 250 without"
+    );
+}
+
+#[quench_test::test]
+fn the_statistics_are_asked_for_when_the_page_opens_and_after_a_change() {
+    let l = live("/songbook/ui/library");
+    assert!(l.take().contains(&Request::Stats));
+    l.send(Msg::CategorySet);
+    assert!(l.take().contains(&Request::Stats));
+}
+
+#[quench_test::test]
 fn the_library_shows_albums_with_their_songs_and_links() {
     let l = started("/songbook/ui/library");
     assert_eq!(

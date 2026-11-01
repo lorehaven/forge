@@ -483,10 +483,74 @@ pub(crate) fn library(env: &Env) -> View {
             let env = env.clone();
             move || head(&env, "ui_library_title", "ui_library_intro").into_view()
         }))
+        .child(stats_strip(env))
         .child(chips)
         .child(summary)
         .child(result)
         .into_view()
+}
+
+/// The numbers on top of the library: how big it is, and how much of it is on disk.
+fn stats_strip(env: &Env) -> View {
+    let env = env.clone();
+    View::dynamic(move || {
+        let t = &env.t;
+        let Some(s) = env.m.stats.get() else {
+            return View::Empty;
+        };
+        let card = |id: &str, label: String, value: u32, sub: Option<String>, class: &str| {
+            let mut c = div()
+                .attr("id", format!("stat-{id}"))
+                .class(format!("sb-stat {class}"))
+                .child(span().class("sb-stat-label").text(label))
+                .child(strong().class("sb-stat-value").text(value.to_string()));
+            if let Some(sub) = sub {
+                c = c.child(small().class("sb-stat-sub").text(sub));
+            }
+            c
+        };
+        // Rounded, but never 100% while something is missing.
+        let percent = if s.songs == 0 {
+            0
+        } else {
+            let p = (u64::from(s.downloaded) * 100 + u64::from(s.songs) / 2) / u64::from(s.songs);
+            let p = u32::try_from(p).unwrap_or(100);
+            if s.missing > 0 { p.min(99) } else { p }
+        };
+        div()
+            .attr("id", "stats")
+            .class("sb-stats")
+            .child(card(
+                "artists",
+                t.t("ui_stat_artists"),
+                s.artists,
+                Some(t.tr("ui_stat_artists_sub", &[("n", s.credited.into())])),
+                "",
+            ))
+            .child(card("albums", t.t("ui_stat_albums"), s.albums, None, ""))
+            .child(card("songs", t.t("ui_stat_songs"), s.songs, None, ""))
+            .child(card(
+                "downloaded",
+                t.t("ui_stat_downloaded"),
+                s.downloaded,
+                Some(t.tr("ui_stat_downloaded_sub", &[("pct", percent.into())])),
+                "sb-stat-ok",
+            ))
+            .child(card(
+                "missing",
+                t.t("ui_stat_missing"),
+                s.missing,
+                Some(t.tr(
+                    "ui_stat_missing_sub",
+                    &[
+                        ("linked", s.missing_linked.into()),
+                        ("unlinked", (s.missing - s.missing_linked).into()),
+                    ],
+                )),
+                if s.missing == 0 { "" } else { "sb-stat-warn" },
+            ))
+            .into_view()
+    })
 }
 
 /// The category, genre and link chips.

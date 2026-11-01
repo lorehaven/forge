@@ -10,5 +10,5 @@ pub mod naming;
 pub use api::{
     AddArtists, Added, Album, ArtistRow, BlacklistBody, Browse, CategoryBody, Filter, Job,
     JobStart, LinkBody, NewArtist, NewCategory, RemoveArtist, Removed, RenameCategory, Retagged,
-    Started, State, Suggestion, Track, Updated,
+    Started, State, Stats, Suggestion, Track, Updated,
 };

@@ -117,6 +117,14 @@ ui_run_all_title = Ejecutar todo
 ui_run_all_text = Sincroniza la biblioteca, busca enlaces (vuelve a probar las canciones sin resultado), descarga y convierte: los pasos de abajo, uno tras otro. Se detiene en el primer paso que falla. Se aplican las opciones de abajo (sencillos, el artista elegido en el lateral, los límites).
 ui_run_all = Ejecutar todo
 ui_run_all_hint = Sincronizar, buscar enlaces, descargar y convertir de una vez
+ui_stat_artists = Artistas
+ui_stat_artists_sub = { $n } acreditados en total
+ui_stat_albums = Álbumes
+ui_stat_songs = Canciones
+ui_stat_downloaded = Descargadas
+ui_stat_downloaded_sub = { $pct } % de las canciones
+ui_stat_missing = Faltan
+ui_stat_missing_sub = { $linked } con enlace · { $unlinked } sin
 ui_download = Descargar
 ui_convert = Convertir
 

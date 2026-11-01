@@ -26,6 +26,7 @@ fn reads_are_gets_under_the_admin_api() {
             body: None
         }
     );
+    assert_eq!(call(&Request::Stats).path, format!("{API}/stats"));
     assert_eq!(
         call(&Request::Job { from: 42 }).path,
         format!("{API}/job?from=42")
@@ -141,6 +142,10 @@ fn answers_become_messages() {
     let state = r#"{"artists":[],"categories":["A"],"uncategorized":"Uncategorized","genres":[],"suggestions":[]}"#;
     assert!(
         matches!(interpret(&Request::State, 200, state), Msg::State(s) if s.categories == ["A"])
+    );
+    let numbers = r#"{"artists":61,"credited":2122,"albums":679,"songs":8395,"downloaded":8141,"missing":254,"missing_linked":1}"#;
+    assert!(
+        matches!(interpret(&Request::Stats, 200, numbers), Msg::Stats(s) if (s.songs, s.downloaded, s.missing_linked) == (8395, 8141, 1))
     );
     let browse = r#"{"total":1,"linked":0,"shown":1,"albums":[]}"#;
     assert!(

@@ -119,6 +119,14 @@ ui_run_all_title = Uruchom wszystko
 ui_run_all_text = Synchronizuje bibliotekę, szuka linków (ponawiając utwory bez dopasowania), pobiera i konwertuje: kroki poniżej, jeden po drugim. Zatrzymuje się na pierwszym kroku, który się nie powiedzie. Obowiązują opcje poniżej (single, artysta wybrany z lewej, limity).
 ui_run_all = Uruchom wszystko
 ui_run_all_hint = Synchronizacja, szukanie linków, pobieranie i konwersja za jednym razem
+ui_stat_artists = Artyści
+ui_stat_artists_sub = { $n } wszystkich w utworach
+ui_stat_albums = Albumy
+ui_stat_songs = Utwory
+ui_stat_downloaded = Pobrane
+ui_stat_downloaded_sub = { $pct }% utworów
+ui_stat_missing = Brakujące
+ui_stat_missing_sub = { $linked } z linkiem · { $unlinked } bez
 ui_download = Pobierz
 ui_convert = Konwertuj
 

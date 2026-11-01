@@ -117,6 +117,14 @@ ui_run_all_title = Run everything
 ui_run_all_text = Sync the library, find links (trying again the songs that had no match), download and convert: the steps below, one after the other. It stops at the first step that fails. The options below (singles, the artist picked in the sidebar, the limits) apply.
 ui_run_all = Run everything
 ui_run_all_hint = Sync, find links, download and convert in one go
+ui_stat_artists = Artists
+ui_stat_artists_sub = { $n } credited in all
+ui_stat_albums = Albums
+ui_stat_songs = Songs
+ui_stat_downloaded = Downloaded
+ui_stat_downloaded_sub = { $pct }% of the songs
+ui_stat_missing = Missing
+ui_stat_missing_sub = { $linked } with a link · { $unlinked } without
 ui_download = Download
 ui_convert = Convert
 

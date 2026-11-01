@@ -19,6 +19,8 @@ use crate::screens;
 pub enum Request {
     /// The followed artists, categories, genres and suggestions.
     State,
+    /// How big the library is and how much of it is on disk.
+    Stats,
     /// The albums that match a filter.
     Browse(Filter),
     /// Set the link of a song; an empty `url` clears it.
@@ -47,6 +49,7 @@ pub enum Request {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
     State(State),
+    Stats(songbook_core::Stats),
     Browse(Browse),
     Job(Job),
     /// Whether the job started (`false`: one is already running).
@@ -180,6 +183,7 @@ pub(crate) enum Dialog {
 #[derive(Clone)]
 pub(crate) struct Model {
     pub state: Signal<Option<State>>,
+    pub stats: Signal<Option<songbook_core::Stats>>,
     pub browse: Signal<Option<Browse>>,
     pub filter: Signal<Filter>,
     /// The job's state; its log is in `log`.
@@ -208,6 +212,7 @@ impl Model {
         use quench_ui::form::Field;
         Self {
             state: create_signal(None),
+            stats: create_signal(None),
             browse: create_signal(None),
             filter: create_signal(Filter::default()),
             job: create_signal(Job::default()),
@@ -266,6 +271,7 @@ impl Env {
     /// Asks for the state and the albums again, after a change.
     pub fn refresh(&self) {
         (self.ask)(Request::State);
+        (self.ask)(Request::Stats);
         self.load();
     }
 }
@@ -320,6 +326,7 @@ fn receive(env: &Env, msg: Msg) {
             m.problem.set(None);
             m.state.set(Some(state));
         }
+        Msg::Stats(stats) => m.stats.set(Some(stats)),
         Msg::Browse(browse) => {
             m.problem.set(None);
             m.browse.set(Some(browse));
@@ -468,6 +475,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         let env = env.clone();
         move |_: &RouteContext| -> View {
             env.load();
+            (env.ask)(Request::Stats);
             screens::library(&env)
         }
     };

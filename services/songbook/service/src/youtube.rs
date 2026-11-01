@@ -24,7 +24,12 @@ pub struct Output {
 
 /// Runs `program` and waits for it (at most `limit`); the process is killed if it outlives that or this future is dropped.
 pub async fn run_tool(program: &str, args: &[String], limit: Duration) -> Result<Output, String> {
-    let mut command = Command::new(program);
+    // `yt-dlp` is the copy the service keeps current when it has one (see `ytdlp`).
+    let mut command = if program == "yt-dlp" {
+        Command::new(crate::ytdlp::program())
+    } else {
+        Command::new(program)
+    };
     if program == "yt-dlp" {
         // Extra options for every yt-dlp run, e.g. `--js-runtimes node` (YouTube's challenges need a JavaScript runtime).
         command.args(quench_core::env::get_or("YTDLP_ARGS", "").split_whitespace());
@@ -443,6 +448,7 @@ pub async fn run(
     retry_missing: bool,
     log: &Log,
 ) -> Result<(), String> {
+    crate::ytdlp::ensure(&app.config, log).await;
     let (name, retry) = (artist.to_string(), retry_missing);
     let all = app
         .index

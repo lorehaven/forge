@@ -22,5 +22,7 @@ mod routers_tests;
 mod sync_tests;
 #[path = "unit/youtube_tests.rs"]
 mod youtube_tests;
+#[path = "unit/ytdlp_tests.rs"]
+mod ytdlp_tests;
 
 quench_test::main!();

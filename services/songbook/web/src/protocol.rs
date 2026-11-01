@@ -5,7 +5,7 @@ use songbook_app::{Msg, Request};
 use songbook_core::api::encode;
 use songbook_core::{
     AddArtists, Added, BlacklistBody, Browse, CategoryBody, Job, LinkBody, NewCategory,
-    RemoveArtist, Removed, RenameCategory, Started, State,
+    RemoveArtist, Removed, RenameCategory, Started, State, Stats,
 };
 
 /// Where the admin API lives, under the service's own prefix.
@@ -51,6 +51,7 @@ pub fn call_for(request: &Request) -> Option<Call> {
     Some(match request {
         Request::Language(_) => return None,
         Request::State => get(format!("{API}/state")),
+        Request::Stats => get(format!("{API}/stats")),
         Request::Browse(filter) => get(format!("{API}/browse{}", filter.query())),
         Request::Job { from } => get(format!("{API}/job?from={from}")),
         Request::SaveLink { track_id, url } => post(
@@ -117,6 +118,7 @@ pub fn interpret(request: &Request, status: u16, body: &str) -> Msg {
     match status {
         200..=299 => match request {
             Request::State => read::<State>(body, Msg::State),
+            Request::Stats => read::<Stats>(body, Msg::Stats),
             Request::Browse(_) => read::<Browse>(body, Msg::Browse),
             Request::Job { .. } => read::<Job>(body, Msg::Job),
             Request::SaveLink { .. } => Msg::LinkSaved,

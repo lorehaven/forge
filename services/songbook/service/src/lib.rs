@@ -34,3 +34,4 @@ pub mod routers;
 pub mod similar;
 pub mod sync;
 pub mod youtube;
+pub mod ytdlp;

@@ -30,6 +30,7 @@ songbook-web = { workspace = true }
 quench-auth = { workspace = true }
 quench-client = { workspace = true }
 quench-core = { workspace = true }
+quench-crypto = { workspace = true }
 quench-http = { workspace = true }
 quench-log = { workspace = true }
 quench-serde = { workspace = true }

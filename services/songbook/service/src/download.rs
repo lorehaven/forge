@@ -15,6 +15,15 @@ pub fn output_template(dir: &std::path::Path, filename: &str) -> String {
         .into_owned()
 }
 
+/// How many downloads in a row YouTube may refuse with 403 before the run stops: the next ones would be refused too.
+const MAX_REFUSED: u32 = 5;
+
+/// Does yt-dlp's output say the video data was refused (HTTP 403)?
+#[must_use]
+pub fn is_forbidden(output: &str) -> bool {
+    output.contains("HTTP Error 403")
+}
+
 pub async fn run(
     app: &App,
     artist: &str,
@@ -62,8 +71,11 @@ pub async fn run(
         rows.len(),
         app.config.data.display()
     ));
+    crate::ytdlp::ensure(&app.config, log).await;
     let auth = Auth::new(&app.config);
     let (mut succeeded, mut failed, mut skipped) = (0u32, 0u32, 0u32);
+    // Songs in a row that YouTube refused with 403: it is not the songs but the tool or the login.
+    let mut refused = 0u32;
     for (i, (name, url)) in rows.iter().enumerate() {
         let at = format!("[{}/{}]", i + 1, rows.len());
         if on_disk.contains_key(name) {
@@ -93,6 +105,7 @@ pub async fn run(
             match run_tool("yt-dlp", &args, Duration::from_mins(30)).await {
                 Ok(out) if out.ok => {
                     succeeded += 1;
+                    refused = 0;
                     break;
                 }
                 Ok(out) => {
@@ -102,13 +115,22 @@ pub async fn run(
                         log.line("  ERROR: YouTube age/authentication restriction. Configure cookies; retries will not fix missing authentication.");
                         break;
                     }
-                    if attempt >= retries {
+                    // A 403 on the video data does not go away by waiting, so it gets one more try, not all of them.
+                    let forbidden = is_forbidden(&all);
+                    if attempt >= if forbidden { retries.min(1) } else { retries } {
                         failed += 1;
+                        refused = if forbidden { refused + 1 } else { 0 };
                         log.line(format!(
                             "  ERROR: yt-dlp failed after {} attempt(s): {}",
                             attempt + 1,
                             out.stderr.trim().lines().last().unwrap_or("")
                         ));
+                        if refused >= MAX_REFUSED {
+                            return Err(format!(
+                                "YouTube refused {MAX_REFUSED} downloads in a row (HTTP 403): yt-dlp is out of date or the cookies are no longer accepted. \
+                                 The service updates its own yt-dlp (see the first lines of this log); push fresh cookies and run again."
+                            ));
+                        }
                         break;
                     }
                     let delay = (retry_delay << attempt).min(300);

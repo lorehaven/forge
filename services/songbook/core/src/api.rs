@@ -4,6 +4,7 @@
 //! |-----------------------------------|---------------------|-------------|
 //! | `GET  /state`                     |                     | [`State`]   |
 //! | `GET  /browse`                    | [`Filter`] as query | [`Browse`]  |
+//! | `GET  /stats`                     |                     | [`Stats`]   |
 //! | `POST /link`                      | [`LinkBody`]        | [`Updated`] |
 //! | `POST /albums/blacklist`          | [`BlacklistBody`]   | [`Removed`] |
 //! | `POST /artists/add`               | [`AddArtists`]      | [`Added`]   |
@@ -59,6 +60,23 @@ pub struct State {
     pub uncategorized: String,
     pub genres: Vec<String>,
     pub suggestions: Vec<Suggestion>,
+}
+
+/// How big the library is and how much of it is on disk: the numbers on the main page.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Stats {
+    /// Followed artists.
+    pub artists: u32,
+    /// Every artist in the index, followed or only credited on a song.
+    pub credited: u32,
+    pub albums: u32,
+    pub songs: u32,
+    /// Songs with a file in the audio folder, in any format.
+    pub downloaded: u32,
+    /// Songs with no file yet.
+    pub missing: u32,
+    /// Of the missing, the ones that have a link to download from.
+    pub missing_linked: u32,
 }
 
 /// One song on one album.
