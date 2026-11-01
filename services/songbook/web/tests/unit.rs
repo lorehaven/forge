@@ -99,6 +99,17 @@ fn changes_are_posts_with_a_json_body() {
             Some(r#"{"name":"Gibbs","category":""}"#)
         )
     );
+    let c = call(&Request::RenameCategory {
+        name: "Polish Rap".into(),
+        new_name: "Rap PL".into(),
+    });
+    assert_eq!(
+        (c.path.as_str(), c.body.as_deref()),
+        (
+            "/api/v1/admin/categories/rename",
+            Some(r#"{"name":"Polish Rap","new_name":"Rap PL"}"#)
+        )
+    );
     let c = call(&Request::AddCategory("Latino".into()));
     assert_eq!(
         (c.path.as_str(), c.body.as_deref()),
@@ -166,6 +177,18 @@ fn answers_become_messages() {
         category: String::new(),
     };
     assert_eq!(interpret(&cat, 200, r#"{"retagged":3}"#), Msg::CategorySet);
+    let rename = Request::RenameCategory {
+        name: "A".into(),
+        new_name: "B".into(),
+    };
+    assert_eq!(
+        interpret(&rename, 200, r#"{"retagged":3}"#),
+        Msg::CategoryRenamed
+    );
+    assert_eq!(
+        interpret(&rename, 400, r#"{"error":"category exists: B"}"#),
+        Msg::Rejected("category exists: B".into())
+    );
     assert_eq!(
         interpret(
             &Request::AddCategory(String::new()),

@@ -33,6 +33,8 @@ pub enum Request {
     SetCategory { name: String, category: String },
     /// Create a category.
     AddCategory(String),
+    /// Give a category another name.
+    RenameCategory { name: String, new_name: String },
     /// Start a job.
     StartJob(JobStart),
     /// The job's state and its log from character `from`.
@@ -58,6 +60,7 @@ pub enum Msg {
     /// The categories that were new.
     CategoryAdded(Vec<String>),
     CategorySet,
+    CategoryRenamed,
     /// The service refused the change; the text says why.
     Rejected(String),
     /// The service could not be reached, or answered something else.
@@ -149,6 +152,11 @@ pub(crate) enum Pending {
     Remove {
         name: String,
     },
+    /// A category being renamed.
+    RenameCategory {
+        from: String,
+        to: String,
+    },
     /// A new category, then the artist goes into it.
     NewCategoryThen {
         name: String,
@@ -163,6 +171,8 @@ pub(crate) enum Dialog {
     Blacklist(songbook_core::Album),
     Remove(String),
     Category(songbook_core::ArtistRow),
+    /// Rename this category.
+    RenameCategory(String),
     Add,
 }
 
@@ -400,6 +410,24 @@ fn receive(env: &Env, msg: Msg) {
             if let Pending::NewCategoryThen { name, category } = take() {
                 (env.ask)(Request::SetCategory { name, category });
             }
+        }
+        Msg::CategoryRenamed => {
+            if let Pending::RenameCategory { from, to } = take() {
+                m.dialog.set(None);
+                // The filter and the open list follow the new name.
+                m.filter.update(|f| {
+                    if f.category == from {
+                        f.category.clone_from(&to);
+                    }
+                });
+                m.open.update(|open| {
+                    for c in open.iter_mut().filter(|c| **c == from) {
+                        c.clone_from(&to);
+                    }
+                });
+                env.say(t.tr("ui_catrename_done", &[("name", to.into())]));
+            }
+            env.refresh();
         }
         Msg::CategorySet => {
             m.dialog.set(None);

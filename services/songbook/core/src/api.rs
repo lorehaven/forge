@@ -10,6 +10,7 @@
 //! | `POST /artists/remove`            | [`RemoveArtist`]    | `{}`        |
 //! | `POST /artists/category`          | [`CategoryBody`]    | [`Retagged`]|
 //! | `POST /categories/add`            | [`NewCategory`]     | [`Added`]   |
+//! | `POST /categories/rename`         | [`RenameCategory`]  | [`Retagged`]|
 //! | `POST /jobs`                      | [`JobStart`]        | [`Started`] |
 //! | `GET  /job?from=N`                |                     | [`Job`]     |
 //!
@@ -206,6 +207,13 @@ pub struct CategoryBody {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewCategory {
     pub name: String,
+}
+
+/// `POST /categories/rename`: the artists keep their place; their songs are retagged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RenameCategory {
+    pub name: String,
+    pub new_name: String,
 }
 
 /// `POST /jobs`: `name` is `sync`, `tags`, `similar`, `youtube`, `download` or `convert`.

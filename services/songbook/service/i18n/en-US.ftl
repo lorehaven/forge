@@ -85,6 +85,11 @@ ui_cat_label = Category
 ui_cat_new = Or create a new category
 ui_cat_new_hint = Retags this artist's songs; files stay where they are.
 ui_cat_saved = Category saved
+ui_catrename_title = Rename category
+ui_catrename_aria = Rename category “{ $name }”
+ui_catrename_label = Name
+ui_catrename_hint = Retags the songs of its artists; files stay where they are.
+ui_catrename_done = Category renamed to { $name }
 
 # ── Pipeline ─────────────────────────────────────────────────────────────────
 ui_pipeline_title = Pipeline

@@ -87,6 +87,11 @@ ui_cat_label = Kategoria
 ui_cat_new = Albo utwórz nową kategorię
 ui_cat_new_hint = Zmienia tagi utworów tego artysty; pliki zostają na miejscu.
 ui_cat_saved = Zapisano kategorię
+ui_catrename_title = Zmień nazwę kategorii
+ui_catrename_aria = Zmień nazwę kategorii „{ $name }”
+ui_catrename_label = Nazwa
+ui_catrename_hint = Zmienia tagi utworów jej artystów; pliki zostają na miejscu.
+ui_catrename_done = Zmieniono nazwę kategorii na { $name }
 
 # ── Potok ────────────────────────────────────────────────────────────────────
 ui_pipeline_title = Potok

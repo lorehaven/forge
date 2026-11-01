@@ -191,6 +191,39 @@ pub fn add_category(db: &mut Connection, name: &str) -> Result<std::result::Resu
     Ok(Ok(true))
 }
 
+/// Renames a category; the artists in it keep their place. Only a case change may land on a name that is taken (by itself).
+pub fn rename_category(
+    db: &mut Connection,
+    name: &str,
+    new_name: &str,
+) -> Result<std::result::Result<(), Refused>> {
+    let old = match known_category(db, name)? {
+        Ok(c) if !c.is_empty() => c,
+        Ok(_) => {
+            return Ok(Err(Refused::Input(
+                "Uncategorized cannot be renamed".into(),
+            )));
+        }
+        Err(e) => return Ok(Err(e)),
+    };
+    let new = clean(new_name);
+    if new.is_empty() || norm(&new) == norm(UNCATEGORIZED) {
+        return Ok(Err(Refused::Input("invalid category name".into())));
+    }
+    if norm(&new) != norm(&old) && categories(db)?.iter().any(|c| norm(c) == norm(&new)) {
+        return Ok(Err(Refused::Input(format!("category exists: {new}"))));
+    }
+    db.execute(
+        "UPDATE categories SET name = ? WHERE name = ?",
+        &[text(&new), text(&old)],
+    )?;
+    db.execute(
+        "UPDATE follows SET category = ? WHERE category = ?",
+        &[text(&new), text(&old)],
+    )?;
+    Ok(Ok(()))
+}
+
 /// Blacklisted `(normalised artist, album key)` pairs.
 pub fn blacklist(db: &mut Connection) -> Result<HashSet<(String, String)>> {
     let rows = db.query("SELECT artist, album_key FROM blacklist", &[])?;

@@ -626,6 +626,58 @@ fn the_category_of_an_artist_changes_in_a_dialog() {
 }
 
 #[quench_test::test]
+fn the_artists_of_a_category_are_listed_alphabetically() {
+    let l = started("/songbook/ui/library");
+    let mut s = state();
+    s.artists = vec![
+        artist("zeta", "Polish Rap", 1, true),
+        artist("Beta", "Polish Rap", 1, true),
+        artist("alpha", "Polish Rap", 1, true),
+        artist("Gamma", "Polish Rap", 1, true),
+    ];
+    l.send(Msg::State(s));
+    l.expand();
+    let order: Vec<String> =
+        l.r.document_order()
+            .into_iter()
+            .filter_map(|n| l.r.attr(n, "data-artist"))
+            .collect();
+    assert_eq!(order, ["alpha", "Beta", "Gamma", "zeta"]);
+}
+
+#[quench_test::test]
+fn a_category_is_renamed_in_a_dialog_and_the_filter_follows() {
+    let l = started("/songbook/ui/library");
+    l.click("button", ("data-rename", "Polish Rap"));
+    l.type_into("category-rename", "Rap PL");
+    l.send(Msg::Browse(songbook_core::Browse {
+        total: 0,
+        linked: 0,
+        shown: 0,
+        albums: Vec::new(),
+    }));
+    l.take();
+    l.r.fire(l.find("form", ("class", "sb-dialog-form")), &Event::Submit);
+    assert_eq!(
+        l.take(),
+        vec![Request::RenameCategory {
+            name: "Polish Rap".into(),
+            new_name: "Rap PL".into()
+        }]
+    );
+    l.send(Msg::CategoryRenamed);
+    assert!(!l.has("dialog-rename-category"));
+    assert!(l.text_of("snack").contains("Rap PL"), "{}", l.r.text());
+    // The state is read again; Uncategorized has no rename button.
+    assert!(l.take().contains(&Request::State));
+    assert!(
+        !l.r.document_order()
+            .into_iter()
+            .any(|n| l.r.attr(n, "data-rename").as_deref() == Some("Uncategorized"))
+    );
+}
+
+#[quench_test::test]
 fn a_new_category_is_created_first_and_then_used() {
     let l = started("/songbook/ui/library");
     l.expand();

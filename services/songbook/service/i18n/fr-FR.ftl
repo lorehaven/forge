@@ -85,6 +85,11 @@ ui_cat_label = Catégorie
 ui_cat_new = Ou créez une nouvelle catégorie
 ui_cat_new_hint = Met à jour les étiquettes des titres de cet artiste ; les fichiers ne bougent pas.
 ui_cat_saved = Catégorie enregistrée
+ui_catrename_title = Renommer la catégorie
+ui_catrename_aria = Renommer la catégorie « { $name } »
+ui_catrename_label = Nom
+ui_catrename_hint = Met à jour les étiquettes des titres de ses artistes ; les fichiers ne bougent pas.
+ui_catrename_done = Catégorie renommée en { $name }
 
 # ── Pipeline ─────────────────────────────────────────────────────────────────
 ui_pipeline_title = Pipeline

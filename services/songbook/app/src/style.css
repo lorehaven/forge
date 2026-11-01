@@ -18,6 +18,10 @@
 .sb-artists{display:flex;flex-direction:column;gap:.125rem;padding-top:.5rem;margin-top:.5rem;border-top:1px solid var(--fui-border)}
 .sb-group{margin:.75rem 0 .25rem;padding:0 .75rem;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--fui-text-tertiary)}
 .sb-artist{display:flex;align-items:center;justify-content:flex-start;width:100%;box-sizing:border-box;border-radius:var(--fui-radius-md)}
+.sb-group-row{display:flex;align-items:center}
+.sb-group-row .sb-group-btn{flex:1 1 auto;min-width:0}
+.sb-group-row .sb-rename-btn{opacity:0}
+.sb-group-row:hover .sb-rename-btn,.sb-group-row:focus-within .sb-rename-btn{opacity:1}
 .sb-artists .sb-group-btn{display:flex;align-items:center;justify-content:flex-start;gap:.375rem;width:100%;box-sizing:border-box;margin:.5rem 0 .125rem;border:0;box-shadow:none;background:none;text-align:left;cursor:pointer;font-family:inherit}
 .sb-group-btn:hover{color:var(--fui-text)}
 .sb-chevron{display:inline-block;width:.75rem;text-align:center}

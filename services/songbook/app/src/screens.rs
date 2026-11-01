@@ -98,7 +98,7 @@ pub(crate) fn artists_nav(env: &Env) -> View {
                 .iter()
                 .chain(std::iter::once(&state.uncategorized));
             for category in groups {
-                let members: Vec<&ArtistRow> = state
+                let mut members: Vec<&ArtistRow> = state
                     .artists
                     .iter()
                     .filter(|a| &a.category == category)
@@ -106,32 +106,17 @@ pub(crate) fn artists_nav(env: &Env) -> View {
                 if members.is_empty() {
                     continue;
                 }
+                // Alphabetical, whatever order they were followed in.
+                members.sort_by_cached_key(|a| (a.name.to_lowercase(), a.name.clone()));
                 let expanded = env.m.open.get().contains(category);
-                nav = nav.child(
-                    button()
-                        .attr("type", "button")
-                        .attr("aria-expanded", if expanded { "true" } else { "false" })
-                        .attr("data-fold", category.clone())
-                        .class("sb-group sb-group-btn")
-                        .on_click({
-                            let (m, category) = (env.m.clone(), category.clone());
-                            move || {
-                                m.open.update(|open| {
-                                    if let Some(at) = open.iter().position(|c| c == &category) {
-                                        open.remove(at);
-                                    } else {
-                                        open.push(category.clone());
-                                    }
-                                });
-                            }
-                        })
-                        .child(span().class("sb-chevron").text(if expanded {
-                            "▾"
-                        } else {
-                            "▸"
-                        }))
-                        .child(span().text(format!("{category} ({})", members.len()))),
+                let head = category_head(
+                    &env,
+                    category,
+                    members.len(),
+                    expanded,
+                    category != &state.uncategorized,
                 );
+                nav = nav.child(head);
                 if expanded {
                     for artist in members {
                         nav = nav.child(artist_row(&env, artist, artist.name == selected));
@@ -153,6 +138,63 @@ pub(crate) fn artists_nav(env: &Env) -> View {
         )
         .into_view()
     })
+}
+
+/// The header of a category in the side panel: it folds and unfolds the list, and (for a real category) renames it.
+fn category_head(
+    env: &Env,
+    category: &str,
+    count: usize,
+    expanded: bool,
+    renamable: bool,
+) -> Element {
+    let t = &env.t;
+    let fold = button()
+        .attr("type", "button")
+        .attr("aria-expanded", if expanded { "true" } else { "false" })
+        .attr("data-fold", category.to_string())
+        .class("sb-group sb-group-btn")
+        .on_click({
+            let (m, category) = (env.m.clone(), category.to_string());
+            move || {
+                m.open.update(|open| {
+                    if let Some(at) = open.iter().position(|c| c == &category) {
+                        open.remove(at);
+                    } else {
+                        open.push(category.clone());
+                    }
+                });
+            }
+        })
+        .child(
+            span()
+                .class("sb-chevron")
+                .text(if expanded { "▾" } else { "▸" }),
+        )
+        .child(span().text(format!("{category} ({count})")));
+    let mut head = div().class("sb-group-row").child(fold);
+    if renamable {
+        head = head.child(
+            button()
+                .attr("type", "button")
+                .class("sb-icon-btn sb-rename-btn")
+                .attr("data-rename", category.to_string())
+                .attr(
+                    "aria-label",
+                    t.tr(
+                        "ui_catrename_aria",
+                        &[("name", category.to_string().into())],
+                    ),
+                )
+                .attr("title", t.t("ui_catrename_title"))
+                .on_click({
+                    let (m, category) = (env.m.clone(), category.to_string());
+                    move || m.dialog.set(Some(Dialog::RenameCategory(category.clone())))
+                })
+                .child(span().text("✎")),
+        );
+    }
+    head
 }
 
 fn pick_artist(env: &Env, name: &str) {
@@ -1171,6 +1213,7 @@ pub(crate) fn dialogs(env: &Env) -> View {
         Some(Dialog::Blacklist(album)) => blacklist_dialog(&env, &album),
         Some(Dialog::Remove(name)) => remove_dialog(&env, &name),
         Some(Dialog::Category(artist)) => category_dialog(&env, &artist),
+        Some(Dialog::RenameCategory(name)) => rename_category_dialog(&env, &name),
         Some(Dialog::Add) => add_dialog(&env),
     })
 }
@@ -1447,6 +1490,42 @@ fn category_dialog(env: &Env, artist: &ArtistRow) -> View {
                 fresh.input().attr("autocomplete", "off").class("fui-input"),
             ),
         ],
+        vec![cancel_button(env), submit_button(t.t("ui_save"), false)],
+        go,
+    )
+}
+
+fn rename_category_dialog(env: &Env, name: &str) -> View {
+    let t = &env.t;
+    let field = Field::new("category-rename", name);
+    let go = {
+        let (env, field, name) = (env.clone(), field.clone(), name.to_string());
+        move || {
+            let new_name = field.value_untracked().trim().to_string();
+            if new_name.is_empty() || new_name == name {
+                env.m.dialog.set(None);
+                return;
+            }
+            *env.m.pending.borrow_mut() = Pending::RenameCategory {
+                from: name.clone(),
+                to: new_name.clone(),
+            };
+            (env.ask)(Request::RenameCategory {
+                name: name.clone(),
+                new_name,
+            });
+        }
+    };
+    modal(
+        env,
+        "dialog-rename-category",
+        &t.t("ui_catrename_title"),
+        vec![field_row(
+            "category-rename",
+            &t.t("ui_catrename_label"),
+            Some(t.t("ui_catrename_hint")),
+            field.input().attr("autocomplete", "off").class("fui-input"),
+        )],
         vec![cancel_button(env), submit_button(t.t("ui_save"), false)],
         go,
     )

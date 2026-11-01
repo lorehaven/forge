@@ -5,7 +5,7 @@ use songbook_app::{Msg, Request};
 use songbook_core::api::encode;
 use songbook_core::{
     AddArtists, Added, BlacklistBody, Browse, CategoryBody, Job, LinkBody, NewCategory,
-    RemoveArtist, Removed, Started, State,
+    RemoveArtist, Removed, RenameCategory, Started, State,
 };
 
 /// Where the admin API lives, under the service's own prefix.
@@ -84,6 +84,13 @@ pub fn call_for(request: &Request) -> Option<Call> {
             },
         ),
         Request::AddCategory(name) => post("/categories/add", &NewCategory { name: name.clone() }),
+        Request::RenameCategory { name, new_name } => post(
+            "/categories/rename",
+            &RenameCategory {
+                name: name.clone(),
+                new_name: new_name.clone(),
+            },
+        ),
         Request::StartJob(job) => post("/jobs", job),
     })
 }
@@ -118,6 +125,7 @@ pub fn interpret(request: &Request, status: u16, body: &str) -> Msg {
             Request::RemoveArtist(_) => Msg::ArtistRemoved,
             Request::SetCategory { .. } => Msg::CategorySet,
             Request::AddCategory(_) => read::<Added>(body, |a| Msg::CategoryAdded(a.added)),
+            Request::RenameCategory { .. } => Msg::CategoryRenamed,
             Request::StartJob(_) => read::<Started>(body, |s| Msg::Started(s.started)),
             Request::Language(_) => Msg::Failed("nothing to ask".into()),
         },

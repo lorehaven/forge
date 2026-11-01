@@ -85,6 +85,11 @@ ui_cat_label = Categoría
 ui_cat_new = O crea una categoría nueva
 ui_cat_new_hint = Cambia las etiquetas de las canciones de este artista; los archivos no se mueven.
 ui_cat_saved = Categoría guardada
+ui_catrename_title = Renombrar categoría
+ui_catrename_aria = Renombrar la categoría «{ $name }»
+ui_catrename_label = Nombre
+ui_catrename_hint = Cambia las etiquetas de las canciones de sus artistas; los archivos no se mueven.
+ui_catrename_done = Categoría renombrada a { $name }
 
 # ── Canalización ─────────────────────────────────────────────────────────────
 ui_pipeline_title = Canalización

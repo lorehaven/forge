@@ -397,6 +397,36 @@ fn followed_artists_and_categories_are_managed_in_the_index() {
 }
 
 #[quench_test::test]
+fn a_category_is_renamed_with_the_artists_in_it() {
+    let dir = Scratch::new();
+    let index = index_in(&dir);
+    index
+        .with(|db| {
+            follow::add_category(db, "Polish Rap")?.unwrap();
+            follow::add_category(db, "Latino")?.unwrap();
+            follow::add_follow(db, "Kartky", "", "Polish Rap")?.unwrap();
+            follow::add_follow(db, "Nas", "", "Latino")?.unwrap();
+            follow::rename_category(db, "polish rap", "Rap PL")?.unwrap();
+            assert_eq!(follow::categories(db)?, ["Rap PL", "Latino"], "same place");
+            let f = follow::follows(db)?;
+            assert_eq!(
+                (f[0].category.as_str(), f[1].category.as_str()),
+                ("Rap PL", "Latino")
+            );
+            // a case change is fine; another category's name, an empty one and Uncategorized are not
+            follow::rename_category(db, "Rap PL", "rap pl")?.unwrap();
+            assert_eq!(follow::categories(db)?[0], "rap pl");
+            assert!(follow::rename_category(db, "rap pl", "LATINO")?.is_err());
+            assert!(follow::rename_category(db, "rap pl", "  ")?.is_err());
+            assert!(follow::rename_category(db, "rap pl", "Uncategorized")?.is_err());
+            assert!(follow::rename_category(db, "Nope", "X")?.is_err());
+            assert!(follow::rename_category(db, "", "X")?.is_err());
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[quench_test::test]
 fn the_old_keys_are_recomputed_once_and_the_text_files_imported_once() {
     let dir = Scratch::new();
     let meta = dir.path().join("meta");

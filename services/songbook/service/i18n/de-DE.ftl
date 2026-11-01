@@ -85,6 +85,11 @@ ui_cat_label = Kategorie
 ui_cat_new = Oder eine neue Kategorie anlegen
 ui_cat_new_hint = Setzt die Tags der Titel dieses Künstlers neu; Dateien bleiben, wo sie sind.
 ui_cat_saved = Kategorie gespeichert
+ui_catrename_title = Kategorie umbenennen
+ui_catrename_aria = Kategorie „{ $name }“ umbenennen
+ui_catrename_label = Name
+ui_catrename_hint = Setzt die Tags der Titel ihrer Künstler neu; die Dateien bleiben, wo sie sind.
+ui_catrename_done = Kategorie umbenannt in { $name }
 
 # ── Pipeline ─────────────────────────────────────────────────────────────────
 ui_pipeline_title = Pipeline
