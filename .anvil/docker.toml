@@ -15,6 +15,7 @@ packages = [
     "gantry",
     "daybook",
     "gauge",
+    "songbook",
     "hoist",
     "lectern",
 ]
@@ -74,6 +75,14 @@ image_name = "gauge"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The browser client: the image builds `gauge-web` and ships it in `web/` (the service serves it at /ui).
 build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "gauge-web" }
+
+[docker.modules.docker.songbook]
+module_name = "songbook"
+image_name = "songbook"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+# The browser client: the image builds `songbook-web` and ships it in `web/` (the service serves it at /ui). It downloads
+# with yt-dlp and converts with ffmpeg, so the runtime carries them (and node, which yt-dlp needs for YouTube's challenges).
+build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "songbook-web", RUNTIME_PACKAGES = "ffmpeg yt-dlp nodejs" }
 
 [docker.modules.docker.daybook]
 module_name = "daybook"

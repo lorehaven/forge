@@ -4,7 +4,7 @@ parent: Guides
 nav_order: 2
 ---
 
-Eight services (`conveyor`, `gantry`, `gatehouse`, `gauge`, `sage`, `switchboard`, `warehouse`, `workbench`) and Daybook serve a UI that is a `quench-ui` program compiled to WebAssembly. The service keeps its JSON API, its data and its SSO routes; the browser runs the screens and calls the API with `fetch` and the session cookie. This page describes the layout from the code of those crates (Workbench is the reference).
+Nine services (`conveyor`, `gantry`, `gatehouse`, `gauge`, `sage`, `songbook`, `switchboard`, `warehouse`, `workbench`) and Daybook serve a UI that is a `quench-ui` program compiled to WebAssembly. The service keeps its JSON API, its data and its SSO routes; the browser runs the screens and calls the API with `fetch` and the session cookie. This page describes the layout from the code of those crates (Workbench is the reference).
 
 ## Crates
 

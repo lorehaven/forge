@@ -1613,6 +1613,55 @@ dependencies = [
 ]
 
 [[package]]
+name = "songbook"
+version = "0.1.0"
+dependencies = [
+ "forge-web",
+ "quench-auth",
+ "quench-client",
+ "quench-core",
+ "quench-http",
+ "quench-log",
+ "quench-serde",
+ "quench-sqlite",
+ "quench-starter",
+ "quench-test",
+ "songbook-core",
+ "songbook-web",
+ "tokio",
+]
+
+[[package]]
+name = "songbook-app"
+version = "0.1.0"
+dependencies = [
+ "forge-shell",
+ "quench-test",
+ "quench-ui",
+ "songbook-core",
+]
+
+[[package]]
+name = "songbook-core"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "songbook-web"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-web",
+ "songbook-app",
+ "songbook-core",
+]
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

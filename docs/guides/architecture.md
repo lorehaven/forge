@@ -20,7 +20,7 @@ members = [
 | `cli/*` | `anvil`, `conveyor-cli`, `foreman`, `pulley`, `riveter`, `toolbox` (package `forge-toolbox`), `warehouse-cli`, `welder` |
 | `libs/*` | `conveyor-pipeline`, `forge-shell`, `forge-ui`, `forge-web`, `gatehouse-auth`, `gatehouse-client`, `rivet-package` |
 | `tests/*` | `forge-bdd`, `forge-sectest` |
-| services with a server and a browser client | `conveyor`, `gantry`, `gatehouse`, `gauge`, `sage`, `switchboard`, `warehouse`, `workbench`: `app`, `core`, `service`, `web` |
+| services with a server and a browser client | `conveyor`, `gantry`, `gatehouse`, `gauge`, `sage`, `songbook`, `switchboard`, `warehouse`, `workbench`: `app`, `core`, `service`, `web` |
 | `daybook` | `app`, `core`, `desktop`, `host`, `net`, `service`, `surface`, `web` |
 | `hoist` | `app`, `core`, `desktop`, `net`, `service`, `surface` (no `web`) |
 | `forklift` | `app`, `core`, `desktop`, `host`, `net`, `surface` (no server, no `web`) |
@@ -97,7 +97,7 @@ Edges: `daybook-host -> daybook-core, daybook-net`; `forklift-host -> forklift-a
 
 ## The estate
 
-Twelve server crates exist: `conveyor`, `daybook`, `foundry`, `gantry`, `gatehouse`, `gauge`, `hoist`, `lectern`, `sage`, `switchboard`, `warehouse`, `workbench` (each `services/<name>/service`). They are quench-http servers started by `quench-starter`; most own a Postgres schema installed by Foundry.
+Thirteen server crates exist: `conveyor`, `daybook`, `foundry`, `gantry`, `gatehouse`, `gauge`, `hoist`, `lectern`, `sage`, `songbook`, `switchboard`, `warehouse`, `workbench` (each `services/<name>/service`). They are quench-http servers started by `quench-starter`; most own a Postgres schema installed by Foundry.
 
 ```text
                     Gatehouse (identity, tokens, JWKS)
@@ -115,6 +115,7 @@ Twelve server crates exist: `conveyor`, `daybook`, `foundry`, `gantry`, `gatehou
 * **Gantry** deploys `.rivet` packages with runner Jobs.
 * **Gauge** shows host metrics; no database.
 * **Lectern** serves the documentation books held in a Warehouse files storage to anyone: no login, no database, no schema. See [Lectern](../services/lectern/index.md).
+* **Songbook** is the music library (a personal streaming replacement); its admin module keeps the index of songs in a SQLite file and runs the Deezer sync, the YouTube lookup, the downloads and the conversion. No Postgres, no Foundry schema.
 * **Daybook**, **Hoist** and **Forklift** are the apps; Daybook and Hoist have servers, Forklift talks to Warehouse.
 
 Per-service facts (ports, env, schemas) are on each service's page.

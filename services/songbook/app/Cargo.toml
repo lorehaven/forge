@@ -1,0 +1,31 @@
+[package]
+name = "songbook-app"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+autotests = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "songbook_app"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+forge-shell = { workspace = true }
+songbook-core = { workspace = true }
+quench-ui = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+
+[[test]]
+name = "screens"
+path = "tests/screens.rs"
+harness = false

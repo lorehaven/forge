@@ -1,0 +1,46 @@
+[package]
+name = "songbook"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+description = "Songbook - the library of every song: admin module (index, Deezer sync, YouTube links, download, convert)"
+keywords = ["music", "library", "tools"]
+categories = ["multimedia"]
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+autotests = false
+
+[lib]
+name = "songbook_service"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "songbook-service"
+path = "src/main.rs"
+
+[dependencies]
+forge-web = { workspace = true }
+songbook-core = { workspace = true }
+songbook-web = { workspace = true }
+quench-auth = { workspace = true }
+quench-client = { workspace = true }
+quench-core = { workspace = true }
+quench-http = { workspace = true }
+quench-log = { workspace = true }
+quench-serde = { workspace = true }
+quench-sqlite = { workspace = true }
+quench-starter = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false

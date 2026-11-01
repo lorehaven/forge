@@ -1,0 +1,33 @@
+[package]
+name = "songbook-web"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+autotests = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "songbook_web"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+songbook-app = { workspace = true }
+songbook-core = { workspace = true }
+quench-serde = { workspace = true }
+quench-ui = { workspace = true }
+quench-ui-web = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
