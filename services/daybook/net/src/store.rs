@@ -42,6 +42,27 @@ impl Settings {
     }
 }
 
+/// The token as it is written: sealed with the device's key where there is a client (a program), as it is in a browser.
+#[cfg(feature = "client")]
+fn seal_token(token: &str) -> String {
+    gatehouse_client::vault::seal(token)
+}
+
+#[cfg(not(feature = "client"))]
+fn seal_token(token: &str) -> String {
+    token.to_string()
+}
+
+#[cfg(feature = "client")]
+fn open_token(stored: &str) -> Option<String> {
+    gatehouse_client::vault::open(stored)
+}
+
+#[cfg(not(feature = "client"))]
+fn open_token(stored: &str) -> Option<String> {
+    Some(stored.trim().to_string())
+}
+
 /// The data directory's files.
 #[derive(Debug, Clone)]
 pub struct Store {
@@ -100,16 +121,12 @@ impl Store {
     #[must_use]
     pub fn token(&self) -> Option<String> {
         self.read("session")
-            .and_then(|t| gatehouse_client::vault::open(&t))
+            .and_then(|t| open_token(&t))
             .filter(|t| !t.is_empty())
     }
 
     pub fn set_token(&self, token: &str) {
-        self.write(
-            "session",
-            &format!("{}\n", gatehouse_client::vault::seal(token)),
-            true,
-        );
+        self.write("session", &format!("{}\n", seal_token(token)), true);
     }
 
     /// Signs out: the token goes.
