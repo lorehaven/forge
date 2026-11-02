@@ -31,9 +31,9 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "cc"
-version = "1.10.0"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86e055fa6e3e40ad6187ba25b6855eeb635d5271f8e0f0e1e9a5826b8d75bea0"
+checksum = "375989decec1a0fa424442bed520fa12ede43a48475ce8c7417d2c69b32b5f6b"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -734,9 +734,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.34"
+version = "0.4.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "mio"
@@ -808,9 +808,9 @@ dependencies = [
 
 [[package]]
 name = "quench-android-surface"
-version = "0.1.6"
+version = "0.1.8"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "1573fafa5b823bc8a2ff7048f9d081160706a31ca1c3d3723390b5b2311cf6dd"
+checksum = "9c95c27b09fa47c34f289ba9605d6a76484a9aa1048bd892b1bb32036bb605de"
 dependencies = [
  "quench-raster",
  "quench-serde",
@@ -948,15 +948,15 @@ dependencies = [
 
 [[package]]
 name = "quench-css"
-version = "0.1.3"
+version = "0.1.4"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "c9bce7f1432b1e05e11843d6315b6b8685032682fb6d7a85601af3c7d6579c13"
+checksum = "aabf222d41063f725bdc0671d11d161959dc739afe8875ee73060ec773359cc6"
 
 [[package]]
 name = "quench-db"
-version = "0.2.15"
+version = "0.2.16"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "bdb3b8b4ee9057daf03d0c7b85aae0f1e0514191515e5593ed31b6502dd51dcf"
+checksum = "9b6107527b79765c11abf31ae8cf83c557fca6c6a750b0a08cb710ee7f2b3a15"
 dependencies = [
  "quench-core",
  "quench-crypto",
@@ -967,18 +967,18 @@ dependencies = [
 
 [[package]]
 name = "quench-desktop-atspi"
-version = "0.1.6"
+version = "0.1.8"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "06b18def27decd464f45a8ae006f1f59f6bd571bb7db6a414e566ad0fbf158c5"
+checksum = "1b6cbf619bc884c37115dc3803f7397be4e8d1c67953378ef6ec45dc4a134450"
 dependencies = [
  "quench-ui-native",
 ]
 
 [[package]]
 name = "quench-desktop-native"
-version = "0.1.8"
+version = "0.1.10"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "4ac3381c0fd81f70a860787862c9d99e33949a9808319f1cc505650b797ddff3"
+checksum = "06f02163ee7523eea2a39a87d53b1d4a2e6b422f28080507cd462d3541ff478c"
 dependencies = [
  "quench-desktop-atspi",
  "quench-desktop-wayland",
@@ -998,9 +998,9 @@ dependencies = [
 
 [[package]]
 name = "quench-fullstack"
-version = "0.1.8"
+version = "0.1.10"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "45a619cae79a313e235889f094f10a22cd7500a05e495c6949b50aee8fecc36f"
+checksum = "715dd4783a4c2b2987b8424ec0b97aa28229c8c03311068d6a6d58a037bdca43"
 dependencies = [
  "quench-archive",
  "quench-auth",
@@ -1060,9 +1060,9 @@ dependencies = [
 
 [[package]]
 name = "quench-image"
-version = "0.1.1"
+version = "0.1.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "bc8fb23a6f1c0fcf36a6a508c7c587e504ab8f6ee20b31d33e4aea20024da950"
+checksum = "7815e81f0f354dfc4e343a632d04e40e60367f4111cc0a108719489911e677c5"
 dependencies = [
  "quench-archive",
 ]
@@ -1080,9 +1080,9 @@ dependencies = [
 
 [[package]]
 name = "quench-layout"
-version = "0.1.6"
+version = "0.1.7"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "2a9c6dfe5d3c9dda146514a96aba389fbf8a5b4714cf9950983340b40def6f7f"
+checksum = "fff09cabba7bbe400a1778b79ec35a34332e32841dcc43c0d0e414abeb14dc52"
 dependencies = [
  "quench-css",
  "quench-text",
@@ -1123,9 +1123,9 @@ dependencies = [
 
 [[package]]
 name = "quench-paint"
-version = "0.1.6"
+version = "0.1.7"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "a6e0a9c8668584fbf70a2b6a3b0d98b4127c875ec0abcb89b7995b31c7556317"
+checksum = "5075abc5a95bc3a513b0e7c8777037df96f2be58fecd6d5abb111eaee515db57"
 dependencies = [
  "quench-css",
  "quench-layout",
@@ -1235,9 +1235,9 @@ checksum = "28918405c34566375ec91d119980fdfeaac862e087905ad9394855d5a3d76c72"
 
 [[package]]
 name = "quench-starter"
-version = "0.4.20"
+version = "0.4.22"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "864f114e8f787194a866448c9180ed8304aa028d731fdfccb3a8ccdcfcd4b5f5"
+checksum = "c45a64c5964a61184c343646959db60e35528beff423f8a90f4add5a04e4c3a1"
 dependencies = [
  "quench-auth",
  "quench-cli",
@@ -1263,9 +1263,9 @@ dependencies = [
 
 [[package]]
 name = "quench-svg"
-version = "0.1.4"
+version = "0.1.6"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "726a1d45724c1e8e79278e4cc07ba27150c1bda4b8512a21ab13be503aee217d"
+checksum = "eb275902ab46facd7814a7faff550d08e6b078128a436e4aef6e10d777aaa8da"
 dependencies = [
  "quench-css",
  "quench-image",
@@ -1368,9 +1368,9 @@ checksum = "ef0e4bee20c55f3b515fdc25c7d14d26cd858a24e4a3cdf4bf4ca552d939482a"
 
 [[package]]
 name = "quench-ui-native"
-version = "0.1.6"
+version = "0.1.8"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "894a9158898b324a23f67b46f41a86731755192a0633de4c2170dd2506046b54"
+checksum = "6e7552d898efe98b6642a17ef77ce063bb9a3b4fa1eecf1663f2e014750df68b"
 dependencies = [
  "quench-core",
  "quench-css",
@@ -1656,8 +1656,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "songbook-player"
+name = "songbook-native"
 version = "0.1.0"
+dependencies = [
+ "gatehouse-client",
+ "quench-serde",
+ "quench-test",
+ "songbook-core",
+]
+
+[[package]]
+name = "songbook-player"
+version = "0.1.2"
 dependencies = [
  "quench-serde",
  "quench-test",
@@ -1674,6 +1684,24 @@ dependencies = [
  "quench-ui",
  "quench-ui-web",
  "songbook-core",
+ "songbook-player",
+]
+
+[[package]]
+name = "songbook-surface"
+version = "0.1.0"
+dependencies = [
+ "quench-android-surface",
+ "quench-image",
+ "quench-layout",
+ "quench-raster",
+ "quench-serde",
+ "quench-style",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-native",
+ "songbook-core",
+ "songbook-native",
  "songbook-player",
 ]
 

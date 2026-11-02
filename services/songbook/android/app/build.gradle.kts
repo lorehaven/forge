@@ -20,6 +20,13 @@ android {
         buildConfig = true
     }
 
+    // The Rust program is a file of its own (`libquench_native.so`, run as a process): it has to be extracted to be run.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     // The release key comes from the environment, as for the other apps: the passwords are never in a file.
     signingConfigs {
         create("release") {

@@ -1,11 +1,11 @@
 //! How the player's requests become calls to the service, and how the answers become messages.
 
+use crate::{Msg, Request};
 use quench_serde::{Deserialize, json};
 use songbook_core::api::encode;
 use songbook_core::{
     AlbumInfo, Home, Overview, PlaylistBody, PlaylistInfo, Search, SongIds, SongIdsBody, SongList,
 };
-use songbook_player::{Msg, Request};
 
 /// The listener API, under the service's own prefix.
 pub const API: &str = "/api/v1";

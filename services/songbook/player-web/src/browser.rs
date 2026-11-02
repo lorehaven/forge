@@ -42,7 +42,7 @@ pub fn app() -> View {
             });
         })
     };
-    let Player { view, deliver } = player(
+    let Player { view, deliver, .. } = player(
         requests,
         Setup {
             login_url: format!("{base}/ui/login"),
@@ -50,6 +50,7 @@ pub fn app() -> View {
             history: Rc::new(history),
             // The admin link is hidden on touch devices by the stylesheet, and the service sends them away from /ui/admin.
             mobile: false,
+            engine: None,
         },
     );
     *slot.borrow_mut() = Some(deliver);

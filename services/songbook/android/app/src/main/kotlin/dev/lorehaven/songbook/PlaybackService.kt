@@ -38,11 +38,9 @@ class PlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         val session = Session.of(this)
-        val recents = Recents(this)
-        val library = Library(session)
-        val tree = Tree(this, session, library, recents, Offline.of(this))
-
+        val brain = Brain.of(this)
         val offline = Offline.of(this)
+        val tree = Tree(session, brain, offline)
 
         val attributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build()
         val sources = DefaultMediaSourceFactory(this).setDataSourceFactory(offline.playback)
@@ -59,21 +57,34 @@ class PlaybackService : MediaLibraryService() {
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val item = mediaItem ?: return
+                // A song the player's screens queued is only an address: its title, artist and picture are looked up now, so
+                // that the lock screen, the car and the history have them.
+                if (item.mediaMetadata.title == null && item.mediaId.startsWith("s:")) {
+                    work.execute {
+                        val filled = try { tree.fill(item) } catch (e: java.io.IOException) { null } ?: return@execute
+                        main.post {
+                            val at = (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == item.mediaId }
+                            if (at != null) player.replaceMediaItem(at, filled)
+                        }
+                    }
+                    return
+                }
                 val song = Tree.songOf(item) ?: return
-                recents.add(song)
-                Resume.save(this@PlaybackService, item, 0)
-                // Every device's "recently played" has it (a phone with no network keeps it here only).
-                work.execute { try { library.played(song.id) } catch (e: java.io.IOException) { /* later, on the next play */ } }
+                // Kept on this phone, and told to the service so that every device's "recently played" has it.
+                work.execute {
+                    try { brain.call("played", "song" to song.toInfo()) } catch (e: java.io.IOException) { /* later, on the next play */ }
+                    Resume.save(brain, item, 0)
+                }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 // Where the music was left, for when the person comes back.
-                if (!isPlaying) player.currentMediaItem?.let { Resume.save(this@PlaybackService, it, player.currentPosition) }
+                if (!isPlaying) player.currentMediaItem?.let { item -> val at = player.currentPosition; work.execute { Resume.save(brain, item, at) } }
             }
         })
 
         val settings = Settings.of(this)
-        librarySession = MediaLibrarySession.Builder(this, player, Callback(session, tree, player, settings))
+        librarySession = MediaLibrarySession.Builder(this, player, Callback(session, tree, brain, player, settings))
             .setBitmapLoader(DataSourceBitmapLoader.Builder(this).setDataSourceFactory(offline.pictures).build())
             .build()
         // The car's button for the crossfade follows the setting, wherever it is changed.
@@ -96,7 +107,7 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onDestroy() {
         stopWatching?.invoke()
-        librarySession?.player?.let { p -> p.currentMediaItem?.let { Resume.save(this, it, p.currentPosition) } }
+        librarySession?.player?.let { p -> p.currentMediaItem?.let { Resume.save(Brain.of(this), it, p.currentPosition) } }
         crossfader?.release()
         librarySession?.run {
             player.release()
@@ -107,13 +118,14 @@ class PlaybackService : MediaLibraryService() {
         super.onDestroy()
     }
 
-    private inner class Callback(private val session: Session, private val tree: Tree, private val player: Player, private val settings: Settings) : MediaLibrarySession.Callback {
+    private inner class Callback(private val session: Session, private val tree: Tree, private val brain: Brain, private val player: Player, private val settings: Settings) : MediaLibrarySession.Callback {
         /** Runs `block` off the main thread; a person who is not signed in, or a server that is not there, is an error result. */
         private fun <T : Any> asynchronous(block: () -> LibraryResult<T>): ListenableFuture<LibraryResult<T>> = work.submit<LibraryResult<T>> {
             if (!session.signedIn) return@submit LibraryResult.ofError<T>(LibraryResult.RESULT_ERROR_SESSION_AUTHENTICATION_EXPIRED)
             try {
                 block()
             } catch (e: SignedOut) {
+                session.refresh()
                 LibraryResult.ofError<T>(LibraryResult.RESULT_ERROR_SESSION_AUTHENTICATION_EXPIRED)
             } catch (e: java.io.IOException) {
                 LibraryResult.ofError<T>(LibraryResult.RESULT_ERROR_IO)
@@ -138,7 +150,7 @@ class PlaybackService : MediaLibraryService() {
         /** The person comes back (the car connects, a headset button is pressed): the music as it was left. */
         override fun onPlaybackResumption(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, isForPlayback: Boolean): ListenableFuture<MediaSession.MediaItemsWithStartPosition> =
             work.submit<MediaSession.MediaItemsWithStartPosition> {
-                val saved = Resume.load(this@PlaybackService) ?: throw UnsupportedOperationException("nothing was played yet")
+                val saved = Resume.load(brain) ?: throw UnsupportedOperationException("nothing was played yet")
                 Resume.queue(tree, saved) ?: throw UnsupportedOperationException("the list is gone")
             }
 

@@ -57,7 +57,7 @@ class KeepTest {
 
     @Test
     fun keptSongsAreListedAndPlayWithNoServer() {
-        val songs = Library(Session.of(context)).home().popular.take(2)
+        val songs = Lib.popular(context).take(2)
         assertEquals(2, songs.size)
         offline.keep(songs)
         waitFor("both are on the device", 90) { songs.all { offline.state(it.id) == 100 } }
@@ -84,7 +84,7 @@ class KeepTest {
 
     @Test
     fun aKeptSongCanBeRemoved() {
-        val songs = Library(Session.of(context)).home().popular.take(1)
+        val songs = Lib.popular(context).take(1)
         offline.keep(songs)
         waitFor("it is on the device", 90) { offline.state(songs[0].id) == 100 }
         offline.remove(songs)

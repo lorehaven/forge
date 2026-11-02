@@ -1,28 +1,28 @@
 package dev.lorehaven.songbook
 
-import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.session.MediaSession
-import org.json.JSONObject
 
 /**
  * Where the music was left: the song and how far into it. Android Auto (and the media buttons of a headset or a car) start
  * the app again with "play" when the person comes back, and the player is then put back as it was: the same list, the same
- * song, the same place.
+ * song, the same place. The Rust program ([Brain]) keeps it.
  */
 object Resume {
     class Saved(val mediaId: String, val positionMs: Long, val song: Song)
 
-    fun save(context: Context, item: MediaItem, positionMs: Long) {
+    fun save(brain: Brain, item: MediaItem, positionMs: Long) {
         val song = Tree.songOf(item) ?: return
-        val json = JSONObject().put("id", item.mediaId).put("position", positionMs).put("song", song.toJson())
-        context.getSharedPreferences("last", Context.MODE_PRIVATE).edit().putString("played", json.toString()).apply()
+        try {
+            brain.call("last_save", "queue_id" to item.mediaId, "position_ms" to positionMs, "song" to song.toInfo())
+        } catch (e: java.io.IOException) {
+            // Not kept this time.
+        }
     }
 
-    fun load(context: Context): Saved? = try {
-        val o = JSONObject(context.getSharedPreferences("last", Context.MODE_PRIVATE).getString("played", null) ?: return null)
-        Song.fromJson(o.getString("song"))?.let { Saved(o.getString("id"), o.optLong("position"), it) }
-    } catch (e: Exception) {
+    fun load(brain: Brain): Saved? = try {
+        brain.call("last_load").optJSONObject("last")?.let { Saved(it.getString("id"), it.optLong("position_ms"), Song.fromInfo(it.getJSONObject("song"))) }
+    } catch (e: java.io.IOException) {
         null
     }
 

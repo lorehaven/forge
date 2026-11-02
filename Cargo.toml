@@ -42,6 +42,8 @@ members = [
   "services/lectern/service",
   "services/songbook/app",
   "services/songbook/core",
+  "services/songbook/native",
+  "services/songbook/surface",
   "services/songbook/player",
   "services/songbook/player-web",
   "services/songbook/service",
@@ -75,7 +77,7 @@ license = "MIT"
 readme = "README.md"
 
 [workspace.dependencies]
-quench-android = { registry = "ennor", version = "0.1.1" }
+quench-android = { registry = "ennor", version = "0.1.2" }
 conveyor-pipeline = { path = "libs/conveyor-pipeline", registry = "ennor", version = "0.2.0" }
 gatehouse-client = { path = "libs/gatehouse-client" }
 gatehouse-auth = { path = "libs/gatehouse-auth", registry = "ennor", version = "0.1.0" }
@@ -83,11 +85,11 @@ forge-ui = { path = "libs/forge-ui", version = "0.1.0" }
 forge-shell = { path = "libs/forge-shell" }
 forge-web = { path = "libs/forge-web" }
 libc = { version = "0.2" }
-quench-android-surface = { registry = "ennor", version = "0.1.6" }
-quench-desktop-native = { registry = "ennor", version = "0.1.8" }
+quench-android-surface = { registry = "ennor", version = "0.1.8" }
+quench-desktop-native = { registry = "ennor", version = "0.1.10" }
 quench-style = { registry = "ennor", version = "0.1.3" }
 quench-ui = { registry = "ennor", version = "0.1.4" }
-quench-ui-native = { registry = "ennor", version = "0.1.6" }
+quench-ui-native = { registry = "ennor", version = "0.1.8" }
 quench-ui-web = { registry = "ennor", version = "0.1.8" }
 quench-archive = { registry = "ennor", version = "0.1.3" }
 quench-args = { registry = "ennor", version = "0.1.3" }
@@ -99,9 +101,9 @@ quench-config = { registry = "ennor", version = "0.1.14" }
 quench-convert = { registry = "ennor", version = "0.1.4" }
 quench-core = { registry = "ennor", version = "0.1.8" }
 quench-crypto = { registry = "ennor", version = "0.1.9" }
-quench-db = { registry = "ennor", version = "0.2.15" }
+quench-db = { registry = "ennor", version = "0.2.16" }
 quench-html = { registry = "ennor", version = "0.1.3" }
-quench-fullstack = { registry = "ennor", version = "0.1.8" }
+quench-fullstack = { registry = "ennor", version = "0.1.10" }
 quench-http = { registry = "ennor", version = "0.1.16" }
 quench-k8s = { registry = "ennor", version = "0.1.6" }
 quench-sqlite = { registry = "ennor", version = "0.1.0" }
@@ -114,7 +116,7 @@ quench-qr = { registry = "ennor", version = "0.1.3" }
 quench-regex = { registry = "ennor", version = "0.1.3" }
 quench-schema = { registry = "ennor", version = "0.1.4" }
 quench-serde = { registry = "ennor", version = "0.1.8" }
-quench-starter = { registry = "ennor", version = "0.4.20" }
+quench-starter = { registry = "ennor", version = "0.4.22" }
 quench-test = { registry = "ennor", version = "0.1.4" }
 quench-test-bdd = { registry = "ennor", version = "0.1.4" }
 quench-tls = { registry = "ennor", version = "0.1.9" }
@@ -151,8 +153,10 @@ sage-core = { path = "services/sage/core" }
 sage-web = { path = "services/sage/web" }
 songbook-app = { path = "services/songbook/app" }
 songbook-core = { path = "services/songbook/core" }
+songbook-native = { path = "services/songbook/native" }
 songbook-player = { path = "services/songbook/player" }
 songbook-player-web = { path = "services/songbook/player-web" }
+songbook-surface = { path = "services/songbook/surface" }
 songbook-web = { path = "services/songbook/web" }
 workbench-app = { path = "services/workbench/app" }
 workbench-core = { path = "services/workbench/core" }

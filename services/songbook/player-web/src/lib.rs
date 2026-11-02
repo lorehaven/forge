@@ -1,7 +1,7 @@
 //! The player in the browser: the screens of `songbook-player` over `fetch`, with the session cookie the service's sign-in set.
 
 pub mod browser;
-pub mod protocol;
+pub use songbook_player::protocol;
 
 pub use browser::app;
 

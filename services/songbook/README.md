@@ -12,6 +12,9 @@ index and one flat folder holds the audio (`Artist A, Artist B - Title.mp3`).
 | `songbook-web` | [`web/`](./web/) | The admin's WebAssembly client (`/ui/admin`). |
 | `songbook-player` | [`player/`](./player/) | The listener's screens (`quench-ui`) and the audio engine (`engine.js`). |
 | `songbook-player-web` | [`player-web/`](./player-web/) | The player's WebAssembly client (`/ui`). |
+| `songbook-native` | [`native/`](./native/) | The Android app's brain, a program the app runs: sign-in, the API, the browse tree, history. |
+| `songbook-surface` | [`surface/`](./surface/) | The Android phone screens: the player drawn by the native renderer, playing through the app's plugin. |
+| Android app | [`android/`](./android/) | Kotlin: the media session (Android Auto), ExoPlayer, downloads, crossfade. |
 | `songbook` | [`service/`](./service/) | The server: index, jobs, API, SSO. Binary `songbook-service`. |
 
 Everything about the index, the API, the jobs and the configuration is in [`service/README.md`](./service/README.md) and in the

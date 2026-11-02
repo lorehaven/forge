@@ -1,0 +1,8 @@
+# Read by the `quench` command (`quench android build-native` builds `native/` for the phone's ABIs). The app itself is the
+# Gradle project in android/, and is released with `anvil artifact release songbook`.
+name = "songbook"
+template = "web"
+[android]
+keystore = "release.keystore"
+key_alias = "release"
+package = "dev.lorehaven.songbook"

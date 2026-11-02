@@ -1,0 +1,17 @@
+.sb-signin { position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; padding: 32px; background: #0b0b0c; color: #f2f2f3; }
+.sb-signin h1 { margin: 0 0 8px; font-size: 28px; }
+.sb-signin p { margin: 0 0 16px; color: #a0a0a6; }
+.sb-signin input { display: block; width: 100%; box-sizing: border-box; margin: 6px 0; padding: 14px 12px; border: 1px solid #38383d; border-radius: 10px; background: #17171a; color: #f2f2f3; font-size: 16px; }
+.sb-signin button { margin-top: 14px; padding: 14px; border: 0; border-radius: 999px; background: #1db954; color: #04130a; font-size: 16px; font-weight: 700; }
+.sb-signin .sb-error { color: #ff6b6b; min-height: 20px; margin: 8px 0 0; }
+
+/* The native renderer sizes a grid row by its content even when the item scrolls, so on a phone the page is a column: the page
+   takes what the bar and the tabs leave and scrolls inside it. */
+@media (max-width: 800px) {
+  .pl-app { display: flex; flex-direction: column; height: 100vh; }
+  .pl-main { flex: 1 1 0; min-height: 0; overflow: auto; }
+  .pl-bar { flex: none; }
+  /* The system's bars: the page starts under the status bar and the tabs stand above the gesture bar. */
+  .pl-app { padding-top: env(safe-area-inset-top); padding-bottom: calc(var(--pl-tabs) + env(safe-area-inset-bottom)); }
+  .pl-tabs { padding-bottom: env(safe-area-inset-bottom); height: calc(var(--pl-tabs) + env(safe-area-inset-bottom)); }
+}

@@ -80,6 +80,9 @@ pub struct Setup {
     pub login_url: String,
     /// A phone or a tablet: no way to the admin pages.
     pub mobile: bool,
+    /// Where the commands for the engine go as JSON text, one each, when the engine is not the page's script (an app that
+    /// plays with the system's own player). The engine answers through [`Player::hear`].
+    pub engine: Option<Rc<dyn Fn(String)>>,
 }
 
 impl std::fmt::Debug for Setup {
@@ -96,6 +99,11 @@ pub struct Player {
     pub view: View,
     /// Hand every message from the host to this, on the thread of the views.
     pub deliver: Rc<dyn Fn(Msg)>,
+    /// Hand every event of the engine to this (when `Setup::engine` is set), on the thread of the views.
+    pub hear: Rc<dyn Fn(Event)>,
+    /// What the Back button of a phone does: closes the box that is open, else goes back a page. False when there is nothing
+    /// to go back to (the app then leaves). Only once the view is mounted.
+    pub back: Rc<dyn Fn() -> bool>,
 }
 
 impl std::fmt::Debug for Player {
@@ -125,6 +133,8 @@ pub enum Problem {
 }
 
 type Inbox = Rc<RefCell<Option<Rc<dyn Fn(Msg)>>>>;
+type Ears = Rc<RefCell<Option<Rc<dyn Fn(Event)>>>>;
+type Backs = Rc<RefCell<Option<Rc<dyn Fn() -> bool>>>>;
 
 /// Everything the screens read.
 #[derive(Debug)]
@@ -199,6 +209,8 @@ pub(crate) struct Env {
     pub base: String,
     pub mobile: bool,
     pub login_url: String,
+    /// See [`Setup::engine`].
+    pub link: Option<Rc<dyn Fn(String)>>,
 }
 
 impl Env {
@@ -227,7 +239,13 @@ impl Env {
     /// Tells the engine to do something.
     pub fn engine(&self, command: &Command) {
         let text = self.m.outbox.borrow_mut().push(command);
-        self.m.cmd.set(text);
+        if let Some(link) = &self.link {
+            if let Some(one) = self.m.outbox.borrow().last() {
+                link(one);
+            }
+        } else {
+            self.m.cmd.set(text);
+        }
     }
 
     /// Says something for a few seconds.
@@ -455,9 +473,11 @@ fn bridge(env: &Env) -> View {
 #[must_use]
 pub fn player(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Player {
     let inbox: Inbox = Rc::default();
-    let built = Rc::clone(&inbox);
+    let ears: Ears = Rc::default();
+    let backs: Backs = Rc::default();
+    let built = (Rc::clone(&inbox), Rc::clone(&ears), Rc::clone(&backs));
     // Built when mounted, inside the page's reactive scope.
-    let view = View::lazy(move || shell(&requests, &setup, &built));
+    let view = View::lazy(move || shell(&requests, &setup, &built.0, &built.1, &built.2));
     let deliver: Rc<dyn Fn(Msg)> = Rc::new({
         let inbox = Rc::clone(&inbox);
         move |msg| {
@@ -467,23 +487,59 @@ pub fn player(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Player {
             }
         }
     });
-    Player { view, deliver }
+    let hear: Rc<dyn Fn(Event)> = Rc::new(move |event| {
+        let listen = ears.borrow().clone();
+        if let Some(listen) = listen {
+            listen(event);
+        }
+    });
+    let back: Rc<dyn Fn() -> bool> = Rc::new(move || {
+        let go = backs.borrow().clone();
+        go.is_some_and(|go| go())
+    });
+    Player {
+        view,
+        deliver,
+        hear,
+        back,
+    }
 }
 
-fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
+fn shell(
+    requests: &Rc<dyn Fn(Request)>,
+    setup: &Setup,
+    inbox: &Inbox,
+    ears: &Ears,
+    backs: &Backs,
+) -> View {
     let env = Env {
         m: Model::new(),
         ask: Rc::clone(requests),
         base: setup.base.clone(),
         mobile: setup.mobile,
         login_url: setup.login_url.clone(),
+        link: setup.engine.clone(),
     };
+    {
+        let env = env.clone();
+        *ears.borrow_mut() = Some(Rc::new(move |e: Event| heard(&env, e)));
+    }
     {
         let env = env.clone();
         *inbox.borrow_mut() = Some(Rc::new(move |m: Msg| receive(&env, m)));
     }
     let router = Router::new(Rc::clone(&setup.history));
     router.provide();
+    {
+        let (env, history) = (env.clone(), Rc::clone(&setup.history));
+        *backs.borrow_mut() = Some(Rc::new(move || {
+            if env.m.dialog.get_untracked().is_some() {
+                env.m.dialog.set(None);
+                return true;
+            }
+            history.back()
+        }));
+    }
 
     (env.ask)(Request::Overview);
     (env.ask)(Request::Playlists);
@@ -523,6 +579,10 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         .child(screens::tabs(&env, &router))
         .child(screens::dialogs(&env))
         .child(screens::toast(&env))
-        .child(bridge(&env))
+        .child(if env.link.is_some() {
+            fragment([])
+        } else {
+            bridge(&env)
+        })
         .into_view()
 }

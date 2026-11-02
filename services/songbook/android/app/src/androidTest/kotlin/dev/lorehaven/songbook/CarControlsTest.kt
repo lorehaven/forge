@@ -81,7 +81,7 @@ class CarControlsTest {
         waitFor("playing") { onMain { browser.isPlaying && browser.currentPosition > 500 } }
         val id = Tree.songOf(chosen)!!.id
         // Told to the service (the same list on the other devices of this person) ...
-        waitFor("the service has it (wanted $id; has ${Library(session).recent(5).map { it.id }})") { Library(session).recent(5).any { it.id == id } }
+        waitFor("the service has it (wanted $id; has ${Lib.recent(context).take(5)})") { Lib.recent(context).take(5).contains(id) }
         // ... and the car's "Recently played" has it near the top.
         val recent = children("recent").take(5).map { it.mediaMetadata.title.toString() }
         assertTrue("$recent", chosen.mediaMetadata.title.toString() in recent)
@@ -95,11 +95,11 @@ class CarControlsTest {
         onMain { browser.seekTo(20_000) }
         waitFor("at 20 s") { onMain { browser.currentPosition >= 20_000 } }
         onMain { browser.pause() }
-        waitFor("paused and saved") { Resume.load(context)?.let { it.mediaId == songs[2].mediaId && it.positionMs >= 19_000 } == true }
+        waitFor("paused and saved") { Resume.load(Brain.of(context))?.let { it.mediaId == songs[2].mediaId && it.positionMs >= 19_000 } == true }
 
         // The queue as it was: the same list, the same song, the same place.
-        val saved = Resume.load(context)!!
-        val tree = Tree(context, session, Library(session), Recents(context), Offline.of(context))
+        val saved = Resume.load(Brain.of(context))!!
+        val tree = Tree(session, Brain.of(context), Offline.of(context))
         val resumed = Resume.queue(tree, saved)
         assertNotNull(resumed)
         assertTrue("the whole list", resumed!!.mediaItems.size >= songs.size)

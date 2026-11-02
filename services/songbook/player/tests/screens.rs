@@ -117,13 +117,14 @@ fn live_on(path: &str, mobile: bool) -> Live {
     CLOCK.with(|c| *c.borrow_mut() = Some(fresh));
     let asked: Asked = Rc::default();
     let log = asked.clone();
-    let Player { view, deliver } = player(
+    let Player { view, deliver, .. } = player(
         Rc::new(move |q| log.borrow_mut().push(q)),
         Setup {
             base: "/songbook".into(),
             history: Rc::new(MemoryHistory::new(path)),
             login_url: "/songbook/ui/login".into(),
             mobile,
+            engine: None,
         },
     );
     let r = Rc::new(TestRenderer::new());
@@ -733,6 +734,50 @@ fn an_ended_session_and_an_unreachable_server_are_told() {
 #[quench_test::test]
 fn an_unknown_address_is_not_found() {
     assert!(live("/songbook/ui/nowhere").has("not-found"));
+}
+
+/// An app that plays with the system's player: the engine's commands go to its function, one JSON text each, and its events
+/// come back through `hear`; no hidden elements are drawn.
+#[quench_test::test]
+fn a_host_that_is_not_a_page_is_sent_the_commands_and_tells_the_events() {
+    let fresh = Rc::new(quench_ui::platform::ManualPlatform::new());
+    quench_ui::platform::install(fresh);
+    let sent: Rc<RefCell<Vec<String>>> = Rc::default();
+    let log = sent.clone();
+    let Player {
+        view,
+        deliver,
+        hear,
+        ..
+    } = player(
+        Rc::new(|_| {}),
+        Setup {
+            base: "/songbook".into(),
+            history: Rc::new(MemoryHistory::new("/songbook/ui")),
+            login_url: String::new(),
+            mobile: true,
+            engine: Some(Rc::new(move |text| log.borrow_mut().push(text))),
+        },
+    );
+    let r = Rc::new(TestRenderer::new());
+    let _mount = mount(&r, &r.root(), view);
+    assert!(!r.html().contains("sb-engine"), "no hidden elements");
+    hear(songbook_player::Event::parse(&json::to_string(&state(2, 1, true))).unwrap());
+    deliver(Msg::Songs(
+        "meta".into(),
+        SongList {
+            total: 1,
+            songs: vec![songs().songs[1].clone()],
+        },
+    ));
+    let play = r
+        .document_order()
+        .into_iter()
+        .find(|n| r.attr(*n, "id").as_deref() == Some("play"))
+        .expect("the play button");
+    r.fire(play, &Event::Click);
+    let last = sent.borrow().last().cloned().expect("a command was sent");
+    assert!(last.contains("\"op\":\"toggle\""), "{last}");
 }
 
 quench_test::main!();

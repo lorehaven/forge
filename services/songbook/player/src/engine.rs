@@ -248,6 +248,12 @@ pub struct Outbox {
 const KEPT: usize = 24;
 
 impl Outbox {
+    /// The last command added, as JSON text (what a host that is not a page is sent).
+    #[must_use]
+    pub fn last(&self) -> Option<String> {
+        self.sent.last().map(quench_serde::json::to_string)
+    }
+
     /// Adds a command; returns the attribute's new text.
     pub fn push(&mut self, command: &Command) -> String {
         self.n += 1;

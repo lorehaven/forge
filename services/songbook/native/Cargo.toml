@@ -1,0 +1,38 @@
+[package]
+name = "songbook-native"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+autotests = false
+
+# The brain of the Android app: signs in to Gatehouse, talks to the Songbook API, makes the tree the car (and the phone)
+# browses, and keeps what was played. It is a program of its own, which the Kotlin shell starts and talks to in lines of JSON
+# on stdin and stdout (no JNI): the shell keeps only what Android makes a JVM thing of (the media session, the player, the
+# downloads). `quench android build-native` builds it for each ABI and packages it as `libquench_native.so`.
+[lints]
+workspace = true
+
+[lib]
+name = "songbook_native"
+path = "src/lib.rs"
+
+[[bin]]
+name = "songbook_native"
+path = "src/main.rs"
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dependencies]
+gatehouse-client = { workspace = true }
+songbook-core = { workspace = true }
+quench-serde = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }

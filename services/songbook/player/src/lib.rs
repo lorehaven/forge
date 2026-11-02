@@ -13,8 +13,10 @@
 
 pub mod engine;
 pub mod live;
+pub mod protocol;
 pub mod screens;
 
+pub use engine::{Command, Event};
 pub use live::{Msg, Player, Request, Setup, player};
 
 /// The player's style.

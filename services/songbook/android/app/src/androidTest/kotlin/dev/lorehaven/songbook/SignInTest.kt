@@ -99,7 +99,6 @@ class SignInTest {
 
         Http.call("POST", "$server/__revoke", "{}")
         Thread.sleep(6_500)
-        session.expire()
         // (Playlists are asked for every time; the mixes of the home page are kept for two minutes.)
         val answer = onMain { b.getChildren("playlists", 0, 5, null) }.get(30, TimeUnit.SECONDS)
         assertEquals(LibraryResult.RESULT_ERROR_SESSION_AUTHENTICATION_EXPIRED, answer.resultCode)

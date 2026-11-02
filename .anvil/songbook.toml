@@ -9,10 +9,11 @@ version_file = "player/Cargo.toml"
 
 [[artifacts.programs.songbook.targets]]
 platform = "android"
+label = "Songbook"
 format = "apk"
 build = [
     "sh",
     "-c",
-    "QUENCH_KEYSTORE=\"$PWD/release.keystore\" QUENCH_KEY_ALIAS=release android/gradlew -p android :app:assembleRelease -Pquench.versionCode=${version_code} -Pquench.versionName=${version_name} && mkdir -p dist && cp android/app/build/outputs/apk/release/app-release.apk dist/songbook-${version_name}-${version_code}.apk",
+    "quench android build-native --release && QUENCH_KEYSTORE=\"$PWD/release.keystore\" QUENCH_KEY_ALIAS=release android/gradlew -p android :app:assembleRelease -Pquench.versionCode=${version_code} -Pquench.versionName=${version_name} && mkdir -p dist && cp android/app/build/outputs/apk/release/app-release.apk dist/songbook-${version_name}-${version_code}.apk",
 ]
 file = "dist/songbook-${version_name}-${version_code}.apk"

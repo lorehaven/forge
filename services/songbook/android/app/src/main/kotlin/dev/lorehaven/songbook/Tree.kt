@@ -1,96 +1,78 @@
 package dev.lorehaven.songbook
 
-import android.content.Context
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import java.net.URLDecoder
-import java.net.URLEncoder
+import org.json.JSONObject
 
 /** The queue to play when a song is chosen in a list: the songs of that list, and where in them it is. */
 class Queue(val items: List<MediaItem>, val start: Int, val shuffled: Boolean)
 
 /**
- * What Android Auto (and any other media browser) sees of the library: a tree of folders and songs, made from the API when
- * asked for. Every id says where it is: `artist/Nate%20Dogg`, `album/7`; a song's is `s:<place>:<song>`, so that choosing
- * it can play the songs of its place, not just that one.
+ * What Android Auto (and any other media browser) sees of the library: a tree of folders and songs. The Rust program ([Brain])
+ * makes it; this turns what it answers into `MediaItem`s, and adds the one folder only the device knows: the kept songs.
+ * Every id says where it is: `artist/Nate%20Dogg`, `album/7`; a song's is `s:<place>:<song>`, so that choosing it can play the
+ * songs of its place, not just that one.
  *
  * Blocking: call it off the main thread.
  */
-class Tree(private val context: Context, private val session: Session, private val library: Library, private val recents: Recents, private val offline: Offline) {
-    private var home: Pair<Long, Home>? = null
-    private var overview: Pair<Long, Overview>? = null
-
-    private fun enc(text: String) = URLEncoder.encode(text, "UTF-8")
-    private fun dec(text: String) = URLDecoder.decode(text, "UTF-8")
-
-    @Synchronized
-    private fun home(): Home {
-        val now = System.currentTimeMillis()
-        home?.takeIf { now - it.first < FRESH_MS }?.let { return it.second }
-        return library.home().also { home = now to it }
-    }
-
-    @Synchronized
-    private fun overview(): Overview {
-        val now = System.currentTimeMillis()
-        overview?.takeIf { now - it.first < FRESH_MS }?.let { return it.second }
-        return library.overview().also { overview = now to it }
-    }
-
-    /** What was played last: as the service knows it (every device), else what this phone remembers. */
-    private fun recentSongs(): List<Song> = try {
-        val server = library.recent()
-        server + recents.songs().filter { local -> server.none { it.id == local.id } }
-    } catch (e: java.io.IOException) {
-        recents.songs()
-    }
-
+class Tree(private val session: Session, private val brain: Brain, private val offline: Offline) {
     // ── Items ────────────────────────────────────────────────────────────────
 
-    private fun folder(id: String, title: String, subtitle: String? = null, art: String? = null, type: Int = MediaMetadata.MEDIA_TYPE_FOLDER_MIXED): MediaItem =
-        MediaItem.Builder()
-            .setMediaId(id)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setSubtitle(subtitle)
-                    .setArtworkUri(art?.let { Uri.parse(it) })
-                    .setIsBrowsable(true)
-                    .setIsPlayable(false)
-                    .setMediaType(type)
-                    .build(),
-            )
+    private fun folderType(kind: String) = when (kind) {
+        "album" -> MediaMetadata.MEDIA_TYPE_ALBUM
+        "artist" -> MediaMetadata.MEDIA_TYPE_ARTIST
+        "artists" -> MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS
+        "playlist" -> MediaMetadata.MEDIA_TYPE_PLAYLIST
+        "playlists" -> MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS
+        else -> MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
+    }
+
+    /** An item of the program's JSON as a `MediaItem`. */
+    private fun item(o: JSONObject): MediaItem {
+        val playable = o.optBoolean("playable")
+        val art = o.optString("art").takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }
+        val metadata = MediaMetadata.Builder()
+            .setTitle(o.optString("title"))
+            .setArtworkUri(art)
+            .setIsBrowsable(o.optBoolean("browsable"))
+            .setIsPlayable(playable)
+            .setMediaType(if (playable) MediaMetadata.MEDIA_TYPE_MUSIC else folderType(o.optString("kind")))
+        if (playable) {
+            metadata.setArtist(o.optString("artist")).setAlbumTitle(o.optString("album")).setDurationMs(o.optLong("duration_ms"))
+        } else {
+            metadata.setSubtitle(o.optString("subtitle").takeIf { it.isNotEmpty() })
+        }
+        return MediaItem.Builder()
+            .setMediaId(o.getString("id"))
+            .apply { o.optString("uri").takeIf { it.isNotEmpty() }?.let { setUri(it) } }
+            .setMediaMetadata(metadata.build())
             .build()
+    }
+
+    private fun items(list: org.json.JSONArray?): List<MediaItem> = (0 until (list?.length() ?: 0)).map { item(list!!.getJSONObject(it)) }
+
+    private fun folder(id: String, title: String): MediaItem = item(JSONObject().put("id", id).put("title", title).put("browsable", true).put("kind", "folder"))
+
+    /** A song kept on the device: listed without the program, so it works with no network. */
+    fun songItem(place: String, s: Song): MediaItem = MediaItem.Builder()
+        .setMediaId("s:$place:${s.id}")
+        .setUri(streamUri(s.id))
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(s.title)
+                .setArtist(s.artist)
+                .setAlbumTitle(s.album)
+                .setArtworkUri(Uri.parse("${session.api}/art/song/${s.id}?w=320"))
+                .setDurationMs(s.durationSecs * 1000L)
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+                .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                .build(),
+        )
+        .build()
 
     fun streamUri(id: Long): Uri = Uri.parse("${session.api}/stream/$id")
-
-    private fun artSong(id: Long) = "${session.api}/art/song/$id?w=320"
-    private fun artAlbum(id: Long) = "${session.api}/art/album/$id?w=320"
-    private fun artArtist(name: String) = "${session.api}/art/artist?name=${enc(name)}&w=320"
-
-    fun songItem(place: String, s: Song): MediaItem =
-        MediaItem.Builder()
-            .setMediaId("s:$place:${s.id}")
-            .setUri(streamUri(s.id))
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(s.title)
-                    .setArtist(s.artist)
-                    .setAlbumTitle(s.album)
-                    .setArtworkUri(Uri.parse(artSong(s.id)))
-                    .setDurationMs(s.durationSecs * 1000L)
-                    .setIsBrowsable(false)
-                    .setIsPlayable(true)
-                    .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-                    .build(),
-            )
-            .build()
-
-    private fun songItems(place: String, songs: List<Song>) = songs.map { songItem(place, it) }
-
-    private fun albumFolder(a: Album) = folder("album/${a.id}", a.title, "${a.year.take(4)} · ${a.artist}".trim(' ', '·'), artAlbum(a.id), MediaMetadata.MEDIA_TYPE_ALBUM)
-    private fun artistFolder(a: Artist) = folder("artist/${enc(a.name)}", a.name, "${a.songs} songs", artArtist(a.name), MediaMetadata.MEDIA_TYPE_ARTIST)
 
     // ── The tree ─────────────────────────────────────────────────────────────
 
@@ -98,96 +80,44 @@ class Tree(private val context: Context, private val session: Session, private v
     fun recentRoot(): MediaItem = folder(RECENT_ROOT, "Recent")
     fun suggestedRoot(): MediaItem = folder(SUGGESTED_ROOT, "Suggested")
 
-    fun children(parent: String): List<MediaItem> {
-        val (kind, key) = parent.substringBefore('/') to parent.substringAfter('/', "")
-        return when {
-            parent == ROOT -> buildList {
-                if (offline.kept().isNotEmpty()) add(folder("kept", "On this device"))
-                add(folder("recent", "Recently played"))
-                add(folder("mixes", "Mixes"))
-                add(folder("popular", "Popular"))
-                add(folder("artists", "Artists", type = MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS))
-                add(folder("categories", "Categories"))
-                add(folder("playlists", "Playlists", type = MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS))
-            }
-            parent == "kept" -> songItems("kept", offline.kept())
-            parent == "recent" -> songItems("recent", recentSongs())
-            // What Android Auto asks for to offer "continue": the song that was playing, and a few to start with.
-            parent == RECENT_ROOT -> Resume.load(context)?.let { listOf(songItem("recent", it.song)) } ?: songItems("recent", recentSongs().take(1))
-            parent == SUGGESTED_ROOT -> songItems("popular", home().popular.take(5))
-            parent == "popular" -> songItems("popular", home().popular)
-            parent == "mixes" -> home().mixes.mapIndexed { i, m ->
-                folder("mix/$i", m.name, if (m.shuffled) "Shuffled · ${m.songs} songs" else "Top ${m.songs}")
-            }
-            parent == "artists" -> letters().map { folder("letter/$it", it) }
-            kind == "letter" -> overview().artists.filter { letter(it.name) == key }.map(::artistFolder)
-            kind == "artist" -> {
-                val name = dec(key)
-                listOf(folder("artistsongs/${enc(name)}", "All songs")) + library.albums(name).map(::albumFolder)
-            }
-            parent == "categories" -> overview().categories.map { folder("category/${enc(it.name)}", it.name, "${it.songs} songs") }
-            parent == "playlists" -> library.playlists().map { folder("playlist/${it.id}", it.name, "${it.songs} songs", type = MediaMetadata.MEDIA_TYPE_PLAYLIST) }
-            else -> {
-                val place = placeOf(parent)
-                songItems(place, songsOf(place).first)
-            }
-        }
+    fun children(parent: String): List<MediaItem> = when (parent) {
+        "kept" -> offline.kept().map { songItem("kept", it) }
+        ROOT -> (if (offline.kept().isNotEmpty()) listOf(folder("kept", "On this device")) else emptyList()) +
+            items(brain.call("children", "parent" to parent).optJSONArray("items"))
+        else -> items(brain.call("children", "parent" to parent).optJSONArray("items"))
     }
-
-    /** The place whose songs a folder lists (`artistsongs/x` lists `artist/x`). */
-    private fun placeOf(folderId: String) = if (folderId.startsWith("artistsongs/")) "artist/" + folderId.substringAfter('/') else folderId
 
     /** A folder or a song by its id; null for one that is not there. */
     fun item(id: String): MediaItem? = when {
         id == ROOT -> root()
-        id.startsWith("s:") -> parseSong(id)?.let { (place, songId) -> songsOf(place).first.firstOrNull { it.id == songId }?.let { songItem(place, it) } }
-        else -> null
-    }
-
-    private fun letter(name: String): String = name.trim().firstOrNull()?.let { if (it.isLetter()) it.uppercaseChar().toString() else "#" } ?: "#"
-    private fun letters(): List<String> = overview().artists.map { letter(it.name) }.distinct().sorted()
-
-    /** `s:<place>:<id>` as (place, id). */
-    private fun parseSong(id: String): Pair<String, Long>? {
-        val parts = id.split(':', limit = 3)
-        return if (parts.size == 3 && parts[0] == "s") parts[2].toLongOrNull()?.let { parts[1] to it } else null
-    }
-
-    /** The songs of a place, and whether it is played shuffled (a mix). */
-    private fun songsOf(place: String): Pair<List<Song>, Boolean> {
-        val kind = place.substringBefore('/')
-        val key = place.substringAfter('/', "")
-        return when {
-            place == "kept" -> offline.kept() to false
-            place == "recent" -> recentSongs() to false
-            place == "popular" -> home().popular to false
-            kind == "mix" -> home().mixes.getOrNull(key.toIntOrNull() ?: -1)?.let {
-                library.songs(SongQuery(category = it.category, sort = "popular", limit = it.songs)) to it.shuffled
-            } ?: (emptyList<Song>() to false)
-            kind == "album" -> library.songs(SongQuery(album = key.toLongOrNull() ?: 0)) to false
-            kind == "artist" -> library.songs(SongQuery(artist = dec(key), limit = CAR_LIMIT)) to false
-            kind == "category" -> library.songs(SongQuery(category = dec(key), sort = "popular", limit = 100)) to false
-            kind == "playlist" -> library.songs(SongQuery(playlist = key.toLongOrNull() ?: 0, limit = CAR_LIMIT)) to false
-            kind == "search" -> library.search(dec(key)).songs to false
-            else -> emptyList<Song>() to false
-        }
+        id.startsWith("s:kept:") -> offline.kept().firstOrNull { "s:kept:${it.id}" == id }?.let { songItem("kept", it) }
+        else -> brain.call("item", "target" to id).optJSONObject("item")?.let { item(it) }
     }
 
     /** The queue for a chosen song: its place's songs, started at it. Null when the id is not a song of this tree. */
     fun queue(id: String): Queue? {
-        val (place, songId) = parseSong(id) ?: return null
-        val (songs, shuffled) = songsOf(place)
-        val items = songItems(place, songs)
-        val at = songs.indexOfFirst { it.id == songId }
-        return if (items.isEmpty()) null else Queue(items, if (at >= 0) at else 0, shuffled)
+        if (id.startsWith("s:kept:")) {
+            val songs = offline.kept()
+            val at = songs.indexOfFirst { "s:kept:${it.id}" == id }
+            return if (songs.isEmpty()) null else Queue(songs.map { songItem("kept", it) }, at.coerceAtLeast(0), false)
+        }
+        val q = brain.call("queue", "target" to id).optJSONObject("queue") ?: return null
+        return Queue(items(q.optJSONArray("items")), q.optInt("start"), q.optBoolean("shuffled"))
     }
 
     /** The songs for words said or typed (the voice search of the car). */
-    fun search(text: String): List<MediaItem> = songItems("search/${enc(text)}", library.search(text).songs)
+    fun search(text: String): List<MediaItem> = items(brain.call("search", "q" to text).optJSONArray("items"))
+
+    /** A queue item the player's screens made (`s:q:<id>`: an address and nothing else) with what the service knows of the song. */
+    fun fill(item: MediaItem): MediaItem? {
+        val id = item.mediaId.substringAfterLast(':').toLongOrNull() ?: return null
+        val found = brain.call("songs", "ids" to org.json.JSONArray(listOf(id))).optJSONArray("items") ?: return null
+        return if (found.length() == 0) null else items(found)[0]
+    }
 
     /** A song of a list added to the queue by itself: its address is all it lacks. */
     fun resolve(item: MediaItem): MediaItem {
-        val song = parseSong(item.mediaId)?.second ?: return item
+        val song = songOf(item)?.id ?: return item
         return if (item.localConfiguration != null) item else item.buildUpon().setUri(streamUri(song)).build()
     }
 
@@ -202,11 +132,5 @@ class Tree(private val context: Context, private val session: Session, private v
             val m = item.mediaMetadata
             return Song(id, m.title?.toString() ?: return null, (m.artist?.toString() ?: "").split(", ").filter { it.isNotEmpty() }, m.albumTitle?.toString() ?: "", 0, ((m.durationMs ?: 0) / 1000).toInt())
         }
-
-        /** How long what was asked of the service is used again (the car asks often). */
-        private const val FRESH_MS = 2 * 60_000L
-
-        /** A car shows a screenful: a place's queue is not the whole library. */
-        private const val CAR_LIMIT = 300
     }
 }
