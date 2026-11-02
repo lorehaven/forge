@@ -3,6 +3,7 @@
 
 pub mod aptoide;
 pub mod fdroid_format;
+pub mod izzy_stats;
 
 use quench_client::transport::Client;
 

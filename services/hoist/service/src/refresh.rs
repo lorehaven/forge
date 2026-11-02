@@ -7,8 +7,8 @@ use quench_log::{error, info};
 use tokio::task::JoinSet;
 
 use crate::config::Settings;
-use crate::connectors::{Source, client};
-use crate::merge::{DEFAULT_SOURCE_PRIORITY, merge_all};
+use crate::connectors::{Source, client, izzy_stats};
+use crate::merge::{DEFAULT_SOURCE_PRIORITY, add_downloads, merge_all};
 use crate::models::RawListing;
 use crate::store;
 
@@ -39,6 +39,18 @@ pub async fn fetch_all(sources: Vec<Source>) -> Fetched {
 /// # Errors
 /// The store failed.
 pub async fn apply(db: &Db, fetched: Fetched) -> Result<usize, String> {
+    apply_with_downloads(db, fetched, &std::collections::HashMap::new()).await
+}
+
+/// [`apply`], with download counts for the packages the sources gave none for.
+///
+/// # Errors
+/// The store failed.
+pub async fn apply_with_downloads(
+    db: &Db,
+    fetched: Fetched,
+    downloads: &std::collections::HashMap<String, i64>,
+) -> Result<usize, String> {
     let mut by_source = std::collections::HashMap::new();
     let mut any = false;
     for (name, result) in fetched {
@@ -58,7 +70,8 @@ pub async fn apply(db: &Db, fetched: Fetched) -> Result<usize, String> {
         error!("every source failed; keeping the catalogue as it is");
         return Ok(0);
     }
-    let merged = merge_all(by_source, DEFAULT_SOURCE_PRIORITY);
+    let mut merged = merge_all(by_source, DEFAULT_SOURCE_PRIORITY);
+    add_downloads(&mut merged, downloads);
     let count = merged.len();
     store::replace_all(db, &merged)
         .await
@@ -76,7 +89,15 @@ pub fn spawn_scheduler(db: Db, settings: Settings) {
         loop {
             // The first tick is immediate.
             tick.tick().await;
-            if let Err(why) = apply(&db, fetch_all(Source::all(&settings)).await).await {
+            // The counts are an extra: without them (the site is down) the catalogue is just as it was.
+            let downloads = izzy_stats::fetch(&client(), &settings.izzy_stats_url)
+                .await
+                .unwrap_or_else(|why| {
+                    error!("{why}");
+                    std::collections::HashMap::new()
+                });
+            let fetched = fetch_all(Source::all(&settings)).await;
+            if let Err(why) = apply_with_downloads(&db, fetched, &downloads).await {
                 error!("refresh failed: {why}");
             }
         }

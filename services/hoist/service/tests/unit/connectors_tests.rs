@@ -139,3 +139,68 @@ fn a_row_without_a_package_or_a_version_is_not_a_listing() {
     assert!(parse_body("{").is_err());
     assert_eq!(parse_body("{\"a\": 1}").unwrap()["a"].as_i64(), Some(1));
 }
+
+#[quench_test::test]
+fn the_rating_with_more_votes_is_the_one_kept() {
+    let mut row = browse_row();
+    row["stats"]["prating"] = json!({"avg": 4.32, "total": 1221});
+    let app = parse_app(&row, false).unwrap();
+    assert_eq!((app.rating_avg, app.rating_count), (Some(4.32), Some(1221)));
+    // The store's own wins when it has more.
+    row["stats"]["prating"] = json!({"avg": 1.0, "total": 2});
+    let app = parse_app(&row, false).unwrap();
+    assert_eq!((app.rating_avg, app.rating_count), (Some(4.67), Some(3)));
+}
+
+#[quench_test::test]
+fn a_category_is_read_from_the_keywords_of_a_resolved_row() {
+    let mut row = get_meta_row();
+    row["media"]["keywords"] = json!(["google", "android", "tools", "communication"]);
+    assert_eq!(
+        parse_app(&row, true).unwrap().category.as_deref(),
+        Some("System")
+    );
+    row["media"]["keywords"] = json!(["whatsapp", "communication"]);
+    assert_eq!(
+        parse_app(&row, true).unwrap().category.as_deref(),
+        Some("Messaging")
+    );
+    // Brand words only, or no keywords: no category (and a browse row has no media at all).
+    row["media"]["keywords"] = json!(["mozilla", "firefox"]);
+    assert!(parse_app(&row, true).unwrap().category.is_none());
+    row["media"]["keywords"] = json!(["tools"]);
+    assert!(parse_app(&row, false).unwrap().category.is_none());
+}
+
+#[quench_test::test]
+fn izzy_download_counts_are_read_and_the_unusable_left_out() {
+    let counts = hoist_service::connectors::izzy_stats::parse(
+        r#"{"": 3, "a.b": 120, "c.d": 0, "e.f": -4, "g.h": 7}"#,
+    )
+    .unwrap();
+    assert_eq!(counts.len(), 2);
+    assert_eq!((counts["a.b"], counts["g.h"]), (120, 7));
+    assert!(hoist_service::connectors::izzy_stats::parse("[1]").is_err());
+}
+
+#[quench_test::test]
+fn counts_fill_only_the_packages_without_downloads_of_their_own() {
+    use hoist_service::models::MergedPackage;
+    let package = |name: &str, downloads: Option<i64>| MergedPackage {
+        package_name: name.into(),
+        downloads,
+        ..Default::default()
+    };
+    let mut all = [
+        package("a", None),
+        package("b", Some(9)),
+        package("c", None),
+    ];
+    let counts = [("a".to_string(), 5), ("b".to_string(), 1)].into();
+    hoist_service::merge::add_downloads(&mut all, &counts);
+    assert_eq!(
+        all.map(|p| p.downloads),
+        [Some(5), Some(9), None],
+        "Aptoide's figure stays, a package Izzy does not know stays without"
+    );
+}

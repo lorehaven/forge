@@ -24,6 +24,39 @@ use crate::models::RawListing;
 const PAGE_SIZE: i64 = 30;
 const RESOLVE_CONCURRENCY: usize = 20;
 
+/// The category an app's keywords name. Aptoide has no category field, but among an app's keywords (brand and
+/// package words, mostly) there is often a Google Play style one: `communication`, `tools`, `productivity`... Mapped
+/// onto the names F-Droid's categories use, so both stores' apps sit in the same ones. The first keyword that is
+/// one of these wins; an app with none stays uncategorised.
+#[must_use]
+pub fn category_of(keywords: &Value) -> Option<String> {
+    keywords
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .find_map(|k| {
+            let name = match k.to_ascii_lowercase().as_str() {
+                "social" | "dating" => "Social Network",
+                "communication" => "Messaging",
+                "tools" | "personalization" => "System",
+                "productivity" | "business" => "Office",
+                "entertainment" | "video" | "music" | "audio" | "photography" => "Multimedia",
+                "finance" => "Finance Manager",
+                "health" | "fitness" | "medical" | "sports" => "Sports & Health",
+                "education" | "books" | "reference" => "Science & Education",
+                "maps" | "navigation" | "travel" | "transportation" => "Navigation",
+                "news" => "News",
+                "weather" => "Weather",
+                "shopping" | "lifestyle" => "Shopping & Lifestyle",
+                "libraries" => "Development",
+                "games" | "arcade" | "casual" | "puzzle" | "racing" | "simulation" | "strategy"
+                | "adventure" => "Games",
+                _ => return None,
+            };
+            Some(name.to_string())
+        })
+}
+
 /// One app of a response, as a listing. `resolved` says the row came from `app/getMeta` (and so has `media`).
 #[must_use]
 pub fn parse_app(raw: &Value, resolved: bool) -> Option<RawListing> {
@@ -31,7 +64,12 @@ pub fn parse_app(raw: &Value, resolved: bool) -> Option<RawListing> {
     let file = &raw["file"];
     let version_code = file["vercode"].as_i64()?;
     let stats = &raw["stats"];
-    let rating = &stats["rating"];
+    // Two ratings are given: the store's own (a handful of votes) and `prating` (the app's popular rating, often
+    // thousands). Whichever has more votes says more.
+    let rating = [&stats["rating"], &stats["prating"]]
+        .into_iter()
+        .max_by_key(|r| r["total"].as_i64().unwrap_or(0))
+        .unwrap_or(&Value::Null);
     // The store the app was uploaded to is deliberately not carried: this service is the publisher of record.
     let media = if resolved {
         &raw["media"]
@@ -48,6 +86,7 @@ pub fn parse_app(raw: &Value, resolved: bool) -> Option<RawListing> {
             .as_i64()
             .or_else(|| raw["size"].as_i64())
             .unwrap_or(0),
+        category: category_of(&media["keywords"]),
         summary: media["summary"].as_str().map(str::to_string),
         description: media["description"].as_str().map(str::to_string),
         icon_url: raw["icon"].as_str().map(str::to_string),

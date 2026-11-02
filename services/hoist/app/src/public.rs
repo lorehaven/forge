@@ -42,6 +42,8 @@ pub struct PublicState {
     sections: Signal<Vec<(String, Vec<PublicApp>)>>,
     list: Signal<Vec<PublicApp>>,
     more: Signal<bool>,
+    /// The open category has no rated apps: its list is A-Z, not a ranking.
+    unrated: Signal<bool>,
     loading: Signal<bool>,
     failure: Signal<String>,
     /// The page that was asked for last for the open category or search: an answer for any other is not for it.
@@ -74,6 +76,7 @@ impl PublicState {
             sections: create_signal(Vec::new()),
             list: create_signal(Vec::new()),
             more: create_signal(false),
+            unrated: create_signal(false),
             loading: create_signal(false),
             failure: create_signal(String::new()),
             current: Rc::default(),
@@ -104,7 +107,7 @@ impl PublicState {
     }
 
     /// The query that ranks a category: the best rated first, among apps enough people rated; `fallback` for a
-    /// category where nobody did, which is ordered by downloads.
+    /// category where nobody did, which is listed by downloads where it has any (the page says so).
     fn ranked(category: &str, offset: i64, limit: i64, fallback: bool) -> PublicQuery {
         PublicQuery {
             query: None,
@@ -164,6 +167,7 @@ impl PublicState {
     }
 
     fn fetch(&self, query: PublicQuery) {
+        self.unrated.set(false);
         self.list.set(Vec::new());
         self.more.set(false);
         self.failure.set(String::new());
@@ -206,13 +210,7 @@ impl PublicState {
         let home_section = asked.limit == HOME_FETCH && asked.query.is_none();
         if home_section {
             let name = asked.category.clone().unwrap_or_default();
-            // Nobody rated anything there: show what people download most.
-            if page.items.is_empty() && asked.min_votes.is_some() {
-                (self.requests)(Request::PublicPage(Self::ranked(
-                    &name, 0, HOME_FETCH, true,
-                )));
-                return;
-            }
+            // Nobody rated anything there: it has no place among the top rated.
             self.sections.update(|s| {
                 if !page.items.is_empty() {
                     s.push((name, page.items));
@@ -238,10 +236,11 @@ impl PublicState {
         if !is_current {
             return;
         }
-        // The category where nobody rated anything: ordered by downloads instead.
+        // The category where nobody rated anything: listed A-Z instead, and the page says so.
         if asked.offset == 0 && page.items.is_empty() && asked.min_votes.is_some() {
             let name = asked.category.clone().unwrap_or_default();
             self.fetch(Self::ranked(&name, 0, PAGE, true));
+            self.unrated.set(true);
             return;
         }
         self.more.set(page.has_more());
@@ -549,6 +548,11 @@ fn page(state: &PublicState) -> View {
             let next = state.clone();
             div()
                 .attr("id", "public-list")
+                .child(state.unrated.get().then(|| {
+                    p().attr("id", "public-unrated")
+                        .class("hoist-note")
+                        .text(unrated_note(&apps))
+                }))
                 .child(rows(apps, state))
                 .child(more.then(|| {
                     button()
@@ -560,6 +564,20 @@ fn page(state: &PublicState) -> View {
                 }))
                 .into_view()
         }
+    }
+}
+
+/// What a category nobody rated says about its order: by downloads when the first app has a count (the server puts
+/// those without one last), otherwise there is nothing to order by but the alphabet.
+#[must_use]
+pub fn unrated_note(apps: &[PublicApp]) -> &'static str {
+    if apps
+        .first()
+        .is_some_and(|a| a.downloads.is_some_and(|n| n > 0))
+    {
+        "Nobody has rated apps here yet, so the most downloaded come first."
+    } else {
+        "Nobody has rated apps here yet, so they are listed A to Z."
     }
 }
 

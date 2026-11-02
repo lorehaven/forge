@@ -16,6 +16,17 @@ use std::collections::HashMap;
 
 use crate::models::{MergedPackage, RawListing};
 
+/// Gives a package the download count `counts` has for it when it has none of its own (Aptoide's are first). The
+/// counts of the two are of different things - Aptoide's are all-time, Izzy's the last year's - but a category is
+/// mostly one or the other, and a figure beats the alphabet.
+pub fn add_downloads(packages: &mut [MergedPackage], counts: &HashMap<String, i64>) {
+    for package in packages {
+        if package.downloads.is_none() {
+            package.downloads = counts.get(&package.package_name).copied();
+        }
+    }
+}
+
 pub const DEFAULT_SOURCE_PRIORITY: &[&str] = &["fdroid", "izzyondroid", "aptoide"];
 
 fn within_source_rank(listing: &RawListing) -> (i32, i64, i64) {

@@ -800,30 +800,16 @@ fn the_public_tab_suggests_by_category_opens_a_category_and_searches_everything(
             0,
         ),
     });
-    // Nobody rated anything in Internet: the same category by downloads.
+    // Nobody rated anything in Internet: it has no place among the top rated, and nothing else is asked.
+    let before = pages(&asked).len();
     deliver(Msg::PublicPage {
         asked: sections[1].clone(),
         page: page(Vec::new(), 0, 0),
     });
-    let fallback = pages(&asked).pop().unwrap();
-    assert_eq!(
-        (
-            fallback.category.as_deref(),
-            fallback.sort.as_str(),
-            fallback.min_votes
-        ),
-        (Some("Internet"), "downloads", None)
-    );
-    deliver(Msg::PublicPage {
-        asked: fallback,
-        page: page(vec![public_app("org.x.browser", "Browser")], 1, 0),
-    });
+    assert_eq!(pages(&asked).len(), before);
     let text = r.text();
     assert!(
-        text.contains("Games")
-            && text.contains("Chess")
-            && text.contains("Internet")
-            && text.contains("Browser"),
+        text.contains("Games") && text.contains("Chess") && !text.contains("Internet"),
         "{text}"
     );
     assert!(
@@ -839,6 +825,17 @@ fn the_public_tab_suggests_by_category_opens_a_category_and_searches_everything(
         (Some("Games"), 0, 30)
     );
     assert!(r.text().contains("Games"), "the bar names the category");
+    // Nobody rated anything in it: the category is asked for again, A to Z, and the page says so.
+    deliver(Msg::PublicPage {
+        asked: first.clone(),
+        page: page(Vec::new(), 0, 0),
+    });
+    let first = pages(&asked).pop().unwrap();
+    assert_eq!(
+        (first.sort.as_str(), first.min_votes),
+        ("downloads", None),
+        "the fallback is the list by downloads"
+    );
     deliver(Msg::PublicPage {
         asked: first.clone(),
         page: page(
@@ -851,6 +848,11 @@ fn the_public_tab_suggests_by_category_opens_a_category_and_searches_everything(
         ),
     });
     assert!(r.text().contains("Go does things"), "{}", r.text());
+    assert!(
+        r.text().contains("most downloaded come first"),
+        "the apps have counts: {}",
+        r.text()
+    );
     r.fire(find(&r, "button", ("id", "public-more")), &Event::Click);
     let next = pages(&asked).pop().unwrap();
     assert_eq!(next.offset, 2, "after the two it has");
@@ -959,4 +961,17 @@ fn the_password_is_hidden_until_the_eye_is_pressed_and_hidden_again_by_pressing_
         Some("password"),
         "hidden"
     );
+}
+
+#[quench_test::test]
+fn a_category_nobody_rated_says_whether_it_is_by_downloads_or_the_alphabet() {
+    use hoist_app::public::unrated_note;
+    let mut counted = public_app("org.x.a", "A");
+    counted.downloads = Some(1200);
+    let mut none = public_app("org.x.b", "B");
+    none.downloads = None;
+    assert!(unrated_note(&[counted.clone(), none.clone()]).contains("most downloaded"));
+    // The server puts those without a count last, so a first without one means none have.
+    assert!(unrated_note(&[none, counted]).contains("A to Z"));
+    assert!(unrated_note(&[]).contains("A to Z"));
 }
