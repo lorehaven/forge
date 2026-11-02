@@ -4,7 +4,7 @@ use quench_serde::{Deserialize, json};
 use songbook_app::{Msg, Request};
 use songbook_core::api::encode;
 use songbook_core::{
-    AddArtists, Added, BlacklistBody, Browse, CategoryBody, Job, LinkBody, NewCategory,
+    AddArtists, Added, BlacklistBody, Browse, CategoryBody, GenresBody, Job, LinkBody, NewCategory,
     RemoveArtist, Removed, RenameCategory, Schedule, Started, State, Stats,
 };
 
@@ -86,6 +86,13 @@ pub fn call_for(request: &Request) -> Option<Call> {
                 category: category.clone(),
             },
         ),
+        Request::SetGenres { name, genres } => post(
+            "/artists/genres",
+            &GenresBody {
+                name: name.clone(),
+                genres: genres.clone(),
+            },
+        ),
         Request::AddCategory(name) => post("/categories/add", &NewCategory { name: name.clone() }),
         Request::RenameCategory { name, new_name } => post(
             "/categories/rename",
@@ -129,7 +136,7 @@ pub fn interpret(request: &Request, status: u16, body: &str) -> Msg {
             Request::Blacklist { .. } => read::<Removed>(body, |r| Msg::Blacklisted(r.removed)),
             Request::AddArtists(_) => read::<Added>(body, |a| Msg::ArtistsAdded(a.added)),
             Request::RemoveArtist(_) => Msg::ArtistRemoved,
-            Request::SetCategory { .. } => Msg::CategorySet,
+            Request::SetCategory { .. } | Request::SetGenres { .. } => Msg::CategorySet,
             Request::AddCategory(_) => read::<Added>(body, |a| Msg::CategoryAdded(a.added)),
             Request::RenameCategory { .. } => Msg::CategoryRenamed,
             Request::StartJob(_) => read::<Started>(body, |s| Msg::Started(s.started)),

@@ -27,6 +27,26 @@ fn reads_are_gets_under_the_admin_api() {
         }
     );
     assert_eq!(call(&Request::Stats).path, format!("{API}/stats"));
+    let genres = call(&Request::SetGenres {
+        name: "WC".into(),
+        genres: "Rap/Hip Hop".into(),
+    });
+    assert_eq!(genres.path, format!("{API}/artists/genres"));
+    assert_eq!(
+        genres.body.as_deref(),
+        Some(r#"{"name":"WC","genres":"Rap/Hip Hop"}"#)
+    );
+    assert_eq!(
+        interpret(
+            &Request::SetGenres {
+                name: "WC".into(),
+                genres: String::new()
+            },
+            200,
+            "{}"
+        ),
+        Msg::CategorySet
+    );
     assert_eq!(call(&Request::Schedule).path, format!("{API}/schedule"));
     let save = call(&Request::SaveSchedule(songbook_core::Schedule::default()));
     assert_eq!(

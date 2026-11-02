@@ -32,6 +32,9 @@ pub struct ArtistRow {
     pub deezer_name: String,
     pub deezer_id: String,
     pub fans: String,
+    /// Only albums in these genres are kept (Deezer's names, `; `-separated); empty keeps every album.
+    #[serde(default)]
+    pub genres: String,
     /// Songs of the artist's own discography (the albums found under them), each once: what the library page counts for them.
     pub tracks: u32,
     /// The last sync found this artist.
@@ -266,6 +269,13 @@ pub struct CategoryBody {
     pub category: String,
 }
 
+/// `POST /artists/genres`: the genres an artist's albums must have to be kept (`; `-separated), empty for any.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GenresBody {
+    pub name: String,
+    pub genres: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewCategory {
     pub name: String,
@@ -278,7 +288,7 @@ pub struct RenameCategory {
     pub new_name: String,
 }
 
-/// `POST /jobs`: `name` is `sync`, `tags`, `similar`, `youtube`, `download`, `convert`, `pipeline` or `scheduled` (the stages of the saved schedule, now).
+/// `POST /jobs`: `name` is `sync`, `tags`, `similar`, `youtube`, `download`, `convert`, `purge` (the files of blacklisted albums), `pipeline` or `scheduled` (the stages of the saved schedule, now).
 ///
 /// `pipeline` is sync, find links (with the songs that had no match tried again), download and convert, one after the other
 /// in one job; it stops at the first step that fails.
@@ -309,6 +319,9 @@ pub struct JobStart {
     /// youtube: look again at songs that had no match.
     #[serde(default)]
     pub retry_missing: bool,
+    /// purge: only list the files that would be deleted.
+    #[serde(default)]
+    pub dry_run: bool,
 }
 
 /// The nightly run (`GET`/`POST /schedule`).

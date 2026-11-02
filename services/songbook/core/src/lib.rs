@@ -8,7 +8,7 @@ pub mod api;
 pub mod naming;
 
 pub use api::{
-    AddArtists, Added, Album, ArtistRow, BlacklistBody, Browse, CategoryBody, Filter, Job,
-    JobStart, LinkBody, NewArtist, NewCategory, RemoveArtist, Removed, RenameCategory, Retagged,
-    Schedule, Started, State, Stats, Suggestion, TopTrack, Track, Updated, popularity,
+    AddArtists, Added, Album, ArtistRow, BlacklistBody, Browse, CategoryBody, Filter, GenresBody,
+    Job, JobStart, LinkBody, NewArtist, NewCategory, RemoveArtist, Removed, RenameCategory,
+    Retagged, Schedule, Started, State, Stats, Suggestion, TopTrack, Track, Updated, popularity,
 };

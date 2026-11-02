@@ -33,6 +33,8 @@ pub enum Request {
     RemoveArtist(String),
     /// Put an artist in a category (empty for none).
     SetCategory { name: String, category: String },
+    /// Keep only the albums of an artist that are in these genres (empty: all).
+    SetGenres { name: String, genres: String },
     /// Create a category.
     AddCategory(String),
     /// Give a category another name.

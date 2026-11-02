@@ -46,13 +46,17 @@ impl Index {
         let mut db = Connection::open_or_create(path)?;
         db.execute(SCHEMA, &[])?;
         // Columns added after the first release: an older file lacks them (CREATE IF NOT EXISTS leaves its table alone).
-        for column in ["rank", "yt_views"] {
+        for (table, column, kind) in [
+            ("songs", "rank", "INTEGER"),
+            ("songs", "yt_views", "INTEGER"),
+            ("follows", "genres", "TEXT NOT NULL DEFAULT ''"),
+        ] {
             if db
-                .query(&format!("SELECT {column} FROM songs LIMIT 1"), &[])
+                .query(&format!("SELECT {column} FROM {table} LIMIT 1"), &[])
                 .is_err()
             {
                 db.execute(
-                    &format!("ALTER TABLE songs ADD COLUMN {column} INTEGER"),
+                    &format!("ALTER TABLE {table} ADD COLUMN {column} {kind}"),
                     &[],
                 )?;
             }

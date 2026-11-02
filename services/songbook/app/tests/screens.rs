@@ -129,6 +129,7 @@ fn live(path: &str) -> Live {
 
 fn artist(name: &str, category: &str, tracks: u32, synced: bool) -> ArtistRow {
     ArtistRow {
+        genres: String::new(),
         name: name.into(),
         pinned: false,
         category: category.into(),
@@ -671,6 +672,31 @@ fn the_category_of_an_artist_changes_in_a_dialog() {
     l.send(Msg::CategorySet);
     assert!(!l.has("dialog-category"));
     assert!(l.text_of("snack").contains("Category saved"));
+}
+
+#[quench_test::test]
+fn the_genres_an_artist_keeps_are_set_in_the_same_dialog() {
+    let l = started("/songbook/ui/library");
+    l.expand();
+    l.r.fire(
+        l.find("button", ("aria-label", "Change category of Kartky")),
+        &Event::Click,
+    );
+    assert!(l.has("dialog-category"));
+    l.r.fire(
+        l.find("input", ("id", "artist-genres")),
+        &Event::Input("Rap/Hip Hop; Hip Hop".into()),
+    );
+    l.r.fire(l.find("form", ("class", "sb-dialog-form")), &Event::Submit);
+    let asked = l.take();
+    assert_eq!(
+        asked.first(),
+        Some(&Request::SetGenres {
+            name: "Kartky".into(),
+            genres: "Rap/Hip Hop; Hip Hop".into()
+        }),
+        "{asked:?}"
+    );
 }
 
 #[quench_test::test]

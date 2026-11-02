@@ -317,3 +317,134 @@ async fn similar_saves_the_best_songs_of_each_suggested_artist() {
         ("Regulate", "G Funk", 70)
     );
 }
+
+#[quench_test::test]
+async fn purge_deletes_only_the_files_of_blacklisted_albums_that_the_library_does_not_keep() {
+    use songbook_service::index::browse;
+    let dir = Scratch::new();
+    let app = app_with(&dir, &ANSWERS);
+    app.index
+        .with(|db| {
+            follow::add_follow(db, "Nas", "", "")?.unwrap();
+            Ok(())
+        })
+        .unwrap();
+    let (err, log) = sync(&app, false).await;
+    assert_eq!(err, None, "{log}");
+    // Files: Illmatic's three tracks, one kept-album song, a hand-made file.
+    std::fs::create_dir_all(dir.path().join("data")).unwrap();
+    let data = dir.path().join("data");
+    let names: Vec<String> = app
+        .index
+        .with(|db| {
+            Ok(db
+                .query("SELECT filename FROM songs ORDER BY id", &[])?
+                .rows
+                .iter()
+                .map(|r| songbook_service::index::str_at(r, 0))
+                .collect())
+        })
+        .unwrap();
+    for n in &names {
+        std::fs::write(data.join(format!("{n}.mp3")), b"audio").unwrap();
+    }
+    std::fs::write(data.join("My own recording.mp3"), b"mine").unwrap();
+    // Blacklist Illmatic: its songs leave the index but the files stay.
+    app.index
+        .with(|db| browse::blacklist_album(db, "Nas", 10).map(|r| r.unwrap()))
+        .unwrap();
+    assert_eq!(
+        app.index
+            .with(|db| Ok(db.query("SELECT COUNT(*) FROM songs", &[])?.rows[0][0].as_integer()))
+            .unwrap(),
+        Some(0),
+        "the blacklist removed the songs"
+    );
+    purge(&app, true).await;
+    let preview = app.jobs.read(0);
+    assert_eq!(preview.error, None, "{}", preview.log);
+    assert!(preview.log.contains("would delete"), "{}", preview.log);
+    let count = |dir: &std::path::Path| std::fs::read_dir(dir).unwrap().count();
+    let before = count(&data);
+    assert_eq!(before, names.len() + 1, "a preview deletes nothing");
+
+    purge(&app, false).await;
+    let done = app.jobs.read(0);
+    assert_eq!(done.error, None, "{}", done.log);
+    assert!(data.join("My own recording.mp3").exists(), "{}", done.log);
+    assert_eq!(
+        count(&data),
+        1,
+        "only the hand-made file is left: {}",
+        done.log
+    );
+}
+
+async fn purge(app: &App, dry: bool) {
+    let worker = app.clone();
+    assert!(app.jobs.start("purge", move |log| async move {
+        songbook_service::purge::run(&worker, dry, &log).await
+    }));
+    wait(app).await;
+}
+
+async fn wait(app: &App) {
+    for _ in 0..500 {
+        if !app.jobs.running() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+#[quench_test::test]
+async fn an_artists_genres_keep_only_its_own_albums_and_drop_the_others_at_the_next_sync() {
+    let dir = Scratch::new();
+    let app = app_with(&dir, &ANSWERS);
+    app.index
+        .with(|db| {
+            follow::add_follow(db, "Nas", "", "")?.unwrap();
+            Ok(())
+        })
+        .unwrap();
+    let songs = |app: &App| {
+        app.index
+            .with(|db| Ok(db.query("SELECT COUNT(*) FROM songs", &[])?.rows[0][0].as_integer()))
+            .unwrap()
+    };
+    assert_eq!(sync(&app, false).await.0, None);
+    assert_eq!(songs(&app), Some(3), "no filter keeps every album");
+
+    // The profile mixes in someone else: only Rock is wanted, so Illmatic (Rap/Hip Hop) goes.
+    app.index
+        .with(|db| follow::set_genres(db, "Nas", " Rock ;; Punk ").map(|r| r.unwrap()))
+        .unwrap();
+    let rows = app.index.with(follow::artist_rows).unwrap();
+    assert_eq!(rows[0].genres, "Rock; Punk");
+    let (err, log) = sync(&app, false).await;
+    assert_eq!(err, None);
+    assert!(
+        log.contains("skip Illmatic (Rap/Hip Hop): not in Rock; Punk"),
+        "{log}"
+    );
+    assert_eq!(songs(&app), Some(0));
+
+    // The right genre, in any case, brings it back.
+    app.index
+        .with(|db| follow::set_genres(db, "Nas", "rap/hip hop").map(|r| r.unwrap()))
+        .unwrap();
+    assert_eq!(sync(&app, false).await.0, None);
+    assert_eq!(songs(&app), Some(3));
+
+    // Cleared, every album again; an unknown artist is refused.
+    app.index
+        .with(|db| follow::set_genres(db, "Nas", "").map(|r| r.unwrap()))
+        .unwrap();
+    assert_eq!(app.index.with(follow::artist_rows).unwrap()[0].genres, "");
+    assert!(
+        app.index
+            .with(|db| follow::set_genres(db, "Nobody", "Rock"))
+            .unwrap()
+            .is_err()
+    );
+}

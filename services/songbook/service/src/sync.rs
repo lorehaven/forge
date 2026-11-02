@@ -200,8 +200,27 @@ pub async fn run_with(
             hit.fans,
             albums.len()
         ));
+        // An id on Deezer can hold several people of one name (a rapper and a punk band): the genres chosen for the artist
+        // keep only its own albums. An album with no genre does not match.
+        let wanted: Vec<String> = crate::index::follow::genre_list(&f.genres)
+            .iter()
+            .map(|g| norm(g))
+            .collect();
         for al in albums {
             let album = app.deezer.album(al.id).await?;
+            if !wanted.is_empty() && !album.info.genres.iter().any(|g| wanted.contains(&norm(g))) {
+                log.line(format!(
+                    "  skip {} ({}): not in {}",
+                    album.info.title,
+                    if album.info.genres.is_empty() {
+                        "no genre".to_string()
+                    } else {
+                        album.info.genres.join("/")
+                    },
+                    f.genres
+                ));
+                continue;
+            }
             if !touched.insert(album.info.deezer_id) {
                 continue; // a collaboration album already reached through another followed artist
             }

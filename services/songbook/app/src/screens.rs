@@ -844,8 +844,15 @@ fn start(env: &Env, name: &str) {
     let m = &env.m;
     // The whole pipeline takes both limits: `limit` is the one of find links, `limit_download` the one of download.
     let everything = name == "pipeline";
+    // "purge-preview" is the purge job that only lists.
+    let (name, dry_run) = if name == "purge-preview" {
+        ("purge", true)
+    } else {
+        (name, false)
+    };
     (env.ask)(Request::StartJob(JobStart {
         name: name.to_string(),
+        dry_run,
         singles: m.singles.get_untracked(),
         artist: m.filter.get_untracked().artist,
         limit: if name == "youtube" || everything {
@@ -1061,6 +1068,30 @@ pub(crate) fn pipeline(env: &Env) -> View {
                                 &m.limit_download,
                                 &t.t("ui_max_tracks"),
                             ))),
+                    ),
+            )
+            .child(
+                article()
+                    .attr("id", "purge-blacklisted")
+                    .class("sb-card sb-step")
+                    .child(h3().text(t.t("ui_purge_title")))
+                    .child(p().text(t.t("ui_purge_text")))
+                    .child(
+                        toolbar()
+                            .child(job_button(
+                                &env,
+                                "purge-preview",
+                                &t.t("ui_purge_preview"),
+                                "fui-btn-secondary",
+                                Some(t.t("ui_purge_preview_title")),
+                            ))
+                            .child(job_button(
+                                &env,
+                                "purge",
+                                &t.t("ui_purge_delete"),
+                                "fui-btn-danger",
+                                Some(t.t("ui_purge_delete_title")),
+                            )),
                     ),
             )
             .into_view()
@@ -1759,14 +1790,24 @@ fn category_dialog(env: &Env, artist: &ArtistRow) -> View {
     };
     let pick = Field::new("category-pick", &current);
     let fresh = Field::new("category-new", "");
+    let genres = Field::new("artist-genres", &artist.genres);
     let go = {
-        let (env, pick, fresh, name) = (
+        let (env, pick, fresh, genres, name, had) = (
             env.clone(),
             pick.clone(),
             fresh.clone(),
+            genres.clone(),
             artist.name.clone(),
+            artist.genres.clone(),
         );
         move || {
+            let wanted = genres.value_untracked().trim().to_string();
+            if wanted != had {
+                (env.ask)(Request::SetGenres {
+                    name: name.clone(),
+                    genres: wanted,
+                });
+            }
             let new = fresh.value_untracked().trim().to_string();
             if new.is_empty() {
                 (env.ask)(Request::SetCategory {
@@ -1799,6 +1840,16 @@ fn category_dialog(env: &Env, artist: &ArtistRow) -> View {
                 &t.t("ui_cat_new"),
                 Some(t.t("ui_cat_new_hint")),
                 fresh.input().attr("autocomplete", "off").class("fui-input"),
+            ),
+            field_row(
+                "artist-genres",
+                &t.t("ui_genres_label"),
+                Some(t.t("ui_genres_hint")),
+                genres
+                    .input()
+                    .attr("autocomplete", "off")
+                    .attr("placeholder", "Rap/Hip Hop")
+                    .class("fui-input"),
             ),
         ],
         vec![cancel_button(env), submit_button(t.t("ui_save"), false)],

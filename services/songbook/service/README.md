@@ -59,6 +59,7 @@ All under `/api/v1/admin`, JSON, behind Gatehouse sign-in (`Auth`: bearer token 
 | `POST /categories/add` | `{name}` | `{added: [name]}` (empty when it exists) |
 | `POST /jobs` | `{name: sync / tags / similar / youtube / download / convert, singles, artist, limit, top, per_artist, category, retry_missing}` | `{started}` (`false`: a job is running) |
 | `GET /schedule`, `POST /schedule` | the [nightly run](#the-nightly-run): `{enabled, time, zone, sync, links, download, convert, fresh_ratings, singles}` | the saved schedule with `next_run`, `last_run`, `last_result` |
+| `POST /artists/genres` | `{name, genres}` | `{}`; applied at the next sync |
 | `GET /job?from=N` | | `{name, running, error, log, offset}`: the log from byte `N`; poll with the last `offset` |
 
 `link`, `albums/blacklist` and `artists/category` answer `409` while a job runs. Errors are `{"error": "..."}`.
@@ -71,6 +72,10 @@ One job at a time, in the background, with its log kept in memory (the last 4 MB
   track lookups at once), writes songs, artists, albums and links, drops what left Deezer or was blacklisted, rebuilds the tags.
   Albums and tracks are cached as JSON in `$MUSIC_HOME/.deezer_cache`, so a repeat run is fast (the cache of the Python helper
   is reused as is). `singles` also fetches singles.
+* An artist can have **genres** (the dialog of the pencil next to the artist; `; `-separated Deezer genre names, compared without
+  regard to case). Sync then keeps only the albums that have one of them and drops the others, including those already in the
+  index. This is for a Deezer profile that several people of one name share (the rapper WC has Polish punk and Thai singles on
+  his id). An album with no genre never matches; empty keeps every album. Blacklisting is for single albums.
 * **tags** rebuilds category and genre tags without fetching.
 * **similar** asks Deezer for the related artists of the followed ones and ranks them by how many of yours point at them, then
   fetches each one's 5 best songs (`artist/{id}/top`, scored like the library's) and keeps them with the suggestion.
@@ -81,6 +86,11 @@ One job at a time, in the background, with its log kept in memory (the last 4 MB
 * **download** fetches each linked song that has no file into the audio folder (audio only, `-f bestaudio/best`).
 * **convert** turns every media file in the audio folder into mp3 (VBR quality 0) in place and removes the source; a leftover
   source whose mp3 exists is removed too when both last the same within 2 s. A download with no audio stream is reported and left.
+* **purge** deletes the audio files of blacklisted albums. Blacklisting only takes an album out of the index, so its files stay and
+  the index no longer knows their names; purge asks Deezer for each blacklisted album's tracklist again, rebuilds the file names as
+  sync does and deletes the files of those names (every extension) that are in the audio folder. A name that a song in the index
+  still has (it is also on an album you keep) is left alone, as is anything else in the folder. `dry_run` only lists the files and
+  their size. It is never part of the pipeline or the nightly run.
 
 ### The nightly run
 

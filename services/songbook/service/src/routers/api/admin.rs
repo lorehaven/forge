@@ -7,8 +7,8 @@ use crate::{convert, download, pipeline, similar, sync, youtube};
 use quench_http::prelude::{Inject, Json, Query, Response, get, http::StatusCode, post};
 use quench_serde::Deserialize;
 use songbook_core::{
-    AddArtists, Added, BlacklistBody, CategoryBody, Filter, JobStart, LinkBody, NewCategory,
-    RemoveArtist, Removed, RenameCategory, Retagged, Schedule, Started, Updated,
+    AddArtists, Added, BlacklistBody, CategoryBody, Filter, GenresBody, JobStart, LinkBody,
+    NewCategory, RemoveArtist, Removed, RenameCategory, Retagged, Schedule, Started, Updated,
 };
 
 fn server_error(e: impl std::fmt::Display) -> Response {
@@ -165,6 +165,19 @@ pub async fn set_category(Inject(app): Inject<App>, Json(body): Json<CategoryBod
     }
 }
 
+#[post("/api/v1/admin/artists/genres")]
+pub async fn set_genres(Inject(app): Inject<App>, Json(body): Json<GenresBody>) -> Response {
+    match app
+        .index
+        .run(move |db| follow::set_genres(db, &body.name, &body.genres))
+        .await
+    {
+        Ok(Ok(())) => ok(&quench_serde::Map::new()),
+        Ok(Err(e)) => refused(&e),
+        Err(e) => server_error(e),
+    }
+}
+
 #[post("/api/v1/admin/categories/add")]
 pub async fn add_category(Inject(app): Inject<App>, Json(body): Json<NewCategory>) -> Response {
     let name = body.name.clone();
@@ -250,6 +263,7 @@ pub async fn start_job(Inject(app): Inject<App>, Json(body): Json<JobStart>) -> 
             }
             "download" => download::run(&worker, &body.artist, body.limit, 3, 5, &log).await,
             "pipeline" => pipeline::run(&worker, &body, &log).await,
+            "purge" => crate::purge::run(&worker, body.dry_run, &log).await,
             _ => convert::run(&worker.config.data, true, &log).await,
         }
     });
@@ -297,6 +311,7 @@ pub fn register_routes() {
     let _ = add_artists as fn(_, _) -> _;
     let _ = remove_artist as fn(_, _) -> _;
     let _ = set_category as fn(_, _) -> _;
+    let _ = set_genres as fn(_, _) -> _;
     let _ = add_category as fn(_, _) -> _;
     let _ = rename_category as fn(_, _) -> _;
     let _ = start_job as fn(_, _) -> _;

@@ -17,6 +17,8 @@ pub struct Follow {
     pub deezer_name: String,
     pub deezer_id: String,
     pub fans: String,
+    /// Only albums in these genres are kept (`; `-separated); empty keeps all.
+    pub genres: String,
     /// `None` before the first sync; empty when matched; `NO MATCH` when Deezer had nobody by that name.
     pub note: Option<String>,
 }
@@ -44,10 +46,11 @@ fn follow_from(row: &[Value]) -> Follow {
         deezer_id: str_at(row, 4),
         fans: str_at(row, 5),
         note: opt_str_at(row, 6),
+        genres: str_at(row, 7),
     }
 }
 
-const FOLLOW_COLUMNS: &str = "name, pin, category, deezer_name, deezer_id, fans, note";
+const FOLLOW_COLUMNS: &str = "name, pin, category, deezer_name, deezer_id, fans, note, genres";
 
 pub fn follows(db: &mut Connection) -> Result<Vec<Follow>> {
     let rows = db.query(
@@ -174,6 +177,35 @@ pub fn set_category(
     Ok(Ok(()))
 }
 
+/// The genres a name is split into: `; `-separated, trimmed, empty ones dropped.
+#[must_use]
+pub fn genre_list(genres: &str) -> Vec<String> {
+    genres
+        .split([';', '|'])
+        .map(clean)
+        .filter(|g| !g.is_empty())
+        .collect()
+}
+
+/// Sets the genres an artist's albums must have to be kept (empty: any). The next sync applies it.
+pub fn set_genres(
+    db: &mut Connection,
+    name: &str,
+    genres: &str,
+) -> Result<std::result::Result<(), Refused>> {
+    let Some(f) = follows(db)?
+        .into_iter()
+        .find(|f| norm(&f.name) == norm(name))
+    else {
+        return Ok(Err(Refused::Input("unknown artist".into())));
+    };
+    db.execute(
+        "UPDATE follows SET genres = ? WHERE name = ?",
+        &[text(&genre_list(genres).join("; ")), text(&f.name)],
+    )?;
+    Ok(Ok(()))
+}
+
 /// Adds a category. `Ok(false)` when it exists.
 pub fn add_category(db: &mut Connection, name: &str) -> Result<std::result::Result<bool, Refused>> {
     let name = clean(name);
@@ -274,6 +306,7 @@ pub fn artist_rows(db: &mut Connection) -> Result<Vec<ArtistRow>> {
             deezer_name: f.deezer_name,
             deezer_id: f.deezer_id,
             fans: f.fans,
+            genres: f.genres,
             name: f.name,
         })
         .collect())
