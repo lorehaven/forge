@@ -592,9 +592,10 @@ fn the_background_check_does_nothing_when_it_is_off_or_nobody_is_signed_in_or_th
     };
     assert!(updates.is_empty());
     store.clear();
+    // Signed out on purpose (or never signed in): nothing to announce.
     assert_eq!(
         check(&store, &[], "linux", "x86_64", None).unwrap(),
-        Outcome::SignedOut
+        Outcome::SignedOut { notify: false }
     );
 }
 
@@ -635,4 +636,58 @@ fn what_the_host_is_told_is_a_line_of_json_and_what_it_sends_is_read_back() {
     let (title, body) = words(&many);
     assert_eq!(title, "5 updates available");
     assert_eq!(body, "App 0 1.0, App 1 1.0, App 2 1.0, and 2 more");
+}
+
+#[quench_test::test]
+fn a_lost_session_is_announced_once_and_a_kept_one_starts_it_over() {
+    let (base, _state) = start();
+    let store = signed_in("lost", &base);
+    // The server no longer knows the token: the user is told, once.
+    store.write(&base, "spent-token");
+    let lost = || check(&store, &[], "linux", "x86_64", None).unwrap();
+    assert_eq!(lost(), Outcome::SignedOut { notify: true });
+    assert_eq!(lost(), Outcome::SignedOut { notify: false });
+    let line = report(&Ok(Outcome::SignedOut { notify: true }));
+    assert!(
+        line.contains("\"status\":\"signed_out\"") && line.contains("\"notify\":true"),
+        "{line}"
+    );
+    // Signing in again keeps a session, which ends the announcement: a later loss is news again.
+    store.write(&base, "another-spent-token");
+    assert_eq!(lost(), Outcome::SignedOut { notify: true });
+}
+
+#[quench_test::test]
+fn an_empty_session_file_is_a_loss_but_no_file_is_not() {
+    let (base, _state) = start();
+    let store = signed_in("empty", &base);
+    let dir = std::env::temp_dir().join(format!("hoist-check-empty-{}", std::process::id()));
+    std::fs::write(dir.join("session"), "").unwrap();
+    assert_eq!(
+        check(&store, &[], "linux", "x86_64", None).unwrap(),
+        Outcome::SignedOut { notify: true }
+    );
+    store.clear();
+    assert_eq!(
+        check(&store, &[], "linux", "x86_64", None).unwrap(),
+        Outcome::SignedOut { notify: false }
+    );
+}
+
+#[quench_test::test]
+fn the_session_is_written_whole_and_leaves_nothing_behind() {
+    let (base, _state) = start();
+    let store = signed_in("whole", &base);
+    store.write("https://x.example", "tok");
+    assert_eq!(
+        store.read(),
+        Some(("https://x.example".into(), "tok".into()))
+    );
+    let dir = std::env::temp_dir().join(format!("hoist-check-whole-{}", std::process::id()));
+    let leftovers: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .filter(|n| n.ends_with(".tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
 }

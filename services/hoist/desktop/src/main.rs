@@ -28,7 +28,15 @@ fn background_check() -> std::process::ExitCode {
     );
     match found {
         Ok(Outcome::Off) => println!("the background check is switched off in the settings"),
-        Ok(Outcome::SignedOut) => println!("not signed in: open Hoist and sign in"),
+        Ok(Outcome::SignedOut { notify }) => {
+            println!("not signed in: open Hoist and sign in");
+            if notify {
+                notify_desktop(
+                    "Signed out of Hoist",
+                    "Sign in again to keep checking for updates.",
+                );
+            }
+        }
         Ok(Outcome::Updates { updates, notify }) => {
             let (title, body) = words(&updates);
             if updates.is_empty() {

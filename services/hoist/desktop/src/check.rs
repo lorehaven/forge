@@ -14,8 +14,10 @@ use crate::Store;
 pub enum Outcome {
     /// The "check for updates in the background" setting is off.
     Off,
-    /// Nobody is signed in (or the session ended): there is nothing to look with.
-    SignedOut,
+    /// Nobody is signed in (or the session ended): there is nothing to look with. `notify` is whether the user
+    /// should be told: the session was lost (refused, or its file unreadable), and not yet announced. Someone who
+    /// never signed in, or signed out on purpose, is not told.
+    SignedOut { notify: bool },
     /// The updates there are (none, perhaps). `notify` is whether they are news: something not yet announced.
     Updates { updates: Vec<Update>, notify: bool },
 }
@@ -50,7 +52,11 @@ pub fn check(
         return Ok(Outcome::Off);
     }
     let Some((server, token)) = store.read() else {
-        return Ok(Outcome::SignedOut);
+        if store.has_session_file() {
+            eprintln!("hoist check: the session file is there but empty or unreadable");
+            return Ok(signed_out(store));
+        }
+        return Ok(Outcome::SignedOut { notify: false });
     };
     let (keep, follow) = (store.clone(), store.clone());
     let kept_server = server.clone();
@@ -60,7 +66,10 @@ pub fn check(
         .following(move || follow.read().map(|(_, t)| t));
     let rows = match session.catalog(os) {
         Ok(rows) => rows,
-        Err(NetError::Unauthorized) => return Ok(Outcome::SignedOut),
+        Err(NetError::Unauthorized) => {
+            eprintln!("hoist check: the server refused the session (401)");
+            return Ok(signed_out(store));
+        }
         Err(e) => return Err(e.to_string()),
     };
     let mut installed = store.installed();
@@ -75,6 +84,13 @@ pub fn check(
     let notify = !updates.is_empty() && store.announced() != key;
     store.set_announced(&key);
     Ok(Outcome::Updates { updates, notify })
+}
+
+/// The session was lost: worth a notification once, not every time the check runs.
+fn signed_out(store: &Store) -> Outcome {
+    let notify = !store.signed_out_announced();
+    store.set_signed_out_announced();
+    Outcome::SignedOut { notify }
 }
 
 /// How many titles a notification names before it says "and N more".
@@ -104,7 +120,12 @@ pub fn words(updates: &[Update]) -> (String, String) {
 pub fn report(result: &Result<Outcome, String>) -> String {
     let value = match result {
         Ok(Outcome::Off) => json!({ "status": "off" }),
-        Ok(Outcome::SignedOut) => json!({ "status": "signed_out" }),
+        Ok(Outcome::SignedOut { notify }) => json!({
+            "status": "signed_out",
+            "notify": *notify,
+            "title": "Signed out of Hoist",
+            "body": "Sign in again to keep checking for updates.",
+        }),
         Ok(Outcome::Updates { updates, notify }) => {
             let (title, body) = words(updates);
             json!({

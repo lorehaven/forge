@@ -101,6 +101,9 @@ object UpdateCheck {
         Log.i(TAG, "checked: $status, ${answer.optInt("count")} update(s), notify=${answer.optBoolean("notify")}")
         if (status == "updates" && answer.optBoolean("notify")) {
             notify(context, "Hoist: " + answer.optString("title"), answer.optString("body"))
+        } else if (status == "signed_out" && answer.optBoolean("notify")) {
+            // The session was lost: said once (the program remembers), until the person signs in again.
+            notify(context, answer.optString("title"), answer.optString("body"))
         }
     }
 

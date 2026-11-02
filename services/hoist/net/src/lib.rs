@@ -176,7 +176,8 @@ impl Session {
         match response.status().as_u16() {
             200 => {}
             404 => return Err(NetError::RegistryDisabled),
-            401 | 403 => return Err(NetError::Unauthorized),
+            // Only a 401 is a lost session (the token was just renewed); a 403 is a refusal of this request.
+            401 => return Err(NetError::Unauthorized),
             other => return Err(NetError::Status(other)),
         }
         let value: Value = response.json().map_err(network)?;
@@ -211,7 +212,7 @@ impl Session {
         let response = self.get(&path)?;
         match response.status().as_u16() {
             200 => {}
-            401 | 403 => return Err(NetError::Unauthorized),
+            401 => return Err(NetError::Unauthorized),
             other => return Err(NetError::Status(other)),
         }
         let bytes = response.bytes().map_err(network)?;

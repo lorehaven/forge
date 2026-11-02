@@ -72,22 +72,60 @@ impl Store {
         Some((server.to_string(), token.to_string()))
     }
 
+    /// Keeps the session. Written whole to a temporary file and renamed into place, so a program stopped half-way
+    /// (the system kills a background run, the phone loses power) leaves the old file, never an empty one: the token
+    /// rotates, and an empty file is a signed-out user. Having a session again also ends any sign-out announcement.
     pub fn write(&self, server: &str, token: &str) {
+        use std::io::Write as _;
         use std::os::unix::fs::OpenOptionsExt;
         let _ = std::fs::create_dir_all(&self.dir);
+        // The program's id in the name: the window and the background run may both write.
+        let temp = self.dir.join(format!("session.{}.tmp", std::process::id()));
         let file = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
             .mode(0o600)
-            .open(self.file());
-        if let Ok(mut file) = file {
-            let _ = std::io::Write::write_all(&mut file, format!("{server}\n{token}\n").as_bytes());
+            .open(&temp);
+        if let Ok(mut file) = file
+            && file
+                .write_all(format!("{server}\n{token}\n").as_bytes())
+                .is_ok()
+            && file.sync_all().is_ok()
+            && std::fs::rename(&temp, self.file()).is_ok()
+        {
+            let _ = std::fs::remove_file(self.signed_out_file());
+        } else {
+            let _ = std::fs::remove_file(&temp);
         }
     }
 
     pub fn clear(&self) {
         let _ = std::fs::remove_file(self.file());
+        let _ = std::fs::remove_file(self.signed_out_file());
+    }
+
+    /// Whether a session file is there at all (even one that cannot be read): told from a user who never signed in,
+    /// or signed out on purpose, by [`clear`](Self::clear).
+    #[must_use]
+    pub fn has_session_file(&self) -> bool {
+        self.file().exists()
+    }
+
+    fn signed_out_file(&self) -> PathBuf {
+        self.dir.join("signed_out_announced")
+    }
+
+    /// Whether the user was already told the session ended (until a session is kept again).
+    #[must_use]
+    pub fn signed_out_announced(&self) -> bool {
+        self.signed_out_file().exists()
+    }
+
+    /// Remembers that the user was told the session ended.
+    pub fn set_signed_out_announced(&self) {
+        let _ = std::fs::create_dir_all(&self.dir);
+        let _ = std::fs::write(self.signed_out_file(), "1\n");
     }
 
     fn ledger(&self) -> PathBuf {
