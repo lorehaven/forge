@@ -1,6 +1,6 @@
 [package]
 name = "songbook"
-version = "0.1.9"
+version = "0.1.10"
 edition.workspace = true
 authors.workspace = true
 description = "Songbook - the library of every song: admin module (index, Deezer sync, YouTube links, download, convert)"
