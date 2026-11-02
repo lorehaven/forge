@@ -11,7 +11,9 @@ use quench_http::prelude::{
     http::StatusCode, post, put,
 };
 use quench_http::stream::reader_stream;
-use songbook_core::{AlbumQuery, PlaylistBody, SearchQuery, SongIdsBody, SongQuery};
+use songbook_core::{
+    AlbumQuery, PlayedBody, PlaylistBody, RecentQuery, SearchQuery, SongIdsBody, SongQuery,
+};
 use std::io::SeekFrom;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
@@ -80,6 +82,46 @@ pub async fn albums(Inject(app): Inject<App>, Query(q): Query<AlbumQuery>) -> Re
 pub async fn songs(Inject(app): Inject<App>, Me(me): Me, Query(q): Query<SongQuery>) -> Response {
     let catalog = catalog!(app);
     ok(&catalog.songs(&with_playlist(&app, &me, q)))
+}
+
+/// What this person played last (each song once, newest first): the same on every device they use.
+#[get("/api/v1/library/recent")]
+pub async fn recent(
+    Inject(app): Inject<App>,
+    Me(me): Me,
+    Query(q): Query<RecentQuery>,
+) -> Response {
+    let catalog = catalog!(app);
+    let limit = if q.limit == 0 {
+        40
+    } else {
+        (q.limit as usize).min(200)
+    };
+    let ids = match app.playlists.recent(&me, limit * 2) {
+        Ok(ids) => ids,
+        Err(e) => return server_error(e),
+    };
+    // Songs that have no file (any more) are left out.
+    let list = catalog.songs(&SongQuery {
+        ids: join(&ids),
+        limit: u32::try_from(limit).unwrap_or(40),
+        ..SongQuery::default()
+    });
+    ok(&list)
+}
+
+/// A song was started: remembered for this person.
+#[post("/api/v1/history")]
+pub async fn played(
+    Inject(app): Inject<App>,
+    Me(me): Me,
+    Json(body): Json<PlayedBody>,
+) -> Response {
+    let now = quench_core::time::Time::now().timestamp();
+    match app.playlists.played(&me, body.song_id, now) {
+        Ok(()) => ok(&quench_serde::json!({})),
+        Err(e) => server_error(e),
+    }
 }
 
 #[get("/api/v1/library/ids")]
@@ -289,6 +331,8 @@ pub fn register_routes() {
     let _ = albums as fn(_, _) -> _;
     let _ = songs as fn(_, _, _) -> _;
     let _ = ids as fn(_, _, _) -> _;
+    let _ = recent as fn(_, _, _) -> _;
+    let _ = played as fn(_, _, _) -> _;
     let _ = search as fn(_, _) -> _;
     let _ = stream as fn(_, _, _) -> _;
     let _ = playlists as fn(_, _) -> _;

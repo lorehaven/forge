@@ -21,32 +21,56 @@ fn page(who: ActorOrRedirect) -> Response {
     }
 }
 
-macro_rules! screens {
-    ($($name:ident => $path:literal),* $(,)?) => {
-        $(
-            #[get($path)]
-            pub(super) async fn $name(who: ActorOrRedirect) -> Response {
-                page(who)
-            }
-        )*
-
-        fn register_screens() {
-            $( let _ = $name as fn(_) -> _; )*
-        }
-    };
+// One handler per screen, written out: the route census and the security scanner read the attributes, and cannot see
+// through a macro.
+#[get("/ui")]
+pub(super) async fn home(who: ActorOrRedirect) -> Response {
+    page(who)
 }
 
-screens! {
-    home => "/ui",
-    home_slash => "/ui/",
-    search => "/ui/search",
-    artists => "/ui/artists",
-    artist => "/ui/artist/{name}",
-    album => "/ui/album/{id}",
-    category => "/ui/category/{name}",
-    playlists => "/ui/playlists",
-    playlist => "/ui/playlist/{id}",
-    saved => "/ui/saved",
+#[get("/ui/")]
+pub(super) async fn home_slash(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
+#[get("/ui/search")]
+pub(super) async fn search(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
+#[get("/ui/artists")]
+pub(super) async fn artists(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
+#[get("/ui/artist/{name}")]
+pub(super) async fn artist(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
+#[get("/ui/album/{id}")]
+pub(super) async fn album(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
+#[get("/ui/category/{name}")]
+pub(super) async fn category(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
+#[get("/ui/playlists")]
+pub(super) async fn playlists(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
+#[get("/ui/playlist/{id}")]
+pub(super) async fn playlist(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
+#[get("/ui/saved")]
+pub(super) async fn saved(who: ActorOrRedirect) -> Response {
+    page(who)
 }
 
 // The files carry no data of their own: the library comes from the API, which has its own check.
@@ -89,7 +113,16 @@ pub(super) async fn module() -> Response {
 }
 
 pub(super) fn register_routes() {
-    register_screens();
+    let _ = home as fn(_) -> _;
+    let _ = home_slash as fn(_) -> _;
+    let _ = search as fn(_) -> _;
+    let _ = artists as fn(_) -> _;
+    let _ = artist as fn(_) -> _;
+    let _ = album as fn(_) -> _;
+    let _ = category as fn(_) -> _;
+    let _ = playlists as fn(_) -> _;
+    let _ = playlist as fn(_) -> _;
+    let _ = saved as fn(_) -> _;
     let _ = script as fn() -> _;
     let _ = style as fn() -> _;
     let _ = engine as fn() -> _;

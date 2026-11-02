@@ -46,8 +46,26 @@
   function queue() { emit({ ev: 'queue', ids: S.ids.slice(Math.max(S.index, 0), Math.max(S.index, 0) + 100), index: S.index, len: S.ids.length }); }
   // The songs heard last, newest first (kept on this device).
   function recent() { emit({ ev: 'recent', ids: S.recent }); }
+  // What was played is told to the service too, so that "Recently played" is the same on every device; and what the service
+  // knows (from the other devices) is merged in.
+  function tell(id) {
+    try {
+      fetch(base + '/api/v1/history', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ song_id: id }) }).catch(function () { /* offline: kept here only */ });
+    } catch (e) { /* no fetch */ }
+  }
+  function syncRecent() {
+    fetch(base + '/api/v1/library/recent?limit=40', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (list) {
+      if (!list) return;
+      var server = list.songs.map(function (s) { return s.id; });
+      var here = S.recent.filter(function (x) { return server.indexOf(x) < 0; });
+      S.recent = server.concat(here).slice(0, 40);
+      try { localStorage.setItem('sb.recent', JSON.stringify(S.recent)); } catch (e) { /* storage may be blocked */ }
+      recent();
+    }).catch(function () { /* offline: what is here stays */ });
+  }
   function heard(id) {
     if (!id) return;
+    tell(id);
     S.recent = [id].concat(S.recent.filter(function (x) { return x !== id; })).slice(0, 40);
     try { localStorage.setItem('sb.recent', JSON.stringify(S.recent)); } catch (e) { /* storage may be blocked */ }
     recent();
@@ -319,7 +337,7 @@
     // Pictures, the player's files and its last page are kept on the device by a service worker.
     if ('serviceWorker' in navigator) navigator.serviceWorker.register(base + '/sw.js', { scope: base + '/' }).catch(function () { /* not available here */ });
     new MutationObserver(commands).observe(c, { attributes: true, attributeFilter: ['data-cmd'] });
-    commands(); state(); queue(); recent(); cachedList();
+    commands(); state(); queue(); recent(); syncRecent(); cachedList();
     if (S.index >= 0) prepare(cur, S.index);
   }
   new MutationObserver(attach).observe(document.documentElement, { childList: true, subtree: true });

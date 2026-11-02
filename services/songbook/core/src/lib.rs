@@ -15,6 +15,7 @@ pub use api::{
     Retagged, Schedule, Started, State, Stats, Suggestion, TopTrack, Track, Updated, popularity,
 };
 pub use listen::{
-    AlbumInfo, AlbumQuery, ArtistInfo, CategoryInfo, Home, Mix, Overview, PlaylistBody,
-    PlaylistInfo, Search, SearchQuery, SongIds, SongIdsBody, SongInfo, SongList, SongQuery,
+    AlbumInfo, AlbumQuery, ArtistInfo, CategoryInfo, Home, Mix, Overview, PlayedBody, PlaylistBody,
+    PlaylistInfo, RecentQuery, Search, SearchQuery, SongIds, SongIdsBody, SongInfo, SongList,
+    SongQuery,
 };

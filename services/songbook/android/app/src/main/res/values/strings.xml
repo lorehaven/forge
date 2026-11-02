@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Songbook</string>
+    <string name="downloads">Songs kept on this device</string>
+</resources>

@@ -53,6 +53,8 @@ Under `/api/v1` (not `/admin`), for any grant of `songbook`. Only songs that hav
 | `GET /library/songs` | `ids`, `playlist`, `album`, `artist`, `category`, `q`, `limit` | songs (at most 500 unless `limit`) |
 | `GET /library/ids` | the same | the ids only, in play order (up to 20,000): a queue |
 | `GET /library/search?q=` | | a few songs, albums and artists |
+| `GET /library/recent` | `limit` | what this person played last, newest first, each song once (the same on every device) |
+| `POST /history` | `{song_id}` | remembers that the person started a song (the player and the Android app tell it; the last 500 are kept in `meta/user.db`) |
 | `GET /stream/{id}` | `Range` | the audio file; `206` for a range, `bytes=N-` is answered in 4 MiB pieces |
 | `GET/POST /playlists`, `PUT/DELETE /playlists/{id}` | `{name}` | the signed-in person's playlists |
 | `POST /playlists/{id}/songs` | `{song_ids}` | append; `PUT` replaces the order |

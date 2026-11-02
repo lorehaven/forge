@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tells Android Auto that this app plays media: it shows the app in the car and browses the session's library. -->
+<automotiveApp>
+    <uses name="media" />
+</automotiveApp>

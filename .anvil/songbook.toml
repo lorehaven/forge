@@ -1,0 +1,18 @@
+# The Songbook app for Android: plays the library natively and is the music app Android Auto shows in the car. One version
+# for every build of a release: the player's (the web player and this app are the two halves of "the player"); the build is
+# Gradle's, signed with the release key `services/songbook/release.keystore` like the other apps (alias `release`, the passwords
+# from the environment or `anvil login`).
+[artifacts.programs.songbook]
+program = "dev.lorehaven.songbook"
+dir = "services/songbook"
+version_file = "player/Cargo.toml"
+
+[[artifacts.programs.songbook.targets]]
+platform = "android"
+format = "apk"
+build = [
+    "sh",
+    "-c",
+    "QUENCH_KEYSTORE=\"$PWD/release.keystore\" QUENCH_KEY_ALIAS=release android/gradlew -p android :app:assembleRelease -Pquench.versionCode=${version_code} -Pquench.versionName=${version_name} && mkdir -p dist && cp android/app/build/outputs/apk/release/app-release.apk dist/songbook-${version_name}-${version_code}.apk",
+]
+file = "dist/songbook-${version_name}-${version_code}.apk"

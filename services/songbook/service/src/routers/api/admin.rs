@@ -222,20 +222,24 @@ pub async fn rename_category(
     }
 }
 
+/// The jobs `POST /jobs` starts. Every one has a branch in [`start_job`]; a name missing here is refused as unknown (as
+/// `purge` was, so the page's delete button never worked).
+pub const JOBS: [&str; 10] = [
+    "sync",
+    "tags",
+    "similar",
+    "youtube",
+    "download",
+    "convert",
+    "images",
+    "purge",
+    "pipeline",
+    "scheduled",
+];
+
 #[post("/api/v1/admin/jobs")]
 pub async fn start_job(Inject(app): Inject<App>, Json(body): Json<JobStart>) -> Response {
-    let known = [
-        "sync",
-        "tags",
-        "similar",
-        "youtube",
-        "download",
-        "convert",
-        "images",
-        "pipeline",
-        "scheduled",
-    ];
-    if !known.contains(&body.name.as_str()) {
+    if !JOBS.contains(&body.name.as_str()) {
         return json_error(StatusCode::BAD_REQUEST, "unknown job");
     }
     if body.name == "scheduled" {

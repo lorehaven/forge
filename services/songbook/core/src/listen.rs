@@ -6,6 +6,8 @@
 //! | `GET  /library/overview`              |                       | [`Overview`]    |
 //! | `GET  /library/albums`                | [`AlbumQuery`]        | a list of [`AlbumInfo`] |
 //! | `GET  /library/home`                  |                       | [`Home`]        |
+//! | `GET  /library/recent?limit=`         |                       | [`SongList`] (what this person played last, newest first) |
+//! | `POST /history`                       | [`PlayedBody`]        | `{}`            |
 //! | `GET  /library/songs`                 | [`SongQuery`]         | [`SongList`]    |
 //! | `GET  /library/ids`                   | [`SongQuery`]         | [`SongIds`]     |
 //! | `GET  /library/search?q=`             |                       | [`Search`]      |
@@ -218,6 +220,20 @@ pub struct Home {
     pub discover: Vec<SongInfo>,
     /// The newest albums.
     pub albums: Vec<AlbumInfo>,
+}
+
+/// A song the person has just started: what `POST /history` is told.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlayedBody {
+    pub song_id: i64,
+}
+
+/// The query of `GET /library/recent`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecentQuery {
+    /// At most this many (0: 40).
+    #[serde(default)]
+    pub limit: u32,
 }
 
 /// What the search box finds.

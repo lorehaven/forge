@@ -4,7 +4,7 @@
 # services/<service>/release.keystore. A service whose secret is not set is left alone (its build will say it has no key).
 # The passwords are the secrets QUENCH_KEYSTORE_PASSWORD and QUENCH_KEY_PASSWORD, read by the build as they are.
 set -eu
-for service in hoist daybook forklift; do
+for service in hoist daybook forklift songbook; do
   var=$(printf '%s' "$service" | tr '[:lower:]' '[:upper:]')_KEYSTORE_B64
   eval "value=\${$var:-}"
   if [ -n "$value" ]; then

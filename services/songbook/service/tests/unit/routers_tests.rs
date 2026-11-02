@@ -58,3 +58,24 @@ mod access {
         assert!(!is_mobile(""));
     }
 }
+
+#[quench_test::test]
+fn every_job_the_pages_start_is_known_to_the_service() {
+    use songbook_service::routers::api::admin::JOBS;
+    // The names the Pipeline, Schedule and Discover screens send (the purge preview is `purge` with `dry_run`).
+    for name in [
+        "sync",
+        "tags",
+        "similar",
+        "youtube",
+        "download",
+        "convert",
+        "images",
+        "purge",
+        "pipeline",
+        "scheduled",
+    ] {
+        assert!(JOBS.contains(&name), "{name}");
+    }
+    assert!(!JOBS.contains(&"nothing"));
+}

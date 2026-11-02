@@ -1,0 +1,6 @@
+*.keystore
+/dist
+/android/.gradle
+/android/.kotlin
+/android/local.properties
+/android/app/build

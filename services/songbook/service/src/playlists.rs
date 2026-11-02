@@ -12,7 +12,13 @@ CREATE TABLE IF NOT EXISTS playlists(
   id INTEGER PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL, created INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS playlist_songs(
   playlist_id INTEGER NOT NULL, position INTEGER NOT NULL, song_id INTEGER NOT NULL, PRIMARY KEY(playlist_id, position));
-CREATE INDEX IF NOT EXISTS playlists_owner ON playlists(owner);";
+CREATE INDEX IF NOT EXISTS playlists_owner ON playlists(owner);
+CREATE TABLE IF NOT EXISTS plays(
+  owner TEXT NOT NULL, song_id INTEGER NOT NULL, at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS plays_owner_at ON plays(owner, at);";
+
+/// How many plays of a person are kept (the oldest go).
+pub const MAX_PLAYS: i64 = 500;
 
 /// At most this many entries in one playlist, and this many playlists for a person.
 pub const MAX_SONGS: usize = 5000;
@@ -72,6 +78,42 @@ impl Playlists {
             &[int(id)],
         )?;
         Ok(rows.rows.first().map(|r| row_info(r)))
+    }
+
+    /// Remembers that `owner` started `song` at `now`.
+    pub fn played(&self, owner: &str, song: i64, now: i64) -> Result<()> {
+        self.played_keeping(owner, song, now, MAX_PLAYS)
+    }
+
+    /// [`played`](Self::played), keeping `most` plays of this person.
+    pub fn played_keeping(&self, owner: &str, song: i64, now: i64, most: i64) -> Result<()> {
+        self.with(|db| {
+            db.execute(
+                "INSERT INTO plays(owner, song_id, at) VALUES (?, ?, ?)",
+                &[text(owner), int(song), int(now)],
+            )?;
+            // Only the latest are kept.
+            db.execute(
+                "DELETE FROM plays WHERE owner = ? AND rowid NOT IN (SELECT rowid FROM plays WHERE owner = ? ORDER BY at DESC, rowid DESC LIMIT ?)",
+                &[text(owner), text(owner), int(most)],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// The songs `owner` played last, each once, newest first.
+    pub fn recent(&self, owner: &str, limit: usize) -> Result<Vec<i64>> {
+        self.with(|db| {
+            Ok(db
+                .query(
+                    "SELECT song_id, MAX(at) AS last FROM plays WHERE owner = ? GROUP BY song_id ORDER BY last DESC, song_id DESC LIMIT ?",
+                    &[text(owner), int(i64::try_from(limit).unwrap_or(40))],
+                )?
+                .rows
+                .iter()
+                .map(|r| int_at(r, 0))
+                .collect())
+        })
     }
 
     pub fn list(&self, owner: &str) -> Result<Vec<PlaylistInfo>> {

@@ -671,3 +671,58 @@ fn a_picture_is_named_by_its_file_and_width_so_a_device_can_ask_whether_it_chang
     );
     assert!(etag(1, 2, None).starts_with('"'), "an ETag is quoted");
 }
+
+#[quench_test::test]
+fn what_a_person_played_last_is_theirs_newest_first_and_each_song_once() {
+    let dir = Scratch::new();
+    let lists = Playlists::open(&dir.path().join("user.db")).unwrap();
+    for (song, at) in [(1, 100), (2, 200), (3, 300), (1, 400)] {
+        lists.played("ann", song, at).unwrap();
+    }
+    lists.played("bob", 9, 500).unwrap();
+    assert_eq!(
+        lists.recent("ann", 10).unwrap(),
+        vec![1, 3, 2],
+        "song 1 again is the newest, and once"
+    );
+    assert_eq!(lists.recent("ann", 2).unwrap(), vec![1, 3]);
+    assert_eq!(lists.recent("bob", 10).unwrap(), vec![9]);
+    assert!(lists.recent("nobody", 10).unwrap().is_empty());
+}
+
+#[quench_test::test]
+fn only_the_latest_plays_are_kept() {
+    let dir = Scratch::new();
+    let lists = Playlists::open(&dir.path().join("user.db")).unwrap();
+    for n in 0..12_i64 {
+        lists.played_keeping("ann", n, n, 5).unwrap();
+    }
+    lists.played_keeping("bob", 99, 1, 5).unwrap();
+    assert_eq!(
+        lists.recent("ann", 100).unwrap(),
+        vec![11, 10, 9, 8, 7],
+        "the oldest went"
+    );
+    assert_eq!(
+        lists.recent("bob", 100).unwrap(),
+        vec![99],
+        "another person's plays stay"
+    );
+}
+
+#[quench_test::test]
+fn the_recent_songs_of_the_catalog_skip_what_has_no_file() {
+    let dir = Scratch::new();
+    let (index, ids) = library(&dir);
+    let catalog = Catalog::load(&index, &dir.path().join("data")).unwrap();
+    // The third song of the seed has no file: asked for by id it is not listed, and the order asked for is kept.
+    let asked = format!("{},{},{}", ids[2], ids[1], ids[0]);
+    let list = catalog.songs(&SongQuery {
+        ids: asked,
+        ..SongQuery::default()
+    });
+    assert_eq!(
+        list.songs.iter().map(|s| s.id).collect::<Vec<_>>(),
+        vec![ids[1], ids[0]]
+    );
+}
