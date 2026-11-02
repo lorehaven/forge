@@ -201,12 +201,7 @@ pub(crate) fn side(env: &Env, router: &Router) -> View {
                 .text("Admin"),
         );
     }
-    foot = foot.child(
-        a().attr("href", format!("{}/ui/logout", env.base))
-            .attr("id", "logout")
-            .class("pl-pill")
-            .text("Sign out"),
-    );
+    foot = foot.child(logout(env, "logout"));
     aside()
         .class("pl-side")
         .child(div().class("pl-brand").text("Songbook"))
@@ -1671,6 +1666,7 @@ fn settings(env: &Env) -> View {
     let (volume, set_volume) = (env.m.engine.clone(), env.clone());
     let storage = env.m.storage.clone();
     let kept = env.m.cached.clone();
+    let app = env.link.is_some();
     div()
         .child(
             div()
@@ -1729,22 +1725,90 @@ fn settings(env: &Env) -> View {
                         }),
                 ),
         )
-        .child(
-            a().attr("href", format!("{}/ui/logout", env.base))
-                .attr("id", "logout-settings")
-                .class("pl-pill")
-                .text("Sign out"),
-        )
+        .child(cache_setting(env))
+        .child(logout(env, "logout-settings"))
         .child(p().class("pl-hint").attr("id", "device").text_fn(move || {
             let (used, quota) = storage.get();
-            format!(
-                "{} songs kept on this device. The browser has used {} of {}.",
-                kept.get().len(),
-                megabytes(used),
-                megabytes(quota)
-            )
+            if app {
+                format!("{} songs kept on this device.", kept.get().len())
+            } else {
+                format!(
+                    "{} songs kept on this device. The browser has used {} of {}.",
+                    kept.get().len(),
+                    megabytes(used),
+                    megabytes(quota)
+                )
+            }
         }))
         .into_view()
+}
+
+/// *Sign out*: a link to the page that does it, or (in an app, which has no such page) a button that does it.
+fn logout(env: &Env, id: &str) -> Element {
+    env.sign_out.as_ref().map_or_else(
+        || {
+            a().attr("href", format!("{}/ui/logout", env.base))
+                .attr("id", id.to_string())
+                .class("pl-pill")
+                .text("Sign out")
+        },
+        |go| {
+            let go = Rc::clone(go);
+            button_("Sign out")
+                .attr("id", id.to_string())
+                .class("pl-pill")
+                .text("Sign out")
+                .on_click(move || go())
+        },
+    )
+}
+
+/// How much of what was played the app keeps for next time: only where the engine has such a cache (the app, not the browser).
+fn cache_setting(env: &Env) -> View {
+    let (shown, label, used, change) = (
+        env.m.cache.clone(),
+        env.m.cache.clone(),
+        env.m.cache.clone(),
+        env.clone(),
+    );
+    View::show(
+        move || shown.get().1 > 0,
+        move || {
+            let (label, used, change) = (label.clone(), used.clone(), change.clone());
+            div()
+                .class("pl-setting")
+                .child(
+                    label_()
+                        .attr("for", "cache")
+                        .attr("id", "cache-label")
+                        .text_fn({
+                            let label = label.clone();
+                            move || format!("Songs kept after playing: {} GB", label.get().1 >> 30)
+                        }),
+                )
+                .child(
+                    input()
+                        .attr("id", "cache")
+                        .attr("type", "range")
+                        .attr("min", "1")
+                        .attr("max", "50")
+                        .attr("step", "1")
+                        .attr_fn("value", move || format!("{}", label.get().1 >> 30))
+                        .on_change(move |v| {
+                            if let Ok(gib) = v.parse::<u32>() {
+                                change.engine(&Command::CacheLimit(gib));
+                            }
+                        }),
+                )
+                .child(p().class("pl-hint").attr("id", "cache-used").text_fn(move || {
+                    format!(
+                        "A song you heard plays again without the network, until this is full and the oldest go. Used now: {}.",
+                        megabytes(used.get().0)
+                    )
+                }))
+                .into_view()
+        },
+    )
 }
 
 fn label_() -> Element {

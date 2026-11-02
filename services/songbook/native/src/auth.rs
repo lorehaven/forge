@@ -120,13 +120,32 @@ impl Auth {
             .following(move || follow.token())
     }
 
+    /// Takes up what another program of the app did: the playback service and the screens each run one of these over the same
+    /// files, and a sign-in or a sign-out in one is the other's too.
+    #[allow(clippy::significant_drop_tightening)] // both locks are held while the two change together
+    fn sync(&self) {
+        let kept = self.store.settings();
+        let mut mine = lock(&self.settings);
+        if *mine == kept {
+            return;
+        }
+        let session = (!kept.open && !kept.server.is_empty())
+            .then(|| self.store.token())
+            .flatten()
+            .map(|token| Self::resumed(&self.store, &kept.server, &token));
+        *mine = kept;
+        *lock(&self.session) = session;
+    }
+
     #[must_use]
     pub fn settings(&self) -> Settings {
+        self.sync();
         lock(&self.settings).clone()
     }
 
     #[must_use]
     pub fn signed_in(&self) -> bool {
+        self.sync();
         let s = lock(&self.settings);
         !s.server.is_empty() && (s.open || lock(&self.session).is_some())
     }
@@ -189,6 +208,7 @@ impl Auth {
     /// [`Failure::Unreachable`] when it cannot be asked.
     #[allow(clippy::significant_drop_tightening)] // the lock is held for the whole renewal, on purpose: one refresh at a time
     pub fn token(&self) -> Result<Option<String>, Failure> {
+        self.sync();
         let open = lock(&self.settings).open;
         if open {
             return Ok(None);

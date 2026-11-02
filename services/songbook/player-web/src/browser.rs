@@ -51,6 +51,7 @@ pub fn app() -> View {
             // The admin link is hidden on touch devices by the stylesheet, and the service sends them away from /ui/admin.
             mobile: false,
             engine: None,
+            sign_out: None,
         },
     );
     *slot.borrow_mut() = Some(deliver);

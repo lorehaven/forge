@@ -217,6 +217,14 @@ pub fn build(
         })
     };
 
+    // Signing out forgets the session and shows the sign-in again.
+    let sign_out: Rc<dyn Fn()> = {
+        let (auth, signed) = (Arc::clone(&auth), signed.clone());
+        Rc::new(move || {
+            auth.sign_out();
+            signed.set(false);
+        })
+    };
     let view = {
         let (history, bridge, auth, back) = (
             Rc::clone(&history),
@@ -255,6 +263,7 @@ pub fn build(
                     login_url: String::new(),
                     mobile: true,
                     engine: Some(Rc::clone(&engine)),
+                    sign_out: Some(Rc::clone(&sign_out)),
                 },
             );
             *deliver.borrow_mut() = Some(to_player);

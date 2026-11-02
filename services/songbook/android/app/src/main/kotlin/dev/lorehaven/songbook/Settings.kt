@@ -10,6 +10,11 @@ class Settings private constructor(private val prefs: SharedPreferences) {
         get() = prefs.getInt("crossfade", 0).coerceIn(0, MAX_FADE)
         set(value) = prefs.edit().putInt("crossfade", value.coerceIn(0, MAX_FADE)).apply()
 
+    /** How much of what was played is kept for next time, in GiB (the oldest songs go when it is full). */
+    var cacheGiB: Int
+        get() = prefs.getInt("cache_gib", DEFAULT_CACHE_GIB).coerceIn(1, MAX_CACHE_GIB)
+        set(value) = prefs.edit().putInt("cache_gib", value.coerceIn(1, MAX_CACHE_GIB)).apply()
+
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
     private val watcher = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> listeners.forEach { it() } }
 
@@ -25,6 +30,8 @@ class Settings private constructor(private val prefs: SharedPreferences) {
 
     companion object {
         const val MAX_FADE = 12
+        const val DEFAULT_CACHE_GIB = 5
+        const val MAX_CACHE_GIB = 50
 
         /** The lengths the car's button goes through. */
         val PRESETS = listOf(0, 3, 6, 9, 12)

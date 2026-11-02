@@ -193,6 +193,10 @@ class PlayerPlugin(private val activity: Activity) : Plugin("player") {
                     c.removeMediaItem(at)
                 }
             }
+            "cache" -> {
+                settings.cacheGiB = command.optInt("gib", Settings.DEFAULT_CACHE_GIB)
+                cache()
+            }
             "keep" -> keep(ids(command.optJSONArray("ids")))
             "drop" -> drop(ids(command.optJSONArray("ids")))
             "ask" -> ask()
@@ -270,7 +274,12 @@ class PlayerPlugin(private val activity: Activity) : Plugin("player") {
 
     // ── Events ───────────────────────────────────────────────────────────────
 
+    private fun cache() {
+        emit("event", JSONObject().put("ev", "cache").put("used", offline.playedBytes()).put("limit", settings.cacheGiB * GIB))
+    }
+
     private fun ask() {
+        cache()
         controller?.let {
             state(it)
             queue(it)
@@ -327,6 +336,7 @@ class PlayerPlugin(private val activity: Activity) : Plugin("player") {
                 val done = songs.count { offline.state(it.id) == 100 }
                 val ids = songs.filter { offline.state(it.id) == 100 }.map { it.id }
                 main.post {
+                    cache()
                     emit("event", JSONObject().put("ev", "cached").put("ids", JSONArray(ids)))
                     emit("event", JSONObject().put("ev", "saving").put("done", done).put("total", if (done == songs.size) 0 else songs.size))
                     val quota = activity.filesDir.usableSpace + offline.bytes()
@@ -339,6 +349,7 @@ class PlayerPlugin(private val activity: Activity) : Plugin("player") {
     }
 
     companion object {
-        private const val TICK_MS = 500L
+        private const val TICK_MS = 1000L
+        private const val GIB = 1024L * 1024 * 1024
     }
 }

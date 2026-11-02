@@ -41,7 +41,7 @@ class Offline private constructor(private val context: Context) {
     }
 
     private val keptCache: Cache = SimpleCache(File(context.filesDir, "kept"), NoOpCacheEvictor(), database)
-    private val playedCache: Cache = SimpleCache(File(context.cacheDir, "audio"), LeastRecentlyUsedCacheEvictor(PLAYED_BYTES), database)
+    private val playedCache: Cache = SimpleCache(File(context.cacheDir, "audio"), SizedEvictor { Settings.of(context).cacheGiB * GIB }, database)
     private val artCache: Cache = SimpleCache(File(context.cacheDir, "art"), LeastRecentlyUsedCacheEvictor(ART_BYTES), database)
 
     private val playedLayer = CacheDataSource.Factory().setCache(playedCache).setUpstreamDataSourceFactory(network).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
@@ -120,6 +120,9 @@ class Offline private constructor(private val context: Context) {
         return out.sortedBy { it.first }.map { it.second }
     }
 
+    /** How much room the songs that were played (and are kept for next time) take. */
+    fun playedBytes(): Long = playedCache.cacheSpace
+
     /** How much room the kept songs take. */
     fun bytes(): Long = keptCache.cacheSpace
 
@@ -136,7 +139,7 @@ class Offline private constructor(private val context: Context) {
     }
 
     companion object {
-        private const val PLAYED_BYTES = 1024L * 1024 * 1024
+        private const val GIB = 1024L * 1024 * 1024
         private const val ART_BYTES = 100L * 1024 * 1024
 
         @Volatile private var instance: Offline? = null
@@ -166,5 +169,45 @@ class SongDownloadService : DownloadService(NOTIFICATION_ID, DEFAULT_FOREGROUND_
     companion object {
         const val CHANNEL = "downloads"
         private const val NOTIFICATION_ID = 7
+    }
+}
+
+/**
+ * Keeps the songs that were played, the oldest-used out first, up to a limit that can change while the app runs (the person's
+ * setting): what Media3's own evictor does, with the limit asked for each time instead of fixed when it is made.
+ */
+class SizedEvictor(private val limit: () -> Long) : androidx.media3.datasource.cache.CacheEvictor {
+    private val byUse = java.util.TreeSet<androidx.media3.datasource.cache.CacheSpan> { a, b ->
+        val d = a.lastTouchTimestamp - b.lastTouchTimestamp
+        if (d == 0L) a.compareTo(b) else if (d < 0) -1 else 1
+    }
+    private var size = 0L
+
+    override fun requiresCacheSpanTouches() = true
+
+    override fun onCacheInitialized() {}
+
+    override fun onStartFile(cache: Cache, key: String, position: Long, length: Long) {
+        if (length != androidx.media3.common.C.LENGTH_UNSET.toLong()) trim(cache, length)
+    }
+
+    override fun onSpanAdded(cache: Cache, span: androidx.media3.datasource.cache.CacheSpan) {
+        byUse.add(span)
+        size += span.length
+        trim(cache, 0)
+    }
+
+    override fun onSpanRemoved(cache: Cache, span: androidx.media3.datasource.cache.CacheSpan) {
+        byUse.remove(span)
+        size -= span.length
+    }
+
+    override fun onSpanTouched(cache: Cache, oldSpan: androidx.media3.datasource.cache.CacheSpan, newSpan: androidx.media3.datasource.cache.CacheSpan) {
+        onSpanRemoved(cache, oldSpan)
+        onSpanAdded(cache, newSpan)
+    }
+
+    private fun trim(cache: Cache, extra: Long) {
+        while (size + extra > limit() && byUse.isNotEmpty()) cache.removeSpan(byUse.first())
     }
 }

@@ -14,10 +14,13 @@ class Session private constructor(private val brain: Brain) {
     @Volatile private var name = ""
     @Volatile private var base = ""
 
+    /** When it was last asked: the screens' program signs in and out too, so what is known is asked again after a moment. */
+    @Volatile private var askedAt = 0L
+
     private fun load() {
-        if (loaded) return
+        if (loaded && System.currentTimeMillis() - askedAt < FRESH_MS) return
         synchronized(this) {
-            if (loaded) return
+            if (loaded && System.currentTimeMillis() - askedAt < FRESH_MS) return
             refresh()
         }
     }
@@ -32,6 +35,7 @@ class Session private constructor(private val brain: Brain) {
             name = s.optString("user")
             base = s.optString("api")
             loaded = true
+            askedAt = System.currentTimeMillis()
         } catch (e: java.io.IOException) {
             // Not known yet: asked again next time.
         }
@@ -68,6 +72,8 @@ class Session private constructor(private val brain: Brain) {
     }
 
     companion object {
+        private const val FRESH_MS = 2_000L
+
         @Volatile private var instance: Session? = null
 
         fun of(context: Context): Session = instance ?: synchronized(this) {

@@ -88,6 +88,12 @@ pub enum Event {
         used: u64,
         quota: u64,
     },
+    /// The songs that were played and are kept for next time (not those kept on purpose): bytes used, and the most the app keeps.
+    /// Only an app that has such a cache says it (the browser's engine does not).
+    Cache {
+        used: u64,
+        limit: u64,
+    },
     Error(String),
 }
 
@@ -148,6 +154,10 @@ impl Event {
                 used: u64::try_from(int(&v, "used")).unwrap_or(0),
                 quota: u64::try_from(int(&v, "quota")).unwrap_or(0),
             },
+            "cache" => Self::Cache {
+                used: u64::try_from(int(&v, "used")).unwrap_or(0),
+                limit: u64::try_from(int(&v, "limit")).unwrap_or(0),
+            },
             "error" => Self::Error(
                 v.get("message")
                     .and_then(Value::as_str)
@@ -188,6 +198,8 @@ pub enum Command {
     Remove(i64),
     Keep(Vec<i64>),
     Drop(Vec<i64>),
+    /// How much of what was played the app keeps for next time, in gibibytes.
+    CacheLimit(u32),
     /// Say everything again (the screens just came up).
     Ask,
 }
@@ -229,6 +241,7 @@ impl Command {
             Self::Remove(i) => json!({ "n": n, "op": "remove", "index": i }),
             Self::Keep(ids) => json!({ "n": n, "op": "keep", "ids": ids }),
             Self::Drop(ids) => json!({ "n": n, "op": "drop", "ids": ids }),
+            Self::CacheLimit(gib) => json!({ "n": n, "op": "cache", "gib": gib }),
             Self::Ask => json!({ "n": n, "op": "ask" }),
         }
     }

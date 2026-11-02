@@ -87,6 +87,7 @@ fn main() {
                 login_url: String::new(),
                 mobile: true,
                 engine: Some(Rc::new(move |c| log.borrow_mut().push(c))),
+                sign_out: None,
             },
         );
         let _mounted = mount(&renderer, &renderer.root(), view);

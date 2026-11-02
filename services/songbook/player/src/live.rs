@@ -83,6 +83,8 @@ pub struct Setup {
     /// Where the commands for the engine go as JSON text, one each, when the engine is not the page's script (an app that
     /// plays with the system's own player). The engine answers through [`Player::hear`].
     pub engine: Option<Rc<dyn Fn(String)>>,
+    /// What *Sign out* does when it is not a link to a page (an app signs out by itself).
+    pub sign_out: Option<Rc<dyn Fn()>>,
 }
 
 impl std::fmt::Debug for Setup {
@@ -153,6 +155,8 @@ pub(crate) struct Model {
     pub cached: Signal<Vec<i64>>,
     pub saving: Signal<(u32, u32)>,
     pub storage: Signal<(u64, u64)>,
+    /// What was played and is kept for next time, and the most that is kept (0: the engine has no such cache).
+    pub cache: Signal<(u64, u64)>,
     /// Songs seen, by id; `known` changes when one is added.
     pub library: RefCell<HashMap<i64, SongInfo>>,
     pub known: Signal<u32>,
@@ -187,6 +191,7 @@ impl Model {
             cached: create_signal(Vec::new()),
             saving: create_signal((0, 0)),
             storage: create_signal((0, 0)),
+            cache: create_signal((0, 0)),
             library: RefCell::default(),
             known: create_signal(0),
             outbox: RefCell::default(),
@@ -211,6 +216,8 @@ pub(crate) struct Env {
     pub login_url: String,
     /// See [`Setup::engine`].
     pub link: Option<Rc<dyn Fn(String)>>,
+    /// See [`Setup::sign_out`].
+    pub sign_out: Option<Rc<dyn Fn()>>,
 }
 
 impl Env {
@@ -417,6 +424,18 @@ fn heard(env: &Env, event: Event) {
     let m = &env.m;
     match event {
         Event::State(state) => {
+            // A phone's bar shows no clock: a change of the position alone is not worth drawing the page again (the box of the
+            // song playing, large, shows it).
+            if env.mobile && !matches!(m.dialog.get_untracked(), Some(Dialog::Playing)) {
+                let quiet = m.engine.with_untracked(|old| {
+                    let (mut a, mut b) = (old.clone(), state.clone());
+                    (a.pos, a.dur, b.pos, b.dur) = (0.0, 0.0, 0.0, 0.0);
+                    a == b
+                });
+                if quiet {
+                    return;
+                }
+            }
             let changed = m.engine.with_untracked(|old| old.id != state.id);
             m.engine.set(state.clone());
             if changed && state.id != 0 {
@@ -441,6 +460,7 @@ fn heard(env: &Env, event: Event) {
         }
         Event::Saving { done, total } => m.saving.set((done, total)),
         Event::Storage { used, quota } => m.storage.set((used, quota)),
+        Event::Cache { used, limit } => m.cache.set((used, limit)),
         Event::Error(why) => env.say(why),
     }
 }
@@ -519,6 +539,7 @@ fn shell(
         mobile: setup.mobile,
         login_url: setup.login_url.clone(),
         link: setup.engine.clone(),
+        sign_out: setup.sign_out.clone(),
     };
     {
         let env = env.clone();

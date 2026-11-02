@@ -453,6 +453,22 @@ fn a_wrong_password_says_so_and_a_blank_user_asks_for_an_open_server() {
     ));
 }
 
+#[quench_test::test]
+fn a_sign_in_or_sign_out_in_one_program_is_the_others_too() {
+    let world = Arc::new(Mutex::new(World::default()));
+    let base = serve(Arc::clone(&world));
+    let store = dir("two-programs");
+    let (screens, service) = (Auth::new(store.clone()), Auth::new(store));
+    assert!(!service.signed_in());
+    screens.login(&base, "ann", "secret").unwrap();
+    assert!(service.signed_in(), "the service sees the sign-in");
+    assert_eq!(service.settings().user, "ann");
+    assert!(service.get("/library/overview").is_ok(), "and can use it");
+    screens.sign_out();
+    assert!(!service.signed_in(), "and the sign-out");
+    assert_eq!(service.token(), Err(songbook_native::Failure::SignedOut));
+}
+
 // ── The conversation ─────────────────────────────────────────────────────────
 
 #[quench_test::test]

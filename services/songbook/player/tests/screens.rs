@@ -125,6 +125,7 @@ fn live_on(path: &str, mobile: bool) -> Live {
             login_url: "/songbook/ui/login".into(),
             mobile,
             engine: None,
+            sign_out: None,
         },
     );
     let r = Rc::new(TestRenderer::new());
@@ -681,6 +682,27 @@ fn the_crossfade_is_set_in_the_settings_box() {
 }
 
 #[quench_test::test]
+fn the_songs_kept_after_playing_can_be_limited_where_the_engine_has_such_a_cache() {
+    let l = live("/songbook/ui");
+    l.take();
+    l.click("settings");
+    // The browser's engine says nothing of a cache: no setting.
+    assert!(!l.has("cache"));
+    l.hear(&json!({ "ev": "cache", "used": 3_145_728, "limit": 5_368_709_120_u64 }));
+    assert_eq!(l.text_of("cache-label"), "Songs kept after playing: 5 GB");
+    assert!(l.text_of("cache-used").contains("3.0 MB"));
+    l.r.fire(l.find_id("cache"), &Event::Change("12".into()));
+    let c = l.last_command();
+    assert_eq!(
+        (
+            c.get("op").and_then(Value::as_str),
+            c.get("gib").and_then(Value::as_i64)
+        ),
+        (Some("cache"), Some(12))
+    );
+}
+
+#[quench_test::test]
 fn the_queue_shows_what_comes_next_and_a_row_jumps_to_it() {
     let l = live("/songbook/ui");
     l.take();
@@ -757,6 +779,7 @@ fn a_host_that_is_not_a_page_is_sent_the_commands_and_tells_the_events() {
             login_url: String::new(),
             mobile: true,
             engine: Some(Rc::new(move |text| log.borrow_mut().push(text))),
+            sign_out: None,
         },
     );
     let r = Rc::new(TestRenderer::new());
