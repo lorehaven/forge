@@ -168,7 +168,7 @@ dependencies = [
 
 [[package]]
 name = "daybook-desktop"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "daybook-app",
  "daybook-core",
@@ -359,7 +359,7 @@ dependencies = [
 
 [[package]]
 name = "forklift-desktop"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "forklift-app",
  "forklift-core",
@@ -662,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "hoist-desktop"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "hoist-app",
  "hoist-core",
