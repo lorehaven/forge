@@ -115,6 +115,33 @@ impl Store {
     /// Signs out: the token goes.
     pub fn clear_token(&self) {
         let _ = std::fs::remove_file(self.dir.join("session"));
+        let _ = std::fs::remove_file(self.dir.join("outbox"));
+        let _ = std::fs::remove_file(self.dir.join("cache"));
+    }
+
+    /// The changes made while the services could not be reached, one JSON line each, oldest first.
+    #[must_use]
+    pub fn outbox(&self) -> String {
+        self.read("outbox").unwrap_or_default()
+    }
+
+    pub fn set_outbox(&self, lines: &str) {
+        if lines.trim().is_empty() {
+            let _ = std::fs::remove_file(self.dir.join("outbox"));
+        } else {
+            self.write("outbox", lines, true);
+        }
+    }
+
+    /// The lists, labels and tasks as last known (JSON), so the app has something to show and change without the
+    /// services.
+    #[must_use]
+    pub fn cache(&self) -> Option<String> {
+        self.read("cache")
+    }
+
+    pub fn set_cache(&self, json: &str) {
+        self.write("cache", json, true);
     }
 
     /// What the home-screen widget draws (see `daybook_core::widget`), kept where the widget's Kotlin reads it.

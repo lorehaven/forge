@@ -1,6 +1,7 @@
 //! Everything the app shows, and the local changes that are made before the service has answered.
 
 use quench_core::time::Time;
+use quench_serde::{Map, Value};
 
 use crate::model::{Label, Project, Task};
 
@@ -73,6 +74,68 @@ impl Data {
                 .cmp(&b.sort_order)
                 .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
+    }
+
+    /// Everything as one JSON value, for the copy kept on the device.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        let mut m = Map::new();
+        m.insert(
+            "projects",
+            Value::Array(self.projects.iter().map(Project::to_value).collect()),
+        );
+        m.insert(
+            "labels",
+            Value::Array(self.labels.iter().map(Label::to_value).collect()),
+        );
+        m.insert(
+            "tasks",
+            Value::Array(self.tasks.iter().map(Task::to_value).collect()),
+        );
+        Value::Object(m)
+    }
+
+    /// What [`to_value`](Self::to_value) wrote.
+    #[must_use]
+    pub fn from_value(v: &Value) -> Self {
+        fn rows<T>(v: &Value, key: &str, parse: fn(&Value) -> Option<T>) -> Vec<T> {
+            v.get(key)
+                .and_then(Value::as_array)
+                .map(|rows| rows.iter().filter_map(parse).collect())
+                .unwrap_or_default()
+        }
+        Self {
+            projects: rows(v, "projects", Project::from_value),
+            labels: rows(v, "labels", Label::from_value),
+            tasks: rows(v, "tasks", Task::from_value),
+        }
+    }
+
+    /// Replaces the id `from` (a row made while offline) by `to`, in the rows and in what refers to them.
+    pub fn rename_id(&mut self, from: &str, to: &str) {
+        for p in &mut self.projects {
+            if p.id == from {
+                p.id = to.to_string();
+            }
+        }
+        for l in &mut self.labels {
+            if l.id == from {
+                l.id = to.to_string();
+            }
+        }
+        for t in &mut self.tasks {
+            if t.id == from {
+                t.id = to.to_string();
+            }
+            if t.project_id.as_deref() == Some(from) {
+                t.project_id = Some(to.to_string());
+            }
+            for l in &mut t.label_ids {
+                if l == from {
+                    *l = to.to_string();
+                }
+            }
+        }
     }
 
     /// The tasks that are not completed.

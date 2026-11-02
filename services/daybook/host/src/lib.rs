@@ -18,6 +18,7 @@ use daybook_core::calendar::format_due;
 use daybook_core::{Data, ListRef, Msg, Request, Task, pending_reminders};
 use daybook_net::{NetError, Settings, Store};
 use quench_core::time::Time;
+use quench_serde::{Value, json};
 use quench_tz::Zone;
 
 use daybook_core::Reminder;
@@ -50,12 +51,34 @@ pub trait Platform {
     fn later(&self, ms: u64, f: Box<dyn FnOnce()>);
 }
 
+/// A change made while the services could not be reached (or while earlier ones were still waiting), which goes to them
+/// as soon as they answer. `local` is the id the screen gave what a create made, until the service names it.
+struct Queued {
+    op: Op,
+    local: Option<String>,
+}
+
 struct State {
+    /// The changes that wait for the services, oldest first. Kept on the device, so a restart does not lose them.
+    queue: Vec<Queued>,
+    flushing: bool,
     data: Data,
     settings: Settings,
     /// Counts the changes, so that of the reminder updates set for later only the last one runs.
     generation: u64,
     asked_notifications: bool,
+}
+
+fn read_queue(text: &str) -> Vec<Queued> {
+    text.lines()
+        .filter_map(|line| {
+            let v: Value = json::from_str(line).ok()?;
+            Some(Queued {
+                op: Op::from_value(&v)?,
+                local: v.get("local").and_then(Value::as_str).map(str::to_string),
+            })
+        })
+        .collect()
 }
 
 /// Whether the services could not be reached (no connection, or a proxy answering for a service that is down or restarting: 502-504), as opposed to
@@ -81,11 +104,14 @@ impl Controller {
     #[must_use]
     pub fn new(platform: Rc<dyn Platform>, store: Store, emit: Rc<dyn Fn(Msg)>) -> Rc<Self> {
         let settings = store.settings();
+        let queue = read_queue(&store.outbox());
         Rc::new(Self {
             platform,
             store,
             emit,
             state: RefCell::new(State {
+                queue,
+                flushing: false,
                 data: Data::default(),
                 settings,
                 generation: 0,
@@ -105,7 +131,25 @@ impl Controller {
 
     /// Reads everything. Call it when the program starts with a stored session.
     pub fn start(self: &Rc<Self>) {
-        self.load();
+        // What was known last time is on screen at once, and can be changed without the services.
+        let cached = self
+            .store
+            .cache()
+            .and_then(|t| json::from_str::<Value>(&t).ok());
+        if let Some(cached) = cached {
+            self.state.borrow_mut().data = Data::from_value(&cached);
+            self.publish();
+        }
+        self.sync();
+    }
+
+    /// Sends the changes that wait (then reads everything again), or just reads.
+    fn sync(self: &Rc<Self>) {
+        if self.state.borrow().queue.is_empty() {
+            self.load();
+        } else {
+            self.flush();
+        }
     }
 
     fn busy(&self, on: bool) {
@@ -156,7 +200,7 @@ impl Controller {
             3000 << n.min(3),
             Box::new(move || {
                 me.retrying.set(false);
-                me.load();
+                me.sync();
             }),
         );
     }
@@ -171,6 +215,7 @@ impl Controller {
 
     fn sign_out(&self) {
         self.store.clear_token();
+        self.state.borrow_mut().queue.clear();
         self.platform.call(Op::Logout, Box::new(|_| {}));
         {
             let mut s = self.state.borrow_mut();
@@ -192,9 +237,14 @@ impl Controller {
                 match result {
                     Ok(Reply::Loaded(data)) => {
                         me.reachable();
-                        me.state.borrow_mut().data = *data;
-                        me.publish();
-                        me.reschedule_now();
+                        if me.state.borrow().queue.is_empty() {
+                            me.state.borrow_mut().data = *data;
+                            me.publish();
+                            me.reschedule_now();
+                        } else {
+                            // Changes are still waiting: what they make is on screen, and the reading comes after.
+                            me.flush();
+                        }
                     }
                     Ok(_) => {}
                     Err(e) => me.failed("Could not load", &e),
@@ -211,7 +261,7 @@ impl Controller {
                 username,
                 password,
             } => self.login(server, username, password),
-            Request::Reload => self.load(),
+            Request::Reload => self.sync(),
             Request::Open(list) => self.remember(|s| s.list = list),
             Request::Save { id, draft } => self.save(id, &draft),
             Request::SetCompleted { id, done } => self.set_completed(&id, done),
@@ -300,7 +350,12 @@ impl Controller {
             Some(id) => Op::UpdateTask(id.clone(), body),
             None => Op::CreateTask(body),
         };
-        let me = Rc::clone(self);
+        if self.must_queue() {
+            self.enqueue(op);
+            (self.emit)(Msg::Saved(Ok(())));
+            return;
+        }
+        let (me, queued) = (Rc::clone(self), op.clone());
         self.platform.call(
             op,
             Box::new(move |result| match result {
@@ -312,11 +367,14 @@ impl Controller {
                 }
                 Ok(_) => {}
                 Err(NetError::Unauthorized) => me.sign_out(),
+                Err(e) if is_unreachable(&e) => {
+                    // Kept for when the services answer; the form closes as for any save.
+                    me.enqueue_unreachable(queued);
+                    (me.emit)(Msg::Saved(Ok(())));
+                }
                 Err(e) => {
                     if e == NetError::NotFound {
                         me.load();
-                    } else if is_unreachable(&e) {
-                        me.unreachable();
                     }
                     (me.emit)(Msg::Saved(Err(e.to_string())));
                 }
@@ -331,7 +389,12 @@ impl Controller {
         let mut sent = before.clone();
         sent.is_completed = done;
         let body = sent.to_update();
+        if self.must_queue() {
+            self.enqueue(Op::UpdateTask(id.to_string(), body));
+            return;
+        }
         let me = Rc::clone(self);
+        let queued = Op::UpdateTask(id.to_string(), body.clone());
         // A repeating task is not closed by completing it: the service moves it to its next date, so wait for that.
         let repeats = done && before.recurrence.is_some();
         if !repeats {
@@ -365,6 +428,7 @@ impl Controller {
                     }
                 }
                 Ok(_) => {}
+                Err(e) if is_unreachable(&e) => me.enqueue_unreachable(queued),
                 Err(e) => {
                     me.state.borrow_mut().data.put_task(before);
                     me.publish();
@@ -375,6 +439,12 @@ impl Controller {
     }
 
     fn delete(self: &Rc<Self>, id: &str) {
+        if self.must_queue() {
+            if self.state.borrow().data.task(id).is_some() {
+                self.enqueue(Op::DeleteTask(id.to_string()));
+            }
+            return;
+        }
         let Some(gone) = self.state.borrow_mut().data.take_task(id) else {
             return;
         };
@@ -385,8 +455,10 @@ impl Controller {
             Op::DeleteTask(id.to_string()),
             Box::new(move |result| {
                 if let Err(e) = result {
-                    // Already gone on the service is as good as deleted.
-                    if e != NetError::NotFound {
+                    if is_unreachable(&e) {
+                        me.enqueue_unreachable(Op::DeleteTask(gone.id));
+                    } else if e != NetError::NotFound {
+                        // (Already gone on the service is as good as deleted.)
                         me.state.borrow_mut().data.put_task(gone);
                         me.publish();
                         me.changed();
@@ -399,7 +471,11 @@ impl Controller {
 
     /// A change to a list or a label: the answer is put in the data.
     fn simple(self: &Rc<Self>, op: Op, what: &'static str) {
-        let me = Rc::clone(self);
+        if self.must_queue() {
+            self.enqueue(op);
+            return;
+        }
+        let (me, queued) = (Rc::clone(self), op.clone());
         self.platform.call(
             op,
             Box::new(move |result| match result {
@@ -413,14 +489,19 @@ impl Controller {
                     (me.emit)(Msg::LabelCreated(Box::new(l)));
                 }
                 Ok(_) => {}
+                Err(e) if is_unreachable(&e) => me.enqueue_unreachable(queued),
                 Err(e) => me.failed(what, &e),
             }),
         );
     }
 
     fn delete_project(self: &Rc<Self>, id: String) {
-        let me = Rc::clone(self);
         let op = Op::DeleteProject(id.clone());
+        if self.must_queue() {
+            self.enqueue(op);
+            return;
+        }
+        let (me, queued) = (Rc::clone(self), op.clone());
         self.platform.call(
             op,
             Box::new(move |result| match result {
@@ -432,14 +513,19 @@ impl Controller {
                     me.publish();
                     me.changed();
                 }
+                Err(e) if is_unreachable(&e) => me.enqueue_unreachable(queued),
                 Err(e) => me.failed("Could not delete the list", &e),
             }),
         );
     }
 
     fn delete_label(self: &Rc<Self>, id: String) {
-        let me = Rc::clone(self);
         let op = Op::DeleteLabel(id.clone());
+        if self.must_queue() {
+            self.enqueue(op);
+            return;
+        }
+        let (me, queued) = (Rc::clone(self), op.clone());
         self.platform.call(
             op,
             Box::new(move |result| match result {
@@ -451,9 +537,222 @@ impl Controller {
                     me.publish();
                     me.changed();
                 }
+                Err(e) if is_unreachable(&e) => me.enqueue_unreachable(queued),
                 Err(e) => me.failed("Could not delete the label", &e),
             }),
         );
+    }
+
+    /// Whether a change has to wait its turn: the services cannot be reached, or earlier changes are still waiting
+    /// (and they go first, in the order they were made).
+    fn must_queue(&self) -> bool {
+        self.offline.get() || !self.state.borrow().queue.is_empty()
+    }
+
+    /// Keeps a change for when the services answer. It shows on screen at once, as if it had been done.
+    fn enqueue(self: &Rc<Self>, op: Op) {
+        let local = self.apply_local(&op);
+        self.state.borrow_mut().queue.push(Queued { op, local });
+        self.save_queue();
+        self.publish();
+        self.changed();
+        if self.offline.get() {
+            self.unreachable();
+        } else {
+            self.flush();
+        }
+    }
+
+    /// [`enqueue`](Self::enqueue) for a change the services just failed to answer: they are not asked again at once.
+    fn enqueue_unreachable(self: &Rc<Self>, op: Op) {
+        self.unreachable();
+        self.enqueue(op);
+    }
+
+    fn save_queue(&self) {
+        let lines: String = self
+            .state
+            .borrow()
+            .queue
+            .iter()
+            .filter_map(|q| {
+                let Some(Value::Object(mut m)) = q.op.to_value() else {
+                    return None;
+                };
+                if let Some(local) = &q.local {
+                    m.insert("local", Value::String(local.clone()));
+                }
+                Some(json::to_string(&Value::Object(m)) + "\n")
+            })
+            .collect();
+        self.store.set_outbox(&lines);
+    }
+
+    /// Makes the change in the data on screen. A create gets an id of its own until the service names it.
+    fn apply_local(&self, op: &Op) -> Option<String> {
+        let now = self.platform.now();
+        let local = || format!("local-{}", quench_core::uuid::Uuid::new_v4());
+        let mut made = None;
+        let mut st = self.state.borrow_mut();
+        match op {
+            Op::CreateTask(body) | Op::UpdateTask(_, body) => {
+                let (id, created) = match op {
+                    Op::UpdateTask(id, _) => {
+                        (id.clone(), st.data.task(id).map_or(now, |t| t.created_at))
+                    }
+                    _ => {
+                        let id = local();
+                        made = Some(id.clone());
+                        (id, now)
+                    }
+                };
+                if let Value::Object(mut m) = body.clone() {
+                    m.insert("id", Value::String(id));
+                    m.insert("created_at", Value::String(created.to_rfc3339()));
+                    m.insert("updated_at", Value::String(now.to_rfc3339()));
+                    if let Some(task) = Task::from_value(&Value::Object(m)) {
+                        st.data.put_task(task);
+                    }
+                }
+            }
+            Op::DeleteTask(id) => {
+                st.data.take_task(id);
+            }
+            Op::CreateProject { name, sort_order } => {
+                let id = local();
+                made = Some(id.clone());
+                st.data.put_project(daybook_core::Project {
+                    id,
+                    name: name.trim().to_string(),
+                    sort_order: *sort_order,
+                });
+            }
+            Op::RenameProject {
+                id,
+                name,
+                sort_order,
+            } => st.data.put_project(daybook_core::Project {
+                id: id.clone(),
+                name: name.trim().to_string(),
+                sort_order: *sort_order,
+            }),
+            Op::DeleteProject(id) => {
+                st.data.remove_project(id);
+                if st.settings.list == ListRef::Project(id.clone()) {
+                    st.settings.list = ListRef::Inbox;
+                    self.store.set_settings(&st.settings);
+                }
+            }
+            Op::CreateLabel { name, color } => {
+                let label = daybook_core::Label {
+                    id: local(),
+                    name: name.trim().to_string(),
+                    color: color.clone(),
+                };
+                made = Some(label.id.clone());
+                st.data.put_label(label.clone());
+                drop(st);
+                (self.emit)(Msg::LabelCreated(Box::new(label)));
+                return made;
+            }
+            Op::UpdateLabel { id, name, color } => st.data.put_label(daybook_core::Label {
+                id: id.clone(),
+                name: name.trim().to_string(),
+                color: color.clone(),
+            }),
+            Op::DeleteLabel(id) => {
+                st.data.remove_label(id);
+                if st.settings.list == ListRef::Label(id.clone()) {
+                    st.settings.list = ListRef::Inbox;
+                    self.store.set_settings(&st.settings);
+                }
+            }
+            Op::Login { .. } | Op::Load | Op::Logout => {}
+        }
+        made
+    }
+
+    /// Sends the oldest waiting change; when it is done, the next. When none is left, everything is read again.
+    fn flush(self: &Rc<Self>) {
+        let (op, local) = {
+            let mut st = self.state.borrow_mut();
+            if st.flushing {
+                return;
+            }
+            let Some(first) = st.queue.first() else {
+                return;
+            };
+            let sent = (first.op.clone(), first.local.clone());
+            st.flushing = true;
+            sent
+        };
+        let me = Rc::clone(self);
+        self.platform.call(
+            op,
+            Box::new(move |result| {
+                me.state.borrow_mut().flushing = false;
+                match result {
+                    Err(NetError::Unauthorized) => me.sign_out(),
+                    Err(e) if is_unreachable(&e) => me.unreachable(),
+                    other => {
+                        me.sent(local, other);
+                        me.reachable();
+                        me.state.borrow_mut().queue.remove(0);
+                        me.save_queue();
+                        if me.state.borrow().queue.is_empty() {
+                            me.load();
+                        } else {
+                            me.flush();
+                        }
+                    }
+                }
+            }),
+        );
+    }
+
+    /// The service answered the oldest waiting change: what it made gets its real id, and a refusal is told.
+    fn sent(&self, local: Option<String>, result: Result<Reply, NetError>) {
+        let reply = match result {
+            Ok(reply) => reply,
+            // Gone on the service already: nothing to apply.
+            Err(NetError::NotFound) => return,
+            Err(e) => {
+                self.notice(format!("A change made offline was not accepted: {e}"));
+                return;
+            }
+        };
+        let real = match &reply {
+            Reply::Task(t) => Some(t.id.clone()),
+            Reply::Project(p) => Some(p.id.clone()),
+            Reply::Label(l) => Some(l.id.clone()),
+            _ => None,
+        };
+        if let (Some(local), Some(real)) = (&local, &real) {
+            let mut st = self.state.borrow_mut();
+            st.data.rename_id(local, real);
+            for q in st.queue.iter_mut().skip(1) {
+                q.op.rename_id(local, real);
+                if q.local.as_deref() == Some(local) {
+                    q.local = None;
+                }
+            }
+            let renamed = match &st.settings.list {
+                ListRef::Project(id) if id == local => Some(ListRef::Project(real.clone())),
+                ListRef::Label(id) if id == local => Some(ListRef::Label(real.clone())),
+                _ => None,
+            };
+            if let Some(list) = renamed {
+                st.settings.list = list;
+                self.store.set_settings(&st.settings);
+            }
+        }
+        let mut st = self.state.borrow_mut();
+        match reply {
+            Reply::Task(t) => st.data.put_task(*t),
+            Reply::Project(p) => st.data.put_project(p),
+            Reply::Label(l) => st.data.put_label(l),
+            _ => {}
+        }
     }
 
     fn ask_notifications(self: &Rc<Self>) {
@@ -489,6 +788,7 @@ impl Controller {
             let s = self.state.borrow();
             (pending_reminders(&s.data.tasks, now, &zone), s.data.clone())
         };
+        self.store.set_cache(&json::to_string(&data.to_value()));
         self.platform.data_changed(&data, now, &zone);
         if !reminders.is_empty() && !self.state.borrow().asked_notifications {
             self.state.borrow_mut().asked_notifications = true;

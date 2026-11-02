@@ -210,7 +210,7 @@ fn a_delete_is_at_once_and_undone_if_refused() {
     r.loaded(vec![task("a"), task("b")]);
     r.c.request(Request::Delete { id: "a".into() });
     assert_eq!(r.data().tasks.len(), 1);
-    r.fake.answer(Err(NetError::Network("down".into())));
+    r.fake.answer(Err(NetError::Status(500)));
     assert_eq!(r.data().tasks.len(), 2);
     r.c.request(Request::Delete { id: "a".into() });
     r.fake.answer(Err(NetError::NotFound));
@@ -251,6 +251,146 @@ fn an_unreachable_server_keeps_the_person_signed_in_and_is_tried_again_until_it_
     r.fake.answer(Ok(Reply::Loaded(Box::default())));
     assert!(r.out.borrow().contains(&Msg::Offline(false)));
     assert!(r.fake.later.borrow().is_empty());
+}
+
+fn save_new(r: &Rig, content: &str) {
+    let mut draft = Draft::new(&ListRef::Inbox);
+    draft.content = content.into();
+    r.c.request(Request::Save {
+        id: None,
+        draft: Box::new(draft),
+    });
+}
+
+#[quench_test::test]
+fn changes_made_offline_wait_and_go_to_the_server_in_order_when_it_answers() {
+    let r = rig("queue");
+    r.loaded(vec![task("a")]);
+    // The server goes away while the person works.
+    r.c.request(Request::SetCompleted {
+        id: "a".into(),
+        done: true,
+    });
+    r.fake.answer(Err(NetError::Network("no route".into())));
+    assert!(r.out.borrow().contains(&Msg::Offline(true)));
+    assert!(r.data().task("a").unwrap().is_completed, "kept, not undone");
+    assert!(r.notices().is_empty());
+
+    // More work: nothing is sent, all of it shows at once.
+    save_new(&r, "Milk");
+    assert!(r.out.borrow().contains(&Msg::Saved(Ok(()))));
+    let milk = r
+        .data()
+        .tasks
+        .iter()
+        .find(|t| t.content == "Milk")
+        .unwrap()
+        .id
+        .clone();
+    assert!(milk.starts_with("local-"));
+    // ...also a change to what was made offline.
+    r.c.request(Request::SetCompleted {
+        id: milk.clone(),
+        done: true,
+    });
+    r.c.request(Request::Delete { id: "a".into() });
+    assert!(
+        r.fake.calls.borrow().is_empty(),
+        "nothing is sent while offline"
+    );
+    assert!(r.data().task("a").is_none());
+
+    // The server is back: the changes go in the order they were made, with the real id for the new task.
+    r.fake.fire_later();
+    let first = r.fake.answer(Ok(Reply::Task(Box::new(task("a")))));
+    assert!(matches!(first, Op::UpdateTask(id, _) if id == "a"));
+    let second = r.fake.answer(Ok(Reply::Task(Box::new(task("srv-1")))));
+    assert!(matches!(second, Op::CreateTask(_)));
+    let third = r.fake.answer(Ok(Reply::Task(Box::new(task("srv-1")))));
+    assert!(
+        matches!(third, Op::UpdateTask(ref id, _) if id == "srv-1"),
+        "the id the server gave is used: {third:?}"
+    );
+    let fourth = r.fake.answer(Ok(Reply::Done));
+    assert!(matches!(fourth, Op::DeleteTask(id) if id == "a"));
+    // Then everything is read again, and the waiting state is over.
+    let last = r.fake.answer(Ok(Reply::Loaded(Box::new(Data {
+        tasks: vec![task("srv-1")],
+        ..Data::default()
+    }))));
+    assert!(matches!(last, Op::Load));
+    assert!(r.out.borrow().contains(&Msg::Offline(false)));
+    assert_eq!(r.data().tasks.len(), 1);
+    assert!(r.c.settings().list == ListRef::Inbox);
+}
+
+#[quench_test::test]
+fn a_change_the_server_cannot_be_asked_about_is_kept_across_a_restart() {
+    let r = rig("restart");
+    r.loaded(vec![]);
+    save_new(&r, "Milk");
+    r.fake.answer(Err(NetError::Network("no route".into())));
+    r.c.start();
+    drop(r.fake.calls.borrow_mut().drain(..));
+
+    // A new run of the app with the same files: the work is still there and goes out first.
+    let fake = Rc::new(Fake::default());
+    let out: Rc<RefCell<Vec<Msg>>> = Rc::default();
+    let sink = Rc::clone(&out);
+    let c = Controller::new(
+        fake.clone(),
+        Store::new(&r.dir),
+        Rc::new(move |m| sink.borrow_mut().push(m)),
+    );
+    c.start();
+    let shown = out
+        .borrow()
+        .iter()
+        .rev()
+        .find_map(|m| {
+            if let Msg::Data(d) = m {
+                Some(d.clone())
+            } else {
+                None
+            }
+        })
+        .expect("the last known data is shown at once");
+    assert_eq!(shown.tasks.len(), 0, "the cache is from the last read");
+    let op = fake.answer(Err(NetError::Network("still no route".into())));
+    assert!(
+        matches!(op, Op::CreateTask(_)),
+        "the waiting change is sent first"
+    );
+    assert!(out.borrow().contains(&Msg::Offline(true)));
+}
+
+#[quench_test::test]
+fn a_refused_change_is_told_and_the_others_still_go() {
+    let r = rig("refused");
+    r.loaded(vec![]);
+    save_new(&r, "One");
+    r.fake.answer(Err(NetError::Network("no route".into())));
+    save_new(&r, "Two");
+    r.fake.fire_later();
+    r.fake.answer(Err(NetError::Invalid));
+    assert!(r.notices()[0].starts_with("A change made offline was not accepted"));
+    let next = r.fake.answer(Ok(Reply::Task(Box::new(task("two")))));
+    assert!(matches!(next, Op::CreateTask(_)));
+    assert!(matches!(
+        r.fake.answer(Ok(Reply::Loaded(Box::default()))),
+        Op::Load
+    ));
+}
+
+#[quench_test::test]
+fn signing_out_drops_what_was_waiting() {
+    let r = rig("drop");
+    r.loaded(vec![]);
+    save_new(&r, "One");
+    r.fake.answer(Err(NetError::Network("no route".into())));
+    r.c.request(Request::Logout);
+    assert_eq!(Store::new(&r.dir).outbox(), "");
+    assert!(Store::new(&r.dir).cache().is_none());
 }
 
 #[quench_test::test]

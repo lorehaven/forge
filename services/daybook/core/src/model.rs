@@ -20,6 +20,16 @@ impl Project {
             sort_order: v.get("sort_order").and_then(Value::as_i64).unwrap_or(0),
         })
     }
+
+    /// The row as the service sends it (what [`from_value`](Self::from_value) reads).
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        let mut m = Map::new();
+        m.insert("id", Value::String(self.id.clone()));
+        m.insert("name", Value::String(self.name.clone()));
+        m.insert("sort_order", Value::Int(self.sort_order));
+        Value::Object(m)
+    }
 }
 
 /// A user's own label: it can tag tasks of the inbox and of every list.
@@ -55,6 +65,16 @@ impl Label {
             name: text(v, "name")?,
             color: text(v, "color").unwrap_or_else(|| DEFAULT_LABEL_COLOR.to_string()),
         })
+    }
+
+    /// The row as the service sends it (what [`from_value`](Self::from_value) reads).
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        let mut m = Map::new();
+        m.insert("id", Value::String(self.id.clone()));
+        m.insert("name", Value::String(self.name.clone()));
+        m.insert("color", Value::String(self.color.clone()));
+        Value::Object(m)
     }
 
     /// The colour as red, green and blue; anything that is not `#rrggbb` is grey.
@@ -308,6 +328,19 @@ impl Task {
             created_at: time(v, "created_at").unwrap_or(now),
             updated_at: time(v, "updated_at").unwrap_or(now),
         })
+    }
+
+    /// The row as the service sends it (what [`from_value`](Self::from_value) reads): the update body with the id and
+    /// the times.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        let Value::Object(mut m) = self.to_update() else {
+            return Value::Null;
+        };
+        m.insert("id", Value::String(self.id.clone()));
+        m.insert("created_at", Value::String(self.created_at.to_rfc3339()));
+        m.insert("updated_at", Value::String(self.updated_at.to_rfc3339()));
+        Value::Object(m)
     }
 
     /// The body of `PUT /tasks/{id}`: the endpoint replaces the task, so every field is sent (leaving one out resets it).

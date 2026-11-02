@@ -129,15 +129,6 @@ pub struct Session {
     obtained: Option<Instant>,
     on_refresh: Option<OnRefresh>,
     latest: Option<LatestToken>,
-    /// Kept (by the host, in its safe storage) to sign in again when the refresh token is refused.
-    credentials: Option<Credentials>,
-}
-
-/// The user name and password, never printed.
-#[derive(Clone)]
-struct Credentials {
-    username: String,
-    password: String,
 }
 
 impl fmt::Debug for Session {
@@ -196,7 +187,6 @@ fn tokens(base: &str, status: u16, text: &str) -> Result<Session, Error> {
                 obtained: Some(Instant::now()),
                 on_refresh: None,
                 latest: None,
-                credentials: None,
             })
         }
         401 | 403 if text.contains("mfa_required") => Err(Error::MfaRequired),
@@ -265,7 +255,6 @@ impl Session {
             obtained: None,
             on_refresh: None,
             latest: None,
-            credentials: None,
         }
     }
 
@@ -319,18 +308,6 @@ impl Session {
         self
     }
 
-    /// Signs in again with these when the refresh token is refused (it expired, was revoked, or was spent while the
-    /// answer was lost on the way), so a lost token is not a lost session. Only a refusal of the credentials
-    /// themselves (wrong, locked, disabled) ends the session; a server that cannot be reached never does.
-    #[must_use]
-    pub fn with_credentials(mut self, username: &str, password: &str) -> Self {
-        self.credentials = Some(Credentials {
-            username: username.to_string(),
-            password: password.to_string(),
-        });
-        self
-    }
-
     /// A refresh token someone kept that is not the one this session holds.
     fn newer_token(&self) -> Option<String> {
         self.latest
@@ -347,7 +324,7 @@ impl Session {
         if let Some(newer) = self.newer_token() {
             self.refresh = newer;
         }
-        let result = match self.exchange() {
+        match self.exchange() {
             Err(Error::Unauthorized) => {
                 // Spent a moment ago by the other program? Then the one it kept is the one to use.
                 if let Some(newer) = self.newer_token() {
@@ -358,33 +335,6 @@ impl Session {
                 }
             }
             other => other,
-        };
-        match (result, self.credentials.clone()) {
-            (Err(Error::Unauthorized), Some(c)) => self.sign_in_again(&c),
-            (other, _) => other,
-        }
-    }
-
-    /// The refresh token is gone: the stored credentials get a new session.
-    fn sign_in_again(&mut self, c: &Credentials) -> Result<(), Error> {
-        let fresh = login(&self.base, &c.username, &c.password)?;
-        self.adopt(fresh);
-        Ok(())
-    }
-
-    /// Takes the tokens of `fresh`, keeping this session's hooks, and tells the host the new refresh token.
-    fn adopt(&mut self, fresh: Self) {
-        let (keep, latest, credentials) = (
-            self.on_refresh.take(),
-            self.latest.take(),
-            self.credentials.take(),
-        );
-        *self = fresh;
-        self.on_refresh = keep;
-        self.latest = latest;
-        self.credentials = credentials;
-        if let Some(keep) = &self.on_refresh {
-            keep(&self.refresh);
         }
     }
 
@@ -397,7 +347,13 @@ impl Session {
         )?;
         // A refusal leaves the session as it was, hooks and all.
         let fresh = tokens(&self.base, status, &text)?;
-        self.adopt(fresh);
+        let (keep, latest) = (self.on_refresh.take(), self.latest.take());
+        *self = fresh;
+        self.on_refresh = keep;
+        self.latest = latest;
+        if let Some(keep) = &self.on_refresh {
+            keep(&self.refresh);
+        }
         Ok(())
     }
 

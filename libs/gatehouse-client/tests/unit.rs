@@ -274,45 +274,6 @@ fn a_server_that_is_not_there_is_a_network_error() {
     assert!(matches!(s.refresh().unwrap_err(), Error::Network(_)));
 }
 
-#[quench_test::test]
-fn a_refused_refresh_token_is_replaced_by_signing_in_with_the_kept_credentials() {
-    let (base, seen) = gatehouse(&["old"], |_| 200);
-    let kept = Arc::new(Mutex::new(Vec::<String>::new()));
-    let sink = Arc::clone(&kept);
-    let mut s = Session::resume(&base, "old")
-        .keeping_tokens(move |t| sink.lock().unwrap().push(t.to_string()))
-        .with_credentials("ann", "pw");
-    s.refresh().unwrap();
-    assert_eq!(
-        kept.lock().unwrap().len(),
-        1,
-        "the new token is kept at once"
-    );
-    let targets: Vec<String> = seen
-        .lock()
-        .unwrap()
-        .iter()
-        .map(|r| r.target.clone())
-        .collect();
-    assert_eq!(
-        targets,
-        [
-            "/gatehouse/api/v1/auth/refresh",
-            "/gatehouse/api/v1/auth/login"
-        ]
-    );
-    assert_eq!(get(&mut s, &base, "/x"), 200);
-}
-
-#[quench_test::test]
-fn refused_credentials_end_the_session_and_an_absent_server_does_not() {
-    let (base, _) = serve(Box::new(|_| (401, vec![], String::new())));
-    let mut s = Session::resume(&base, "old").with_credentials("ann", "wrong");
-    assert_eq!(s.refresh().unwrap_err(), Error::Unauthorized);
-    let mut s = Session::resume("http://127.0.0.1:1", "old").with_credentials("ann", "pw");
-    assert!(matches!(s.refresh().unwrap_err(), Error::Network(_)));
-}
-
 const KEY: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
 const OTHER: &str = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
 

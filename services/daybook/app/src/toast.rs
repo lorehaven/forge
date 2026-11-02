@@ -71,7 +71,7 @@ pub fn offline(offline: &Signal<bool>) -> View {
                 .attr("id", "offline")
                 .attr("role", "status")
                 .attr("class", "dbk-offline")
-                .text("The server is not reachable. Waiting for the connection...")
+                .text("The server is not reachable. Changes are kept and sent when it is back.")
                 .into_view()
         },
     )
