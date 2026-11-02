@@ -42,6 +42,11 @@ pub(super) async fn discover(who: ActorOrRedirect) -> Response {
     page(who)
 }
 
+#[get("/ui/schedule")]
+pub(super) async fn schedule(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
 #[get("/ui/activity")]
 pub(super) async fn activity(who: ActorOrRedirect) -> Response {
     page(who)
@@ -78,6 +83,7 @@ pub(super) fn register_routes() {
     let _ = library as fn(_) -> _;
     let _ = pipeline as fn(_) -> _;
     let _ = discover as fn(_) -> _;
+    let _ = schedule as fn(_) -> _;
     let _ = activity as fn(_) -> _;
     let _ = script as fn() -> _;
     let _ = style as fn() -> _;

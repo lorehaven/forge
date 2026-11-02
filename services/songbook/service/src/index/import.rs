@@ -133,6 +133,7 @@ pub fn once(db: &mut Connection, meta_dir: &Path) -> Result<usize> {
                 related_to_count: r[3].parse().unwrap_or(0),
                 related_to: r[4].clone(),
                 scope: r[5].clone(),
+                best: Vec::new(),
             })
             .collect();
         follow::set_suggestions(db, &list)?;

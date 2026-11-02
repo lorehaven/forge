@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS suggestions(
   id INTEGER PRIMARY KEY, artist TEXT NOT NULL, deezer_id TEXT NOT NULL DEFAULT '', fans TEXT NOT NULL DEFAULT '',
   related_to_count INTEGER NOT NULL DEFAULT 0, related_to TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '',
   position INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS suggestion_tracks(
+  deezer_id TEXT NOT NULL, position INTEGER NOT NULL, title TEXT NOT NULL, album TEXT NOT NULL DEFAULT '', score INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(deezer_id, position));
 CREATE TABLE IF NOT EXISTS meta(
   key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS song_artist_artist ON song_artist(artist_id);

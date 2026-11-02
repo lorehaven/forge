@@ -10,7 +10,7 @@ use std::rc::Rc;
 use quench_ui::i18n::I18n;
 use quench_ui::prelude::*;
 use quench_ui::router::{History, RouteContext, Router, Routes};
-use songbook_core::{Browse, Filter, Job, JobStart, NewArtist, State};
+use songbook_core::{Browse, Filter, Job, JobStart, NewArtist, Schedule, State};
 
 use crate::screens;
 
@@ -41,6 +41,10 @@ pub enum Request {
     StartJob(JobStart),
     /// The job's state and its log from character `from`.
     Job { from: u64 },
+    /// The nightly schedule.
+    Schedule,
+    /// Save the nightly schedule.
+    SaveSchedule(Schedule),
     /// The person chose a language (the host keeps it for next time).
     Language(String),
 }
@@ -52,6 +56,8 @@ pub enum Msg {
     Stats(songbook_core::Stats),
     Browse(Browse),
     Job(Job),
+    Schedule(Schedule),
+    ScheduleSaved(Schedule),
     /// Whether the job started (`false`: one is already running).
     Started(bool),
     LinkSaved,
@@ -201,6 +207,20 @@ pub(crate) struct Model {
     pub picked: Signal<Vec<String>>,
     /// The categories the sidebar has expanded (the one holding the selected artist always is).
     pub open: Signal<Vec<String>>,
+    /// The nightly schedule as the service has it (its status lines), and the form that edits it.
+    pub schedule: Signal<Option<Schedule>>,
+    pub sched_enabled: Signal<bool>,
+    pub sched_sync: Signal<bool>,
+    pub sched_links: Signal<bool>,
+    pub sched_download: Signal<bool>,
+    pub sched_convert: Signal<bool>,
+    pub sched_suggestions: Signal<bool>,
+    pub sched_fresh: Signal<bool>,
+    pub sched_singles: Signal<bool>,
+    pub sched_time: quench_ui::form::Field,
+    pub sched_zone: quench_ui::form::Field,
+    /// Has the form been filled from the service yet? (Later answers update the status lines, not what is being typed.)
+    pub sched_filled: Rc<Cell<bool>>,
     pub dialog: Signal<Option<Dialog>>,
     pub snack: Signal<Option<String>>,
     pub problem: Signal<Option<Problem>>,
@@ -226,6 +246,18 @@ impl Model {
             scope: Field::new("scope", ""),
             picked: create_signal(Vec::new()),
             open: create_signal(Vec::new()),
+            schedule: create_signal(None),
+            sched_enabled: create_signal(false),
+            sched_sync: create_signal(true),
+            sched_links: create_signal(true),
+            sched_download: create_signal(true),
+            sched_convert: create_signal(true),
+            sched_suggestions: create_signal(true),
+            sched_fresh: create_signal(true),
+            sched_singles: create_signal(false),
+            sched_time: Field::new("sched-time", "03:00"),
+            sched_zone: Field::new("sched-zone", ""),
+            sched_filled: Rc::default(),
             dialog: create_signal(None),
             snack: create_signal(None),
             problem: create_signal(None),
@@ -315,6 +347,20 @@ fn watch_job(env: &Env, busy_ms: u32, idle_ms: u32) {
     tick(env.clone(), busy_ms, idle_ms, alive);
 }
 
+/// Puts the schedule into the form.
+fn fill_schedule(m: &Model, s: &Schedule) {
+    m.sched_enabled.set(s.enabled);
+    m.sched_sync.set(s.sync);
+    m.sched_links.set(s.links);
+    m.sched_download.set(s.download);
+    m.sched_convert.set(s.convert);
+    m.sched_suggestions.set(s.suggestions);
+    m.sched_fresh.set(s.fresh_ratings);
+    m.sched_singles.set(s.singles);
+    m.sched_time.set(&s.time);
+    m.sched_zone.set(&s.zone);
+}
+
 /// What a message from the host does to the model.
 #[allow(clippy::too_many_lines)]
 fn receive(env: &Env, msg: Msg) {
@@ -327,6 +373,18 @@ fn receive(env: &Env, msg: Msg) {
             m.state.set(Some(state));
         }
         Msg::Stats(stats) => m.stats.set(Some(stats)),
+        Msg::Schedule(schedule) => {
+            m.problem.set(None);
+            if !m.sched_filled.replace(true) {
+                fill_schedule(m, &schedule);
+            }
+            m.schedule.set(Some(schedule));
+        }
+        Msg::ScheduleSaved(schedule) => {
+            fill_schedule(m, &schedule);
+            m.schedule.set(Some(schedule));
+            env.say(t.t("ui_sched_saved"));
+        }
         Msg::Browse(browse) => {
             m.problem.set(None);
             m.browse.set(Some(browse));
@@ -348,6 +406,7 @@ fn receive(env: &Env, msg: Msg) {
             m.job.set(job);
             if finished {
                 env.refresh();
+                (env.ask)(Request::Schedule);
                 env.say(match error {
                     Some(why) => t.tr(
                         "ui_snack_failed",
@@ -483,11 +542,20 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         let env = env.clone();
         move |_: &RouteContext| -> View { screen(&env) }
     };
+    let schedule = {
+        let env = env.clone();
+        move |_: &RouteContext| -> View {
+            env.m.sched_filled.set(false);
+            (env.ask)(Request::Schedule);
+            screens::schedule(&env)
+        }
+    };
     let screens_at = Routes::new()
         .route(&format!("{base}/ui/library"), library.clone())
         .route(&format!("{base}/ui/pipeline"), page(screens::pipeline))
         .route(&format!("{base}/ui/discover"), page(screens::discover))
         .route(&format!("{base}/ui/activity"), page(screens::activity))
+        .route(&format!("{base}/ui/schedule"), schedule)
         .route(&format!("{base}/ui/home"), library.clone())
         .route(&format!("{base}/ui/home/"), library.clone())
         .route(&format!("{base}/ui"), library.clone())

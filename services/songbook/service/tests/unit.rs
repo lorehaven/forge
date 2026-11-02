@@ -18,6 +18,8 @@ mod index_tests;
 mod jobs_tests;
 #[path = "unit/routers_tests.rs"]
 mod routers_tests;
+#[path = "unit/schedule_tests.rs"]
+mod schedule_tests;
 #[path = "unit/sync_tests.rs"]
 mod sync_tests;
 #[path = "unit/youtube_tests.rs"]

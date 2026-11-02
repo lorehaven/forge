@@ -4,7 +4,7 @@ use super::songs::UNCATEGORIZED;
 use super::{Result, Value, int, int_at, opt_str_at, str_at, text};
 use quench_sqlite::Connection;
 use songbook_core::naming::{album_key, norm};
-use songbook_core::{ArtistRow, Suggestion};
+use songbook_core::{ArtistRow, Suggestion, TopTrack};
 use std::collections::{HashMap, HashSet};
 
 /// A followed artist and what the last sync found for it.
@@ -281,6 +281,17 @@ pub fn artist_rows(db: &mut Connection) -> Result<Vec<ArtistRow>> {
 
 pub fn suggestions(db: &mut Connection) -> Result<Vec<Suggestion>> {
     let rows = db.query("SELECT artist, deezer_id, fans, related_to_count, related_to, scope FROM suggestions ORDER BY position, id", &[])?;
+    let mut best: HashMap<String, Vec<TopTrack>> = HashMap::new();
+    for r in db
+        .query("SELECT deezer_id, title, album, score FROM suggestion_tracks ORDER BY deezer_id, position", &[])?
+        .rows
+    {
+        best.entry(str_at(&r, 0)).or_default().push(TopTrack {
+            title: str_at(&r, 1),
+            album: str_at(&r, 2),
+            score: int_at(&r, 3) as u32,
+        });
+    }
     Ok(rows
         .rows
         .iter()
@@ -291,6 +302,7 @@ pub fn suggestions(db: &mut Connection) -> Result<Vec<Suggestion>> {
             related_to_count: int_at(r, 3) as u32,
             related_to: str_at(r, 4),
             scope: str_at(r, 5),
+            best: best.remove(&str_at(r, 1)).unwrap_or_default(),
         })
         .collect())
 }
@@ -298,11 +310,18 @@ pub fn suggestions(db: &mut Connection) -> Result<Vec<Suggestion>> {
 /// Replaces the suggestions. Run it inside a transaction when the caller wants all or nothing.
 pub fn set_suggestions(db: &mut Connection, list: &[Suggestion]) -> Result<()> {
     db.execute("DELETE FROM suggestions", &[])?;
+    db.execute("DELETE FROM suggestion_tracks", &[])?;
     for (i, s) in list.iter().enumerate() {
         db.execute(
             "INSERT INTO suggestions(artist, deezer_id, fans, related_to_count, related_to, scope, position) VALUES (?,?,?,?,?,?,?)",
             &[text(&s.artist), text(&s.deezer_id), text(&s.fans), int(i64::from(s.related_to_count)), text(&s.related_to), text(&s.scope), int(i as i64)],
         )?;
+        for (n, t) in s.best.iter().enumerate() {
+            db.execute(
+                "INSERT OR REPLACE INTO suggestion_tracks(deezer_id, position, title, album, score) VALUES (?,?,?,?,?)",
+                &[text(&s.deezer_id), int(n as i64), text(&t.title), text(&t.album), int(i64::from(t.score))],
+            )?;
+        }
     }
     Ok(())
 }

@@ -4,8 +4,8 @@ use crate::app::App;
 use crate::index::follow;
 use crate::index::songs::UNCATEGORIZED;
 use crate::jobs::Log;
-use songbook_core::Suggestion;
 use songbook_core::naming::norm;
+use songbook_core::{Suggestion, TopTrack, popularity};
 use std::collections::{HashMap, HashSet};
 
 /// Ranks candidates: `(artist id, followed artists that point at it, its Deezer name, fans)`; more pointers first, then
@@ -24,6 +24,9 @@ pub fn rank(
     candidates.truncate(top);
     candidates
 }
+
+/// How many of a suggested artist's best songs are kept.
+pub const BEST: u32 = 5;
 
 pub async fn run(
     app: &App,
@@ -103,17 +106,33 @@ pub async fn run(
             .collect(),
         top as usize,
     );
-    let list: Vec<Suggestion> = ranked
-        .iter()
-        .map(|(id, via, name, fans)| Suggestion {
+    let mut list: Vec<Suggestion> = Vec::new();
+    for (id, via, name, fans) in &ranked {
+        // Their best songs, so the list says what to expect. One failure leaves that artist without songs, not the run.
+        let best = match app.deezer.top_tracks(*id, BEST).await {
+            Ok(tracks) => tracks
+                .into_iter()
+                .map(|t| TopTrack {
+                    title: t.title,
+                    album: t.album,
+                    score: popularity(Some(t.rank), None).unwrap_or(0),
+                })
+                .collect(),
+            Err(e) => {
+                log.line(format!("  no best songs for {name}: {e}"));
+                Vec::new()
+            }
+        };
+        list.push(Suggestion {
             artist: name.clone(),
             deezer_id: id.to_string(),
             fans: fans.to_string(),
             related_to_count: via.len() as u32,
             related_to: via.join("; "),
             scope: scope.to_string(),
-        })
-        .collect();
+            best,
+        });
+    }
     for s in list.iter().take(20) {
         let via: Vec<&str> = s.related_to.split("; ").take(4).collect();
         log.line(format!(

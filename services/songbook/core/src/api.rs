@@ -38,6 +38,15 @@ pub struct ArtistRow {
     pub synced: bool,
 }
 
+/// One of an artist's best songs, as Deezer ranks them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TopTrack {
+    pub title: String,
+    pub album: String,
+    /// Popularity 0-100 (see [`popularity`]).
+    pub score: u32,
+}
+
 /// An artist `similar` suggests.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Suggestion {
@@ -49,6 +58,9 @@ pub struct Suggestion {
     pub related_to: String,
     /// The category the list was made for; empty for all.
     pub scope: String,
+    /// Their best songs on Deezer, best first; empty when not fetched.
+    #[serde(default)]
+    pub best: Vec<TopTrack>,
 }
 
 /// Everything the sidebar and the filters need.
@@ -141,7 +153,7 @@ pub struct Filter {
     /// `has`, `missing` or `unofficial`; empty for all.
     #[serde(default)]
     pub links: String,
-    /// `top` (most popular first) or `suggested` (most popular not yet downloaded); empty for the library order.
+    /// `top` (most popular songs first), `artists` (artists with most fans first, each with their best songs) or `suggested` (most popular not yet downloaded); empty for the library order.
     #[serde(default)]
     pub sort: String,
 }
@@ -151,7 +163,11 @@ pub struct Filter {
 /// Built from Deezer's track `rank` (0 to about 1,000,000) and the views of its `YouTube` video (log scale, 1,000,000,000
 /// views is the top). Both known: 60% Deezer, 40% `YouTube`; one known: that one; none: `None`.
 #[must_use]
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0..=100 from clamped ratios
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)] // 0..=100 from clamped ratios
 pub fn popularity(rank: Option<i64>, views: Option<i64>) -> Option<u32> {
     let deezer = rank
         .filter(|r| *r > 0)
@@ -262,7 +278,7 @@ pub struct RenameCategory {
     pub new_name: String,
 }
 
-/// `POST /jobs`: `name` is `sync`, `tags`, `similar`, `youtube`, `download`, `convert` or `pipeline`.
+/// `POST /jobs`: `name` is `sync`, `tags`, `similar`, `youtube`, `download`, `convert`, `pipeline` or `scheduled` (the stages of the saved schedule, now).
 ///
 /// `pipeline` is sync, find links (with the songs that had no match tried again), download and convert, one after the other
 /// in one job; it stops at the first step that fails.
@@ -293,6 +309,74 @@ pub struct JobStart {
     /// youtube: look again at songs that had no match.
     #[serde(default)]
     pub retry_missing: bool,
+}
+
+/// The nightly run (`GET`/`POST /schedule`).
+///
+/// At `time` (`HH:MM`, in `zone`) every day the chosen stages run one after the other as one job. A stage that fails does
+/// not stop the next ones. The last four fields are filled by the service; what a client sends in them is ignored.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)] // one switch per stage and option, as the page shows them
+pub struct Schedule {
+    pub enabled: bool,
+    /// `HH:MM`, 24-hour.
+    pub time: String,
+    /// An IANA zone name such as `Europe/Warsaw`; empty for the service's own zone.
+    #[serde(default)]
+    pub zone: String,
+    /// Stage 1: sync with Deezer.
+    pub sync: bool,
+    /// Stage 2: find `YouTube` links, trying again the songs that had no match.
+    pub links: bool,
+    /// Stage 3: download every song that has a link and no file yet (the ones that failed before are tried again).
+    pub download: bool,
+    /// Stage 4: convert the downloads to mp3.
+    pub convert: bool,
+    /// Stage 5: refresh the suggested artists and their best songs. A schedule saved before this stage existed has it off.
+    #[serde(default)]
+    pub suggestions: bool,
+    /// Sync asks Deezer for every track again instead of using what it saved, so the ratings are current.
+    pub fresh_ratings: bool,
+    /// Sync includes singles.
+    #[serde(default)]
+    pub singles: bool,
+    /// The local day the schedule last started (`YYYY-MM-DD`); it runs once a day.
+    #[serde(default)]
+    pub last_day: String,
+    /// When it last started, `YYYY-MM-DD HH:MM` in `zone`; empty before the first run.
+    #[serde(default)]
+    pub last_run: String,
+    /// `ok`, or why the last run did not finish well.
+    #[serde(default)]
+    pub last_result: String,
+    /// When it runs next, `YYYY-MM-DD HH:MM` in `zone`; empty when it is off.
+    #[serde(default)]
+    pub next_run: String,
+    /// The zone in force (`zone`, or the service's own when that is empty).
+    #[serde(default)]
+    pub zone_in_use: String,
+}
+
+impl Default for Schedule {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            time: "03:00".into(),
+            zone: String::new(),
+            sync: true,
+            links: true,
+            download: true,
+            convert: true,
+            suggestions: true,
+            fresh_ratings: true,
+            singles: false,
+            last_day: String::new(),
+            last_run: String::new(),
+            last_result: String::new(),
+            next_run: String::new(),
+            zone_in_use: String::new(),
+        }
+    }
 }
 
 /// The one job: running now, or the last one that ran.

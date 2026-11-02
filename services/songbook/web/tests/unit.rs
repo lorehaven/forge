@@ -27,6 +27,16 @@ fn reads_are_gets_under_the_admin_api() {
         }
     );
     assert_eq!(call(&Request::Stats).path, format!("{API}/stats"));
+    assert_eq!(call(&Request::Schedule).path, format!("{API}/schedule"));
+    let save = call(&Request::SaveSchedule(songbook_core::Schedule::default()));
+    assert_eq!(
+        (save.method, save.path.as_str()),
+        ("POST", format!("{API}/schedule").as_str())
+    );
+    assert!(save.body.unwrap().contains("\"fresh_ratings\":true"));
+    let saved = songbook_core::Schedule::default();
+    let body = quench_serde::json::to_string(&saved);
+    assert!(matches!(interpret(&Request::Schedule, 200, &body), Msg::Schedule(s) if s == saved));
     assert_eq!(
         call(&Request::Job { from: 42 }).path,
         format!("{API}/job?from=42")

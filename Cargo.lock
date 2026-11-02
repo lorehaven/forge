@@ -1627,6 +1627,7 @@ dependencies = [
  "quench-sqlite",
  "quench-starter",
  "quench-test",
+ "quench-tz",
  "songbook-core",
  "songbook-web",
  "tokio",

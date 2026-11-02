@@ -31,6 +31,7 @@ pub mod index;
 pub mod jobs;
 pub mod pipeline;
 pub mod routers;
+pub mod schedule;
 pub mod similar;
 pub mod sync;
 pub mod youtube;

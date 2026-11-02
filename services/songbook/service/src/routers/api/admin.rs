@@ -8,7 +8,7 @@ use quench_http::prelude::{Inject, Json, Query, Response, get, http::StatusCode,
 use quench_serde::Deserialize;
 use songbook_core::{
     AddArtists, Added, BlacklistBody, CategoryBody, Filter, JobStart, LinkBody, NewCategory,
-    RemoveArtist, Removed, RenameCategory, Retagged, Started, Updated,
+    RemoveArtist, Removed, RenameCategory, Retagged, Schedule, Started, Updated,
 };
 
 fn server_error(e: impl std::fmt::Display) -> Response {
@@ -212,10 +212,22 @@ pub async fn rename_category(
 #[post("/api/v1/admin/jobs")]
 pub async fn start_job(Inject(app): Inject<App>, Json(body): Json<JobStart>) -> Response {
     let known = [
-        "sync", "tags", "similar", "youtube", "download", "convert", "pipeline",
+        "sync",
+        "tags",
+        "similar",
+        "youtube",
+        "download",
+        "convert",
+        "pipeline",
+        "scheduled",
     ];
     if !known.contains(&body.name.as_str()) {
         return json_error(StatusCode::BAD_REQUEST, "unknown job");
+    }
+    if body.name == "scheduled" {
+        return ok(&Started {
+            started: crate::schedule::start_now(&app).await,
+        });
     }
     let worker = app.clone();
     let name = body.name.clone();
@@ -244,6 +256,27 @@ pub async fn start_job(Inject(app): Inject<App>, Json(body): Json<JobStart>) -> 
     ok(&Started { started })
 }
 
+/// The nightly schedule, with when it runs next and how the last run went.
+#[get("/api/v1/admin/schedule")]
+pub async fn get_schedule(Inject(app): Inject<App>) -> Response {
+    match crate::schedule::load(&app).await {
+        Ok(s) => ok(&s),
+        Err(e) => server_error(e),
+    }
+}
+
+/// Saves the nightly schedule; answers the saved one.
+#[post("/api/v1/admin/schedule")]
+pub async fn save_schedule(Inject(app): Inject<App>, Json(body): Json<Schedule>) -> Response {
+    if let Err(e) = crate::schedule::check(body.clone()) {
+        return json_error(StatusCode::BAD_REQUEST, &e);
+    }
+    match crate::schedule::save(&app, body).await {
+        Ok(s) => ok(&s),
+        Err(e) => server_error(e),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct From {
     #[serde(default)]
@@ -268,4 +301,6 @@ pub fn register_routes() {
     let _ = rename_category as fn(_, _) -> _;
     let _ = start_job as fn(_, _) -> _;
     let _ = job as fn(_, _) -> _;
+    let _ = get_schedule as fn(_) -> _;
+    let _ = save_schedule as fn(_, _) -> _;
 }

@@ -158,6 +158,18 @@ fn state() -> State {
                 related_to_count: 3,
                 related_to: "Nate Dogg; Snoop Dogg; Nas; Eminem".into(),
                 scope: "American Rap".into(),
+                best: vec![
+                    songbook_core::TopTrack {
+                        title: "Regulate".into(),
+                        album: "Regulate... G Funk Era".into(),
+                        score: 71,
+                    },
+                    songbook_core::TopTrack {
+                        title: "This DJ".into(),
+                        album: String::new(),
+                        score: 40,
+                    },
+                ],
             },
             Suggestion {
                 artist: "Daz".into(),
@@ -166,6 +178,7 @@ fn state() -> State {
                 related_to_count: 1,
                 related_to: "Nate Dogg".into(),
                 scope: "American Rap".into(),
+                best: Vec::new(),
             },
         ],
     }
@@ -1032,6 +1045,10 @@ fn suggestions_are_ticked_and_followed_with_a_sync() {
         "{text}"
     );
     assert!(text.contains("Current list: American Rap."), "{text}");
+    assert!(
+        text.contains("Best songs: Regulate (71), This DJ (40)"),
+        "{text}"
+    );
     assert!(!l.has("add-suggested"));
     l.r.fire(
         l.find("button", ("data-suggestion", "Warren G")),

@@ -6,15 +6,16 @@ use std::rc::Rc;
 use quench_ui::form::Field;
 use quench_ui::prelude::*;
 use quench_ui::router::{Router, link};
-use songbook_core::{Album, ArtistRow, Filter, JobStart, NewArtist, Track};
+use songbook_core::{Album, ArtistRow, Filter, JobStart, NewArtist, Schedule, Track};
 
 use crate::live::{Dialog, Env, Pending, Problem, Request};
 
 /// The screens in the side panel: path, title key, element id, icon.
-pub(crate) const PAGES: [(&str, &str, &str, &str); 4] = [
+pub(crate) const PAGES: [(&str, &str, &str, &str); 5] = [
     ("/library", "ui_nav_library", "nav-library", "database"),
     ("/pipeline", "ui_nav_pipeline", "nav-pipeline", "layers"),
     ("/discover", "ui_nav_discover", "nav-discover", "users"),
+    ("/schedule", "ui_nav_schedule", "nav-schedule", "clock"),
     ("/activity", "ui_nav_activity", "nav-activity", "activity"),
 ];
 
@@ -474,9 +475,10 @@ const LINK_FILTERS: [(&str, &str); 4] = [
     ("unofficial", "ui_links_unofficial"),
 ];
 
-const SORTS: [(&str, &str); 3] = [
+const SORTS: [(&str, &str); 4] = [
     ("", "ui_sort_library"),
     ("top", "ui_sort_top"),
+    ("artists", "ui_sort_artists"),
     ("suggested", "ui_sort_suggested"),
 ];
 
@@ -706,8 +708,10 @@ fn album(env: &Env, a: &Album) -> Element {
         .into_iter()
         .chain(a.genre.split("; ").map(str::to_string))
         .filter(|x| !x.is_empty());
-    // A ranked list (top, suggested) is one card without an album: no title, no blacklist, artists on each track.
-    let ranked = a.album.is_empty();
+    // A ranked list (top, suggested) is one card without an album: no title, no blacklist, artists on each track. By artist,
+    // a card is titled with the artist's name and also has no blacklist (it is not an album: id 0).
+    let ranked = a.id == 0;
+    let with_artists = ranked && a.album.is_empty();
     article()
         .class("sb-card")
         .attr("data-album", a.id.to_string())
@@ -722,7 +726,7 @@ fn album(env: &Env, a: &Album) -> Element {
                 })
                 .text(format!("⊘ {}", t.t("ui_blacklist")))
         }))
-        .child((!ranked).then(|| h4().class("sb-album").text(a.album.clone())))
+        .child((!a.album.is_empty()).then(|| h4().class("sb-album").text(a.album.clone())))
         .child((!ranked).then(|| div().class("sb-sub").text(a.artist.clone())))
         .child(
             div()
@@ -734,7 +738,7 @@ fn album(env: &Env, a: &Album) -> Element {
                 a.tracks
                     .iter()
                     .enumerate()
-                    .map(|(i, tr)| track(env, i + 1, tr, ranked).into_view()),
+                    .map(|(i, tr)| track(env, i + 1, tr, with_artists).into_view()),
             ),
         )
 }
@@ -1220,7 +1224,17 @@ fn suggestions(env: &Env) -> View {
                                 ("n", s.related_to_count.into()),
                                 ("names", via.join(", ").into()),
                             ],
-                        ))),
+                        )))
+                        .child((!s.best.is_empty()).then(|| {
+                            let songs: Vec<String> = s
+                                .best
+                                .iter()
+                                .map(|b| format!("{} ({})", b.title, b.score))
+                                .collect();
+                            small()
+                                .class("sb-best")
+                                .text(t.tr("ui_best", &[("songs", songs.join(", ").into())]))
+                        })),
                 )
                 .into_view()
         });
@@ -1269,6 +1283,184 @@ fn fab(env: &Env) -> View {
 }
 
 // ── Activity ─────────────────────────────────────────────────────────────────
+
+/// The nightly run: when, which stages, and how the last one went.
+#[allow(clippy::too_many_lines)]
+pub(crate) fn schedule(env: &Env) -> View {
+    let env = env.clone();
+    View::dynamic(move || {
+        let t = &env.t;
+        let m = env.m.clone();
+        let status = {
+            let (m, t) = (m.clone(), Rc::clone(&env.t));
+            View::dynamic(move || {
+                let Some(s) = m.schedule.get() else {
+                    return p()
+                        .attr("id", "sched-waiting")
+                        .class("fui-empty")
+                        .text(t.t("ui_waiting"))
+                        .into_view();
+                };
+                let zone = if s.zone_in_use.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", s.zone_in_use)
+                };
+                let next = if s.next_run.is_empty() {
+                    t.t("ui_sched_off")
+                } else {
+                    t.tr(
+                        "ui_sched_next",
+                        &[("when", format!("{}{zone}", s.next_run).into())],
+                    )
+                };
+                let last = if s.last_run.is_empty() {
+                    t.t("ui_sched_never")
+                } else {
+                    t.tr(
+                        "ui_sched_last",
+                        &[
+                            ("when", s.last_run.clone().into()),
+                            ("result", s.last_result.into()),
+                        ],
+                    )
+                };
+                div()
+                    .attr("id", "sched-status")
+                    .class("fui-alert fui-alert-info")
+                    .child(div().attr("id", "sched-next").text(next))
+                    .child(div().attr("id", "sched-last").text(last))
+                    .into_view()
+            })
+        };
+        let stages = div()
+            .class("sb-actions")
+            .attr("id", "sched-stages")
+            .child(toggle(
+                t.t("ui_sched_sync"),
+                t.t("ui_sched_sync_title"),
+                "sched-sync",
+                &m.sched_sync,
+            ))
+            .child(toggle(
+                t.t("ui_sched_links"),
+                t.t("ui_sched_links_title"),
+                "sched-links",
+                &m.sched_links,
+            ))
+            .child(toggle(
+                t.t("ui_sched_download"),
+                t.t("ui_sched_download_title"),
+                "sched-download",
+                &m.sched_download,
+            ))
+            .child(toggle(
+                t.t("ui_sched_convert"),
+                t.t("ui_sched_convert_title"),
+                "sched-convert",
+                &m.sched_convert,
+            ))
+            .child(toggle(
+                t.t("ui_sched_suggestions"),
+                t.t("ui_sched_suggestions_title"),
+                "sched-suggestions",
+                &m.sched_suggestions,
+            ));
+        let options = div()
+            .class("sb-actions")
+            .child(toggle(
+                t.t("ui_sched_fresh"),
+                t.t("ui_sched_fresh_title"),
+                "sched-fresh",
+                &m.sched_fresh,
+            ))
+            .child(toggle(
+                t.t("ui_singles"),
+                t.t("ui_singles_title"),
+                "sched-singles",
+                &m.sched_singles,
+            ));
+        let when = div()
+            .class("sb-actions")
+            .child(toggle(
+                t.t("ui_sched_enabled"),
+                t.t("ui_sched_enabled_title"),
+                "sched-enabled",
+                &m.sched_enabled,
+            ))
+            .child(
+                label_for(
+                    m.sched_time.name(),
+                    &t.t("ui_sched_time"),
+                    m.sched_time
+                        .input()
+                        .attr("type", "time")
+                        .class("fui-input fui-input-sm"),
+                )
+                .class("sb-opt"),
+            )
+            .child(
+                label_for(
+                    m.sched_zone.name(),
+                    &t.t("ui_sched_zone"),
+                    m.sched_zone
+                        .input()
+                        .attr("placeholder", "Europe/Warsaw")
+                        .attr("title", t.t("ui_sched_zone_title"))
+                        .class("fui-input fui-input-sm"),
+                )
+                .class("sb-opt"),
+            );
+        let save = {
+            let env = env.clone();
+            button()
+                .attr("type", "button")
+                .attr("id", "sched-save")
+                .class("fui-btn fui-btn-primary")
+                .on_click(move || {
+                    let m = &env.m;
+                    let kept = m.schedule.get_untracked().unwrap_or_default();
+                    (env.ask)(Request::SaveSchedule(Schedule {
+                        enabled: m.sched_enabled.get_untracked(),
+                        time: m.sched_time.value_untracked(),
+                        zone: m.sched_zone.value_untracked(),
+                        sync: m.sched_sync.get_untracked(),
+                        links: m.sched_links.get_untracked(),
+                        download: m.sched_download.get_untracked(),
+                        convert: m.sched_convert.get_untracked(),
+                        suggestions: m.sched_suggestions.get_untracked(),
+                        fresh_ratings: m.sched_fresh.get_untracked(),
+                        singles: m.sched_singles.get_untracked(),
+                        ..kept
+                    }));
+                })
+                .text(t.t("ui_sched_save"))
+        };
+        div()
+            .attr("id", "page-schedule")
+            .class("sb-page")
+            .child(head(&env, "ui_sched_title", "ui_sched_intro"))
+            .child(status)
+            .child(
+                article()
+                    .class("sb-card sb-step")
+                    .child(h3().text(t.t("ui_sched_when")))
+                    .child(when)
+                    .child(h3().text(t.t("ui_sched_stages")))
+                    .child(stages)
+                    .child(h3().text(t.t("ui_sched_options")))
+                    .child(options)
+                    .child(div().class("sb-actions").child(save).child(job_button(
+                        &env,
+                        "scheduled",
+                        &t.t("ui_sched_run_now"),
+                        "fui-btn-secondary",
+                        Some(t.t("ui_sched_run_now_title")),
+                    ))),
+            )
+            .into_view()
+    })
+}
 
 pub(crate) fn activity(env: &Env) -> View {
     let env = env.clone();

@@ -125,6 +125,23 @@ pub fn contributors(track: &TrackRef, detail: Option<&TrackDetail>) -> Vec<(i64,
 }
 
 pub async fn run(app: &App, singles: bool, log: &Log) -> Result<(), String> {
+    run_with(app, singles, false, log).await
+}
+
+/// [`run`]; with `fresh_ratings` the tracks are asked of Deezer again (saved ones older than 12 hours), so their ratings are
+/// current. That is one request per track, spread out by the client's throttle.
+pub async fn run_with(
+    app: &App,
+    singles: bool,
+    fresh_ratings: bool,
+    log: &Log,
+) -> Result<(), String> {
+    let deezer = if fresh_ratings {
+        app.deezer
+            .with_track_ttl(std::time::Duration::from_hours(12))
+    } else {
+        app.deezer.clone()
+    };
     let follows = app
         .index
         .run(follow::follows)
@@ -192,7 +209,7 @@ pub async fn run(app: &App, singles: bool, log: &Log) -> Result<(), String> {
                 .tracks
                 .iter()
                 .map(|t| {
-                    let (deezer, id) = (app.deezer.clone(), t.id);
+                    let (deezer, id) = (deezer.clone(), t.id);
                     tokio::spawn(async move { deezer.track(id).await })
                 })
                 .collect();

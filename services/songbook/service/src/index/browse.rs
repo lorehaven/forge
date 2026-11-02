@@ -11,6 +11,9 @@ use std::collections::{HashMap, HashSet};
 /// How many tracks the library page shows at most.
 pub const LIMIT: usize = 300;
 
+/// How many songs of an artist the "top artists" order lists.
+pub const BEST_PER_ARTIST: usize = 10;
+
 pub fn state(db: &mut Connection) -> Result<State> {
     let genres = db
         .query(
@@ -77,6 +80,8 @@ struct Row {
     /// File name without extension, to tell whether the song is on disk.
     filename: String,
     score: Option<u32>,
+    /// Deezer's rank, to tell apart songs whose rounded scores are equal.
+    rank: i64,
     album_id: i64,
     album: String,
     year: String,
@@ -152,6 +157,7 @@ impl Snapshot {
                     owner: str_at(r, 10),
                     filename: str_at(r, 11),
                     score: popularity(opt_int_at(r, 12), opt_int_at(r, 13)),
+                    rank: opt_int_at(r, 12).unwrap_or(0),
                     people,
                     categories,
                     genres,
@@ -215,6 +221,7 @@ impl Snapshot {
 
     /// [`browse`](Self::browse) that also knows which files are on disk (`files::file_index`), which `sort=suggested` needs.
     ///
+    /// `sort=artists` lists the artists with most Deezer fans first, each with their best songs.
     /// `sort=top` lists the matching songs, each once, most popular first; `sort=suggested` does the same for the ones
     /// that are not downloaded yet. Songs nobody scored come last (top) or not at all (suggested). The list is one
     /// "album" with no name, so the page shows it as a plain list.
@@ -241,7 +248,7 @@ impl Snapshot {
                     }
             })
             .collect();
-        let ranked = matches!(filter.sort.as_str(), "top" | "suggested");
+        let ranked = matches!(filter.sort.as_str(), "top" | "suggested" | "artists");
         if ranked {
             let mut seen = HashSet::new();
             matching.retain(|r| seen.insert(r.song));
@@ -249,8 +256,43 @@ impl Snapshot {
                 matching.retain(|r| r.score.is_some() && !on_disk.contains_key(&r.filename));
             }
             // Stable: equal scores keep the library order.
-            matching.sort_by_key(|r| std::cmp::Reverse(r.score.unwrap_or(0)));
+            matching.sort_by_key(|r| {
+                (
+                    std::cmp::Reverse(r.score.unwrap_or(0)),
+                    std::cmp::Reverse(r.rank),
+                )
+            });
+            if filter.sort == "artists" {
+                // Best artist first (most Deezer fans, then the better songs), each with only their best songs.
+                let fans: HashMap<&str, i64> = self
+                    .state
+                    .artists
+                    .iter()
+                    .map(|a| (a.name.as_str(), a.fans.trim().parse().unwrap_or(0)))
+                    .collect();
+                let mut taken: HashMap<&str, usize> = HashMap::new();
+                matching.retain(|r| {
+                    let n = taken.entry(r.owner.as_str()).or_default();
+                    *n += 1;
+                    *n <= BEST_PER_ARTIST
+                });
+                let best: HashMap<&str, u32> = matching.iter().fold(HashMap::new(), |mut m, r| {
+                    let top = m.entry(r.owner.as_str()).or_default();
+                    *top = (*top).max(r.score.unwrap_or(0));
+                    m
+                });
+                matching.sort_by(|a, b| {
+                    let (fa, fb) = (fans.get(a.owner.as_str()), fans.get(b.owner.as_str()));
+                    fb.cmp(&fa)
+                        .then_with(|| best[b.owner.as_str()].cmp(&best[a.owner.as_str()]))
+                        .then_with(|| a.owner.cmp(&b.owner))
+                        .then_with(|| {
+                            (b.score.unwrap_or(0), b.rank).cmp(&(a.score.unwrap_or(0), a.rank))
+                        })
+                });
+            }
         }
+        let by_artist = filter.sort == "artists";
         let songs: HashSet<i64> = matching.iter().map(|r| r.song).collect();
         let total = songs.len();
         let linked = matching
@@ -262,41 +304,43 @@ impl Snapshot {
         let mut albums: Vec<Album> = Vec::new();
         let mut at: HashMap<(&str, i64), usize> = HashMap::new();
         for row in matching.into_iter().take(LIMIT) {
-            // A ranked list is one group; otherwise one group per album.
-            let group = if ranked {
-                ("", 0)
-            } else {
-                (row.owner.as_str(), row.album_id)
+            // A ranked list is one group (no album, id 0); by artist, one group per artist (named, id 0); else one per album.
+            let group = match (ranked, by_artist) {
+                (false, _) => (row.owner.as_str(), row.album_id),
+                (true, false) => ("", 0),
+                (true, true) => (row.owner.as_str(), 0),
             };
             let index = *at.entry(group).or_insert_with(|| {
-                albums.push(Album {
-                    artist: if ranked {
-                        String::new()
-                    } else {
-                        row.owner.clone()
-                    },
-                    album: if ranked {
-                        String::new()
-                    } else {
-                        row.album.clone()
-                    },
-                    year: if ranked {
-                        String::new()
-                    } else {
-                        row.year.clone()
-                    },
-                    id: if ranked { 0 } else { row.album_id },
-                    kind: if ranked {
-                        String::new()
-                    } else {
-                        row.kind.clone()
-                    },
-                    genre: if ranked {
-                        String::new()
-                    } else {
-                        row.genre.clone()
-                    },
-                    tracks: Vec::new(),
+                albums.push(if by_artist {
+                    Album {
+                        artist: String::new(),
+                        album: row.owner.clone(),
+                        year: String::new(),
+                        id: 0,
+                        kind: String::new(),
+                        genre: String::new(),
+                        tracks: Vec::new(),
+                    }
+                } else if ranked {
+                    Album {
+                        artist: String::new(),
+                        album: String::new(),
+                        year: String::new(),
+                        id: 0,
+                        kind: String::new(),
+                        genre: String::new(),
+                        tracks: Vec::new(),
+                    }
+                } else {
+                    Album {
+                        artist: row.owner.clone(),
+                        album: row.album.clone(),
+                        year: row.year.clone(),
+                        id: row.album_id,
+                        kind: row.kind.clone(),
+                        genre: row.genre.clone(),
+                        tracks: Vec::new(),
+                    }
                 });
                 albums.len() - 1
             });

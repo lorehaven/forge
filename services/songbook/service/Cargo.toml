@@ -36,6 +36,7 @@ quench-log = { workspace = true }
 quench-serde = { workspace = true }
 quench-sqlite = { workspace = true }
 quench-starter = { workspace = true }
+quench-tz = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]

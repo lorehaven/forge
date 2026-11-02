@@ -113,6 +113,16 @@ pub struct TrackDetail {
     pub rank: Option<i64>,
 }
 
+/// One of an artist's best songs (`artist/{id}/top`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtistTrack {
+    pub id: i64,
+    pub title: String,
+    pub album: String,
+    /// Deezer's popularity score of the track.
+    pub rank: i64,
+}
+
 /// An album listed under an artist.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlbumRef {
@@ -141,6 +151,8 @@ pub struct Deezer {
     gap: Duration,
     /// How long to wait after a transport error or a quota answer before the first retry.
     pause: Duration,
+    /// Saved track files older than this are fetched again (`None`: they never expire). Ratings change.
+    track_ttl: Option<Duration>,
 }
 
 impl std::fmt::Debug for Deezer {
@@ -163,6 +175,7 @@ impl Deezer {
             details: Arc::new(Semaphore::new(4)),
             gap: Duration::from_millis(150),
             pause: Duration::from_secs(2),
+            track_ttl: None,
         }
     }
 
@@ -170,6 +183,14 @@ impl Deezer {
     #[must_use]
     pub fn live(cache: PathBuf) -> Self {
         Self::new(Arc::new(Http::new("https://api.deezer.com")), cache)
+    }
+
+    /// The same client, but saved track files older than `ttl` are fetched again, so the ratings in them are current.
+    #[must_use]
+    pub fn with_track_ttl(&self, ttl: Duration) -> Self {
+        let mut fresh = self.clone();
+        fresh.track_ttl = Some(ttl);
+        fresh
     }
 
     /// No waiting between requests or retries; for tests.
@@ -308,6 +329,17 @@ impl Deezer {
             .and_then(|t| json::parse(&t).ok())
     }
 
+    /// Is the saved file young enough to use (always, unless a track lifetime is set)?
+    fn young(&self, name: &str) -> bool {
+        self.track_ttl.is_none_or(|ttl| {
+            std::fs::metadata(self.cache.join(name))
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .is_some_and(|age| age < ttl)
+        })
+    }
+
     fn store(&self, name: &str, value: &Value) {
         if std::fs::create_dir_all(&self.cache).is_ok() {
             let _ = std::fs::write(self.cache.join(name), json::to_string(value));
@@ -370,7 +402,10 @@ impl Deezer {
     pub async fn track(&self, id: i64) -> Result<Option<TrackDetail>, String> {
         let file = format!("track_{id}.json");
         // A cache entry from before `rank` was kept is fetched again.
-        let value = if let Some(v) = self.cached(&file).filter(|v| v.get("rank").is_some()) {
+        let value = if let Some(v) = self
+            .cached(&file)
+            .filter(|v| v.get("rank").is_some() && self.young(&file))
+        {
             v
         } else {
             let Ok(_permit) = self.details.acquire().await else {
@@ -423,6 +458,38 @@ impl Deezer {
                 })
                 .unwrap_or_default(),
         }))
+    }
+
+    /// An artist's best songs as Deezer lists them (`artist/{id}/top`), most popular first.
+    pub async fn top_tracks(&self, artist: i64, limit: u32) -> Result<Vec<ArtistTrack>, String> {
+        let answer = self
+            .get(
+                &format!("artist/{artist}/top"),
+                &[("limit", limit.to_string())],
+            )
+            .await?;
+        let mut tracks: Vec<ArtistTrack> = answer
+            .get("data")
+            .and_then(Value::as_array)
+            .map(|list| {
+                list.iter()
+                    .filter_map(|t| {
+                        Some(ArtistTrack {
+                            id: int_of(t, "id")?,
+                            title: str_of(t, "title"),
+                            album: t
+                                .pointer("/album/title")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_string(),
+                            rank: int_of(t, "rank").unwrap_or(0),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        tracks.sort_by_key(|t| std::cmp::Reverse(t.rank));
+        Ok(tracks)
     }
 
     /// The artists Deezer relates to an artist.

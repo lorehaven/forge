@@ -188,3 +188,24 @@ async fn an_album_and_a_track_are_read_once_and_then_from_the_cache() {
     // an unknown track is None, and not cached
     assert!(offline.track(91).await.unwrap().is_none());
 }
+
+#[quench_test::test]
+async fn an_artists_top_tracks_come_best_first_with_their_album() {
+    let dir = Scratch::new();
+    let app = app_with(
+        &dir,
+        &[(
+            "artist/712/top",
+            r#"{"data": [
+                {"id": 1, "title": "Less", "rank": 300000, "album": {"title": "B"}},
+                {"id": 2, "title": "More", "rank": 800000, "album": {"title": "A"}},
+                {"id": 3, "title": "Unranked"}
+            ]}"#,
+        )],
+    );
+    let top = app.deezer.top_tracks(712, 5).await.unwrap();
+    let titles: Vec<&str> = top.iter().map(|t| t.title.as_str()).collect();
+    assert_eq!(titles, ["More", "Less", "Unranked"]);
+    assert_eq!((top[0].album.as_str(), top[0].rank), ("A", 800_000));
+    assert_eq!(top[2].rank, 0);
+}

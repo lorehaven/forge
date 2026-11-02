@@ -268,3 +268,52 @@ async fn an_unfollowed_artist_and_a_blacklisted_album_leave_at_the_next_sync() {
         })
         .unwrap();
 }
+
+#[quench_test::test]
+async fn similar_saves_the_best_songs_of_each_suggested_artist() {
+    use songbook_service::index::follow;
+    let dir = Scratch::new();
+    let app = app_with(
+        &dir,
+        &[
+            (
+                "artist/1/related",
+                r#"{"data": [{"id": 712, "name": "Warren G", "nb_fan": 99}]}"#,
+            ),
+            (
+                "artist/712/top",
+                r#"{"data": [{"id": 9, "title": "Regulate", "rank": 700000, "album": {"title": "G Funk"}}]}"#,
+            ),
+        ],
+    );
+    app.index
+        .with(|db| {
+            follow::add_follow(db, "Nas", "", "")?.unwrap();
+            follow::set_match(db, "Nas", "Nas", "1", "1", "")
+        })
+        .unwrap();
+    let worker = app.clone();
+    assert!(app.jobs.start("similar", move |log| async move {
+        songbook_service::similar::run(&worker, 10, 10, "", &log).await
+    }));
+    for _ in 0..200 {
+        if !app.jobs.running() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let job = app.jobs.read(0);
+    assert_eq!(job.error, None, "{}", job.log);
+    let list = app.index.with(follow::suggestions).unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].artist, "Warren G");
+    assert_eq!(list[0].best.len(), 1);
+    assert_eq!(
+        (
+            list[0].best[0].title.as_str(),
+            list[0].best[0].album.as_str(),
+            list[0].best[0].score
+        ),
+        ("Regulate", "G Funk", 70)
+    );
+}

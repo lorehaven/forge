@@ -58,6 +58,7 @@ All under `/api/v1/admin`, JSON, behind Gatehouse sign-in (`Auth`: bearer token 
 | `POST /artists/category` | `{name, category}` | `{retagged}` |
 | `POST /categories/add` | `{name}` | `{added: [name]}` (empty when it exists) |
 | `POST /jobs` | `{name: sync / tags / similar / youtube / download / convert, singles, artist, limit, top, per_artist, category, retry_missing}` | `{started}` (`false`: a job is running) |
+| `GET /schedule`, `POST /schedule` | the [nightly run](#the-nightly-run): `{enabled, time, zone, sync, links, download, convert, fresh_ratings, singles}` | the saved schedule with `next_run`, `last_run`, `last_result` |
 | `GET /job?from=N` | | `{name, running, error, log, offset}`: the log from byte `N`; poll with the last `offset` |
 
 `link`, `albums/blacklist` and `artists/category` answer `409` while a job runs. Errors are `{"error": "..."}`.
@@ -71,7 +72,8 @@ One job at a time, in the background, with its log kept in memory (the last 4 MB
   Albums and tracks are cached as JSON in `$MUSIC_HOME/.deezer_cache`, so a repeat run is fast (the cache of the Python helper
   is reused as is). `singles` also fetches singles.
 * **tags** rebuilds category and genre tags without fetching.
-* **similar** asks Deezer for the related artists of the followed ones and ranks them by how many of yours point at them.
+* **similar** asks Deezer for the related artists of the followed ones and ranks them by how many of yours point at them, then
+  fetches each one's 5 best songs (`artist/{id}/top`, scored like the library's) and keeps them with the suggestion.
 * **youtube** searches YouTube (`yt-dlp --flat-playlist ytsearch20:...`, metadata only) for each song without a link or file, and
   keeps the best result when its score is 4 or more: the artist's "Topic" channel, VEVO or an artist-named channel, a matching
   title and a duration within a few seconds win; live, cover, remix, karaoke and similar lose. A song with no good match is
@@ -79,6 +81,20 @@ One job at a time, in the background, with its log kept in memory (the last 4 MB
 * **download** fetches each linked song that has no file into the audio folder (audio only, `-f bestaudio/best`).
 * **convert** turns every media file in the audio folder into mp3 (VBR quality 0) in place and removes the source; a leftover
   source whose mp3 exists is removed too when both last the same within 2 s. A download with no audio stream is reported and left.
+
+### The nightly run
+
+The Schedule page (and `/schedule`) keeps one daily run: a time (`HH:MM`), an IANA time zone (empty: the server's own, from `TZ`)
+and the stages to run, in this order: sync, find links (songs that had no match are tried again), download (songs that failed
+before are tried again, as every run does), convert, refresh suggestions (the *similar* job with its defaults: 50 artists, 20 related per artist). It runs as the one job (named `scheduled`, log on the Activity page) once a
+day: from the set time, or as soon as a running job is done. A stage that fails does not stop the next ones; the run's result is
+`ok` or the failed stages. *Fresh ratings* makes sync ask Deezer for every track again (saved track files older than 12 hours) so
+`songs.rank` is current; it costs one request per track. Saving a time that has already passed today waits for tomorrow; *Run now*
+starts the stages at once. The schedule is the `schedule` key of the `meta` table.
+
+The library's orders: *Top* (songs by popularity), *Top artists* (artists with the most Deezer fans first, each with their 10 best
+songs) and *Suggested* (the most popular songs not yet downloaded). *Popularity* (the score behind them) is Deezer's `rank` and the views of the song's YouTube video; views are
+only recorded when a link is found, so a song that already has a link keeps Deezer's rank alone until its link is looked up again.
 
 ## Configuration
 

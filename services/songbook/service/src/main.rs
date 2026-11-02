@@ -37,6 +37,8 @@ async fn main() -> std::io::Result<()> {
         deezer,
     };
 
+    songbook_service::schedule::spawn(app.clone());
+
     let jwt_config = JwtConfig::init().await;
     let sso_config = SsoConfig::init();
     let session_db = SessionDb::from_env().await.expect("session store");

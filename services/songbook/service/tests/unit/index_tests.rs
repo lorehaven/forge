@@ -618,3 +618,97 @@ fn top_and_suggested_list_songs_by_popularity() {
         })
         .unwrap();
 }
+
+#[quench_test::test]
+fn top_artists_lists_the_most_followed_first_with_only_their_best_songs() {
+    let dir = Scratch::new();
+    let index = index_in(&dir);
+    index
+        .with(|db| {
+            for (deezer, name, fans, rank_base) in [
+                (1, "Small Act", "10", 900_000),
+                (2, "Big Act", "5000", 100_000),
+            ] {
+                follow::add_follow(db, name, "", "")?.unwrap();
+                follow::set_match(db, name, name, &deezer.to_string(), fans, "")?;
+                let artist = upsert_artist(db, deezer, name, Some(name))?;
+                let al = upsert_album(db, &album(deezer, &format!("{name} LP"), &["Pop"]), artist)?;
+                // twelve songs, so the cap shows
+                for n in 0..12 {
+                    let s = upsert_song(
+                        db,
+                        &names(&[(deezer, name)]),
+                        &format!("{name} song {n}"),
+                        Some(200),
+                        deezer * 100 + n,
+                    )?;
+                    link_album(db, s, al, n + 1)?;
+                    db.execute(
+                        "UPDATE songs SET rank = ? WHERE id = ?",
+                        &[int(rank_base + n * 1000), int(s)],
+                    )?;
+                }
+            }
+            let snapshot = browse::Snapshot::load(db)?;
+            let by = snapshot.browse(&Filter {
+                sort: "artists".into(),
+                ..Filter::default()
+            });
+            let groups: Vec<&str> = by.albums.iter().map(|a| a.album.as_str()).collect();
+            // Big Act has fewer-ranked songs but more fans, so it comes first.
+            assert_eq!(groups, ["Big Act", "Small Act"]);
+            assert!(by.albums.iter().all(|a| a.id == 0 && a.artist.is_empty()));
+            assert!(
+                by.albums
+                    .iter()
+                    .all(|a| a.tracks.len() == browse::BEST_PER_ARTIST)
+            );
+            let first: Vec<&str> = by.albums[0]
+                .tracks
+                .iter()
+                .map(|t| t.title.as_str())
+                .collect();
+            assert_eq!(first[0], "Big Act song 11", "best song first");
+            assert_eq!(first[9], "Big Act song 2");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[quench_test::test]
+fn suggestions_keep_their_best_songs() {
+    let dir = Scratch::new();
+    let index = index_in(&dir);
+    index
+        .with(|db| {
+            let best = vec![
+                songbook_core::TopTrack {
+                    title: "Regulate".into(),
+                    album: "G Funk".into(),
+                    score: 71,
+                },
+                songbook_core::TopTrack {
+                    title: "Second".into(),
+                    album: String::new(),
+                    score: 40,
+                },
+            ];
+            let list = vec![songbook_core::Suggestion {
+                artist: "Warren G".into(),
+                deezer_id: "712".into(),
+                fans: "1".into(),
+                related_to_count: 1,
+                related_to: "Nate Dogg".into(),
+                scope: String::new(),
+                best,
+            }];
+            follow::set_suggestions(db, &list)?;
+            assert_eq!(follow::suggestions(db)?, list);
+            follow::set_suggestions(db, &[])?;
+            assert!(follow::suggestions(db)?.is_empty());
+            let left = db.query("SELECT COUNT(*) FROM suggestion_tracks", &[])?;
+            assert_eq!(left.rows[0][0], quench_sqlite::Value::Integer(0));
+            Ok(())
+        })
+        .unwrap();
+}
