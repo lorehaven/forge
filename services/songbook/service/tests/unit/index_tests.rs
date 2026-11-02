@@ -562,3 +562,59 @@ fn the_old_keys_are_recomputed_once_and_the_text_files_imported_once() {
     let index = Index::open(&meta.join("library.db"), &meta).unwrap();
     assert_eq!(index.with(follow::follows).unwrap().len(), 3);
 }
+
+#[quench_test::test]
+fn top_and_suggested_list_songs_by_popularity() {
+    let dir = Scratch::new();
+    let index = index_in(&dir);
+    catalogue(&index);
+    index
+        .with(|db| {
+            let ids: Vec<i64> = db
+                .query("SELECT id FROM songs ORDER BY id", &[])?
+                .rows
+                .iter()
+                .map(|r| songbook_service::index::int_at(r, 0))
+                .collect();
+            assert_eq!(ids.len(), 2);
+            let names: Vec<String> = db
+                .query("SELECT filename FROM songs ORDER BY id", &[])?
+                .rows
+                .iter()
+                .map(|r| songbook_service::index::str_at(r, 0))
+                .collect();
+            // the second song is the popular one
+            db.execute(
+                "UPDATE songs SET rank = 800000 WHERE id = ?",
+                &[songbook_service::index::int(ids[1])],
+            )?;
+            db.execute(
+                "UPDATE songs SET yt_views = 1000 WHERE id = ?",
+                &[songbook_service::index::int(ids[0])],
+            )?;
+            let snapshot = browse::Snapshot::load(db)?;
+            let top = snapshot.browse(&Filter {
+                sort: "top".into(),
+                ..Filter::default()
+            });
+            assert_eq!(top.albums.len(), 1);
+            assert!(top.albums[0].album.is_empty());
+            let order: Vec<i64> = top.albums[0].tracks.iter().map(|t| t.id).collect();
+            assert_eq!(order, vec![ids[1], ids[0]]);
+            assert!(top.albums[0].tracks[0].score > top.albums[0].tracks[1].score);
+
+            let mut on_disk = HashMap::new();
+            on_disk.insert(names[1].clone(), vec![format!("{}.mp3", names[1])]);
+            let suggested = snapshot.browse_on_disk(
+                &Filter {
+                    sort: "suggested".into(),
+                    ..Filter::default()
+                },
+                &on_disk,
+            );
+            let order: Vec<i64> = suggested.albums[0].tracks.iter().map(|t| t.id).collect();
+            assert_eq!(order, vec![ids[0]]); // the popular one is already downloaded
+            Ok(())
+        })
+        .unwrap();
+}

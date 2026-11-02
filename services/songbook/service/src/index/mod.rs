@@ -45,6 +45,18 @@ impl Index {
         }
         let mut db = Connection::open_or_create(path)?;
         db.execute(SCHEMA, &[])?;
+        // Columns added after the first release: an older file lacks them (CREATE IF NOT EXISTS leaves its table alone).
+        for column in ["rank", "yt_views"] {
+            if db
+                .query(&format!("SELECT {column} FROM songs LIMIT 1"), &[])
+                .is_err()
+            {
+                db.execute(
+                    &format!("ALTER TABLE songs ADD COLUMN {column} INTEGER"),
+                    &[],
+                )?;
+            }
+        }
         let index = Self {
             db: Arc::new(Mutex::new(db)),
             snapshot: Arc::default(),

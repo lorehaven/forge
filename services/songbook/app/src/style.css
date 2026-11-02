@@ -67,6 +67,7 @@
 .sb-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .sb-ok{color:var(--fui-brand-500)}
 .sb-manual{padding:0 .5rem;border-radius:999px;font-size:.75rem;font-weight:500;line-height:1.125rem;background:var(--fui-brand-soft-bg);color:var(--fui-brand-soft-text)}
+.sb-score{padding:0 .5rem;border-radius:999px;font-size:.75rem;font-variant-numeric:tabular-nums;line-height:1.125rem;background:var(--fui-brand-soft-bg);color:var(--fui-brand-soft-text)}
 .sb-nolink{font-size:.75rem;color:var(--fui-text-tertiary)}
 
 /* pipeline, discover, activity */

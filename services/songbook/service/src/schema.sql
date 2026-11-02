@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS songs(
   id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, title TEXT NOT NULL, filename TEXT NOT NULL UNIQUE, duration INTEGER,
   yt_url TEXT NOT NULL DEFAULT '', yt_channel TEXT NOT NULL DEFAULT '', yt_title TEXT NOT NULL DEFAULT '',
   yt_official INTEGER NOT NULL DEFAULT 0, yt_score REAL, yt_manual INTEGER NOT NULL DEFAULT 0,
-  yt_status TEXT, yt_candidate TEXT NOT NULL DEFAULT '');
+  yt_status TEXT, yt_candidate TEXT NOT NULL DEFAULT '',
+  rank INTEGER, yt_views INTEGER);
 CREATE TABLE IF NOT EXISTS song_artist(
   song_id INTEGER NOT NULL, artist_id INTEGER NOT NULL, position INTEGER NOT NULL, PRIMARY KEY(song_id, artist_id));
 CREATE TABLE IF NOT EXISTS song_album(

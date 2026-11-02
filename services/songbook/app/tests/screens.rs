@@ -179,6 +179,7 @@ fn track(id: i64, title: &str, url: &str, official: bool, manual: bool) -> Track
         url: url.into(),
         official,
         manual,
+        score: None,
     }
 }
 

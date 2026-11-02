@@ -28,3 +28,26 @@ fn a_job_start_reads_with_missing_fields() {
     assert_eq!(j.name, "sync");
     assert!(!j.singles && j.limit.is_none() && j.limit_download.is_none());
 }
+
+#[quench_test::test]
+fn popularity_blends_deezer_rank_and_youtube_views() {
+    use songbook_core::popularity;
+    assert_eq!(popularity(None, None), None);
+    assert_eq!(popularity(Some(0), Some(0)), None);
+    assert_eq!(popularity(Some(500_000), None), Some(50));
+    assert_eq!(popularity(Some(5_000_000), None), Some(100)); // capped
+    assert_eq!(popularity(None, Some(1_000_000_000)), Some(100));
+    let both = popularity(Some(1_000_000), Some(1_000_000_000)).unwrap();
+    assert_eq!(both, 100);
+    let mixed = popularity(Some(500_000), Some(1_000)).unwrap();
+    assert!(mixed > 30 && mixed < 50, "{mixed}");
+}
+
+#[quench_test::test]
+fn a_filter_keeps_its_sort_in_the_query() {
+    let f = Filter {
+        sort: "top".into(),
+        ..Filter::default()
+    };
+    assert_eq!(f.query(), "?sort=top");
+}

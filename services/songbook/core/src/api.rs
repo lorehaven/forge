@@ -93,6 +93,9 @@ pub struct Track {
     pub official: bool,
     /// The link was set by hand.
     pub manual: bool,
+    /// Popularity 0-100 from Deezer's rank and the video's `YouTube` views (see [`popularity`]); `None` when neither is known.
+    #[serde(default)]
+    pub score: Option<u32>,
 }
 
 /// An album with its tracklist.
@@ -138,6 +141,30 @@ pub struct Filter {
     /// `has`, `missing` or `unofficial`; empty for all.
     #[serde(default)]
     pub links: String,
+    /// `top` (most popular first) or `suggested` (most popular not yet downloaded); empty for the library order.
+    #[serde(default)]
+    pub sort: String,
+}
+
+/// Popularity of a song, 0-100.
+///
+/// Built from Deezer's track `rank` (0 to about 1,000,000) and the views of its `YouTube` video (log scale, 1,000,000,000
+/// views is the top). Both known: 60% Deezer, 40% `YouTube`; one known: that one; none: `None`.
+#[must_use]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0..=100 from clamped ratios
+pub fn popularity(rank: Option<i64>, views: Option<i64>) -> Option<u32> {
+    let deezer = rank
+        .filter(|r| *r > 0)
+        .map(|r| (r as f64 / 1_000_000.0).min(1.0));
+    let youtube = views
+        .filter(|v| *v > 0)
+        .map(|v| ((v as f64).ln_1p() / 1e9_f64.ln_1p()).min(1.0));
+    let blended = match (deezer, youtube) {
+        (Some(d), Some(y)) => 0.4_f64.mul_add(y, 0.6 * d),
+        (Some(x), None) | (None, Some(x)) => x,
+        (None, None) => return None,
+    };
+    Some((blended * 100.0).round() as u32)
 }
 
 impl Filter {
@@ -150,6 +177,7 @@ impl Filter {
             ("genre", &self.genre),
             ("q", &self.q),
             ("links", &self.links),
+            ("sort", &self.sort),
         ];
         let parts: Vec<String> = pairs
             .iter()

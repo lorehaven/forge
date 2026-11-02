@@ -243,6 +243,13 @@ pub async fn run(app: &App, singles: bool, log: &Log) -> Result<(), String> {
                         let duration = det.as_ref().and_then(|d| d.duration).or(t.duration);
                         let song = songs::upsert_song(db, &people, &title, duration, t.id)?;
                         songs::link_album(db, song, album_id, i as i64 + 1)?;
+                        if let Some(rank) = det.as_ref().and_then(|d| d.rank).filter(|r| *r > 0) {
+                            // A song on several releases keeps the best rank of its tracks.
+                            db.execute(
+                                "UPDATE songs SET rank = ? WHERE id = ? AND (rank IS NULL OR rank < ?)",
+                                &[crate::index::int(rank), crate::index::int(song), crate::index::int(rank)],
+                            )?;
+                        }
                     }
                 }
                 // Artists removed from the follow list: forget their albums. Artists with no match keep what they had.

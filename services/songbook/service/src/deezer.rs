@@ -109,6 +109,8 @@ pub struct TrackDetail {
     pub title: String,
     pub duration: Option<i64>,
     pub contributors: Vec<(i64, String)>,
+    /// Deezer's popularity score of the track (0 to about 1,000,000).
+    pub rank: Option<i64>,
 }
 
 /// An album listed under an artist.
@@ -367,7 +369,8 @@ impl Deezer {
     /// of these run at once.
     pub async fn track(&self, id: i64) -> Result<Option<TrackDetail>, String> {
         let file = format!("track_{id}.json");
-        let value = if let Some(v) = self.cached(&file) {
+        // A cache entry from before `rank` was kept is fetched again.
+        let value = if let Some(v) = self.cached(&file).filter(|v| v.get("rank").is_some()) {
             v
         } else {
             let Ok(_permit) = self.details.acquire().await else {
@@ -400,6 +403,7 @@ impl Deezer {
                 d.get("duration").cloned().unwrap_or(Value::Null),
             );
             m.insert("isrc", Value::String(str_of(&d, "isrc")));
+            m.insert("rank", d.get("rank").cloned().unwrap_or(Value::Null));
             m.insert("contributors", Value::Array(contributors));
             let out = Value::Object(m);
             self.store(&file, &out);
@@ -408,6 +412,7 @@ impl Deezer {
         Ok(Some(TrackDetail {
             title: str_of(&value, "title"),
             duration: int_of(&value, "duration"),
+            rank: int_of(&value, "rank"),
             contributors: value
                 .get("contributors")
                 .and_then(Value::as_array)

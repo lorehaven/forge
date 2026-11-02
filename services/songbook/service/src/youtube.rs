@@ -238,6 +238,8 @@ pub struct Candidate {
     pub duration: Option<f64>,
     pub official: bool,
     pub score: f64,
+    /// The video's view count, when YouTube said.
+    pub views: Option<i64>,
 }
 
 impl Candidate {
@@ -291,6 +293,11 @@ pub fn best_of(
         duration: entry.get("duration").and_then(Value::as_f64),
         official,
         score,
+        views: entry
+            .get("view_count")
+            .and_then(Value::as_f64)
+            .filter(|v| *v >= 0.0)
+            .map(|v| v as i64),
     };
     Some((candidate, score >= 4.0))
 }
@@ -528,8 +535,8 @@ pub async fn run(
             .run(move |db| match found {
                 Some((c, true)) => db
                     .execute(
-                        "UPDATE songs SET yt_url = ?, yt_channel = ?, yt_title = ?, yt_official = ?, yt_score = ?, yt_status = 'ok', yt_candidate = '' WHERE id = ?",
-                        &[text(&c.url), text(&c.channel), text(&c.title), int(i64::from(c.official)), quench_sqlite::Value::Real((c.score * 10.0).round() / 10.0), int(id)],
+                        "UPDATE songs SET yt_url = ?, yt_channel = ?, yt_title = ?, yt_official = ?, yt_score = ?, yt_views = ?, yt_status = 'ok', yt_candidate = '' WHERE id = ?",
+                        &[text(&c.url), text(&c.channel), text(&c.title), int(i64::from(c.official)), quench_sqlite::Value::Real((c.score * 10.0).round() / 10.0), c.views.map_or(quench_sqlite::Value::Null, int), int(id)],
                     )
                     .map(|_| ()),
                 other => {

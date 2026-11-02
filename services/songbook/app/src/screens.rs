@@ -474,6 +474,12 @@ const LINK_FILTERS: [(&str, &str); 4] = [
     ("unofficial", "ui_links_unofficial"),
 ];
 
+const SORTS: [(&str, &str); 3] = [
+    ("", "ui_sort_library"),
+    ("top", "ui_sort_top"),
+    ("suggested", "ui_sort_suggested"),
+];
+
 pub(crate) fn library(env: &Env) -> View {
     let (chips, summary, result) = (filters(env), summary(env), albums(env));
     div()
@@ -621,7 +627,20 @@ fn filters(env: &Env) -> View {
                 set(|f, v| f.links = v.to_string(), value.to_string()),
             ));
         }
+        let mut sorts = div()
+            .class("sb-chips")
+            .attr("id", "filter-sort")
+            .attr("role", "group");
+        for (value, key) in SORTS {
+            sorts = sorts.child(chip(
+                t.t(key),
+                filter.sort == value,
+                &format!("sort-{}", if value.is_empty() { "library" } else { value }),
+                set(|f, v| f.sort = v.to_string(), value.to_string()),
+            ));
+        }
         div()
+            .child(sorts)
             .child(categories)
             .child(genres)
             .child(links)
@@ -687,10 +706,12 @@ fn album(env: &Env, a: &Album) -> Element {
         .into_iter()
         .chain(a.genre.split("; ").map(str::to_string))
         .filter(|x| !x.is_empty());
+    // A ranked list (top, suggested) is one card without an album: no title, no blacklist, artists on each track.
+    let ranked = a.album.is_empty();
     article()
         .class("sb-card")
         .attr("data-album", a.id.to_string())
-        .child(
+        .child((!ranked).then(|| {
             button()
                 .attr("type", "button")
                 .class("fui-btn fui-btn-tertiary fui-btn-sm sb-blacklist")
@@ -699,10 +720,10 @@ fn album(env: &Env, a: &Album) -> Element {
                     let (m, a) = (env.m.clone(), a.clone());
                     move || m.dialog.set(Some(Dialog::Blacklist(a.clone())))
                 })
-                .text(format!("⊘ {}", t.t("ui_blacklist"))),
-        )
-        .child(h4().class("sb-album").text(a.album.clone()))
-        .child(div().class("sb-sub").text(a.artist.clone()))
+                .text(format!("⊘ {}", t.t("ui_blacklist")))
+        }))
+        .child((!ranked).then(|| h4().class("sb-album").text(a.album.clone())))
+        .child((!ranked).then(|| div().class("sb-sub").text(a.artist.clone())))
         .child(
             div()
                 .class("sb-chips")
@@ -713,22 +734,33 @@ fn album(env: &Env, a: &Album) -> Element {
                 a.tracks
                     .iter()
                     .enumerate()
-                    .map(|(i, tr)| track(env, i + 1, tr).into_view()),
+                    .map(|(i, tr)| track(env, i + 1, tr, ranked).into_view()),
             ),
         )
 }
 
-fn track(env: &Env, number: usize, tr: &Track) -> Element {
+fn track(env: &Env, number: usize, tr: &Track, with_artists: bool) -> Element {
     let t = &env.t;
     let has = !tr.url.is_empty();
+    let shown = if with_artists {
+        format!("{} – {}", tr.artists, tr.title)
+    } else {
+        tr.title.clone()
+    };
     li().attr("data-song", tr.id.to_string())
         .child(span().class("sb-no").text(number.to_string()))
         .child(
             span()
                 .class("sb-t")
-                .attr("title", tr.title.clone())
-                .text(tr.title.clone()),
+                .attr("title", shown.clone())
+                .text(shown),
         )
+        .child(tr.score.map(|n| {
+            span()
+                .class("sb-score")
+                .attr("title", "Deezer rank + YouTube views")
+                .text(n.to_string())
+        }))
         .child(tr.manual.then(|| {
             span()
                 .class("sb-manual")

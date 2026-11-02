@@ -38,6 +38,18 @@ pub async fn state(Inject(app): Inject<App>) -> Response {
 #[get("/api/v1/admin/browse")]
 pub async fn browse_library(Inject(app): Inject<App>, Query(filter): Query<Filter>) -> Response {
     match app.index.snapshot().await {
+        Ok(snapshot) if filter.sort == "suggested" => {
+            // Which songs are on disk is looked at now, as for the statistics.
+            let data = app.config.data.clone();
+            match tokio::task::spawn_blocking(move || {
+                snapshot.browse_on_disk(&filter, &crate::files::file_index(&data))
+            })
+            .await
+            {
+                Ok(browse) => ok(&browse),
+                Err(e) => server_error(e),
+            }
+        }
         Ok(snapshot) => ok(&snapshot.browse(&filter)),
         Err(e) => server_error(e),
     }

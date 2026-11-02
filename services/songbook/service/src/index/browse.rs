@@ -2,10 +2,10 @@
 
 use super::follow::{self, Refused};
 use super::songs;
-use super::{Result, Value, int, int_at, placeholders, str_at, text};
+use super::{Result, Value, int, int_at, opt_int_at, placeholders, str_at, text};
 use quench_sqlite::Connection;
 use songbook_core::naming::album_key;
-use songbook_core::{Album, Browse, Filter, State, Stats, Track};
+use songbook_core::{Album, Browse, Filter, State, Stats, Track, popularity};
 use std::collections::{HashMap, HashSet};
 
 /// How many tracks the library page shows at most.
@@ -74,6 +74,9 @@ struct Row {
     url: String,
     official: bool,
     manual: bool,
+    /// File name without extension, to tell whether the song is on disk.
+    filename: String,
+    score: Option<u32>,
     album_id: i64,
     album: String,
     year: String,
@@ -105,7 +108,7 @@ impl Snapshot {
     pub fn load(db: &mut Connection) -> Result<Self> {
         let rows = db
             .query(
-                "SELECT s.id, s.title, s.yt_url, s.yt_official, s.yt_manual, al.deezer_id, al.title, al.year, al.type, al.genre, o.listed_as \
+                "SELECT s.id, s.title, s.yt_url, s.yt_official, s.yt_manual, al.deezer_id, al.title, al.year, al.type, al.genre, o.listed_as, s.filename, s.rank, s.yt_views \
                  FROM song_album sl JOIN songs s ON s.id = sl.song_id JOIN albums al ON al.id = sl.album_id JOIN artists o ON o.id = al.owner_id \
                  ORDER BY o.listed_as, al.year, al.title, sl.track_no",
                 &[],
@@ -147,6 +150,8 @@ impl Snapshot {
                     kind: str_at(r, 8),
                     genre: str_at(r, 9),
                     owner: str_at(r, 10),
+                    filename: str_at(r, 11),
+                    score: popularity(opt_int_at(r, 12), opt_int_at(r, 13)),
                     people,
                     categories,
                     genres,
@@ -205,8 +210,22 @@ impl Snapshot {
     /// `linked` count each matching song once, `albums` holds the first `LIMIT` listed tracks.
     #[must_use]
     pub fn browse(&self, filter: &Filter) -> Browse {
+        self.browse_on_disk(filter, &HashMap::new())
+    }
+
+    /// [`browse`](Self::browse) that also knows which files are on disk (`files::file_index`), which `sort=suggested` needs.
+    ///
+    /// `sort=top` lists the matching songs, each once, most popular first; `sort=suggested` does the same for the ones
+    /// that are not downloaded yet. Songs nobody scored come last (top) or not at all (suggested). The list is one
+    /// "album" with no name, so the page shows it as a plain list.
+    #[must_use]
+    pub fn browse_on_disk(
+        &self,
+        filter: &Filter,
+        on_disk: &HashMap<String, Vec<String>>,
+    ) -> Browse {
         let needle = filter.q.to_lowercase();
-        let matching: Vec<&Row> = self
+        let mut matching: Vec<&Row> = self
             .rows
             .iter()
             .filter(|r| {
@@ -222,6 +241,16 @@ impl Snapshot {
                     }
             })
             .collect();
+        let ranked = matches!(filter.sort.as_str(), "top" | "suggested");
+        if ranked {
+            let mut seen = HashSet::new();
+            matching.retain(|r| seen.insert(r.song));
+            if filter.sort == "suggested" {
+                matching.retain(|r| r.score.is_some() && !on_disk.contains_key(&r.filename));
+            }
+            // Stable: equal scores keep the library order.
+            matching.sort_by_key(|r| std::cmp::Reverse(r.score.unwrap_or(0)));
+        }
         let songs: HashSet<i64> = matching.iter().map(|r| r.song).collect();
         let total = songs.len();
         let linked = matching
@@ -233,20 +262,44 @@ impl Snapshot {
         let mut albums: Vec<Album> = Vec::new();
         let mut at: HashMap<(&str, i64), usize> = HashMap::new();
         for row in matching.into_iter().take(LIMIT) {
-            let index = *at
-                .entry((row.owner.as_str(), row.album_id))
-                .or_insert_with(|| {
-                    albums.push(Album {
-                        artist: row.owner.clone(),
-                        album: row.album.clone(),
-                        year: row.year.clone(),
-                        id: row.album_id,
-                        kind: row.kind.clone(),
-                        genre: row.genre.clone(),
-                        tracks: Vec::new(),
-                    });
-                    albums.len() - 1
+            // A ranked list is one group; otherwise one group per album.
+            let group = if ranked {
+                ("", 0)
+            } else {
+                (row.owner.as_str(), row.album_id)
+            };
+            let index = *at.entry(group).or_insert_with(|| {
+                albums.push(Album {
+                    artist: if ranked {
+                        String::new()
+                    } else {
+                        row.owner.clone()
+                    },
+                    album: if ranked {
+                        String::new()
+                    } else {
+                        row.album.clone()
+                    },
+                    year: if ranked {
+                        String::new()
+                    } else {
+                        row.year.clone()
+                    },
+                    id: if ranked { 0 } else { row.album_id },
+                    kind: if ranked {
+                        String::new()
+                    } else {
+                        row.kind.clone()
+                    },
+                    genre: if ranked {
+                        String::new()
+                    } else {
+                        row.genre.clone()
+                    },
+                    tracks: Vec::new(),
                 });
+                albums.len() - 1
+            });
             albums[index].tracks.push(Track {
                 id: row.song,
                 title: row.title.clone(),
@@ -254,6 +307,7 @@ impl Snapshot {
                 url: row.url.clone(),
                 official: row.official,
                 manual: row.manual,
+                score: row.score,
             });
         }
         let shown = albums.iter().map(|a| a.tracks.len()).sum::<usize>();
@@ -300,12 +354,12 @@ pub fn set_link(
     }
     if url.is_empty() {
         db.execute(
-            "UPDATE songs SET yt_url = '', yt_channel = '', yt_title = '', yt_official = 0, yt_score = NULL, yt_manual = 0, yt_status = NULL, yt_candidate = '' WHERE id = ?",
+            "UPDATE songs SET yt_url = '', yt_channel = '', yt_title = '', yt_official = 0, yt_score = NULL, yt_views = NULL, yt_manual = 0, yt_status = NULL, yt_candidate = '' WHERE id = ?",
             &[int(song)],
         )?;
     } else {
         db.execute(
-            "UPDATE songs SET yt_url = ?, yt_channel = 'manual', yt_title = '', yt_official = 0, yt_score = NULL, yt_manual = 1, yt_status = 'ok', yt_candidate = '' WHERE id = ?",
+            "UPDATE songs SET yt_url = ?, yt_channel = 'manual', yt_title = '', yt_official = 0, yt_score = NULL, yt_views = NULL, yt_manual = 1, yt_status = 'ok', yt_candidate = '' WHERE id = ?",
             &[text(url), int(song)],
         )?;
     }
