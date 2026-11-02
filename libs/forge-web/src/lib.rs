@@ -56,6 +56,14 @@ pub struct Client {
     icon: &'static [u8],
     /// Whether the page has forge's frame (its stylesheet and script), as the services' own clients do.
     framed: bool,
+    /// Where the client's files are, under the service's base path: `/ui` unless the service has several clients.
+    prefix: &'static str,
+    /// The file in `WEB_DIR` the module is read from, and served as.
+    module: &'static str,
+    /// A script of the client's own, `(file name, text)`, loaded by the page after the module's loader.
+    script: Option<(&'static str, &'static str)>,
+    /// The client plays audio from `blob:` addresses (songs kept on the device).
+    media: bool,
 }
 
 impl Client {
@@ -67,7 +75,54 @@ impl Client {
             stylesheet,
             icon: &[],
             framed: false,
+            prefix: "/ui",
+            module: "app.wasm",
+            script: None,
+            media: false,
         }
+    }
+
+    /// The module is the file `name` of `WEB_DIR` (default `app.wasm`), for a service with more than one client.
+    #[must_use]
+    pub const fn module_file(mut self, name: &'static str) -> Self {
+        self.module = name;
+        self
+    }
+
+    /// A script of the client's own, served at `{prefix}/assets/{name}` and loaded by the page.
+    #[must_use]
+    pub const fn with_script(mut self, name: &'static str, text: &'static str) -> Self {
+        self.script = Some((name, text));
+        self
+    }
+
+    /// The client plays audio, also from `blob:` addresses: the page's policy allows it.
+    #[must_use]
+    pub const fn media(mut self) -> Self {
+        self.media = true;
+        self
+    }
+
+    /// The client's own script, or `404` when it has none.
+    #[must_use]
+    pub fn own_script(&self) -> Response {
+        self.script.map_or_else(Response::not_found, |(_, text)| {
+            asset(text, "text/javascript; charset=utf-8")
+        })
+    }
+
+    /// A service with more than one client gives each its own place: the files of this one are `{prefix}/assets/...`
+    /// (the default is `/ui`).
+    #[must_use]
+    pub const fn at(mut self, prefix: &'static str) -> Self {
+        self.prefix = prefix;
+        self
+    }
+
+    /// Where one of this client's files is, under the service's base path: `name` is `app.css`, `quench.js`, ...
+    #[must_use]
+    pub fn asset_path(&self, name: &str) -> String {
+        with_base_path(&format!("{}/assets/{name}", self.prefix))
     }
 
     /// The page wears forge's frame: `forge-shell`'s stylesheet and script come with it (the client draws the top bar).
@@ -134,7 +189,7 @@ impl Client {
     /// [`page`](Self::page) with the module looked for in `dir`.
     #[must_use]
     pub fn page_from(&self, dir: &Path) -> Response {
-        if !dir.join("app.wasm").is_file() {
+        if !dir.join(self.module).is_file() {
             return Response::text(
                 StatusCode::NOT_FOUND,
                 "the browser client is not installed on this server",
@@ -142,15 +197,29 @@ impl Client {
         }
         let nonce = new_nonce();
         let html = self.with_head(&render_document(
-            Page::new(self.title, View::Empty).stylesheet(&with_base_path(STYLE_PATH)),
+            Page::new(self.title, View::Empty).stylesheet(&self.asset_path("app.css")),
             &nonce,
-            &with_base_path(SCRIPT_PATH),
-            &with_base_path(MODULE_PATH),
+            &self.asset_path("quench.js"),
+            &self.asset_path(self.module),
         ));
         Response::html(StatusCode::OK, html)
             .header("cache-control", "no-store")
-            .header("content-security-policy", content_security_policy(&nonce))
+            .header("content-security-policy", self.policy(&nonce))
             .header("referrer-policy", "same-origin")
+    }
+
+    /// The page's content policy: the framework's, and `blob:` for audio when the client plays it.
+    fn policy(&self, nonce: &str) -> String {
+        let policy = content_security_policy(nonce);
+        if self.media {
+            policy.replacen(
+                "default-src 'self';",
+                "default-src 'self'; media-src 'self' blob:;",
+                1,
+            )
+        } else {
+            policy
+        }
     }
 
     /// The icon and the shell script in the page's head. The script is a file of this origin, so the policy allows it.
@@ -160,7 +229,7 @@ impl Client {
             let _ = write!(
                 tags,
                 "<link rel=\"icon\" type=\"image/png\" href=\"{}\">",
-                with_base_path(ICON_PATH)
+                self.asset_path("favicon.png")
             );
         }
         if self.framed {
@@ -168,9 +237,12 @@ impl Client {
             let _ = write!(
                 tags,
                 "<script src=\"{}\" data-gatehouse=\"{}\"></script>",
-                with_base_path(SHELL_PATH),
+                self.asset_path("shell.js"),
                 quench_ui::html::escape_attr(gatehouse.trim_end_matches('/')),
             );
+        }
+        if let Some((name, _)) = self.script {
+            let _ = write!(tags, "<script src=\"{}\"></script>", self.asset_path(name));
         }
         html.replacen("</head>", &format!("{tags}</head>"), 1)
     }
@@ -178,7 +250,7 @@ impl Client {
     /// [`module`](Self::module) with the module looked for in `dir`.
     #[must_use]
     pub fn module_from(&self, dir: &Path) -> Response {
-        std::fs::read(dir.join("app.wasm")).map_or_else(
+        std::fs::read(dir.join(self.module)).map_or_else(
             |_| Response::not_found(),
             |bytes| asset(bytes, "application/wasm"),
         )

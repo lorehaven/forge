@@ -1,0 +1,33 @@
+[package]
+name = "songbook-player"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+autotests = false
+
+# The listener's screens: browse, search, playlists and the player itself. No I/O (the host asks the service) and no sound
+# (`engine.js` makes it); the same screens run in the browser and in tests.
+[lints]
+workspace = true
+
+[lib]
+name = "songbook_player"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+songbook-core = { workspace = true }
+quench-serde = { workspace = true }
+quench-ui = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+
+[[test]]
+name = "screens"
+path = "tests/screens.rs"
+harness = false

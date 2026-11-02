@@ -231,6 +231,7 @@ pub async fn start_job(Inject(app): Inject<App>, Json(body): Json<JobStart>) -> 
         "youtube",
         "download",
         "convert",
+        "images",
         "pipeline",
         "scheduled",
     ];
@@ -262,6 +263,7 @@ pub async fn start_job(Inject(app): Inject<App>, Json(body): Json<JobStart>) -> 
                 youtube::run(&worker, &body.artist, body.limit, body.retry_missing, &log).await
             }
             "download" => download::run(&worker, &body.artist, body.limit, 3, 5, &log).await,
+            "images" => crate::images::run(&worker, body.retry_missing, &log).await,
             "pipeline" => pipeline::run(&worker, &body, &log).await,
             "purge" => crate::purge::run(&worker, body.dry_run, &log).await,
             _ => convert::run(&worker.config.data, true, &log).await,

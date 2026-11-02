@@ -51,3 +51,30 @@ fn a_filter_keeps_its_sort_in_the_query() {
     };
     assert_eq!(f.query(), "?sort=top");
 }
+
+#[quench_test::test]
+fn the_listener_queries_leave_out_what_is_not_set() {
+    use songbook_core::{AlbumQuery, SongQuery};
+    assert_eq!(SongQuery::default().query(), "");
+    let q = SongQuery {
+        album: 7,
+        limit: 500,
+        ..SongQuery::default()
+    };
+    assert_eq!(q.query(), "?album=7&limit=500");
+    let q = SongQuery {
+        artist: "Nate Dogg".into(),
+        ids: "1,2".into(),
+        ..SongQuery::default()
+    };
+    assert_eq!(q.query(), "?ids=1%2C2&artist=Nate%20Dogg");
+    assert_eq!(
+        AlbumQuery {
+            category: "Rap/Hip Hop".into(),
+            limit: 60,
+            ..AlbumQuery::default()
+        }
+        .query(),
+        "?category=Rap%2FHip%20Hop&limit=60"
+    );
+}

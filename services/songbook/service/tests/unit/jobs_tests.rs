@@ -68,9 +68,9 @@ async fn a_failed_job_records_why_and_a_new_one_starts_a_new_log() {
 }
 
 #[quench_test::test]
-fn the_pipeline_runs_the_four_steps_of_the_page_in_their_order() {
+fn the_pipeline_runs_the_five_steps_of_the_page_in_their_order() {
     assert_eq!(
         songbook_service::pipeline::STEPS,
-        ["sync", "find links", "download", "convert"]
+        ["sync", "find links", "download", "convert", "images"]
     );
 }

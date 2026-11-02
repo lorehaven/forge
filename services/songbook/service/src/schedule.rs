@@ -7,7 +7,7 @@
 use crate::app::App;
 use crate::index::{meta_get, meta_set};
 use crate::jobs::Log;
-use crate::{convert, download, similar, sync, youtube};
+use crate::{convert, download, images, similar, sync, youtube};
 use quench_core::time::Time;
 use quench_serde::json;
 use quench_tz::Zone;
@@ -54,7 +54,7 @@ pub fn check(mut s: Schedule) -> Result<Schedule, String> {
     s.time = format!("{h:02}:{m:02}");
     s.zone = s.zone.trim().to_string();
     zone_of(&s.zone)?;
-    if !(s.sync || s.links || s.download || s.convert || s.suggestions) {
+    if !(s.sync || s.links || s.download || s.convert || s.suggestions || s.images) {
         return Err("choose at least one stage".into());
     }
     Ok(s)
@@ -181,6 +181,10 @@ pub async fn run_stages(app: &App, s: &Schedule, log: &Log) -> Result<(), String
     if s.suggestions {
         header(log, "refresh suggestions");
         note("suggestions", similar::run(app, 50, 20, "", log).await);
+    }
+    if s.images {
+        header(log, "images");
+        note("images", images::run(app, false, log).await);
     }
     if failed.is_empty() {
         log.line("\n== scheduled run finished ==");

@@ -10,6 +10,8 @@ use songbook_service::config::Config;
 use songbook_service::deezer::Deezer;
 use songbook_service::index::Index;
 use songbook_service::jobs::Jobs;
+use songbook_service::library::Library;
+use songbook_service::playlists::Playlists;
 use songbook_service::routers;
 use std::sync::Arc;
 
@@ -29,12 +31,16 @@ async fn main() -> std::io::Result<()> {
     );
     let index = Index::open(&config.db(), &config.meta())
         .unwrap_or_else(|e| panic!("index {}: {e}", config.db().display()));
+    let playlists = Playlists::open(&config.user_db())
+        .unwrap_or_else(|e| panic!("playlists {}: {e}", config.user_db().display()));
     let deezer = Deezer::live(config.cache());
     let app = App {
         config: Arc::new(config),
         index,
         jobs: Jobs::default(),
         deezer,
+        library: Library::default(),
+        playlists,
     };
 
     songbook_service::schedule::spawn(app.clone());

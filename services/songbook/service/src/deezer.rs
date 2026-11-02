@@ -17,6 +17,11 @@ use crate::index::songs::AlbumInfo;
 #[async_trait]
 pub trait Transport: Send + Sync {
     async fn get(&self, path: &str, params: &[(String, String)]) -> Result<Value, String>;
+
+    /// A file by its address (a picture of the content network, not the API). The default is no files.
+    async fn bytes(&self, _url: &str) -> Result<Vec<u8>, String> {
+        Err("this transport serves no files".to_string())
+    }
 }
 
 /// The Deezer API over HTTPS.
@@ -53,6 +58,23 @@ impl Transport for Http {
             .map_err(|e| e.to_string())?;
         let body = response.text().await.map_err(|e| e.to_string())?;
         json::parse(&body).map_err(|e| e.to_string())
+    }
+
+    async fn bytes(&self, url: &str) -> Result<Vec<u8>, String> {
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("status {}", response.status().as_u16()));
+        }
+        response
+            .bytes()
+            .await
+            .map(|b| b.to_vec())
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -492,6 +514,52 @@ impl Deezer {
         Ok(tracks)
     }
 
+    /// The address of an album's cover (500 pixels): from the saved album when there is one, else asked for. Empty when
+    /// Deezer has none.
+    pub async fn cover_url(&self, album: i64) -> Result<String, String> {
+        let file = format!("album_{album}.json");
+        let detail = match self.cached(&file) {
+            Some(v) => v,
+            None => self.get(&format!("album/{album}"), &[]).await?,
+        };
+        Ok(["cover_big", "cover_xl", "cover"]
+            .iter()
+            .map(|k| str_of(&detail, k))
+            .find(|u| !u.is_empty())
+            .unwrap_or_default())
+    }
+
+    /// The address of an artist's picture (500 pixels). Empty when Deezer has none: its stand-in picture (an address with no
+    /// image name in it) is no picture.
+    pub async fn picture_url(&self, artist: i64) -> Result<String, String> {
+        let answer = self.get(&format!("artist/{artist}"), &[]).await?;
+        let url = ["picture_big", "picture_xl", "picture"]
+            .iter()
+            .map(|k| str_of(&answer, k))
+            .find(|u| !u.is_empty())
+            .unwrap_or_default();
+        Ok(if url.contains("/artist//") {
+            String::new()
+        } else {
+            url
+        })
+    }
+
+    /// A picture's bytes, tried three times.
+    pub async fn image(&self, url: &str) -> Result<Vec<u8>, String> {
+        let mut failure = String::new();
+        for attempt in 0..3u32 {
+            match self.transport.bytes(url).await {
+                Ok(bytes) => return Ok(bytes),
+                Err(e) => {
+                    failure = e;
+                    tokio::time::sleep(self.pause.saturating_mul(attempt + 1)).await;
+                }
+            }
+        }
+        Err(format!("{url}: {failure}"))
+    }
+
     /// The artists Deezer relates to an artist.
     pub async fn related(&self, artist: i64, limit: u32) -> Result<Vec<Related>, String> {
         let answer = self
@@ -537,5 +605,12 @@ impl Transport for Canned {
             return Ok(v.clone());
         }
         Ok(Value::Object(quench_serde::Map::new()))
+    }
+
+    async fn bytes(&self, url: &str) -> Result<Vec<u8>, String> {
+        // A JPEG's first bytes, then the address: tests read the file back to see which picture it was.
+        let mut file = vec![0xFF, 0xD8, 0xFF];
+        file.extend_from_slice(url.as_bytes());
+        Ok(file)
     }
 }

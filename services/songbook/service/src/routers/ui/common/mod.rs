@@ -53,3 +53,54 @@ impl std::fmt::Debug for ActorOrRedirect {
         formatter.write_str("ActorOrRedirect { .. }")
     }
 }
+
+/// Whether the browser is a phone or a tablet: the admin pages are not for them.
+#[must_use]
+pub fn is_mobile(user_agent: &str) -> bool {
+    ["Mobi", "Android", "iPhone", "iPad", "iPod"]
+        .iter()
+        .any(|word| user_agent.contains(word))
+}
+
+/// Who may open the admin pages: signed in, allowed to write, on a computer. Anyone else is sent to the player.
+pub enum AdminOrRedirect {
+    Admin(Claims),
+    Redirect(Response),
+}
+
+impl AdminOrRedirect {
+    pub fn or_redirect(self) -> Result<Claims, Response> {
+        match self {
+            Self::Admin(claims) => Ok(claims),
+            Self::Redirect(resp) => Err(resp),
+        }
+    }
+}
+
+#[async_trait]
+impl FromRequest for AdminOrRedirect {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self::Redirect(ui_login_redirect_for(req)));
+        };
+        let Some(claims) = actor(req, &config).await else {
+            return Ok(Self::Redirect(ui_login_redirect_for(req)));
+        };
+        let phone = is_mobile(req.header("user-agent").unwrap_or(""));
+        if phone || (config.auth_enabled && !claims.can(&config.service_name, "write")) {
+            return Ok(Self::Redirect(
+                quench_http::prelude::Response::new(quench_http::http::StatusCode::FOUND).header(
+                    "Location",
+                    quench_starter::common::routes::with_base_path("/ui"),
+                ),
+            ));
+        }
+        Ok(Self::Admin(claims))
+    }
+}
+
+impl std::fmt::Debug for AdminOrRedirect {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("AdminOrRedirect { .. }")
+    }
+}

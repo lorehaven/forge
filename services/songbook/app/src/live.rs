@@ -1,7 +1,7 @@
 //! The app against a host.
 //!
 //! It asks for the data and for every change (`Request`) and is told what came (`Msg`). The host does the talking to the
-//! service; the app owns the routes (`{base}/ui/library`, `/pipeline`, `/discover`, `/activity`), the polling of the job and
+//! service; the app owns the routes (`{base}/ui/admin/library`, `/pipeline`, `/discover`, `/activity`), the polling of the job and
 //! the language.
 
 use std::cell::{Cell, RefCell};
@@ -201,6 +201,8 @@ pub(crate) struct Model {
     pub offset: Signal<u64>,
     pub singles: Signal<bool>,
     pub retry: Signal<bool>,
+    /// Images: ask again for the pictures Deezer had none for.
+    pub retry_images: Signal<bool>,
     pub limit_links: quench_ui::form::Field,
     pub limit_download: quench_ui::form::Field,
     pub top: quench_ui::form::Field,
@@ -217,6 +219,7 @@ pub(crate) struct Model {
     pub sched_download: Signal<bool>,
     pub sched_convert: Signal<bool>,
     pub sched_suggestions: Signal<bool>,
+    pub sched_images: Signal<bool>,
     pub sched_fresh: Signal<bool>,
     pub sched_singles: Signal<bool>,
     pub sched_time: quench_ui::form::Field,
@@ -242,6 +245,7 @@ impl Model {
             offset: create_signal(0),
             singles: create_signal(false),
             retry: create_signal(false),
+            retry_images: create_signal(false),
             limit_links: Field::new("limit-links", ""),
             limit_download: Field::new("limit-download", ""),
             top: Field::new("top", "50"),
@@ -255,6 +259,7 @@ impl Model {
             sched_download: create_signal(true),
             sched_convert: create_signal(true),
             sched_suggestions: create_signal(true),
+            sched_images: create_signal(true),
             sched_fresh: create_signal(true),
             sched_singles: create_signal(false),
             sched_time: Field::new("sched-time", "03:00"),
@@ -279,9 +284,9 @@ pub(crate) struct Env {
 }
 
 impl Env {
-    /// `{base}/ui{path}`.
+    /// `{base}/ui/admin{path}`.
     pub fn path(&self, path: &str) -> String {
-        format!("{}/ui{path}", self.base)
+        format!("{}/ui/admin{path}", self.base)
     }
 
     /// Tells the person something for a few seconds.
@@ -357,6 +362,7 @@ fn fill_schedule(m: &Model, s: &Schedule) {
     m.sched_download.set(s.download);
     m.sched_convert.set(s.convert);
     m.sched_suggestions.set(s.suggestions);
+    m.sched_images.set(s.images);
     m.sched_fresh.set(s.fresh_ratings);
     m.sched_singles.set(s.singles);
     m.sched_time.set(&s.time);
@@ -552,16 +558,15 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             screens::schedule(&env)
         }
     };
+    let admin = format!("{base}/ui/admin");
     let screens_at = Routes::new()
-        .route(&format!("{base}/ui/library"), library.clone())
-        .route(&format!("{base}/ui/pipeline"), page(screens::pipeline))
-        .route(&format!("{base}/ui/discover"), page(screens::discover))
-        .route(&format!("{base}/ui/activity"), page(screens::activity))
-        .route(&format!("{base}/ui/schedule"), schedule)
-        .route(&format!("{base}/ui/home"), library.clone())
-        .route(&format!("{base}/ui/home/"), library.clone())
-        .route(&format!("{base}/ui"), library.clone())
-        .route(&format!("{base}/ui/"), library)
+        .route(&format!("{admin}/library"), library.clone())
+        .route(&format!("{admin}/pipeline"), page(screens::pipeline))
+        .route(&format!("{admin}/discover"), page(screens::discover))
+        .route(&format!("{admin}/activity"), page(screens::activity))
+        .route(&format!("{admin}/schedule"), schedule)
+        .route(&admin, library.clone())
+        .route(&format!("{admin}/"), library)
         .not_found({
             let env = env.clone();
             move |_| screens::not_found(&env)
@@ -572,8 +577,8 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             name: "Songbook",
             icon: "database",
         },
-        image: Some(format!("{base}/ui/assets/favicon.png")),
-        home: format!("{base}/ui/library"),
+        image: Some(format!("{base}/ui/admin/assets/favicon.png")),
+        home: format!("{base}/ui/admin/library"),
         spa: true,
         account: true,
         brand_in_bar: false,

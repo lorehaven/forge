@@ -871,7 +871,11 @@ fn start(env: &Env, name: &str) {
         per_artist: None,
         category: m.scope.value_untracked(),
         // The pipeline always looks again at songs that had no match.
-        retry_missing: m.retry.get_untracked() || everything,
+        retry_missing: if name == "images" {
+            m.retry_images.get_untracked()
+        } else {
+            m.retry.get_untracked() || everything
+        },
     }));
 }
 
@@ -1068,6 +1072,28 @@ pub(crate) fn pipeline(env: &Env) -> View {
                                 &m.limit_download,
                                 &t.t("ui_max_tracks"),
                             ))),
+                    )
+                    .child(
+                        article()
+                            .attr("id", "step-images")
+                            .class("sb-card sb-step")
+                            .children(step(4, "ui_step_images", "ui_step_images_text"))
+                            .child(
+                                toolbar()
+                                    .child(job_button(
+                                        &env,
+                                        "images",
+                                        &t.t("ui_find_images"),
+                                        "fui-btn-secondary",
+                                        None,
+                                    ))
+                                    .child(toggle(
+                                        t.t("ui_retry_images"),
+                                        t.t("ui_retry_images_title"),
+                                        "retry-images",
+                                        &m.retry_images,
+                                    )),
+                            ),
                     ),
             )
             .child(
@@ -1396,6 +1422,12 @@ pub(crate) fn schedule(env: &Env) -> View {
                 t.t("ui_sched_suggestions_title"),
                 "sched-suggestions",
                 &m.sched_suggestions,
+            ))
+            .child(toggle(
+                t.t("ui_sched_images"),
+                t.t("ui_sched_images_title"),
+                "sched-images",
+                &m.sched_images,
             ));
         let options = div()
             .class("sb-actions")
@@ -1460,6 +1492,7 @@ pub(crate) fn schedule(env: &Env) -> View {
                         download: m.sched_download.get_untracked(),
                         convert: m.sched_convert.get_untracked(),
                         suggestions: m.sched_suggestions.get_untracked(),
+                        images: m.sched_images.get_untracked(),
                         fresh_ratings: m.sched_fresh.get_untracked(),
                         singles: m.sched_singles.get_untracked(),
                         ..kept

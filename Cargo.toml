@@ -42,6 +42,8 @@ members = [
   "services/lectern/service",
   "services/songbook/app",
   "services/songbook/core",
+  "services/songbook/player",
+  "services/songbook/player-web",
   "services/songbook/service",
   "services/songbook/web",
   "services/sage/app",
@@ -149,6 +151,8 @@ sage-core = { path = "services/sage/core" }
 sage-web = { path = "services/sage/web" }
 songbook-app = { path = "services/songbook/app" }
 songbook-core = { path = "services/songbook/core" }
+songbook-player = { path = "services/songbook/player" }
+songbook-player-web = { path = "services/songbook/player-web" }
 songbook-web = { path = "services/songbook/web" }
 workbench-app = { path = "services/workbench/app" }
 workbench-core = { path = "services/workbench/core" }

@@ -7,6 +7,9 @@ use quench_serde::Serialize;
 pub use quench_starter::http::domain::api_error::{ApiError, json_error};
 
 pub mod admin;
+pub mod art;
+pub mod gate;
+pub mod listen;
 
 /// `Auth` over all of `/api/v1` (incl. its 404 fallback, so unmapped paths 401 not 404).
 pub fn wrap_auth(
@@ -15,6 +18,11 @@ pub fn wrap_auth(
     base_path: &str,
 ) -> std::sync::Arc<dyn Endpoint> {
     let prefix: &'static str = Box::leak(protected_prefix(base_path).into_boxed_str());
+    // `Auth` goes on last, so it runs first: the gate reads the claims it puts on the request.
+    let app = wrap(
+        app,
+        OnPathPrefix::new(prefix, gate::Gate::new(jwt_config.clone(), prefix)),
+    );
     wrap(app, OnPathPrefix::new(prefix, Auth::new(jwt_config)))
 }
 
@@ -27,6 +35,8 @@ pub fn protected_prefix(base_path: &str) -> String {
 
 pub fn register_routes() {
     admin::register_routes();
+    listen::register_routes();
+    art::register_routes();
 }
 
 /// `200` with `value` as JSON.

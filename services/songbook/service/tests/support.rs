@@ -66,5 +66,10 @@ pub fn app_with(dir: &Scratch, answers: &[(&str, &str)]) -> App {
         config: Arc::new(config),
         jobs: Jobs::default(),
         deezer,
+        library: songbook_service::library::Library::default(),
+        playlists: songbook_service::playlists::Playlists::open(
+            &dir.path().join("meta").join("user.db"),
+        )
+        .unwrap(),
     }
 }

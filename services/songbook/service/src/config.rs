@@ -40,6 +40,12 @@ impl Config {
         self.meta().join("library.db")
     }
 
+    /// The listeners' playlists (apart from the library index: writing one must not drop that index's cached copy).
+    #[must_use]
+    pub fn user_db(&self) -> PathBuf {
+        self.meta().join("user.db")
+    }
+
     #[must_use]
     pub fn cache(&self) -> PathBuf {
         self.home.join(".deezer_cache")

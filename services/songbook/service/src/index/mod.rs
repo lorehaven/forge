@@ -26,6 +26,8 @@ pub struct Index {
     db: Arc<Mutex<Connection>>,
     /// The library as the page reads it; dropped by every call that is not a read of it, rebuilt on the next `snapshot`.
     snapshot: Arc<Mutex<Option<Arc<browse::Snapshot>>>>,
+    /// Counts the calls that may have changed the tables, for whatever keeps a copy of them.
+    generation: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl std::fmt::Debug for Index {
@@ -64,6 +66,7 @@ impl Index {
         let index = Self {
             db: Arc::new(Mutex::new(db)),
             snapshot: Arc::default(),
+            generation: Arc::default(),
         };
         index.with(|db| {
             songs::rekey(db)?;
@@ -76,12 +79,26 @@ impl Index {
     pub fn with<T>(&self, f: impl FnOnce(&mut Connection) -> Result<T>) -> Result<T> {
         let mut guard = self.db.lock().unwrap_or_else(PoisonError::into_inner);
         let out = f(&mut guard);
+        self.generation
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // Taken while the connection is still held, so a snapshot built from the old tables cannot outlive the change.
         self.snapshot
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
         out
+    }
+
+    /// Runs `f` with the connection for a read: neither the snapshot nor the generation is touched.
+    pub fn read<T>(&self, f: impl FnOnce(&mut Connection) -> Result<T>) -> Result<T> {
+        let mut guard = self.db.lock().unwrap_or_else(PoisonError::into_inner);
+        f(&mut guard)
+    }
+
+    /// How many calls have gone through [`with`](Self::with): a copy of the tables made at another number is stale.
+    #[must_use]
+    pub fn generation(&self) -> u64 {
+        self.generation.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// The library as the page reads it: built from the tables on the first call after a change, then shared.

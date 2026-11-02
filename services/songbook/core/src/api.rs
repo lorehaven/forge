@@ -288,9 +288,13 @@ pub struct RenameCategory {
     pub new_name: String,
 }
 
-/// `POST /jobs`: `name` is `sync`, `tags`, `similar`, `youtube`, `download`, `convert`, `purge` (the files of blacklisted albums), `pipeline` or `scheduled` (the stages of the saved schedule, now).
+/// `POST /jobs`: which job to start, and its options.
 ///
-/// `pipeline` is sync, find links (with the songs that had no match tried again), download and convert, one after the other
+/// `name` is `sync`, `tags`, `similar`, `youtube`, `download`, `convert`, `images` (pictures of artists and albums;
+/// `retry_missing` asks again for those Deezer had none for), `purge` (the files of blacklisted albums), `pipeline` or
+/// `scheduled` (the stages of the saved schedule, now).
+///
+/// `pipeline` is sync, find links (with the songs that had no match tried again), download, convert and find images, one after the other
 /// in one job; it stops at the first step that fails.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobStart {
@@ -348,6 +352,10 @@ pub struct Schedule {
     /// Stage 5: refresh the suggested artists and their best songs. A schedule saved before this stage existed has it off.
     #[serde(default)]
     pub suggestions: bool,
+    /// Stage 6: find the pictures of artists, albums and singles (what is missing only). A schedule saved before this stage
+    /// existed has it off.
+    #[serde(default)]
+    pub images: bool,
     /// Sync asks Deezer for every track again instead of using what it saved, so the ratings are current.
     pub fresh_ratings: bool,
     /// Sync includes singles.
@@ -381,6 +389,7 @@ impl Default for Schedule {
             download: true,
             convert: true,
             suggestions: true,
+            images: true,
             fresh_ratings: true,
             singles: false,
             last_day: String::new(),

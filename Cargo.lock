@@ -1631,6 +1631,8 @@ dependencies = [
  "quench-test",
  "quench-tz",
  "songbook-core",
+ "songbook-player",
+ "songbook-player-web",
  "songbook-web",
  "tokio",
 ]
@@ -1651,6 +1653,28 @@ version = "0.1.0"
 dependencies = [
  "quench-serde",
  "quench-test",
+]
+
+[[package]]
+name = "songbook-player"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "songbook-core",
+]
+
+[[package]]
+name = "songbook-player-web"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-web",
+ "songbook-core",
+ "songbook-player",
 ]
 
 [[package]]

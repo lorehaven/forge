@@ -41,6 +41,29 @@ meta         key, value                                (schema, key_scheme)
 `service/src/schema.sql` is the one definition; the service runs it on start. `quench-sqlite` refuses foreign keys, so none are
 declared and the service removes dependants itself. `yt_status` is `NULL` (not searched), `ok` or `miss`.
 
+## The listener API
+
+Under `/api/v1` (not `/admin`), for any grant of `songbook`. Only songs that have a file are listed. Shapes in
+[`core/src/listen.rs`](../core/src/listen.rs).
+
+| Method and path | Body / query | Answer |
+|---|---|---|
+| `GET /library/overview` | | counts, artists and categories with how many playable songs |
+| `GET /library/albums` | `artist`, `category`, `q`, `limit` | albums |
+| `GET /library/songs` | `ids`, `playlist`, `album`, `artist`, `category`, `q`, `limit` | songs (at most 500 unless `limit`) |
+| `GET /library/ids` | the same | the ids only, in play order (up to 20,000): a queue |
+| `GET /library/search?q=` | | a few songs, albums and artists |
+| `GET /stream/{id}` | `Range` | the audio file; `206` for a range, `bytes=N-` is answered in 4 MiB pieces |
+| `GET/POST /playlists`, `PUT/DELETE /playlists/{id}` | `{name}` | the signed-in person's playlists |
+| `POST /playlists/{id}/songs` | `{song_ids}` | append; `PUT` replaces the order |
+
+| `GET /art/album/{id}`, `/art/song/{id}`, `/art/artist?name=` | `w` (64, 160 or 320; none: the saved 500 px) | the picture (`404` when there is none); `ETag`, a week's `Cache-Control` |
+
+A song's picture is its album's cover (a single's own cover), else its artist's. The pictures are what the **images** job saved in `meta/images` (`album-<deezer id>.jpg`, `artist-<deezer id>.jpg`; an empty `<name>.none` marks what Deezer has none of, `retry_missing` clears them); smaller copies are made with ffmpeg on first request. The job is a Pipeline step, the last stage of "run everything" and a stage of the nightly run. The player keeps pictures, its files, its last page and the library answers on the device with a service worker (`/sw.js`), so it opens without the network.
+
+The catalog is built from the index and a look at the audio folder, kept for 30 s and rebuilt when the index changes.
+Playlists live in `meta/user.db`, apart from the index, so writing one does not drop the index's cached copy.
+
 ## The admin API
 
 All under `/api/v1/admin`, JSON, behind Gatehouse sign-in (`Auth`: bearer token or the session cookie). The shapes are in

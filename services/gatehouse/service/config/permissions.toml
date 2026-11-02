@@ -96,12 +96,13 @@ home = true
 description = "Host metrics: CPU, memory, GPU, disks and network."
 actions = ["read"]
 
-# The music library's admin module (index, Deezer sync, YouTube links, downloads). In no template: the service does not
-# check actions yet, so a grant is full admin - give it to a user by hand.
+# The music library: `read` lets someone listen (the player at /ui: browse, play, playlists, songs kept on the device),
+# `write` is the admin module (index, Deezer sync, YouTube links, downloads) and is checked by the service. In no template:
+# give it to a user by hand.
 [services.songbook]
 label = "Songbook"
 home = true
-description = "Music library: index, Deezer sync, YouTube links, downloads."
+description = "Music library: the player, and (write) the index, Deezer sync, YouTube links, downloads."
 actions = ["read", "write"]
 
 # No page of its own: the app (on a phone or a desktop) reads the public app catalogue. A service that is not

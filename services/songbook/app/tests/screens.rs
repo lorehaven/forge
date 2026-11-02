@@ -234,7 +234,7 @@ fn started(path: &str) -> Live {
 
 #[quench_test::test]
 fn the_app_asks_for_the_state_the_job_and_the_albums_on_arrival() {
-    let l = live("/songbook/ui/library");
+    let l = live("/songbook/ui/admin/library");
     let asked = l.take();
     assert!(asked.contains(&Request::State), "{asked:?}");
     assert!(asked.contains(&Request::Job { from: 0 }), "{asked:?}");
@@ -247,7 +247,7 @@ fn the_app_asks_for_the_state_the_job_and_the_albums_on_arrival() {
 
 #[quench_test::test]
 fn the_side_panel_groups_the_followed_artists_by_category() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.expand();
     let text = l.r.text();
     assert!(text.contains("Followed artists (3)"), "{text}");
@@ -278,13 +278,13 @@ fn the_side_panel_groups_the_followed_artists_by_category() {
     assert_eq!(
         l.r.attr(l.find("a", ("id", "nav-pipeline")), "href")
             .as_deref(),
-        Some("/songbook/ui/pipeline")
+        Some("/songbook/ui/admin/pipeline")
     );
 }
 
 #[quench_test::test]
 fn the_categories_start_folded_and_fold_again() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     let listed = |l: &Live| {
         l.r.document_order()
             .into_iter()
@@ -301,7 +301,7 @@ fn the_categories_start_folded_and_fold_again() {
 
 #[quench_test::test]
 fn the_library_opens_with_the_statistics_of_the_whole_collection() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     assert!(!l.has("stats"), "nothing to show before the numbers come");
     l.send(Msg::Stats(songbook_core::Stats {
         artists: 61,
@@ -327,7 +327,7 @@ fn the_library_opens_with_the_statistics_of_the_whole_collection() {
 
 #[quench_test::test]
 fn the_statistics_are_asked_for_when_the_page_opens_and_after_a_change() {
-    let l = live("/songbook/ui/library");
+    let l = live("/songbook/ui/admin/library");
     assert!(l.take().contains(&Request::Stats));
     l.send(Msg::CategorySet);
     assert!(l.take().contains(&Request::Stats));
@@ -335,7 +335,7 @@ fn the_statistics_are_asked_for_when_the_page_opens_and_after_a_change() {
 
 #[quench_test::test]
 fn the_library_shows_albums_with_their_songs_and_links() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     assert_eq!(
         l.text_of("summary"),
         "All artists · 3 songs · 2 with a YouTube link"
@@ -383,7 +383,7 @@ fn the_library_shows_albums_with_their_songs_and_links() {
 
 #[quench_test::test]
 fn the_summary_says_when_only_the_first_are_shown_and_when_nothing_matches() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     let mut b = browse();
     b.total = 900;
     b.shown = 300;
@@ -404,7 +404,7 @@ fn the_summary_says_when_only_the_first_are_shown_and_when_nothing_matches() {
 
 #[quench_test::test]
 fn the_filters_ask_for_the_albums_again() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.r.fire(
         l.find("button", ("data-chip", "links-missing")),
         &Event::Click,
@@ -450,7 +450,7 @@ fn the_filters_ask_for_the_albums_again() {
 
 #[quench_test::test]
 fn choosing_an_artist_filters_by_it_and_the_summary_names_it() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.expand();
     let main = l.r.children(l.find("div", ("data-artist", "Kartky")))[0];
     l.r.fire(main, &Event::Click);
@@ -472,7 +472,7 @@ fn choosing_an_artist_filters_by_it_and_the_summary_names_it() {
 
 #[quench_test::test]
 fn searching_waits_for_a_pause_in_the_typing() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.type_into("q", "pup");
     l.type_into("q", "puppy");
     assert!(l.take().is_empty());
@@ -488,7 +488,7 @@ fn searching_waits_for_a_pause_in_the_typing() {
 
 #[quench_test::test]
 fn a_link_is_edited_in_a_dialog() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     assert!(!l.has("dialog-link"));
     l.r.fire(
         l.find("button", ("aria-label", "Add link for Puppy Love")),
@@ -519,7 +519,7 @@ fn a_link_is_edited_in_a_dialog() {
 
 #[quench_test::test]
 fn a_link_is_removed_from_the_dialog() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.r.fire(
         l.find(
             "button",
@@ -546,7 +546,7 @@ fn a_link_is_removed_from_the_dialog() {
 
 #[quench_test::test]
 fn the_dialog_closes_on_cancel() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.click("button", ("id", "add-artist"));
     assert!(l.has("dialog-add"));
     l.click("button", ("id", "dialog-cancel"));
@@ -555,7 +555,7 @@ fn the_dialog_closes_on_cancel() {
 
 #[quench_test::test]
 fn an_album_is_blacklisted_after_asking() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.r.fire(
         l.find(
             "button",
@@ -584,7 +584,7 @@ fn an_album_is_blacklisted_after_asking() {
 
 #[quench_test::test]
 fn an_artist_is_followed_from_the_dialog() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.click("button", ("id", "add-artist"));
     l.type_into("artist-name", " Gibbs ");
     l.type_into("artist-id", "4242");
@@ -612,7 +612,7 @@ fn an_artist_is_followed_from_the_dialog() {
 
 #[quench_test::test]
 fn following_nobody_does_nothing_and_an_old_name_says_so() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.click("button", ("id", "add-artist"));
     l.r.fire(l.find("form", ("class", "sb-dialog-form")), &Event::Submit);
     assert!(l.take().is_empty());
@@ -625,7 +625,7 @@ fn following_nobody_does_nothing_and_an_old_name_says_so() {
 
 #[quench_test::test]
 fn an_artist_is_removed_after_asking() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.expand();
     l.click("button", ("id", "all-artists"));
     l.r.fire(
@@ -646,7 +646,7 @@ fn an_artist_is_removed_after_asking() {
 
 #[quench_test::test]
 fn the_category_of_an_artist_changes_in_a_dialog() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.expand();
     l.r.fire(
         l.find("button", ("aria-label", "Change category of Kartky")),
@@ -676,7 +676,7 @@ fn the_category_of_an_artist_changes_in_a_dialog() {
 
 #[quench_test::test]
 fn the_genres_an_artist_keeps_are_set_in_the_same_dialog() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.expand();
     l.r.fire(
         l.find("button", ("aria-label", "Change category of Kartky")),
@@ -701,7 +701,7 @@ fn the_genres_an_artist_keeps_are_set_in_the_same_dialog() {
 
 #[quench_test::test]
 fn the_artists_of_a_category_are_listed_alphabetically() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     let mut s = state();
     s.artists = vec![
         artist("zeta", "Polish Rap", 1, true),
@@ -721,7 +721,7 @@ fn the_artists_of_a_category_are_listed_alphabetically() {
 
 #[quench_test::test]
 fn a_category_is_renamed_in_a_dialog_and_the_filter_follows() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.click("button", ("data-rename", "Polish Rap"));
     l.type_into("category-rename", "Rap PL");
     l.send(Msg::Browse(songbook_core::Browse {
@@ -753,7 +753,7 @@ fn a_category_is_renamed_in_a_dialog_and_the_filter_follows() {
 
 #[quench_test::test]
 fn a_new_category_is_created_first_and_then_used() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.expand();
     l.r.fire(
         l.find("button", ("aria-label", "Change category of Kartky")),
@@ -774,7 +774,7 @@ fn a_new_category_is_created_first_and_then_used() {
 
 #[quench_test::test]
 fn the_service_refusing_is_said_and_keeps_the_dialog() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.r.fire(
         l.find("button", ("aria-label", "Add link for Puppy Love")),
         &Event::Click,
@@ -790,7 +790,7 @@ fn the_service_refusing_is_said_and_keeps_the_dialog() {
 fn the_pipeline_starts_jobs_with_the_options_set_here() {
     let l = started(
         "/songbook/pipeline"
-            .replace("/songbook/pipeline", "/songbook/ui/pipeline")
+            .replace("/songbook/pipeline", "/songbook/ui/admin/pipeline")
             .as_str(),
     );
     assert!(l.has("page-pipeline"));
@@ -832,7 +832,7 @@ fn the_pipeline_starts_jobs_with_the_options_set_here() {
 
 #[quench_test::test]
 fn the_selected_artist_is_the_scope_of_the_pipeline() {
-    let l = started("/songbook/ui/pipeline");
+    let l = started("/songbook/ui/admin/pipeline");
     l.expand();
     l.r.fire(
         l.r.children(l.find("div", ("data-artist", "Kartky")))[0],
@@ -857,7 +857,7 @@ fn the_selected_artist_is_the_scope_of_the_pipeline() {
 
 #[quench_test::test]
 fn running_everything_starts_the_pipeline_with_both_limits_and_retrying_the_misses() {
-    let l = started("/songbook/ui/pipeline");
+    let l = started("/songbook/ui/admin/pipeline");
     l.expand();
     l.click("div", ("data-artist", "Kartky")); // not a button: nothing happens
     l.take();
@@ -894,7 +894,7 @@ fn running_everything_starts_the_pipeline_with_both_limits_and_retrying_the_miss
 
 #[quench_test::test]
 fn the_buttons_are_off_while_a_job_runs_and_a_second_start_is_said() {
-    let l = started("/songbook/ui/pipeline");
+    let l = started("/songbook/ui/admin/pipeline");
     assert!(
         l.r.attr(l.find("button", ("id", "job-sync")), "disabled")
             .is_none()
@@ -917,7 +917,7 @@ fn the_buttons_are_off_while_a_job_runs_and_a_second_start_is_said() {
 
 #[quench_test::test]
 fn the_job_is_polled_from_where_the_log_ends_and_faster_while_it_runs() {
-    let l = live("/songbook/ui/activity");
+    let l = live("/songbook/ui/admin/activity");
     assert!(l.take().contains(&Request::Job { from: 0 }));
     tick(5_100.0);
     assert_eq!(l.take(), vec![Request::Job { from: 0 }]);
@@ -941,7 +941,7 @@ fn the_job_is_polled_from_where_the_log_ends_and_faster_while_it_runs() {
 
 #[quench_test::test]
 fn the_log_is_one_element_that_keeps_its_place_while_it_grows() {
-    let l = started("/songbook/ui/activity");
+    let l = started("/songbook/ui/admin/activity");
     let job = |log: &str, offset: u64| {
         Msg::Job(Job {
             name: Some("sync".into()),
@@ -964,7 +964,7 @@ fn the_log_is_one_element_that_keeps_its_place_while_it_grows() {
 
 #[quench_test::test]
 fn the_activity_screen_gathers_the_log_and_starts_over_for_a_new_job() {
-    let l = started("/songbook/ui/activity");
+    let l = started("/songbook/ui/admin/activity");
     assert_eq!(l.text_of("status"), "Idle");
     assert_eq!(l.text_of("log"), "No job has run yet.");
     l.send(Msg::Job(Job {
@@ -995,7 +995,7 @@ fn the_activity_screen_gathers_the_log_and_starts_over_for_a_new_job() {
 
 #[quench_test::test]
 fn a_finished_job_refreshes_the_library_and_says_so() {
-    let l = started("/songbook/ui/activity");
+    let l = started("/songbook/ui/admin/activity");
     l.send(Msg::Job(Job {
         name: Some("download".into()),
         running: true,
@@ -1048,7 +1048,7 @@ fn a_finished_job_refreshes_the_library_and_says_so() {
 
 #[quench_test::test]
 fn starting_a_job_clears_the_log_and_asks_at_once() {
-    let l = started("/songbook/ui/activity");
+    let l = started("/songbook/ui/admin/activity");
     l.send(Msg::Job(Job {
         name: Some("sync".into()),
         running: false,
@@ -1064,7 +1064,7 @@ fn starting_a_job_clears_the_log_and_asks_at_once() {
 
 #[quench_test::test]
 fn suggestions_are_ticked_and_followed_with_a_sync() {
-    let l = started("/songbook/ui/discover");
+    let l = started("/songbook/ui/admin/discover");
     let text = l.r.text();
     assert!(
         text.contains("Warren G") && text.contains("3× via Nate Dogg, Snoop Dogg, Nas"),
@@ -1107,7 +1107,7 @@ fn suggestions_are_ticked_and_followed_with_a_sync() {
 
 #[quench_test::test]
 fn similar_artists_are_found_for_a_scope_and_a_top() {
-    let l = started("/songbook/ui/discover");
+    let l = started("/songbook/ui/admin/discover");
     l.r.fire(
         l.find("select", ("id", "scope")),
         &Event::Input("Polish Rap".into()),
@@ -1129,7 +1129,7 @@ fn similar_artists_are_found_for_a_scope_and_a_top() {
 
 #[quench_test::test]
 fn no_suggestions_says_so() {
-    let l = live("/songbook/ui/discover");
+    let l = live("/songbook/ui/admin/discover");
     l.send(Msg::State(State {
         suggestions: vec![],
         ..state()
@@ -1139,25 +1139,25 @@ fn no_suggestions_says_so() {
 
 #[quench_test::test]
 fn the_home_screen_is_the_library_and_an_unknown_one_is_said() {
-    assert!(live("/songbook/ui/home").has("page-library"));
-    assert!(live("/songbook/ui").has("page-library"));
-    assert!(live("/songbook/ui/nowhere").has("not-found"));
+    assert!(live("/songbook/ui/admin").has("page-library"));
+    assert!(live("/songbook/ui/admin/").has("page-library"));
+    assert!(live("/songbook/ui/admin/nowhere").has("not-found"));
 }
 
 #[quench_test::test]
 fn the_navigation_moves_between_screens_without_a_page_load() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.click("a", ("id", "nav-discover"));
     assert!(l.has("page-discover"));
     assert!(!l.has("page-library"));
-    assert_eq!(l.history.location().path, "/songbook/ui/discover");
+    assert_eq!(l.history.location().path, "/songbook/ui/admin/discover");
     l.click("a", ("id", "nav-library"));
     assert!(l.has("page-library"));
 }
 
 #[quench_test::test]
 fn problems_show_as_a_banner_and_go_with_the_next_answer() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.send(Msg::Failed("cannot reach the service: offline".into()));
     assert!(l.text_of("problem").contains("offline"));
     l.send(Msg::Browse(browse()));
@@ -1171,7 +1171,7 @@ fn problems_show_as_a_banner_and_go_with_the_next_answer() {
 
 #[quench_test::test]
 fn picking_a_language_tells_the_host_and_translates_the_screens() {
-    let l = started("/songbook/ui/library");
+    let l = started("/songbook/ui/admin/library");
     l.expand();
     l.r.fire(
         l.find("select", ("id", "language")),

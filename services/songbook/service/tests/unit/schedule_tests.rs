@@ -105,6 +105,7 @@ fn a_schedule_must_be_valid() {
         download: false,
         convert: false,
         suggestions: false,
+        images: false,
         ..nightly("")
     };
     assert!(check(none).is_err());

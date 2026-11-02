@@ -16,6 +16,8 @@ mod deezer_tests;
 mod index_tests;
 #[path = "unit/jobs_tests.rs"]
 mod jobs_tests;
+#[path = "unit/listen_tests.rs"]
+mod listen_tests;
 #[path = "unit/routers_tests.rs"]
 mod routers_tests;
 #[path = "unit/schedule_tests.rs"]
