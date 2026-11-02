@@ -161,6 +161,20 @@ impl Platform for Stdio {
         );
     }
 
+    fn digest(&self, uri: &str, then: Box<dyn FnOnce(Result<String, String>)>) {
+        self.call(
+            "hash",
+            vec![("uri", Value::String(uri.into()))],
+            Box::new(move |answer| {
+                then(answer.and_then(|v| {
+                    v.as_str()
+                        .map(str::to_string)
+                        .ok_or_else(|| "no digest".to_string())
+                }));
+            }),
+        );
+    }
+
     fn cancel(&self, _id: &str) {}
 
     fn changes(

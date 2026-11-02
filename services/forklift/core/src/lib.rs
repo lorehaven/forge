@@ -15,7 +15,8 @@ pub use snapshot::{Row, Snapshot, bytes, clock};
 pub use engine::{Engine, Outcome, Pause, Start, Verdict};
 
 pub use manifest::{
-    Found, Item, LARGE_FILE_BYTES, MAX_ATTEMPTS, Manifest, Scanned, Status, Totals, backoff_ms,
+    Found, Item, LARGE_FILE_BYTES, MAX_ATTEMPTS, Manifest, Requeued, Scanned, Status, Totals,
+    backoff_ms,
 };
 pub use restore::{
     Fetch, Plan, PlanSummary, Present, Progress, RESTORE_ATTEMPTS, Remote, RestoreView, Restorer,

@@ -33,6 +33,8 @@ struct Fake {
     storages: RefCell<Vec<Storage>>,
     now: Cell<i64>,
     later: RefCell<Vec<(u64, Box<dyn FnOnce()>)>>,
+    /// What the device reads as the digest of a file, by uri.
+    digests: RefCell<BTreeMap<String, String>>,
     media_calls: RefCell<Vec<(&'static str, u32)>>,
     /// When set, a page of the media library is not answered until the test says so.
     hold_media: Cell<bool>,
@@ -77,6 +79,15 @@ impl Platform for Fake {
         self.uploads
             .borrow_mut()
             .push((id.into(), uri.into(), url.into(), token.into()));
+    }
+    fn digest(&self, uri: &str, then: Box<dyn FnOnce(Result<String, String>)>) {
+        then(
+            self.digests
+                .borrow()
+                .get(uri)
+                .cloned()
+                .ok_or_else(|| "unknown".to_string()),
+        );
     }
     fn changes(
         &self,
@@ -800,6 +811,7 @@ fn change(id: i64, path: &str, op: &str, size: Option<u64>) -> Change {
         path: path.into(),
         op: op.into(),
         size,
+        sha256: None,
     }
 }
 
@@ -844,6 +856,59 @@ fn what_the_server_already_holds_is_recognised_and_not_sent_again() {
         "the feed is read from there next time"
     );
     assert_eq!(*w.fake.feed_asked.borrow(), [0]);
+    w.cleanup();
+}
+
+#[quench_test::test]
+fn a_touched_file_is_not_sent_again_but_an_edited_one_is() {
+    let fake = Fake::default();
+    *fake.images.borrow_mut() = vec![file("1", 10, 1000), file("2", 20, 2000)];
+    let w = world(
+        "touched",
+        Settings {
+            videos: false,
+            ..Settings::default()
+        },
+        fake,
+    );
+    w.controller.start();
+    w.done_all();
+    assert_eq!(w.fake.uploads.borrow().len(), 2, "both went the first time");
+    // The device touched both (new times), and the person edited "2" without changing its size.
+    *w.fake.images.borrow_mut() = vec![file("1", 10, 5000), file("2", 20, 6000)];
+    *w.fake.feed.borrow_mut() = vec![
+        Change {
+            sha256: Some("aa".into()),
+            ..change(1, "photos/1970/01/1-1.jpg", "put", Some(10))
+        },
+        Change {
+            sha256: Some("bb".into()),
+            ..change(2, "photos/1970/01/2-2.jpg", "put", Some(20))
+        },
+    ];
+    w.fake.digests.borrow_mut().extend([
+        ("content://media/1".to_string(), "AA".to_string()),
+        ("content://media/2".to_string(), "cc".to_string()),
+    ]);
+    w.controller.scan(true);
+    let sent: Vec<String> = w
+        .fake
+        .uploads
+        .borrow()
+        .iter()
+        .skip(2)
+        .map(|u| u.1.clone())
+        .collect();
+    assert_eq!(
+        sent,
+        ["content://media/2"],
+        "only the edited one goes again"
+    );
+    assert_eq!(
+        w.store.manifest().get("photos", "1").unwrap().status,
+        Status::Done
+    );
+    assert_eq!(*w.fake.feed_asked.borrow().last().unwrap(), 0);
     w.cleanup();
 }
 

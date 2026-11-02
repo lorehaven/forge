@@ -348,6 +348,11 @@ impl Platform for Linux {
         });
     }
 
+    // A changed file is sent again (there is no digest of it to compare on the desktop yet).
+    fn digest(&self, _uri: &str, then: Box<dyn FnOnce(Result<String, String>)>) {
+        then(Err("not supported".into()));
+    }
+
     fn cancel(&self, _id: &str) {}
 
     fn changes(

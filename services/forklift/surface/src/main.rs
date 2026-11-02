@@ -209,6 +209,11 @@ impl Platform for Android {
         );
     }
 
+    // The window has no way to read a file's digest yet: a changed file is sent again, as before.
+    fn digest(&self, _uri: &str, then: Then<Result<String, String>>) {
+        then(Err("not supported".into()));
+    }
+
     fn cancel(&self, id: &str) {
         self.bridge.call(
             "files",

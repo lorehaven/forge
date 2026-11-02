@@ -11,8 +11,8 @@ use std::rc::Rc;
 
 use forklift_app::live::Msg;
 use forklift_core::{
-    Category, Engine, Folder, Found, Outcome, Plan, Remote, RestoreView, Restorer, Settings,
-    Snapshot, StorageInfo, Verdict, base_name, category_of, folder_slug, short_id,
+    Category, Engine, Folder, Found, Outcome, Plan, Remote, Requeued, RestoreView, Restorer,
+    Settings, Snapshot, StorageInfo, Verdict, base_name, category_of, folder_slug, short_id,
 };
 use forklift_net::{Change, NetError, Storage, Store, upload_url};
 
@@ -43,6 +43,9 @@ pub trait Platform {
     fn upload(&self, id: &str, uri: &str, url: &str, token: &str);
     /// Gives up an upload that was started.
     fn cancel(&self, id: &str);
+    /// The `sha256` of what `uri` holds now, in hex (read on the device, not from the server). An `Err` means it
+    /// could not be told, and the file is sent again as if it had changed.
+    fn digest(&self, uri: &str, then: Then<Result<String, String>>);
     /// What changed in the storage since change number `since`.
     fn changes(&self, storage: &str, since: i64, then: Then<Result<Vec<Change>, NetError>>);
     /// Every file stored.
@@ -462,10 +465,14 @@ impl Controller {
         // What the server already holds is recognised before anything is sent (a fresh install, a new storage).
         let (storage, since) = {
             let st = self.state.borrow();
-            (
-                st.settings.storage.clone(),
-                self.store.sync_cursor(&st.settings.storage),
-            )
+            // Files sent before and found changed are checked against what the server holds, which takes the whole
+            // feed (it has the digest of the latest `put` of each path).
+            let since = if st.engine.manifest.requeued().is_empty() {
+                self.store.sync_cursor(&st.settings.storage)
+            } else {
+                0
+            };
+            (st.settings.storage.clone(), since)
         };
         let this = Rc::clone(self);
         let kept = storage.clone();
@@ -483,10 +490,10 @@ impl Controller {
             return;
         }
         // No feed (a storage that keeps none, or no network): nothing is recognised this time.
-        if let Ok(changes) = result {
+        if let Ok(changes) = &result {
             let mut known: std::collections::BTreeMap<String, u64> =
                 std::collections::BTreeMap::new();
-            for change in &changes {
+            for change in changes {
                 if change.op == "delete" {
                     known.remove(&change.path);
                 } else {
@@ -502,6 +509,67 @@ impl Controller {
                 .collect();
             self.state.borrow_mut().engine.manifest.reconcile(&known);
         }
+        let mut digests: std::collections::BTreeMap<String, (u64, String)> =
+            std::collections::BTreeMap::new();
+        if let Ok(changes) = &result {
+            for change in changes {
+                match (change.op.as_str(), &change.sha256) {
+                    ("delete", _) => {
+                        digests.remove(&change.path);
+                    }
+                    (_, Some(sha)) => {
+                        digests
+                            .insert(change.path.clone(), (change.size.unwrap_or(0), sha.clone()));
+                    }
+                    _ => {
+                        digests.remove(&change.path);
+                    }
+                }
+            }
+        }
+        let queue = self.state.borrow().engine.manifest.requeued();
+        let this = Rc::clone(self);
+        self.verify(queue, 0, Rc::new(digests), Box::new(move || this.settle()));
+    }
+
+    /// Looks at files sent before whose size or time changed: one that holds what the server holds (same size, same
+    /// `sha256`) was only touched, and is done; the rest wait to be sent.
+    fn verify(
+        self: &Rc<Self>,
+        queue: Vec<Requeued>,
+        at: usize,
+        digests: Rc<std::collections::BTreeMap<String, (u64, String)>>,
+        then: Box<dyn FnOnce()>,
+    ) {
+        let Some(file) = queue.get(at).cloned() else {
+            then();
+            return;
+        };
+        let held = digests
+            .get(&file.remote)
+            .filter(|(size, _)| *size == file.size)
+            .map(|(_, sha)| sha.clone());
+        let Some(held) = held else {
+            self.verify(queue, at + 1, digests, then);
+            return;
+        };
+        let this = Rc::clone(self);
+        self.platform.digest(
+            &file.uri,
+            Box::new(move |answer| {
+                if answer.is_ok_and(|d| d.eq_ignore_ascii_case(&held)) {
+                    this.state.borrow_mut().engine.manifest.done(
+                        &file.category,
+                        &file.local_id,
+                        &file.remote,
+                    );
+                }
+                this.verify(queue, at + 1, digests, then);
+            }),
+        );
+    }
+
+    fn settle(self: &Rc<Self>) {
         {
             let mut st = self.state.borrow_mut();
             // A restore just brought files back: they are on the device and in the storage already.

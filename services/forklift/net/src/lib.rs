@@ -437,6 +437,8 @@ pub struct Change {
     /// `put` or `delete`.
     pub op: String,
     pub size: Option<u64>,
+    /// `sha256` of the content the server holds, in hex, for a `put`.
+    pub sha256: Option<String>,
 }
 
 impl Change {
@@ -446,6 +448,10 @@ impl Change {
             path: v.get("path")?.as_str()?.to_string(),
             op: v.get("op")?.as_str()?.to_string(),
             size: v.get("size").and_then(Value::as_u64),
+            sha256: v
+                .get("sha256")
+                .and_then(Value::as_str)
+                .map(|d| d.strip_prefix("sha256:").unwrap_or(d).to_string()),
         })
     }
 }

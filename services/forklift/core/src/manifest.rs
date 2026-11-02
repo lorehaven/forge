@@ -94,6 +94,16 @@ impl Item {
     }
 }
 
+/// A file sent before that waits again (see [`Manifest::requeued`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Requeued {
+    pub category: String,
+    pub local_id: String,
+    pub uri: String,
+    pub size: u64,
+    pub remote: String,
+}
+
 /// What a scan changed.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Scanned {
@@ -276,6 +286,23 @@ impl Manifest {
         for i in self.items.values_mut().filter(|i| i.category == category) {
             i.gone = !seen.contains(i.local_id.as_str());
         }
+    }
+
+    /// Files that were sent before and wait again because the scan found them changed (a new size or time): the ones
+    /// whose content may still be what the storage holds.
+    #[must_use]
+    pub fn requeued(&self) -> Vec<Requeued> {
+        self.items
+            .values()
+            .filter(|i| i.status == Status::Pending && !i.remote.is_empty() && !i.gone)
+            .map(|i| Requeued {
+                category: i.category.clone(),
+                local_id: i.local_id.clone(),
+                uri: i.uri.clone(),
+                size: i.size,
+                remote: i.remote.clone(),
+            })
+            .collect()
     }
 
     /// Puts files found sending back to waiting (call it once, after loading).

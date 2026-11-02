@@ -344,6 +344,26 @@ object Backup {
             .put("charging", (sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0)
     }
 
+    /** The sha256 of a file in hex, read on its own thread (a long file must not hold up the program's other calls). */
+    private fun digest(context: Context, uri: Uri, reply: (Any) -> Unit, fail: (String) -> Unit) {
+        Thread {
+            try {
+                val sha = java.security.MessageDigest.getInstance("SHA-256")
+                (context.contentResolver.openInputStream(uri) ?: throw java.io.FileNotFoundException(uri.toString())).use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        sha.update(buffer, 0, n)
+                    }
+                }
+                reply(sha.digest().joinToString("") { "%02x".format(it) })
+            } catch (e: Exception) {
+                fail(e.message ?: e.javaClass.simpleName)
+            }
+        }.start()
+    }
+
     private val uploads = ConcurrentHashMap<String, HttpURLConnection>()
 
     /** Files the server took in this run. */
@@ -439,6 +459,7 @@ object Backup {
                                 "folder" -> reply(folder(context, Uri.parse(message.getString("uri"))))
                                 "device" -> reply(device(context))
                                 "upload" -> { upload(context, message, send); reply(JSONObject()) }
+                                "hash" -> digest(context, Uri.parse(message.getString("uri")), reply, fail)
                                 else -> fail("unknown call")
                             }
                         } catch (e: Exception) {
@@ -466,7 +487,7 @@ object Backup {
         }
         Log.i(TAG, "run ended; ${sent.get()} file(s) sent")
         updateStatus(context)
-        if (sent.get() > 0) notifyResult(context, "Forklift", "Backed up ${sent.get()} new file${if (sent.get() == 1) "" else "s"}")
+        if (sent.get() > 0) notifyResult(context, "Forklift", "Backed up ${sent.get()} file${if (sent.get() == 1) "" else "s"}")
         return !busy
     }
 
