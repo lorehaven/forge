@@ -69,7 +69,7 @@ impl Store {
     pub fn read(&self) -> Option<(String, String)> {
         let text = std::fs::read_to_string(self.file()).ok()?;
         let (server, token) = text.trim().split_once('\n')?;
-        Some((server.to_string(), token.to_string()))
+        Some((server.to_string(), hoist_net::vault::open(token)?))
     }
 
     /// Keeps the session. Written whole to a temporary file and renamed into place, so a program stopped half-way
@@ -89,7 +89,7 @@ impl Store {
             .open(&temp);
         if let Ok(mut file) = file
             && file
-                .write_all(format!("{server}\n{token}\n").as_bytes())
+                .write_all(format!("{server}\n{}\n", hoist_net::vault::seal(token)).as_bytes())
                 .is_ok()
             && file.sync_all().is_ok()
             && std::fs::rename(&temp, self.file()).is_ok()

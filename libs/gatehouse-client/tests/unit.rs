@@ -274,4 +274,70 @@ fn a_server_that_is_not_there_is_a_network_error() {
     assert!(matches!(s.refresh().unwrap_err(), Error::Network(_)));
 }
 
+#[quench_test::test]
+fn a_refused_refresh_token_is_replaced_by_signing_in_with_the_kept_credentials() {
+    let (base, seen) = gatehouse(&["old"], |_| 200);
+    let kept = Arc::new(Mutex::new(Vec::<String>::new()));
+    let sink = Arc::clone(&kept);
+    let mut s = Session::resume(&base, "old")
+        .keeping_tokens(move |t| sink.lock().unwrap().push(t.to_string()))
+        .with_credentials("ann", "pw");
+    s.refresh().unwrap();
+    assert_eq!(
+        kept.lock().unwrap().len(),
+        1,
+        "the new token is kept at once"
+    );
+    let targets: Vec<String> = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|r| r.target.clone())
+        .collect();
+    assert_eq!(
+        targets,
+        [
+            "/gatehouse/api/v1/auth/refresh",
+            "/gatehouse/api/v1/auth/login"
+        ]
+    );
+    assert_eq!(get(&mut s, &base, "/x"), 200);
+}
+
+#[quench_test::test]
+fn refused_credentials_end_the_session_and_an_absent_server_does_not() {
+    let (base, _) = serve(Box::new(|_| (401, vec![], String::new())));
+    let mut s = Session::resume(&base, "old").with_credentials("ann", "wrong");
+    assert_eq!(s.refresh().unwrap_err(), Error::Unauthorized);
+    let mut s = Session::resume("http://127.0.0.1:1", "old").with_credentials("ann", "pw");
+    assert!(matches!(s.refresh().unwrap_err(), Error::Network(_)));
+}
+
+const KEY: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+const OTHER: &str = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
+
+#[quench_test::test]
+fn a_sealed_session_opens_only_with_its_key() {
+    let sealed = gatehouse_client::vault::seal_with(Some(KEY), "refresh-token");
+    assert!(!sealed.contains("refresh-token"));
+    assert_eq!(
+        gatehouse_client::vault::open_with(Some(KEY), &sealed).as_deref(),
+        Some("refresh-token")
+    );
+    assert_eq!(
+        gatehouse_client::vault::open_with(Some(OTHER), &sealed),
+        None
+    );
+    assert_eq!(gatehouse_client::vault::open_with(None, &sealed), None);
+}
+
+#[quench_test::test]
+fn without_a_key_text_is_kept_as_it_is_and_an_old_plain_file_is_still_read() {
+    assert_eq!(gatehouse_client::vault::seal_with(None, "t"), "t");
+    assert_eq!(
+        gatehouse_client::vault::open_with(Some(KEY), "plain-token\n").as_deref(),
+        Some("plain-token")
+    );
+}
+
 quench_test::main!();

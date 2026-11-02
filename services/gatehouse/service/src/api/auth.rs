@@ -16,6 +16,32 @@ use quench_serde::{Deserialize, Serialize};
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
+    /// An installed app (`daybook-android`): it gets one long-lived session of its own, see [`client_ttl_secs`].
+    #[serde(default)]
+    pub client: Option<String>,
+}
+
+/// How long an app's session lives after its last use (`CLIENT_REFRESH_TTL_SECS`, default 90 days).
+fn client_ttl_secs() -> i64 {
+    quench_core::env::get_or("CLIENT_REFRESH_TTL_SECS", "7776000")
+        .parse()
+        .unwrap_or(7_776_000)
+}
+
+/// How old an app's refresh token gets before it is replaced (`CLIENT_ROTATE_SECS`, default 30 days).
+fn client_rotate_secs() -> u64 {
+    quench_core::env::get_or("CLIENT_ROTATE_SECS", "2592000")
+        .parse()
+        .unwrap_or(2_592_000)
+}
+
+/// A client name is a short label, not free text.
+fn valid_client(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 40
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,7 +95,14 @@ async fn login(
             return LoginError::response("invalid_credentials");
         }
     };
-    match issue_token_pair(&config, &sessions, &user).await {
+    let issued = match request.client.as_deref() {
+        None => issue_token_pair(&config, &sessions, &user).await,
+        Some(client) if valid_client(client) => {
+            issue_client_token_pair(&config, &sessions, &user, client).await
+        }
+        Some(_) => return Response::new(StatusCode::BAD_REQUEST),
+    };
+    match issued {
         Ok(tokens) => json_ok(&tokens),
         Err(err) => {
             quench_log::error!("Failed to create authentication session: {}", err);
@@ -243,7 +276,14 @@ async fn rotate_serialized(
     ttl_secs: i64,
 ) -> quench_core::Result<Option<(Session, String)>> {
     let _one_at_a_time = ROTATION.lock().await;
-    sessions.rotate(refresh_token, ttl_secs).await
+    sessions
+        .rotate_with(
+            refresh_token,
+            ttl_secs,
+            client_ttl_secs(),
+            client_rotate_secs(),
+        )
+        .await
 }
 
 /// Renews a session from its refresh token, in-process.
@@ -284,6 +324,19 @@ pub async fn issue_token_pair(
 ) -> quench_core::Result<TokenResponse> {
     let (session, refresh_token) = sessions
         .create(&user.username, config.refresh_token_ttl_secs)
+        .await?;
+    Ok(token_response(config, user, &session, refresh_token).await?)
+}
+
+/// The pair for an installed app: its one session per user, replacing the app's earlier one.
+pub async fn issue_client_token_pair(
+    config: &JwtConfig,
+    sessions: &SessionDb,
+    user: &User,
+    client: &str,
+) -> quench_core::Result<TokenResponse> {
+    let (session, refresh_token) = sessions
+        .create_for_client(&user.username, client, client_ttl_secs())
         .await?;
     Ok(token_response(config, user, &session, refresh_token).await?)
 }

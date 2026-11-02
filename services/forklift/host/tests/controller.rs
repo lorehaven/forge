@@ -612,6 +612,52 @@ fn a_session_that_cannot_be_renewed_signs_out() {
 }
 
 #[quench_test::test]
+fn a_server_that_does_not_answer_keeps_the_person_signed_in_and_is_waited_for() {
+    let fake = Fake::default();
+    *fake.images.borrow_mut() = vec![file("1", 10, 1)];
+    *fake.token.borrow_mut() = Some(Err(NetError::Network("no route".into())));
+    let w = world(
+        "offline",
+        Settings {
+            videos: false,
+            ..Settings::default()
+        },
+        fake,
+    );
+    w.store.set_token("old");
+    w.controller.start();
+    assert!(
+        w.sent
+            .borrow()
+            .iter()
+            .any(|m| matches!(m, Msg::Offline(true)))
+    );
+    assert!(!w.sent.borrow().iter().any(|m| matches!(m, Msg::SignedOut)));
+    assert_eq!(
+        w.store.token().as_deref(),
+        Some("old"),
+        "the session is kept"
+    );
+    assert!(w.fake.uploads.borrow().is_empty());
+
+    // The server is back by the time the wait is over: the file goes, and the waiting state ends.
+    *w.fake.token.borrow_mut() = Some(Ok("fresh".into()));
+    let waits: Vec<_> = w.fake.later.borrow_mut().drain(..).collect();
+    assert!(waits.iter().any(|(ms, _)| *ms >= 5000));
+    for (_, f) in waits {
+        f();
+    }
+    assert!(
+        w.sent
+            .borrow()
+            .iter()
+            .any(|m| matches!(m, Msg::Offline(false)))
+    );
+    assert_eq!(w.fake.uploads.borrow().len(), 1);
+    w.cleanup();
+}
+
+#[quench_test::test]
 fn a_failure_is_tried_again_when_its_wait_is_over() {
     let fake = Fake::default();
     *fake.images.borrow_mut() = vec![file("1", 10, 1)];

@@ -526,6 +526,8 @@ name = "gatehouse-client"
 version = "0.1.0"
 dependencies = [
  "quench-client",
+ "quench-core",
+ "quench-crypto",
  "quench-serde",
  "quench-test",
 ]
@@ -844,9 +846,9 @@ dependencies = [
 
 [[package]]
 name = "quench-auth"
-version = "0.4.17"
+version = "0.4.19"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "187df6226c8e4cbc15282094b628999e31d11c56c8be877c09a9068936d5d7dc"
+checksum = "43c55c38f4cf610f9301c596043e464fe1aa68ac1a82216d90d083eea35e9262"
 dependencies = [
  "quench-cache",
  "quench-client",

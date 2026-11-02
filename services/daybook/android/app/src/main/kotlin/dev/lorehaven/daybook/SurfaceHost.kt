@@ -51,6 +51,7 @@ class SurfaceHost(private val context: Context, private val listener: Listener) 
                 .directory(context.filesDir)
                 .apply {
                     environment()["HOME"] = context.filesDir.absolutePath
+                    SessionKey.hex(context)?.let { environment()["FORGE_SESSION_KEY"] = it }
                     // The program has no zone database of its own on the device: it reads this (an app that shows or computes local
                     // times needs it).
                     environment()["TZ"] = java.util.TimeZone.getDefault().id

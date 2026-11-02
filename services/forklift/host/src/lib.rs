@@ -105,6 +105,10 @@ struct State {
     scan_ok: bool,
     /// Whether the timer that looks for new files is already running.
     rescan_scheduled: bool,
+    /// The server did not answer; the next try is waiting (`retrying`), `attempts` of them so far.
+    offline: bool,
+    retrying: bool,
+    attempts: u32,
     /// The ids of the files the running scan has met in the category it is reading (what it did not meet is gone).
     seen: Vec<String>,
     /// How many files the running scan has looked at.
@@ -130,6 +134,18 @@ pub const MEDIA_PAGE: u32 = 2000;
 pub const PUBLISH_EVERY_MS: i64 = 250;
 /// How often the manifest is written while uploads go on.
 const SAVE_EVERY_MS: i64 = 3000;
+
+/// Whether this answer ends the session: the refresh was refused for good, or the account was turned off. Nothing
+/// else does (a server that is down, a refusal of one request).
+fn is_session_over(error: &NetError) -> bool {
+    matches!(error, NetError::Unauthorized | NetError::AccountDisabled)
+}
+
+/// Whether the server could not be reached (no connection, or a proxy answering for a service that is down or
+/// restarting: 502-504).
+fn is_unreachable(error: &NetError) -> bool {
+    matches!(error, NetError::Network(_) | NetError::Status(502..=504))
+}
 /// How often a running app looks for new files by itself.
 const RESCAN_MS: u64 = 10 * 60 * 1000;
 
@@ -168,6 +184,9 @@ impl Controller {
                 listing: None,
                 scan_ok: true,
                 rescan_scheduled: false,
+                offline: false,
+                retrying: false,
+                attempts: 0,
                 seen: Vec::new(),
                 looked_at: 0,
                 settled: false,
@@ -647,6 +666,7 @@ impl Controller {
             false,
             Box::new(move |token| match token {
                 Ok(token) => {
+                    this.reachable();
                     this.state.borrow_mut().pumping = false;
                     for start in starts {
                         let url = upload_url(&base, &storage, &start.remote);
@@ -663,14 +683,54 @@ impl Controller {
         self.state.borrow_mut().pumping = false;
         self.state.borrow_mut().engine.stop();
         self.save();
-        if *error == NetError::Unauthorized {
+        if is_session_over(error) {
             self.state.borrow_mut().engine.resume();
             self.store.clear_token();
             (self.emit)(Msg::SignedOut);
+        } else if is_unreachable(error) {
+            self.unreachable();
         } else {
             self.notice(&error.to_string());
         }
         self.publish();
+    }
+
+    /// The server does not answer: the person stays signed in, the app says it is waiting, and the work starts again
+    /// by itself after a wait that grows (5 s up to 40 s).
+    fn unreachable(self: &Rc<Self>) {
+        if !self.state.borrow_mut().offline {
+            self.state.borrow_mut().offline = true;
+            (self.emit)(Msg::Offline(true));
+        }
+        if std::mem::replace(&mut self.state.borrow_mut().retrying, true) {
+            return;
+        }
+        let n = {
+            let mut st = self.state.borrow_mut();
+            let n = st.attempts;
+            st.attempts = n.saturating_add(1);
+            n
+        };
+        let this = Rc::clone(self);
+        self.platform.later(
+            5000 << n.min(3),
+            Box::new(move || {
+                this.state.borrow_mut().retrying = false;
+                this.pump();
+            }),
+        );
+    }
+
+    /// The server answered: the waiting state ends.
+    fn reachable(&self) {
+        let was = {
+            let mut st = self.state.borrow_mut();
+            st.attempts = 0;
+            std::mem::replace(&mut st.offline, false)
+        };
+        if was {
+            (self.emit)(Msg::Offline(false));
+        }
     }
 
     /// Looks again when the earliest file waiting out a failure is due.

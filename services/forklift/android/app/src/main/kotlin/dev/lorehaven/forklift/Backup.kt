@@ -423,7 +423,7 @@ object Backup {
         val process = try {
             ProcessBuilder(program.absolutePath, "--backup")
                 .directory(context.filesDir)
-                .apply { environment()["HOME"] = context.filesDir.absolutePath }
+                .apply { environment()["HOME"] = context.filesDir.absolutePath; SessionKey.hex(context)?.let { environment()["FORGE_SESSION_KEY"] = it } }
                 .start()
         } catch (e: Exception) {
             running.set(false)

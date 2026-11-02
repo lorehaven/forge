@@ -55,6 +55,8 @@ pub enum Msg {
     Restore(Box<forklift_core::RestoreView>),
     /// Something to tell the person.
     Notice(String),
+    /// The server cannot be reached (`true`) or is back: the person stays signed in and the host tries again.
+    Offline(bool),
     /// The session ended: show the sign-in again.
     SignedOut,
 }
@@ -106,6 +108,7 @@ pub fn forklift(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Forklift {
         let signed_in = create_signal(setup.has_session);
         let shot = create_signal(setup.initial.clone());
         let message = create_signal(String::new());
+        let offline = create_signal(false);
         let busy = create_signal(false);
         let screen = create_signal(0_usize);
         let confirm_out = create_signal(false);
@@ -133,6 +136,7 @@ pub fn forklift(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Forklift {
         let kept = Rc::new(std::cell::RefCell::new(setup.settings.clone()));
 
         // What the host says comes to the signals.
+        let offline_in = offline.clone();
         {
             let (signed_in, shot, message, busy, controls, kept, restore, chooser, ask) = (
                 signed_in.clone(),
@@ -177,6 +181,7 @@ pub fn forklift(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Forklift {
                     busy.set(false);
                     message.set(text);
                 }
+                Msg::Offline(on) => offline_in.set(on),
                 Msg::SignedOut => {
                     busy.set(false);
                     signed_in.set(false);
@@ -343,6 +348,7 @@ pub fn forklift(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Forklift {
             .child(bar)
             .child(div().class("forklift-body").child(panels))
             .child(crate::toast::toast(&shown))
+            .child(crate::toast::offline(&offline))
             .child(View::show(
                 move || working.get(),
                 || {

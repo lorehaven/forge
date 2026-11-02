@@ -78,7 +78,7 @@ object UpdateCheck {
         }
         val process = ProcessBuilder(program.absolutePath, "--check")
             .directory(context.filesDir)
-            .apply { environment()["HOME"] = context.filesDir.absolutePath }
+            .apply { environment()["HOME"] = context.filesDir.absolutePath; SessionKey.hex(context)?.let { environment()["FORGE_SESSION_KEY"] = it } }
             .start()
         process.outputStream.use { it.write(installed(context).toByteArray()) }
         val errors = Thread {

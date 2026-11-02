@@ -231,6 +231,29 @@ fn only_the_last_change_schedules_the_reminders() {
 }
 
 #[quench_test::test]
+fn an_unreachable_server_keeps_the_person_signed_in_and_is_tried_again_until_it_answers() {
+    let r = rig("offline");
+    r.c.start();
+    r.fake.answer(Err(NetError::Network("no route".into())));
+    assert!(r.out.borrow().contains(&Msg::Offline(true)));
+    assert!(!r.out.borrow().contains(&Msg::SignedOut));
+    assert!(r.notices().is_empty(), "the banner says it, not a toast");
+    assert_eq!(*r.fake.signed_out.borrow(), 0);
+
+    // Again, and again (a 5xx is a server that is down or restarting, not a refusal).
+    r.fake.fire_later();
+    r.fake.answer(Err(NetError::Status(502)));
+    assert_eq!(r.fake.later.borrow().len(), 1, "the next try is waiting");
+    assert!(r.fake.later.borrow()[0].0 > 3000, "the wait grows");
+    assert!(!r.out.borrow().contains(&Msg::SignedOut));
+
+    r.fake.fire_later();
+    r.fake.answer(Ok(Reply::Loaded(Box::default())));
+    assert!(r.out.borrow().contains(&Msg::Offline(false)));
+    assert!(r.fake.later.borrow().is_empty());
+}
+
+#[quench_test::test]
 fn a_session_that_ended_signs_out_and_cancels_the_reminders() {
     let r = rig("expired");
     r.loaded(vec![task("a")]);

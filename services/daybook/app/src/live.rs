@@ -90,6 +90,8 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     let list = create_signal(setup.list.clone());
     let loading = create_signal(setup.has_session);
     let message = create_signal(String::new());
+    let offline = create_signal(false);
+    let offline_in = offline.clone();
     let login_busy = create_signal(false);
     let login_error = create_signal(String::new());
     let drawer = create_signal(false);
@@ -156,6 +158,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             Msg::LabelCreated(label) => made_label.set(Some(label.id)),
             Msg::Notice(text) => message.set(text),
             Msg::Loading(on) => loading.set(on),
+            Msg::Offline(on) => offline_in.set(on),
             Msg::NotificationsBlocked(b) => blocked.set(b),
             Msg::Show { list, add, task } => show_request.set(Some((list, add, task))),
             Msg::SignedOut => {
@@ -387,6 +390,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         ))
         .child(naming_dialog(&naming, &naming_open, Rc::clone(requests)))
         .child(crate::toast::toast(&message))
+        .child(crate::toast::offline(&offline))
         .child(snackbar(&create_signal(None), None))
         .into_view()
 }

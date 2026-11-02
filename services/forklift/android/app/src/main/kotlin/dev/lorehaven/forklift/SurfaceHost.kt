@@ -52,6 +52,7 @@ class SurfaceHost(private val context: Context, private val listener: Listener) 
                 .directory(context.filesDir)
                 .apply {
                     environment()["HOME"] = context.filesDir.absolutePath
+                    SessionKey.hex(context)?.let { environment()["FORGE_SESSION_KEY"] = it }
                     // What the app asked of the network and what came back (paths and statuses only), in debug builds.
                     if (BuildConfig.DEBUG) environment()["FORKLIFT_TRACE"] = "1"
                 }

@@ -161,6 +161,7 @@ h3{font-size:1.125rem;font-weight:600;margin:1rem 0 .5rem;color:var(--dbk-text)}
 .dbk-loader{position:absolute;left:0;right:0;top:0;height:3px;background:var(--dbk-brand-500);opacity:.8}
 .dbk-dot{display:none}
 .dbk-toast{position:fixed;left:1rem;right:1rem;bottom:96px;padding:.875rem 1rem;border-radius:10px;border:1px solid var(--dbk-strong);background:var(--dbk-surface-2);color:var(--dbk-text);font-size:.9375rem}
+.dbk-offline{position:fixed;left:0;right:0;top:0;padding:.5rem 1rem;text-align:center;font-size:.875rem;background:var(--dbk-error-soft);border-bottom:1px solid var(--dbk-error-line);color:var(--dbk-error-text)}
 .dbk-toast-problem{background:var(--dbk-error-soft);border-color:var(--dbk-error-line);color:var(--dbk-error-text)}
 
 /* Popups come in quickly: on a phone every frame of a full-screen transition costs, and 200 ms of them is what felt slow. */

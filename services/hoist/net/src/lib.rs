@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gatehouse_client::transfer_client;
+pub use gatehouse_client::vault;
 use hoist_core::{Artifact, Category, PublicApp, PublicPage, PublicQuery};
 use quench_serde::{Deserialize, Value, json};
 
@@ -98,13 +99,22 @@ pub fn set_timeouts(call: Duration, transfer: Duration) {
     gatehouse_client::set_timeouts(call, transfer);
 }
 
+/// The name gatehouse keeps this app's session under: one session per user and app, renewed rarely.
+const CLIENT: &str = if cfg!(target_os = "android") {
+    "hoist-android"
+} else {
+    "hoist-desktop"
+};
+
 /// Signs in. The password is not kept.
 ///
 /// # Errors
 /// [`NetError`].
 pub fn login(base: &str, username: &str, password: &str) -> Result<Session, NetError> {
     gatehouse_client::trace_var("HOIST_TRACE");
-    Ok(Session(gatehouse_client::login(base, username, password)?))
+    Ok(Session(gatehouse_client::login_as(
+        base, username, password, CLIENT,
+    )?))
 }
 
 /// A signed-in session against one server.

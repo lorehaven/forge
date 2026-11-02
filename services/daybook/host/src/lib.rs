@@ -58,6 +58,12 @@ struct State {
     asked_notifications: bool,
 }
 
+/// Whether the services could not be reached (no connection, or a proxy answering for a service that is down or restarting: 502-504), as opposed to
+/// answering with a refusal.
+fn is_unreachable(error: &NetError) -> bool {
+    matches!(error, NetError::Network(_) | NetError::Status(502..=504))
+}
+
 /// The controller.
 pub struct Controller {
     platform: Rc<dyn Platform>,
@@ -65,6 +71,10 @@ pub struct Controller {
     emit: Rc<dyn Fn(Msg)>,
     state: RefCell<State>,
     loading: Cell<u32>,
+    /// The services did not answer, and the next try is waiting.
+    offline: Cell<bool>,
+    retrying: Cell<bool>,
+    attempts: Cell<u32>,
 }
 
 impl Controller {
@@ -82,6 +92,9 @@ impl Controller {
                 asked_notifications: false,
             }),
             loading: Cell::new(0),
+            offline: Cell::new(false),
+            retrying: Cell::new(false),
+            attempts: Cell::new(0),
         })
     }
 
@@ -116,12 +129,43 @@ impl Controller {
         (self.emit)(Msg::Notice(text.into()));
     }
 
-    /// An answer that says the session is over ends it; anything else is told to the person.
-    fn failed(&self, what: &str, error: &NetError) {
+    /// An answer that says the session is over ends it; services that do not answer put the app in its waiting state
+    /// (the person stays signed in); anything else is told to the person.
+    fn failed(self: &Rc<Self>, what: &str, error: &NetError) {
         if *error == NetError::Unauthorized {
             self.sign_out();
+        } else if is_unreachable(error) {
+            self.unreachable();
         } else {
             self.notice(format!("{what}: {error}"));
+        }
+    }
+
+    /// Says the services cannot be reached and tries to read again after a wait that grows (3 s up to 24 s).
+    fn unreachable(self: &Rc<Self>) {
+        if !self.offline.replace(true) {
+            (self.emit)(Msg::Offline(true));
+        }
+        if self.retrying.replace(true) {
+            return;
+        }
+        let n = self.attempts.get();
+        self.attempts.set(n.saturating_add(1));
+        let me = Rc::clone(self);
+        self.platform.later(
+            3000 << n.min(3),
+            Box::new(move || {
+                me.retrying.set(false);
+                me.load();
+            }),
+        );
+    }
+
+    /// The services answered: the waiting state ends.
+    fn reachable(&self) {
+        self.attempts.set(0);
+        if self.offline.replace(false) {
+            (self.emit)(Msg::Offline(false));
         }
     }
 
@@ -147,6 +191,7 @@ impl Controller {
                 me.busy(false);
                 match result {
                     Ok(Reply::Loaded(data)) => {
+                        me.reachable();
                         me.state.borrow_mut().data = *data;
                         me.publish();
                         me.reschedule_now();
@@ -270,6 +315,8 @@ impl Controller {
                 Err(e) => {
                     if e == NetError::NotFound {
                         me.load();
+                    } else if is_unreachable(&e) {
+                        me.unreachable();
                     }
                     (me.emit)(Msg::Saved(Err(e.to_string())));
                 }

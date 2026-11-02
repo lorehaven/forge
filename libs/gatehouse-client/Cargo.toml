@@ -20,6 +20,8 @@ path = "tests/unit.rs"
 harness = false
 
 [dependencies]
+quench-core = { workspace = true }
+quench-crypto = { workspace = true }
 quench-client = { workspace = true, features = ["blocking"] }
 quench-serde = { workspace = true }
 

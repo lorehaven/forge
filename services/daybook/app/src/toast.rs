@@ -59,6 +59,24 @@ pub fn toast(message: &Signal<String>) -> View {
     )
 }
 
+/// The banner over the top of the screen while the services cannot be reached: the person stays signed in, and the
+/// app reads again by itself.
+#[must_use]
+pub fn offline(offline: &Signal<bool>) -> View {
+    let when = offline.clone();
+    View::show(
+        move || when.get(),
+        || {
+            div()
+                .attr("id", "offline")
+                .attr("role", "status")
+                .attr("class", "dbk-offline")
+                .text("The server is not reachable. Waiting for the connection...")
+                .into_view()
+        },
+    )
+}
+
 /// `busy`, kept up for at least `min_ms` once it has come on, so that quick work still shows the loader. With
 /// `min_ms` of 0 it is `busy` itself.
 #[must_use]

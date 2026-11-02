@@ -82,6 +82,9 @@ pub enum Msg {
         add: bool,
         task: Option<String>,
     },
+    /// The services cannot be reached (`true`) or are back (`false`). The person stays signed in: the host keeps
+    /// trying by itself until they answer.
+    Offline(bool),
     /// The session ended: show the sign-in again.
     SignedOut,
 }

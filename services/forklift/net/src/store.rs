@@ -231,12 +231,16 @@ impl Store {
     #[must_use]
     pub fn token(&self) -> Option<String> {
         self.read("session")
-            .map(|t| t.trim().to_string())
+            .and_then(|t| gatehouse_client::vault::open(&t))
             .filter(|t| !t.is_empty())
     }
 
     pub fn set_token(&self, token: &str) {
-        self.write("session", &format!("{token}\n"), true);
+        self.write(
+            "session",
+            &format!("{}\n", gatehouse_client::vault::seal(token)),
+            true,
+        );
     }
 
     /// Signs out: the token goes.

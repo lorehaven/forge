@@ -89,7 +89,7 @@ quench-ui-native = { registry = "ennor", version = "0.1.6" }
 quench-ui-web = { registry = "ennor", version = "0.1.8" }
 quench-archive = { registry = "ennor", version = "0.1.3" }
 quench-args = { registry = "ennor", version = "0.1.3" }
-quench-auth = { registry = "ennor", version = "0.4.17" }
+quench-auth = { registry = "ennor", version = "0.4.19" }
 quench-cache = { registry = "ennor", version = "0.1.21" }
 quench-cli = { registry = "ennor", version = "0.1.15" }
 quench-client = { registry = "ennor", version = "0.2.18" }

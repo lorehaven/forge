@@ -458,3 +458,64 @@ async fn concurrent_refreshes_with_one_token_all_succeed_for_two_tabs() {
     }
     assert_eq!(failures, 0, "a concurrent refresh was refused");
 }
+
+/// An installed app keeps one long-lived session: its refresh token survives a renewal unchanged (so a lost answer
+/// costs nothing), and signing in again from the same app replaces the session.
+#[quench_test::test]
+async fn an_app_keeps_its_refresh_token_and_has_one_session() {
+    let db = db().await;
+    realm::create(
+        &db,
+        &realm_catalog(),
+        true,
+        "erin",
+        "correct-horse",
+        vec![Role::User],
+        Permissions::new(),
+        None,
+    )
+    .await
+    .expect("seed user");
+    let sessions = sessions();
+    let config = JwtConfig::for_tests_with_signing();
+    let user = realm::get(&db, "erin").await.expect("user");
+    let api = gatehouse_service::api::auth::issue_client_token_pair;
+
+    let first = api(&config, &sessions, &user, "daybook-android")
+        .await
+        .expect("issue tokens");
+    let renewed = gatehouse_service::api::auth::refresh_session(
+        &config,
+        &db,
+        &sessions,
+        &first.refresh_token,
+    )
+    .await
+    .expect("renewal");
+    assert_eq!(renewed.refresh_token, first.refresh_token);
+
+    let second = api(&config, &sessions, &user, "daybook-android")
+        .await
+        .expect("sign in again");
+    assert!(
+        gatehouse_service::api::auth::refresh_session(
+            &config,
+            &db,
+            &sessions,
+            &first.refresh_token
+        )
+        .await
+        .is_none(),
+        "the app's earlier session ended"
+    );
+    let other = api(&config, &sessions, &user, "forklift-android")
+        .await
+        .expect("another app");
+    for token in [&second.refresh_token, &other.refresh_token] {
+        assert!(
+            gatehouse_service::api::auth::refresh_session(&config, &db, &sessions, token)
+                .await
+                .is_some()
+        );
+    }
+}

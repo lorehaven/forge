@@ -60,6 +60,7 @@ class WidgetRefreshJobService : JobService() {
             .redirectErrorStream(true)
             .apply {
                 environment()["HOME"] = filesDir.absolutePath
+                SessionKey.hex(this@WidgetRefreshJobService)?.let { environment()["FORGE_SESSION_KEY"] = it }
                 environment()["TZ"] = java.util.TimeZone.getDefault().id
             }
             .start()
