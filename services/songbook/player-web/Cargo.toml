@@ -20,7 +20,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 songbook-player = { workspace = true }
 songbook-core = { workspace = true }
-quench-serde = { workspace = true }
 quench-ui = { workspace = true }
 quench-ui-web = { workspace = true }
 
