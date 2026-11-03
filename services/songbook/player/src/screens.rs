@@ -51,6 +51,14 @@ fn megabytes(bytes: u64) -> String {
 }
 
 /// A colour for a name, the same each time: the cover of something that has no picture.
+/// The plain colour of a tint: where gradients are not drawn (the phone's native screens) this is what shows.
+fn tint_solid(name: &str) -> String {
+    let hash = name
+        .bytes()
+        .fold(7_u32, |h, b| h.wrapping_mul(31).wrapping_add(u32::from(b)));
+    format!("hsl({}, 48%, 28%)", hash % 360)
+}
+
 fn tint(name: &str) -> String {
     let hash = name
         .bytes()
@@ -94,7 +102,11 @@ fn cover_with(name: &str, label: &str, big: bool) -> Element {
         } else {
             "pl-cover"
         })
-        .css("background", {
+        .css("background-color", {
+            let name = name.to_string();
+            move || tint_solid(&name)
+        })
+        .css("background-image", {
             let name = name.to_string();
             move || tint(&name)
         })
@@ -105,7 +117,11 @@ fn cover_with(name: &str, label: &str, big: bool) -> Element {
 fn mix_cover(name: &str, icon: &str) -> Element {
     div()
         .class("pl-cover pl-cover-icon")
-        .css("background", {
+        .css("background-color", {
+            let name = name.to_string();
+            move || tint_solid(&name)
+        })
+        .css("background-image", {
             let name = name.to_string();
             move || tint(&name)
         })
@@ -217,12 +233,19 @@ pub(crate) fn side(env: &Env, router: &Router) -> View {
     };
     let mut foot = div().class("pl-side-foot");
     if !env.mobile {
-        foot = foot.child(
-            a().attr("href", format!("{}/ui/admin", env.base))
-                .attr("id", "admin-link")
-                .class("pl-pill")
-                .text("Admin"),
-        );
+        // Only for someone who may use the admin pages (the service says so in the overview).
+        let env = env.clone();
+        foot = foot.child(View::dynamic(move || {
+            if env.m.overview.get().is_some_and(|o| o.admin) {
+                a().attr("href", format!("{}/ui/admin", env.base))
+                    .attr("id", "admin-link")
+                    .class("pl-pill")
+                    .text("Admin")
+                    .into_view()
+            } else {
+                View::Empty
+            }
+        }));
     }
     foot = foot.child(logout(env, "logout"));
     aside()

@@ -62,6 +62,8 @@ class PlaybackService : MediaLibraryService() {
                 if (item.mediaMetadata.title == null && item.mediaId.startsWith("s:")) {
                     work.execute {
                         val filled = try { tree.fill(item) } catch (e: java.io.IOException) { null } ?: return@execute
+                        // Remembered now: replacing the item may or may not be reported as a new song.
+                        remember(filled, reason, 0)
                         main.post {
                             val at = (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == item.mediaId }
                             if (at != null) player.replaceMediaItem(at, filled)
@@ -69,12 +71,7 @@ class PlaybackService : MediaLibraryService() {
                     }
                     return
                 }
-                val song = Tree.songOf(item) ?: return
-                // Kept on this phone, and told to the service so that every device's "recently played" has it.
-                work.execute {
-                    try { brain.call("played", "song" to song.toInfo()) } catch (e: java.io.IOException) { /* later, on the next play */ }
-                    Resume.save(brain, item, 0)
-                }
+                remember(item, reason, 0)
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -92,6 +89,22 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private var stopWatching: (() -> Unit)? = null
+
+    /** The song last told to the service, so that filling in its details does not count as playing it twice. */
+    private var lastTold: String? = null
+
+    /** Kept on this phone, and told to the service so that every device's "recently played" has it; then the screens hear of it. */
+    private fun remember(item: MediaItem, reason: Int, at: Long) {
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED && lastTold == item.mediaId) return
+        val song = Tree.songOf(item) ?: return
+        lastTold = item.mediaId
+        val brain = Brain.of(this)
+        work.execute {
+            try { brain.call("played", "song" to song.toInfo()) } catch (e: java.io.IOException) { /* later, on the next play */ }
+            Resume.save(brain, item, at)
+            main.post { onPlayed?.invoke() }
+        }
+    }
 
     /** The button on the car's player: the crossfade now, and a press moves to the next length. */
     private fun fadeButton(settings: Settings): CommandButton {
@@ -210,6 +223,10 @@ class PlaybackService : MediaLibraryService() {
     companion object {
         /** The session command of the crossfade button on the car's player. */
         const val FADE_COMMAND = "songbook.crossfade"
+
+        /** Told (on the main thread) each time a song was written to the history: the screens' "recently played" asks again. */
+        @Volatile
+        var onPlayed: (() -> Unit)? = null
 
     }
 }

@@ -128,7 +128,8 @@ pub async fn upsert(repo: &Repository<ClientRow>, row: ClientRow) -> quench_core
     Ok(())
 }
 
-/// `<PREFIX>_UI_URL`/`<PREFIX>_URL`, with any trailing `/ui/home` trimmed.
+/// `<PREFIX>_UI_URL`/`<PREFIX>_URL`, with a trailing `/ui/home` (or else `/ui`) trimmed: the client's `redirect_path` starts
+/// with `/ui` itself.
 #[must_use]
 pub fn redirect_base_url(client_id: &str) -> Option<String> {
     let prefix = client_id.to_uppercase().replace('-', "_");
@@ -139,6 +140,7 @@ pub fn redirect_base_url(client_id: &str) -> Option<String> {
             return Some(
                 trimmed
                     .strip_suffix("/ui/home")
+                    .or_else(|| trimmed.strip_suffix("/ui"))
                     .unwrap_or(trimmed)
                     .to_string(),
             );

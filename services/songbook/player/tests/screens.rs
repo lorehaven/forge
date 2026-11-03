@@ -177,6 +177,7 @@ fn songs() -> SongList {
 
 fn overview() -> Overview {
     Overview {
+        admin: true,
         songs: 3,
         albums: 1,
         artists: vec![
@@ -736,8 +737,23 @@ fn the_queue_shows_what_comes_next_and_a_row_jumps_to_it() {
 
 #[quench_test::test]
 fn a_phone_has_no_way_to_the_admin_pages_and_a_computer_has() {
-    assert!(live_on("/songbook/ui", false).has("admin-link"));
-    assert!(!live_on("/songbook/ui", true).has("admin-link"));
+    // Only someone the service says may use the admin pages sees the way there, and not on a phone.
+    let computer = live_on("/songbook/ui", false);
+    assert!(
+        !computer.has("admin-link"),
+        "not before the service has said"
+    );
+    computer.send(Msg::Overview(overview()));
+    assert!(computer.has("admin-link"));
+    let listener = live_on("/songbook/ui", false);
+    listener.send(Msg::Overview(Overview {
+        admin: false,
+        ..overview()
+    }));
+    assert!(!listener.has("admin-link"), "a listener has no admin link");
+    let phone = live_on("/songbook/ui", true);
+    phone.send(Msg::Overview(overview()));
+    assert!(!phone.has("admin-link"));
     assert!(live("/songbook/ui").has("logout"));
 }
 

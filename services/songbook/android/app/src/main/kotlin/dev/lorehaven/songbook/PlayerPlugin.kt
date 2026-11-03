@@ -48,6 +48,8 @@ class PlayerPlugin(private val activity: Activity) : Plugin("player") {
 
     init {
         main.post { connect() }
+        // The history is written after a song starts, so "recently played" is asked for when that is done.
+        PlaybackService.onPlayed = { if (!closed) recent() }
     }
 
     private fun connect() {
@@ -65,7 +67,6 @@ class PlayerPlugin(private val activity: Activity) : Plugin("player") {
                     state(c)
                     if (events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_TIMELINE_CHANGED)) {
                         queue(c)
-                        if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) recent()
                     }
                 }
 
@@ -91,6 +92,7 @@ class PlayerPlugin(private val activity: Activity) : Plugin("player") {
     /** The screens went away: stop listening (the playback goes on, it is the service's). */
     fun close() {
         closed = true
+        PlaybackService.onPlayed = null
         stopWatching?.invoke()
         stopWatchingKept?.invoke()
         controller?.release()

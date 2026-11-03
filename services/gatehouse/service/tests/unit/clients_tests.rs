@@ -60,6 +60,17 @@ async fn redirect_base_url_reads_ui_url_and_trims_the_home_suffix() {
 }
 
 #[quench_test::test]
+async fn redirect_base_url_trims_a_plain_ui_suffix_too() {
+    let _guard = env_lock().lock().await;
+    quench_core::env::set("SONGBOOK_UI_URL", "https://host.example.test/songbook/ui");
+    assert_eq!(
+        redirect_base_url("songbook"),
+        Some("https://host.example.test/songbook".to_string())
+    );
+    quench_core::env::remove("SONGBOOK_UI_URL");
+}
+
+#[quench_test::test]
 async fn redirect_base_url_falls_back_to_the_plain_url_var() {
     let _guard = env_lock().lock().await;
     quench_core::env::remove("WORKBENCH_UI_URL");

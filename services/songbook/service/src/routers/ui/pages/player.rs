@@ -33,6 +33,12 @@ pub(super) async fn home_slash(who: ActorOrRedirect) -> Response {
     page(who)
 }
 
+/// The address the home page had before the player was rewritten: portal links and bookmarks still point at it.
+#[get("/ui/library")]
+pub(super) async fn library_legacy() -> Response {
+    Response::new(StatusCode::FOUND).header("Location", with_base_path("/ui"))
+}
+
 #[get("/ui/search")]
 pub(super) async fn search(who: ActorOrRedirect) -> Response {
     page(who)
@@ -123,6 +129,7 @@ pub(super) fn register_routes() {
     let _ = playlists as fn(_) -> _;
     let _ = playlist as fn(_) -> _;
     let _ = saved as fn(_) -> _;
+    let _ = library_legacy as fn() -> _;
     let _ = script as fn() -> _;
     let _ = style as fn() -> _;
     let _ = engine as fn() -> _;

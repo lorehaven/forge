@@ -56,6 +56,7 @@ impl Api for Fake {
     }
     fn overview(&self) -> Result<Overview> {
         Ok(Overview {
+            admin: false,
             artists: vec![
                 ArtistInfo {
                     name: "Ann".into(),

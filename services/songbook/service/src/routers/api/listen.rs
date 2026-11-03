@@ -62,9 +62,32 @@ macro_rules! catalog {
     };
 }
 
+/// Whether the request is from someone who may write (the admin pages): the same rule as `AdminOrRedirect`, without the phone.
+#[derive(Debug)]
+pub struct IsAdmin(pub bool);
+
+#[async_trait]
+impl FromRequest for IsAdmin {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<quench_auth::domain::jwt::JwtConfig>() else {
+            return Ok(Self(false));
+        };
+        if !config.auth_enabled {
+            return Ok(Self(true));
+        }
+        let allowed = req
+            .extensions()
+            .get::<Claims>()
+            .is_some_and(|c| c.can(&config.service_name, "write"));
+        Ok(Self(allowed))
+    }
+}
+
 #[get("/api/v1/library/overview")]
-pub async fn overview(Inject(app): Inject<App>) -> Response {
-    ok(&catalog!(app).overview())
+pub async fn overview(Inject(app): Inject<App>, IsAdmin(admin): IsAdmin) -> Response {
+    let mut overview = catalog!(app).overview();
+    overview.admin = admin;
+    ok(&overview)
 }
 
 /// What to listen to. The picks that are not the plain best change at midnight (UTC).
@@ -331,7 +354,7 @@ pub async fn set_playlist(
 }
 
 pub fn register_routes() {
-    let _ = overview as fn(_) -> _;
+    let _ = overview as fn(_, _) -> _;
     let _ = home as fn(_) -> _;
     let _ = albums as fn(_, _) -> _;
     let _ = songs as fn(_, _, _) -> _;

@@ -119,6 +119,9 @@ impl Store {
     pub fn forget(&self) {
         self.remove("session");
         self.remove("settings");
+        // The next person to sign in on this phone has a history of their own.
+        self.remove("recent");
+        self.remove("last");
     }
 
     // ── What was played ──────────────────────────────────────────────────────

@@ -21,3 +21,9 @@
 
 /* The boxes (settings, queue, the song playing) are as large as the screen: they start under the status bar. */
 .pl-sheet { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+.pl-card-play { display: none; }
+
+/* The song playing keeps its number in the list (the web page swaps it for a drawn note, which the phone's renderer cannot draw);
+   the colour says which it is. */
+.pl-current .pl-song-n { font-size: 15px; color: var(--pl-accent); }
+.pl-current .pl-song-n::before { display: none; }

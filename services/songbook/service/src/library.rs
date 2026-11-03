@@ -154,6 +154,7 @@ impl Catalog {
             albums: u32::try_from(self.albums.len()).unwrap_or(u32::MAX),
             artists: self.artists.clone(),
             categories: self.categories.clone(),
+            admin: false,
         }
     }
 

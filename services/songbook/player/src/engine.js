@@ -47,7 +47,7 @@
   // The songs heard last, newest first (kept on this device).
   function recent() { emit({ ev: 'recent', ids: S.recent }); }
   // What was played is told to the service too, so that "Recently played" is the same on every device; and what the service
-  // knows (from the other devices) is merged in.
+  // knows (from the other devices) replaces what this browser kept, which is only for when the service cannot be reached.
   function tell(id) {
     try {
       fetch(base + '/api/v1/history', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ song_id: id }) }).catch(function () { /* offline: kept here only */ });
@@ -56,9 +56,8 @@
   function syncRecent() {
     fetch(base + '/api/v1/library/recent?limit=40', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (list) {
       if (!list) return;
-      var server = list.songs.map(function (s) { return s.id; });
-      var here = S.recent.filter(function (x) { return server.indexOf(x) < 0; });
-      S.recent = server.concat(here).slice(0, 40);
+      // The service's list is this person's: what this browser kept may be another person's, so it is replaced, not merged.
+      S.recent = list.songs.map(function (s) { return s.id; }).slice(0, 40);
       try { localStorage.setItem('sb.recent', JSON.stringify(S.recent)); } catch (e) { /* storage may be blocked */ }
       recent();
     }).catch(function () { /* offline: what is here stays */ });

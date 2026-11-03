@@ -173,7 +173,16 @@ pub fn build(
                 let url = format!("{}{BASE}{}", auth.settings().server, call.path);
                 let msg = match auth.exchange(call.method, &url, call.body.as_deref()) {
                     Ok((status, body)) => {
-                        interpret(&request, status, &String::from_utf8_lossy(&body))
+                        let text = String::from_utf8_lossy(&body);
+                        let msg = interpret(&request, status, &text);
+                        // An empty list to play is told in the log (the host forwards stderr to logcat): what was asked, what came back.
+                        if let Some(Msg::Ids(_, ref picked)) = msg
+                            && picked.ids.is_empty()
+                        {
+                            let shown: String = text.chars().take(120).collect();
+                            eprintln!("empty list to play: GET {} -> {status} {shown}", call.path);
+                        }
+                        msg
                     }
                     Err(Failure::SignedOut) => Some(Msg::SignedOut),
                     Err(other) => Some(unreachable(&other.message())),

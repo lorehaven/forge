@@ -89,6 +89,9 @@ pub struct Overview {
     pub albums: u32,
     pub artists: Vec<ArtistInfo>,
     pub categories: Vec<CategoryInfo>,
+    /// Whether the person asking may use the admin pages (the player shows the way there only to them).
+    #[serde(default)]
+    pub admin: bool,
 }
 
 /// Which songs: the first field that is set picks the list (`ids`, then `playlist`, `album`, `artist`, `category`, `q`);

@@ -92,6 +92,7 @@ fn main() {
         );
         let _mounted = mount(&renderer, &renderer.root(), view);
         deliver(Msg::Overview(Overview {
+            admin: true,
             songs: 4,
             albums: 2,
             artists: vec![
