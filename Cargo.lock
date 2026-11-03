@@ -1679,7 +1679,6 @@ dependencies = [
 name = "songbook-player-web"
 version = "0.1.0"
 dependencies = [
- "quench-serde",
  "quench-test",
  "quench-ui",
  "quench-ui-web",

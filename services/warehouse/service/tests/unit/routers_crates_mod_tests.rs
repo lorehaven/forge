@@ -60,6 +60,9 @@ fn crate_file_path_rejects_invalid_names_or_versions() {
 
 #[quench_test::test]
 fn crate_file_path_lays_out_name_version_and_filename() {
+    let _guard = super::support::storage_env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let path = crate_file_path("my-crate", "1.2.3").expect("valid inputs");
     assert_eq!(
         path.strip_prefix(crates_storage_root()).unwrap(),
@@ -75,6 +78,9 @@ fn index_file_path_rejects_invalid_names() {
 
 #[quench_test::test]
 fn index_file_path_nests_under_the_computed_prefix() {
+    let _guard = super::support::storage_env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let path = index_file_path("my-crate").expect("valid name");
     assert_eq!(
         path.strip_prefix(crates_storage_root()).unwrap(),
