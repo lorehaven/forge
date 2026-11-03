@@ -66,7 +66,7 @@ declared and the service removes dependants itself. `yt_status` is `NULL` (not s
 ## The admin API
 
 All under `/api/v1/admin`, JSON, behind Gatehouse sign-in (`Auth`: bearer token or the session cookie). The shapes are in
-[`core/src/api.rs`](core/src/api.rs).
+`core/src/api.rs` in the Songbook source.
 
 | Method and path | Body / query | Answer |
 |---|---|---|
