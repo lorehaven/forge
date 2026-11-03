@@ -5,8 +5,8 @@ use songbook_app::{Msg, Request};
 use songbook_core::api::encode;
 use songbook_core::{
     AddArtists, Added, BlacklistBody, BlacklistEntry, BlacklistRemove, BlacklistSave, Browse,
-    CategoryBody, GenresBody, Job, LinkBody, NewCategory,
-    RemoveArtist, Removed, RenameCategory, Schedule, Started, State, Stats,
+    CategoryBody, GenresBody, Job, LinkBody, NewCategory, RemoveArtist, Removed, RenameCategory,
+    Schedule, Started, State, Stats,
 };
 
 /// Where the admin API lives, under the service's own prefix.
@@ -153,7 +153,9 @@ pub fn interpret(request: &Request, status: u16, body: &str) -> Msg {
             Request::SaveLink { .. } => Msg::LinkSaved,
             Request::ReplaceSong { .. } => read::<Started>(body, |s| Msg::Started(s.started)),
             Request::BlacklistList => read::<Vec<BlacklistEntry>>(body, Msg::BlacklistList),
-            Request::SaveBlacklist { .. } => read::<Removed>(body, |r| Msg::BlacklistSaved(r.removed)),
+            Request::SaveBlacklist { .. } => {
+                read::<Removed>(body, |r| Msg::BlacklistSaved(r.removed))
+            }
             Request::RemoveBlacklist(_) => Msg::BlacklistLetGo,
             Request::Blacklist { .. } => read::<Removed>(body, |r| Msg::Blacklisted(r.removed)),
             Request::AddArtists(_) => read::<Added>(body, |a| Msg::ArtistsAdded(a.added)),
