@@ -240,6 +240,30 @@ pub struct BlacklistBody {
     pub album_id: i64,
 }
 
+/// One album kept out of every sync (`GET /blacklist`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlacklistEntry {
+    pub id: i64,
+    pub artist: String,
+    pub title: String,
+}
+
+/// `POST /blacklist`: add an album to the blacklist (`id` 0), or change an entry (its `id`). The album, and the songs only it
+/// held, leave the index at once, as when it is blacklisted from the library.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlacklistSave {
+    #[serde(default)]
+    pub id: i64,
+    pub artist: String,
+    pub title: String,
+}
+
+/// `POST /blacklist/remove`: let an album back in (the next sync brings it).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlacklistRemove {
+    pub id: i64,
+}
+
 /// An artist to follow.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewArtist {

@@ -6,16 +6,19 @@ use std::rc::Rc;
 use quench_ui::form::Field;
 use quench_ui::prelude::*;
 use quench_ui::router::{Router, link};
-use songbook_core::{Album, ArtistRow, Filter, JobStart, NewArtist, Schedule, Track};
+use songbook_core::{
+    Album, ArtistRow, BlacklistEntry, Filter, JobStart, NewArtist, Schedule, Track,
+};
 
 use crate::live::{Dialog, Env, Pending, Problem, Request};
 
 /// The screens in the side panel: path, title key, element id, icon.
-pub(crate) const PAGES: [(&str, &str, &str, &str); 5] = [
+pub(crate) const PAGES: [(&str, &str, &str, &str); 6] = [
     ("/library", "ui_nav_library", "nav-library", "database"),
     ("/pipeline", "ui_nav_pipeline", "nav-pipeline", "layers"),
     ("/discover", "ui_nav_discover", "nav-discover", "users"),
     ("/schedule", "ui_nav_schedule", "nav-schedule", "clock"),
+    ("/blacklist", "ui_nav_blacklist", "nav-blacklist", "shield"),
     ("/activity", "ui_nav_activity", "nav-activity", "activity"),
 ];
 
@@ -1585,6 +1588,7 @@ pub(crate) fn dialogs(env: &Env) -> View {
     View::dynamic(move || match env.m.dialog.get() {
         None => View::Empty,
         Some(Dialog::Link(track)) => link_dialog(&env, &track),
+        Some(Dialog::EditBlacklist(entry)) => blacklist_edit_dialog(&env, entry.as_ref()),
         Some(Dialog::Blacklist(album)) => blacklist_dialog(&env, &album),
         Some(Dialog::Remove(name)) => remove_dialog(&env, &name),
         Some(Dialog::Category(artist)) => category_dialog(&env, &artist),
@@ -1702,6 +1706,22 @@ fn link_dialog(env: &Env, track: &Track) -> View {
             });
         }
     };
+    // Replacing the song: the file the song has is put aside for the one of this link (a wrong song, or the wrong version).
+    let replace = {
+        let (env, url, id) = (env.clone(), url.clone(), track.id);
+        move || {
+            let text = url.value_untracked().trim().to_string();
+            if text.is_empty() {
+                env.say(env.t.t("ui_replace_need_link"));
+                return;
+            }
+            *env.m.pending.borrow_mut() = Pending::ReplaceSong;
+            (env.ask)(Request::ReplaceSong {
+                track_id: id,
+                url: text,
+            });
+        }
+    };
     let query = format!("{} {}", track.artists, track.title);
     let search = format!(
         "https://www.youtube.com/results?search_query={}",
@@ -1739,13 +1759,144 @@ fn link_dialog(env: &Env, track: &Track) -> View {
                 .attr("rel", "noopener")
                 .class("fui-btn fui-btn-link")
                 .text(t.t("ui_link_search")),
+            small().class("fui-hint").text(t.t("ui_replace_hint")),
         ],
         vec![
             remove,
+            button()
+                .attr("type", "button")
+                .attr("id", "link-replace")
+                .class("fui-btn fui-btn-secondary")
+                .attr("title", t.t("ui_replace_title"))
+                .on_click(replace)
+                .text(t.t("ui_replace")),
             cancel_button(env),
             submit_button(t.t("ui_save"), false),
         ],
         move || save(false),
+    )
+}
+
+/// The albums kept out of every sync: add one by name, change an entry, let one back in.
+pub(crate) fn blacklist(env: &Env) -> View {
+    let env = env.clone();
+    View::dynamic(move || {
+        let t = &env.t;
+        let add = {
+            let m = env.m.clone();
+            button()
+                .attr("type", "button")
+                .attr("id", "blacklist-add")
+                .class("fui-btn fui-btn-primary")
+                .on_click(move || m.dialog.set(Some(Dialog::EditBlacklist(None))))
+                .text(t.t("ui_bls_add"))
+        };
+        let body = match env.m.blacklist.get() {
+            None => waiting(&env),
+            Some(list) if list.is_empty() => p()
+                .attr("id", "blacklist-empty")
+                .class("fui-empty")
+                .text(t.t("ui_bls_empty"))
+                .into_view(),
+            Some(list) => {
+                let mut rows = ul().attr("id", "blacklist-rows").class("sb-bls");
+                for entry in list {
+                    let (edit, drop) = (env.clone(), env.clone());
+                    let (to_edit, id) = (entry.clone(), entry.id);
+                    rows = rows.child(
+                        li().attr("data-id", entry.id.to_string())
+                            .child(
+                                div()
+                                    .class("sb-bls-text")
+                                    .child(span().class("sb-bls-title").text(entry.title.clone()))
+                                    .child(small().class("sb-sub").text(entry.artist.clone())),
+                            )
+                            .child(
+                                button()
+                                    .attr("type", "button")
+                                    .class("fui-btn fui-btn-secondary")
+                                    .on_click(move || {
+                                        edit.m.dialog.set(Some(Dialog::EditBlacklist(Some(
+                                            to_edit.clone(),
+                                        ))));
+                                    })
+                                    .text(t.t("ui_bls_edit")),
+                            )
+                            .child(
+                                button()
+                                    .attr("type", "button")
+                                    .class("fui-btn fui-btn-tertiary")
+                                    .on_click(move || (drop.ask)(Request::RemoveBlacklist(id)))
+                                    .text(t.t("ui_bls_remove")),
+                            ),
+                    );
+                }
+                rows.into_view()
+            }
+        };
+        div()
+            .attr("id", "page-blacklist")
+            .class("sb-page")
+            .child(head(&env, "ui_bls_title", "ui_bls_intro"))
+            .child(div().class("sb-actions").child(add))
+            .child(article().class("sb-card").child(body))
+            .into_view()
+    })
+}
+
+/// Adds an album to the blacklist by its artist and title, or changes an entry.
+fn blacklist_edit_dialog(env: &Env, entry: Option<&BlacklistEntry>) -> View {
+    let t = &env.t;
+    let artist = Field::new("bls-artist", entry.map_or("", |e| e.artist.as_str()));
+    let title = Field::new("bls-title", entry.map_or("", |e| e.title.as_str()));
+    let id = entry.map_or(0, |e| e.id);
+    let go = {
+        let (env, artist, title) = (env.clone(), artist.clone(), title.clone());
+        move || {
+            let (artist, title) = (
+                artist.value_untracked().trim().to_string(),
+                title.value_untracked().trim().to_string(),
+            );
+            if artist.is_empty() || title.is_empty() {
+                return;
+            }
+            (env.ask)(Request::SaveBlacklist { id, artist, title });
+        }
+    };
+    modal(
+        env,
+        "dialog-blacklist",
+        &t.t(if entry.is_some() {
+            "ui_bls_dialog_edit"
+        } else {
+            "ui_bls_dialog_add"
+        }),
+        vec![
+            p().class("sb-sub").text(t.t("ui_bls_dialog_hint")),
+            field_row(
+                "bls-artist",
+                &t.t("ui_bls_artist"),
+                None,
+                artist
+                    .input()
+                    .attr("required", "required")
+                    .attr("autocomplete", "off")
+                    .class("fui-input")
+                    .focus_on_mount(),
+            ),
+            field_row(
+                "bls-title",
+                &t.t("ui_bls_album"),
+                None,
+                title
+                    .input()
+                    .attr("required", "required")
+                    .attr("autocomplete", "off")
+                    .class("fui-input"),
+            ),
+        ],
+        vec![cancel_button(env), submit_button(t.t("ui_save"), false)],
+        go,
     )
 }
 

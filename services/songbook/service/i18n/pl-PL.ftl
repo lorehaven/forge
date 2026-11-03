@@ -232,3 +232,24 @@ ui_purge_preview = Podgląd
 ui_purge_preview_title = Wypisz pliki, które zostałyby usunięte; niczego nie usuwa
 ui_purge_delete = Usuń pliki z czarnej listy
 ui_purge_delete_title = Usuń na stałe pliki z podglądu
+
+# Czarna lista i podmiana utworu
+ui_nav_blacklist = Czarna lista
+ui_bls_title = Czarna lista
+ui_bls_intro = Albumy pomijane przy każdej synchronizacji. Dodaj album po nazwie, zmień wpis albo przywróć album.
+ui_bls_empty = Czarna lista jest pusta.
+ui_bls_add = Dodaj album
+ui_bls_edit = Edytuj
+ui_bls_remove = Przywróć
+ui_bls_artist = Wykonawca
+ui_bls_album = Album
+ui_bls_dialog_add = Dodaj album do czarnej listy
+ui_bls_dialog_edit = Zmień wpis
+ui_bls_dialog_hint = Album i jego inne wydania znikają z indeksu od razu i są pomijane przy kolejnych synchronizacjach.
+ui_bls_saved = Zapisano; z indeksu zniknęło utworów: { $n }
+ui_bls_let_go = Przywrócono: następna synchronizacja go przyniesie
+ui_replace = Podmień plik
+ui_replace_title = Pobierz ten link i wstaw go w miejsce pliku utworu
+ui_replace_hint = „Podmień plik” pobiera ten link i zamienia nim dźwięk utworu (dla złego utworu lub wersji). Stary plik zostaje, jeśli pobieranie się nie uda.
+ui_replace_need_link = Najpierw wpisz adres filmu
+ui_replace_started = Podmieniam utwór: zobacz Aktywność

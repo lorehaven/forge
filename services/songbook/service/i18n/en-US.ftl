@@ -228,3 +228,24 @@ ui_purge_preview = Preview
 ui_purge_preview_title = List the files that would be deleted; deletes nothing
 ui_purge_delete = Delete blacklisted files
 ui_purge_delete_title = Delete the files the preview lists, for good
+
+# The blacklist page, and replacing a song
+ui_nav_blacklist = Blacklist
+ui_bls_title = Blacklist
+ui_bls_intro = Albums kept out of every sync. Add one by name, change an entry, or let an album back in.
+ui_bls_empty = Nothing is blacklisted.
+ui_bls_add = Add an album
+ui_bls_edit = Edit
+ui_bls_remove = Let back in
+ui_bls_artist = Artist
+ui_bls_album = Album
+ui_bls_dialog_add = Blacklist an album
+ui_bls_dialog_edit = Change the entry
+ui_bls_dialog_hint = The album, with its other editions, leaves the index now and is skipped by later syncs.
+ui_bls_saved = Saved; { $n } tracks left the index
+ui_bls_let_go = Let back in: the next sync brings it
+ui_replace = Replace the file
+ui_replace_title = Download this link and put it in place of the song's file
+ui_replace_hint = “Replace the file” downloads this link and swaps it in for the song's audio (for a wrong song or version). The old file stays if the download fails.
+ui_replace_need_link = Enter the video URL first
+ui_replace_started = Replacing the song: see Activity

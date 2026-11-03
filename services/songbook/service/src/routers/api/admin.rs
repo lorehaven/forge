@@ -7,8 +7,9 @@ use crate::{convert, download, pipeline, similar, sync, youtube};
 use quench_http::prelude::{Inject, Json, Query, Response, get, http::StatusCode, post};
 use quench_serde::Deserialize;
 use songbook_core::{
-    AddArtists, Added, BlacklistBody, CategoryBody, Filter, GenresBody, JobStart, LinkBody,
-    NewCategory, RemoveArtist, Removed, RenameCategory, Retagged, Schedule, Started, Updated,
+    AddArtists, Added, BlacklistBody, BlacklistEntry, BlacklistRemove, BlacklistSave, CategoryBody,
+    Filter, GenresBody, JobStart, LinkBody, NewCategory, RemoveArtist, Removed, RenameCategory,
+    Retagged, Schedule, Started, Updated,
 };
 
 fn server_error(e: impl std::fmt::Display) -> Response {
@@ -84,6 +85,68 @@ pub async fn link(Inject(app): Inject<App>, Json(body): Json<LinkBody>) -> Respo
     {
         Ok(Ok(updated)) => ok(&Updated { updated }),
         Ok(Err(e)) => refused(&e),
+        Err(e) => server_error(e),
+    }
+}
+
+/// Puts the audio of another YouTube link in place of a song's file (a wrong song, or the wrong version), as a job.
+#[post("/api/v1/admin/replace")]
+pub async fn replace(Inject(app): Inject<App>, Json(body): Json<LinkBody>) -> Response {
+    if !browse::is_link(body.url.trim()) {
+        return json_error(
+            StatusCode::BAD_REQUEST,
+            "the link must start with http:// or https://",
+        );
+    }
+    let worker = app.clone();
+    let started = app.jobs.start("replace", move |log| async move {
+        crate::replace::run(&worker, body.track_id, &body.url, &log).await
+    });
+    ok(&Started { started })
+}
+
+/// Every album kept out of the syncs.
+#[get("/api/v1/admin/blacklist")]
+pub async fn blacklist_list(Inject(app): Inject<App>) -> Response {
+    match app.index.run(follow::blacklist_entries).await {
+        Ok(rows) => ok(&rows
+            .into_iter()
+            .map(|(id, artist, title)| BlacklistEntry { id, artist, title })
+            .collect::<Vec<_>>()),
+        Err(e) => server_error(e),
+    }
+}
+
+/// Adds an album to the blacklist by name, or changes an entry.
+#[post("/api/v1/admin/blacklist")]
+pub async fn blacklist_save(Inject(app): Inject<App>, Json(body): Json<BlacklistSave>) -> Response {
+    if app.jobs.running() {
+        return busy();
+    }
+    match app
+        .index
+        .run(move |db| browse::blacklist_save(db, body.id, &body.artist, &body.title))
+        .await
+    {
+        Ok(Ok(removed)) => ok(&Removed { removed }),
+        Ok(Err(e)) => refused(&e),
+        Err(e) => server_error(e),
+    }
+}
+
+/// Lets an album back in; the next sync brings it.
+#[post("/api/v1/admin/blacklist/remove")]
+pub async fn blacklist_remove(
+    Inject(app): Inject<App>,
+    Json(body): Json<BlacklistRemove>,
+) -> Response {
+    match app
+        .index
+        .run(move |db| follow::blacklist_remove(db, body.id))
+        .await
+    {
+        Ok(true) => ok(&Removed { removed: 1 }),
+        Ok(false) => json_error(StatusCode::NOT_FOUND, "unknown entry"),
         Err(e) => server_error(e),
     }
 }
@@ -313,7 +376,11 @@ pub fn register_routes() {
     let _ = browse_library as fn(_, _) -> _;
     let _ = stats as fn(_) -> _;
     let _ = link as fn(_, _) -> _;
+    let _ = replace as fn(_, _) -> _;
     let _ = blacklist as fn(_, _) -> _;
+    let _ = blacklist_list as fn(_) -> _;
+    let _ = blacklist_save as fn(_, _) -> _;
+    let _ = blacklist_remove as fn(_, _) -> _;
     let _ = add_artists as fn(_, _) -> _;
     let _ = remove_artist as fn(_, _) -> _;
     let _ = set_category as fn(_, _) -> _;

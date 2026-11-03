@@ -16,7 +16,10 @@ pub fn media_files(root: &Path) -> Vec<PathBuf> {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().into_owned();
                 if path.is_dir() {
-                    walk(&path, out);
+                    // A folder like `.replace` is somebody's work in progress.
+                    if !name.starts_with('.') {
+                        walk(&path, out);
+                    }
                 } else if !TEMP_SUFFIXES.iter().any(|s| name.ends_with(s))
                     && path
                         .extension()

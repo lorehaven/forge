@@ -487,6 +487,88 @@ fn searching_waits_for_a_pause_in_the_typing() {
 }
 
 #[quench_test::test]
+fn a_song_is_replaced_by_the_file_of_another_link() {
+    let l = started("/songbook/ui/admin/library");
+    l.r.fire(
+        l.find("button", ("aria-label", "Add link for Puppy Love")),
+        &Event::Click,
+    );
+    // Without a link there is nothing to download.
+    l.take();
+    l.click("button", ("id", "link-replace"));
+    assert!(l.take().is_empty());
+    assert!(l.text_of("snack").contains("Enter the video URL first"));
+    l.type_into("link-url", " https://youtu.be/right ");
+    l.click("button", ("id", "link-replace"));
+    assert_eq!(
+        l.take(),
+        vec![Request::ReplaceSong {
+            track_id: 3,
+            url: "https://youtu.be/right".into()
+        }]
+    );
+    l.send(Msg::Started(true));
+    assert!(!l.has("dialog-link"), "the job runs on; the dialog is done");
+    assert!(l.text_of("snack").contains("Replacing the song"));
+}
+
+#[quench_test::test]
+fn the_blacklist_page_lists_adds_changes_and_lets_back_in() {
+    use songbook_core::BlacklistEntry;
+    let l = live("/songbook/ui/admin/blacklist");
+    assert!(l.take().contains(&Request::BlacklistList));
+    l.send(Msg::BlacklistList(vec![BlacklistEntry {
+        id: 4,
+        artist: "Nate Dogg".into(),
+        title: "Greatest Hits".into(),
+    }]));
+    assert!(l.r.text().contains("Greatest Hits") && l.r.text().contains("Nate Dogg"));
+    // Let back in.
+    let let_in =
+        l.r.find_by_tag("button")
+            .into_iter()
+            .find(|b| l.r.text_of(*b) == "Let back in")
+            .unwrap();
+    l.r.fire(let_in, &Event::Click);
+    assert_eq!(l.take(), vec![Request::RemoveBlacklist(4)]);
+    // Change the entry in a dialog.
+    let edit =
+        l.r.find_by_tag("button")
+            .into_iter()
+            .find(|b| l.r.text_of(*b) == "Edit")
+            .unwrap();
+    l.r.fire(edit, &Event::Click);
+    assert!(l.has("dialog-blacklist"));
+    l.type_into("bls-title", "Another Record");
+    l.r.fire(l.find("form", ("class", "sb-dialog-form")), &Event::Submit);
+    assert_eq!(
+        l.take(),
+        vec![Request::SaveBlacklist {
+            id: 4,
+            artist: "Nate Dogg".into(),
+            title: "Another Record".into()
+        }]
+    );
+    l.send(Msg::BlacklistSaved(2));
+    assert!(!l.has("dialog-blacklist"));
+    assert!(l.text_of("snack").contains("2 tracks left the index"));
+    // Add by name.
+    l.take();
+    l.click("button", ("id", "blacklist-add"));
+    l.type_into("bls-artist", "ReTo");
+    l.type_into("bls-title", "Last Brap");
+    l.r.fire(l.find("form", ("class", "sb-dialog-form")), &Event::Submit);
+    assert_eq!(
+        l.take(),
+        vec![Request::SaveBlacklist {
+            id: 0,
+            artist: "ReTo".into(),
+            title: "Last Brap".into()
+        }]
+    );
+}
+
+#[quench_test::test]
 fn a_link_is_edited_in_a_dialog() {
     let l = started("/songbook/ui/admin/library");
     assert!(!l.has("dialog-link"));

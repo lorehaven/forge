@@ -92,3 +92,10 @@
 @media (max-width:48rem){.sb-main{padding:1rem}.sb-progress{left:-1rem;right:-1rem;top:-1rem}.sb-tracks{columns:1}.sb-artist .sb-icon-btn{opacity:1}}
 .sb-step .fui-badge{align-self:flex-start}
 .sb-sug{justify-content:flex-start}
+
+/* The blacklist page */
+.sb-bls{list-style:none;margin:0;padding:0}
+.sb-bls li{display:flex;align-items:center;gap:.5rem;padding:.6rem 0;border-bottom:1px solid var(--fui-border)}
+.sb-bls li:last-child{border-bottom:0}
+.sb-bls-text{flex:1;min-width:0;display:flex;flex-direction:column}
+.sb-bls-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

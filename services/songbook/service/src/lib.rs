@@ -34,6 +34,7 @@ pub mod library;
 pub mod pipeline;
 pub mod playlists;
 pub mod purge;
+pub mod replace;
 pub mod routers;
 pub mod schedule;
 pub mod similar;

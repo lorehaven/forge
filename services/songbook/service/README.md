@@ -81,7 +81,11 @@ All under `/api/v1/admin`, JSON, behind Gatehouse sign-in (`Auth`: bearer token 
 | `GET /browse` | `artist`, `category`, `genre`, `q`, `links` (`has` / `missing` / `unofficial`) | albums with tracklists; `total`, `linked`, `shown` (at most 300) |
 | `GET /stats` | | the numbers on the main page: artists (followed, and all credited), albums, songs, downloaded and missing (and how many of the missing have a link); the audio folder is looked at on every call |
 | `POST /link` | `{track_id, url}` (empty url clears) | `{updated}` |
+| `POST /replace` | `{track_id, url}` | `{started}`: a job (`replace`) that downloads the link, converts it to mp3 in `<audio>/.replace`, and only then removes the song's old files and moves the new mp3 in; the link becomes the song's. A link that fails leaves the old file |
 | `POST /albums/blacklist` | `{artist, album_id}` | `{removed}` |
+| `GET /blacklist` | | `[{id, artist, title}]`: every album kept out of the syncs |
+| `POST /blacklist` | `{id, artist, title}` (`id` 0: add by name) | `{removed}`: the album and its other editions leave the index now; an entry already there is refused |
+| `POST /blacklist/remove` | `{id}` | `{removed: 1}`; the next sync brings the album back |
 | `POST /artists/add` | `{items: [{name, id, category}]}` | `{added: [names]}` |
 | `POST /artists/remove` | `{name}` | `{}` |
 | `POST /artists/category` | `{name, category}` | `{retagged}` |

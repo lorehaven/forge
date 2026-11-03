@@ -4,7 +4,8 @@ use quench_serde::{Deserialize, json};
 use songbook_app::{Msg, Request};
 use songbook_core::api::encode;
 use songbook_core::{
-    AddArtists, Added, BlacklistBody, Browse, CategoryBody, GenresBody, Job, LinkBody, NewCategory,
+    AddArtists, Added, BlacklistBody, BlacklistEntry, BlacklistRemove, BlacklistSave, Browse,
+    CategoryBody, GenresBody, Job, LinkBody, NewCategory,
     RemoveArtist, Removed, RenameCategory, Schedule, Started, State, Stats,
 };
 
@@ -63,6 +64,23 @@ pub fn call_for(request: &Request) -> Option<Call> {
                 url: url.clone(),
             },
         ),
+        Request::ReplaceSong { track_id, url } => post(
+            "/replace",
+            &LinkBody {
+                track_id: *track_id,
+                url: url.clone(),
+            },
+        ),
+        Request::BlacklistList => get(format!("{API}/blacklist")),
+        Request::SaveBlacklist { id, artist, title } => post(
+            "/blacklist",
+            &BlacklistSave {
+                id: *id,
+                artist: artist.clone(),
+                title: title.clone(),
+            },
+        ),
+        Request::RemoveBlacklist(id) => post("/blacklist/remove", &BlacklistRemove { id: *id }),
         Request::Blacklist { artist, album_id } => post(
             "/albums/blacklist",
             &BlacklistBody {
@@ -133,6 +151,10 @@ pub fn interpret(request: &Request, status: u16, body: &str) -> Msg {
             Request::Browse(_) => read::<Browse>(body, Msg::Browse),
             Request::Job { .. } => read::<Job>(body, Msg::Job),
             Request::SaveLink { .. } => Msg::LinkSaved,
+            Request::ReplaceSong { .. } => read::<Started>(body, |s| Msg::Started(s.started)),
+            Request::BlacklistList => read::<Vec<BlacklistEntry>>(body, Msg::BlacklistList),
+            Request::SaveBlacklist { .. } => read::<Removed>(body, |r| Msg::BlacklistSaved(r.removed)),
+            Request::RemoveBlacklist(_) => Msg::BlacklistLetGo,
             Request::Blacklist { .. } => read::<Removed>(body, |r| Msg::Blacklisted(r.removed)),
             Request::AddArtists(_) => read::<Added>(body, |a| Msg::ArtistsAdded(a.added)),
             Request::RemoveArtist(_) => Msg::ArtistRemoved,

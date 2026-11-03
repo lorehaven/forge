@@ -228,3 +228,24 @@ ui_purge_preview = Vista previa
 ui_purge_preview_title = Listar los archivos que se borrarían; no borra nada
 ui_purge_delete = Borrar archivos de la lista negra
 ui_purge_delete_title = Borrar para siempre los archivos de la vista previa
+
+# La lista negra y el reemplazo de una canción
+ui_nav_blacklist = Lista negra
+ui_bls_title = Lista negra
+ui_bls_intro = Álbumes que se omiten en cada sincronización. Añade uno por nombre, cambia una entrada o devuelve un álbum.
+ui_bls_empty = No hay nada en la lista negra.
+ui_bls_add = Añadir un álbum
+ui_bls_edit = Editar
+ui_bls_remove = Devolver
+ui_bls_artist = Artista
+ui_bls_album = Álbum
+ui_bls_dialog_add = Añadir un álbum a la lista negra
+ui_bls_dialog_edit = Cambiar la entrada
+ui_bls_dialog_hint = El álbum, con sus otras ediciones, sale del índice ahora y se omite en las próximas sincronizaciones.
+ui_bls_saved = Guardado; { $n } pistas salieron del índice
+ui_bls_let_go = Devuelto: la próxima sincronización lo traerá
+ui_replace = Reemplazar el archivo
+ui_replace_title = Descargar este enlace y ponerlo en lugar del archivo de la canción
+ui_replace_hint = «Reemplazar el archivo» descarga este enlace y cambia con él el audio de la canción (para una canción o versión equivocada). El archivo anterior se conserva si la descarga falla.
+ui_replace_need_link = Primero escribe la URL del vídeo
+ui_replace_started = Reemplazando la canción: mira Actividad

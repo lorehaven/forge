@@ -420,6 +420,51 @@ fn a_blacklisted_album_leaves_with_its_other_editions_and_its_songs() {
 }
 
 #[quench_test::test]
+fn the_blacklist_is_listed_added_by_name_changed_and_let_go_of() {
+    let dir = Scratch::new();
+    let index = index_in(&dir);
+    catalogue(&index);
+    index
+        .with(|db| {
+            follow::add_follow(db, "Nate Dogg", "", "")?.unwrap();
+            assert!(
+                browse::blacklist_save(db, 0, "  ", "x")?.is_err(),
+                "both are needed"
+            );
+            // By name: the album in the index leaves at once, and it is on the list.
+            let removed = browse::blacklist_save(db, 0, "Nate Dogg", "Greatest Hits")?.unwrap();
+            assert_eq!(removed, 2);
+            assert_eq!(browse::browse(db, &Filter::default())?.total, 1);
+            let listed = follow::blacklist_entries(db)?;
+            assert_eq!(listed.len(), 1);
+            assert_eq!(
+                (listed[0].1.as_str(), listed[0].2.as_str()),
+                ("Nate Dogg", "Greatest Hits")
+            );
+            assert!(
+                browse::blacklist_save(db, 0, "nate dogg", "GREATEST HITS")?.is_err(),
+                "the same album is not listed twice"
+            );
+            // Changed: the entry takes the new title (nothing in the index has it).
+            let id = listed[0].0;
+            browse::blacklist_save(db, id, "Nate Dogg", "Another Record")?.unwrap();
+            let listed = follow::blacklist_entries(db)?;
+            assert_eq!(listed.len(), 1);
+            assert_eq!(listed[0].2, "Another Record");
+            assert!(
+                browse::blacklist_save(db, 999, "A", "B")?.is_err(),
+                "unknown entry"
+            );
+            // Let go of: the entry goes (the next sync brings the album back).
+            assert!(follow::blacklist_remove(db, id)?);
+            assert!(!follow::blacklist_remove(db, id)?);
+            assert!(follow::blacklist_entries(db)?.is_empty());
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[quench_test::test]
 fn followed_artists_and_categories_are_managed_in_the_index() {
     let dir = Scratch::new();
     let index = index_in(&dir);

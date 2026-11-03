@@ -426,16 +426,52 @@ pub fn blacklist_album(
             return Ok(Err(Refused::Input("unknown album".into())));
         };
         let title = str_at(row, 0);
-        let key = album_key(&title);
-        follow::blacklist_add(db, artist, &title)?;
-        let owned = db.query("SELECT al.id, al.title FROM albums al JOIN artists o ON o.id = al.owner_id WHERE o.listed_as = ?", &[text(artist)])?;
-        let mut removed = 0;
-        for al in owned.rows.iter().filter(|r| album_key(&str_at(r, 1)) == key) {
-            removed += songs::drop_album(db, int_at(al, 0))?;
+        Ok(Ok(keep_out(db, artist, &title)?))
+    })
+}
+
+/// Blacklists `title` of `artist` and drops its editions, and the songs only they held, from the index; how many tracks left.
+fn keep_out(db: &mut Connection, artist: &str, title: &str) -> Result<u32> {
+    let key = album_key(title);
+    follow::blacklist_add(db, artist, title)?;
+    let owned = db.query("SELECT al.id, al.title FROM albums al JOIN artists o ON o.id = al.owner_id WHERE o.listed_as = ?", &[text(artist)])?;
+    let mut removed = 0;
+    for al in owned
+        .rows
+        .iter()
+        .filter(|r| album_key(&str_at(r, 1)) == key)
+    {
+        removed += songs::drop_album(db, int_at(al, 0))?;
+    }
+    songs::prune(db)?;
+    let cmap = follow::category_map(db)?;
+    songs::retag(db, &cmap)?;
+    Ok(removed)
+}
+
+/// Adds an album to the blacklist by name (`id` 0), or changes an entry (`id`): the entry takes the new artist and title and
+/// what they name leaves the index now. Returns how many tracks left. An entry that is already there is refused.
+pub fn blacklist_save(
+    db: &mut Connection,
+    id: i64,
+    artist: &str,
+    title: &str,
+) -> Result<std::result::Result<u32, Refused>> {
+    let (artist, title) = (artist.trim(), title.trim());
+    if artist.is_empty() || title.is_empty() {
+        return Ok(Err(Refused::Input(
+            "an artist and an album are needed".into(),
+        )));
+    }
+    db.transaction(|db| {
+        if id != 0 && !follow::blacklist_remove(db, id)? {
+            return Ok(Err(Refused::Input("unknown entry".into())));
         }
-        songs::prune(db)?;
-        let cmap = follow::category_map(db)?;
-        songs::retag(db, &cmap)?;
+        let before = follow::blacklist(db)?.len();
+        let removed = keep_out(db, artist, title)?;
+        if id == 0 && follow::blacklist(db)?.len() == before {
+            return Ok(Err(Refused::Input("it is on the blacklist already".into())));
+        }
         Ok(Ok(removed))
     })
 }

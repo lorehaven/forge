@@ -278,6 +278,29 @@ pub fn blacklist_add(db: &mut Connection, artist: &str, title: &str) -> Result<(
     Ok(())
 }
 
+/// Every blacklisted album, by artist and title.
+pub fn blacklist_entries(db: &mut Connection) -> Result<Vec<(i64, String, String)>> {
+    let rows = db.query(
+        "SELECT id, artist, title FROM blacklist ORDER BY lower(artist), lower(title), id",
+        &[],
+    )?;
+    Ok(rows
+        .rows
+        .iter()
+        .map(|r| (int_at(r, 0), str_at(r, 1), str_at(r, 2)))
+        .collect())
+}
+
+/// Lets an album back in: the entry goes. `false` when there is no such entry.
+pub fn blacklist_remove(db: &mut Connection, id: i64) -> Result<bool> {
+    let had = !db
+        .query("SELECT 1 FROM blacklist WHERE id = ?", &[int(id)])?
+        .rows
+        .is_empty();
+    db.execute("DELETE FROM blacklist WHERE id = ?", &[int(id)])?;
+    Ok(had)
+}
+
 /// The sidebar rows: followed artists with their match and song count.
 pub fn artist_rows(db: &mut Connection) -> Result<Vec<ArtistRow>> {
     let counts: HashMap<String, i64> = db

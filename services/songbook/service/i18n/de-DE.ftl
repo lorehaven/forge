@@ -228,3 +228,24 @@ ui_purge_preview = Vorschau
 ui_purge_preview_title = Dateien auflisten, die gelöscht würden; löscht nichts
 ui_purge_delete = Gesperrte Dateien löschen
 ui_purge_delete_title = Die Dateien aus der Vorschau endgültig löschen
+
+# Die Sperrliste und das Ersetzen eines Titels
+ui_nav_blacklist = Sperrliste
+ui_bls_title = Sperrliste
+ui_bls_intro = Alben, die bei jeder Synchronisierung übersprungen werden. Ein Album per Name hinzufügen, einen Eintrag ändern oder ein Album wieder zulassen.
+ui_bls_empty = Nichts ist gesperrt.
+ui_bls_add = Album hinzufügen
+ui_bls_edit = Bearbeiten
+ui_bls_remove = Wieder zulassen
+ui_bls_artist = Künstler
+ui_bls_album = Album
+ui_bls_dialog_add = Album sperren
+ui_bls_dialog_edit = Eintrag ändern
+ui_bls_dialog_hint = Das Album mit seinen anderen Ausgaben verlässt den Index sofort und wird bei späteren Synchronisierungen übersprungen.
+ui_bls_saved = Gespeichert; { $n } Titel haben den Index verlassen
+ui_bls_let_go = Wieder zugelassen: die nächste Synchronisierung bringt es zurück
+ui_replace = Datei ersetzen
+ui_replace_title = Diesen Link herunterladen und an die Stelle der Datei des Titels setzen
+ui_replace_hint = „Datei ersetzen“ lädt diesen Link herunter und tauscht damit das Audio des Titels aus (für einen falschen Titel oder eine falsche Version). Die alte Datei bleibt, wenn der Download scheitert.
+ui_replace_need_link = Zuerst die Video-URL eingeben
+ui_replace_started = Titel wird ersetzt: siehe Aktivität

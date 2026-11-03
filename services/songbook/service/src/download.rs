@@ -15,6 +15,67 @@ pub fn output_template(dir: &std::path::Path, filename: &str) -> String {
         .into_owned()
 }
 
+/// The yt-dlp options every download has: audio only (the pictures of a music video are the bulk of the download and `convert`
+/// throws them away), no overwriting, and file names Windows would accept.
+fn base_args() -> Vec<String> {
+    [
+        "--no-overwrites",
+        "--continue",
+        "--windows-filenames",
+        "-f",
+        "bestaudio/best",
+    ]
+    .map(String::from)
+    .to_vec()
+}
+
+/// Downloads `url` into `dir` as `<name>.<ext>`, trying twice; the reason when it could not.
+pub async fn fetch_one(
+    app: &App,
+    dir: &std::path::Path,
+    name: &str,
+    url: &str,
+    log: &Log,
+) -> Result<(), String> {
+    let auth = Auth::new(&app.config);
+    let mut args = base_args();
+    args.extend(auth.args(log).await);
+    args.extend([
+        "--output".to_string(),
+        output_template(dir, name),
+        url.trim().to_string(),
+    ]);
+    let mut last = String::new();
+    for attempt in 0..2 {
+        match run_tool("yt-dlp", &args, Duration::from_mins(30)).await {
+            Ok(out) if out.ok => return Ok(()),
+            Ok(out) => {
+                let all = format!("{}\n{}", out.stderr, out.stdout);
+                if age_restricted(&all) {
+                    return Err("YouTube age/authentication restriction: configure cookies".into());
+                }
+                last = out
+                    .stderr
+                    .trim()
+                    .lines()
+                    .last()
+                    .unwrap_or("failed")
+                    .to_string();
+                // A refusal (403) does not go away by waiting.
+                if is_forbidden(&all) {
+                    break;
+                }
+            }
+            Err(e) => return Err(e),
+        }
+        if attempt == 0 {
+            log.line("  retrying in 5s");
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    }
+    Err(format!("yt-dlp failed: {last}"))
+}
+
 /// How many downloads in a row YouTube may refuse with 403 before the run stops: the next ones would be refused too.
 const MAX_REFUSED: u32 = 5;
 
@@ -85,15 +146,7 @@ pub async fn run(
         }
         log.line(format!("{at} {name}"));
         // Audio only: the pictures of a music video are the bulk of the download and `convert` throws them away.
-        let mut args: Vec<String> = [
-            "--no-overwrites",
-            "--continue",
-            "--windows-filenames",
-            "-f",
-            "bestaudio/best",
-        ]
-        .map(String::from)
-        .to_vec();
+        let mut args = base_args();
         args.extend(auth.args(log).await);
         args.extend([
             "--output".to_string(),

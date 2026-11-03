@@ -155,3 +155,12 @@ async fn convert_makes_the_mp3_removes_the_source_and_prunes_only_what_matches()
             .ends_with(".part"))
     );
 }
+
+#[quench_test::test]
+fn a_folder_that_starts_with_a_dot_is_not_looked_into() {
+    let dir = Scratch::new();
+    std::fs::create_dir(dir.path().join(".replace")).unwrap();
+    std::fs::write(dir.path().join(".replace").join("A - B.webm"), b"x").unwrap();
+    std::fs::write(dir.path().join("A - C.webm"), b"x").unwrap();
+    assert_eq!(media_files(dir.path()).len(), 1);
+}

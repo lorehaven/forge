@@ -228,3 +228,24 @@ ui_purge_preview = Aperçu
 ui_purge_preview_title = Lister les fichiers qui seraient supprimés ; ne supprime rien
 ui_purge_delete = Supprimer les fichiers de la liste noire
 ui_purge_delete_title = Supprimer définitivement les fichiers de l'aperçu
+
+# La liste noire et le remplacement d'un morceau
+ui_nav_blacklist = Liste noire
+ui_bls_title = Liste noire
+ui_bls_intro = Albums ignorés à chaque synchronisation. Ajoutez-en un par son nom, modifiez une entrée ou réadmettez un album.
+ui_bls_empty = La liste noire est vide.
+ui_bls_add = Ajouter un album
+ui_bls_edit = Modifier
+ui_bls_remove = Réadmettre
+ui_bls_artist = Artiste
+ui_bls_album = Album
+ui_bls_dialog_add = Mettre un album sur la liste noire
+ui_bls_dialog_edit = Modifier l'entrée
+ui_bls_dialog_hint = L'album, avec ses autres éditions, quitte l'index maintenant et est ignoré aux synchronisations suivantes.
+ui_bls_saved = Enregistré ; { $n } pistes ont quitté l'index
+ui_bls_let_go = Réadmis : la prochaine synchronisation le ramènera
+ui_replace = Remplacer le fichier
+ui_replace_title = Télécharger ce lien et le mettre à la place du fichier du morceau
+ui_replace_hint = « Remplacer le fichier » télécharge ce lien et remplace l'audio du morceau (pour un mauvais morceau ou une mauvaise version). L'ancien fichier reste si le téléchargement échoue.
+ui_replace_need_link = Saisissez d'abord l'URL de la vidéo
+ui_replace_started = Remplacement du morceau : voir Activité

@@ -25,6 +25,18 @@ pub enum Request {
     Browse(Filter),
     /// Set the link of a song; an empty `url` clears it.
     SaveLink { track_id: i64, url: String },
+    /// Put the audio of another `YouTube` link in place of a song's file (a job).
+    ReplaceSong { track_id: i64, url: String },
+    /// Every album kept out of the syncs.
+    BlacklistList,
+    /// Add an album to the blacklist by name (`id` 0), or change an entry.
+    SaveBlacklist {
+        id: i64,
+        artist: String,
+        title: String,
+    },
+    /// Let an album back in.
+    RemoveBlacklist(i64),
     /// Skip an album in later syncs and drop it from the index.
     Blacklist { artist: String, album_id: i64 },
     /// Follow these artists.
@@ -63,6 +75,10 @@ pub enum Msg {
     /// Whether the job started (`false`: one is already running).
     Started(bool),
     LinkSaved,
+    BlacklistList(Vec<songbook_core::BlacklistEntry>),
+    /// How many tracks left the index.
+    BlacklistSaved(u32),
+    BlacklistLetGo,
     /// How many tracks left the index.
     Blacklisted(u32),
     /// The names that were new.
@@ -152,6 +168,8 @@ pub(crate) enum Pending {
     Link {
         cleared: bool,
     },
+    /// A song's file being replaced by another link.
+    ReplaceSong,
     Blacklist {
         album: String,
     },
@@ -179,6 +197,8 @@ pub(crate) enum Pending {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Dialog {
     Link(songbook_core::Track),
+    /// Add an album to the blacklist (`None`), or change an entry.
+    EditBlacklist(Option<songbook_core::BlacklistEntry>),
     Blacklist(songbook_core::Album),
     Remove(String),
     Category(songbook_core::ArtistRow),
@@ -213,6 +233,8 @@ pub(crate) struct Model {
     pub open: Signal<Vec<String>>,
     /// The nightly schedule as the service has it (its status lines), and the form that edits it.
     pub schedule: Signal<Option<Schedule>>,
+    /// The albums kept out of the syncs (`None` until the service has said).
+    pub blacklist: Signal<Option<Vec<songbook_core::BlacklistEntry>>>,
     pub sched_enabled: Signal<bool>,
     pub sched_sync: Signal<bool>,
     pub sched_links: Signal<bool>,
@@ -253,6 +275,7 @@ impl Model {
             picked: create_signal(Vec::new()),
             open: create_signal(Vec::new()),
             schedule: create_signal(None),
+            blacklist: create_signal(None),
             sched_enabled: create_signal(false),
             sched_sync: create_signal(true),
             sched_links: create_signal(true),
@@ -329,6 +352,19 @@ pub fn songbook(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Songbook {
     });
     let view = View::lazy(move || shell(&requests, &setup, &inbox));
     Songbook { view, deliver }
+}
+
+/// A screen that asks for what it shows each time it is opened.
+fn asking(
+    env: &Env,
+    request: Request,
+    screen: fn(&Env) -> View,
+) -> impl Fn(&RouteContext) -> View + 'static {
+    let env = env.clone();
+    move |_: &RouteContext| -> View {
+        (env.ask)(request.clone());
+        screen(&env)
+    }
 }
 
 /// Asks about the job now and again until the app is gone; faster while it runs.
@@ -428,6 +464,10 @@ fn receive(env: &Env, msg: Msg) {
             m.log.set(String::new());
             m.offset.set(0);
             (env.ask)(Request::Job { from: 0 });
+            if matches!(take(), Pending::ReplaceSong) {
+                m.dialog.set(None);
+                env.say(t.t("ui_replace_started"));
+            }
         }
         Msg::Started(false) => env.say(t.t("ui_job_busy")),
         Msg::LinkSaved => {
@@ -440,6 +480,17 @@ fn receive(env: &Env, msg: Msg) {
                 }));
             }
             env.refresh();
+        }
+        Msg::BlacklistList(list) => m.blacklist.set(Some(list)),
+        Msg::BlacklistSaved(removed) => {
+            m.dialog.set(None);
+            env.say(t.tr("ui_bls_saved", &[("n", removed.into())]));
+            (env.ask)(Request::BlacklistList);
+            env.refresh();
+        }
+        Msg::BlacklistLetGo => {
+            env.say(t.t("ui_bls_let_go"));
+            (env.ask)(Request::BlacklistList);
         }
         Msg::Blacklisted(_) => {
             m.dialog.set(None);
@@ -558,6 +609,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             screens::schedule(&env)
         }
     };
+    let blacklist = asking(&env, Request::BlacklistList, screens::blacklist);
     let admin = format!("{base}/ui/admin");
     let screens_at = Routes::new()
         .route(&format!("{admin}/library"), library.clone())
@@ -565,6 +617,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         .route(&format!("{admin}/discover"), page(screens::discover))
         .route(&format!("{admin}/activity"), page(screens::activity))
         .route(&format!("{admin}/schedule"), schedule)
+        .route(&format!("{admin}/blacklist"), blacklist)
         .route(&admin, library.clone())
         .route(&format!("{admin}/"), library)
         .not_found({
