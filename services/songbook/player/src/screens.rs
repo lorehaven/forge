@@ -172,6 +172,18 @@ fn nav_items(env: &Env, router: &Router, short: bool) -> View {
             }
             nav = nav.child(item);
         }
+        if short {
+            // On a phone the settings are a tab too (a computer has them beside the queue).
+            let env = env.clone();
+            nav = nav.child(
+                button_("Settings")
+                    .attr("id", "tab-nav-settings")
+                    .class("pl-nav-item")
+                    .child(ico("settings"))
+                    .child(span().text("Settings"))
+                    .on_click(move || env.open(Dialog::Settings)),
+            );
+        }
         nav.into_view()
     })
 }
@@ -836,12 +848,12 @@ fn recent_shelf(env: &Env) -> View {
     let env = env.clone();
     View::dynamic(move || {
         let ids = env.m.recent.get();
-        let songs: Vec<SongInfo> = ids.iter().filter_map(|id| env.song(*id)).take(12).collect();
+        let songs: Vec<SongInfo> = ids.iter().filter_map(|id| env.song(*id)).take(10).collect();
         if songs.is_empty() {
             return View::Empty;
         }
         let queue = Rc::new(songs.iter().map(|s| s.id).collect::<Vec<_>>());
-        let mut grid = div().class("pl-grid").attr("id", "recent");
+        let mut grid = div().class("pl-hrow").attr("id", "recent");
         for (i, song) in songs.iter().enumerate() {
             let art = env.art("song", &song.id.to_string(), 320);
             let (env, queue) = (env.clone(), Rc::clone(&queue));
@@ -878,15 +890,15 @@ pub(crate) fn home(env: &Env, _: &RouteContext) -> View {
                     .text("The library has no songs with a file yet.")
                     .into_view();
             }
-            let mut mixes = div().class("pl-grid").attr("id", "mixes");
+            let mut mixes = div().class("pl-hrow").attr("id", "mixes");
             for mix in &home.mixes {
                 mixes = mixes.child(mix_card(&env, mix));
             }
-            let mut artists = div().class("pl-grid").attr("id", "artists");
+            let mut artists = div().class("pl-hrow").attr("id", "artists");
             for a in &home.artists {
                 artists = artists.child(artist_card(&env, a));
             }
-            let mut albums = div().class("pl-grid").attr("id", "albums");
+            let mut albums = div().class("pl-hrow").attr("id", "albums");
             for a in &home.albums {
                 albums = albums.child(album_card(&env, a));
             }
@@ -903,14 +915,6 @@ pub(crate) fn home(env: &Env, _: &RouteContext) -> View {
                 Some(("All artists", env.path("/artists"))),
                 artists,
             ));
-            if !home.discover.is_empty() {
-                out.push(shelf(
-                    "Worth hearing again",
-                    "shelf-discover",
-                    None,
-                    rows(&env, &home.discover, "discover"),
-                ));
-            }
             if !home.albums.is_empty() {
                 out.push(shelf("New in your library", "shelf-albums", None, albums));
             }

@@ -41,9 +41,9 @@ class SurfaceUiTest {
 
     private fun text(value: String, seconds: Long = 20) = device.wait(Until.findObject(By.text(value)), seconds * 1000)
 
-    /** A tab of the bar at the bottom: the screen is a picture, so the place is worked out from its size (four equal tabs). */
+    /** A tab of the bar at the bottom: the screen is a picture, so the place is worked out from its size (five equal tabs). */
     private fun tab(n: Int) {
-        device.click(device.displayWidth * (2 * n + 1) / 8, device.displayHeight - 130)
+        device.click(device.displayWidth * (2 * n + 1) / 10, device.displayHeight - 130)
     }
 
     /** Touches the element with this text; the screen is redrawn often, so a stale one is looked up again. */

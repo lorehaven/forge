@@ -48,6 +48,9 @@ h1{font-size:2rem;margin:.2em 0 .5em}h2{font-size:1.25rem;margin:1.4em 0 .6em}h3
 .pl-card{position:relative;background:var(--pl-raise);border-radius:10px;padding:12px;transition:background .15s}
 .pl-card:hover{background:var(--pl-hover)}
 .pl-card-main{display:block}
+/* A shelf that scrolls sideways: the page is not as long as the library is rich. */
+.pl-hrow{display:flex;gap:14px;overflow-x:auto;padding-bottom:6px}
+.pl-hrow>.pl-card{flex:none;width:150px}
 .pl-card-title{margin-top:10px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pl-card-sub{color:var(--pl-dim);font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pl-card-play{position:absolute;right:20px;bottom:64px;width:44px;height:44px;border-radius:50%;background:var(--pl-accent);color:var(--pl-accent-text);opacity:0;transform:translateY(8px);transition:.15s;box-shadow:0 6px 14px rgba(0,0,0,.4)}

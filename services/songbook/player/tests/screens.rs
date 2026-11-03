@@ -259,7 +259,6 @@ fn the_home_page_offers_picks_not_the_whole_library() {
         "shelf-mixes",
         "shelf-popular",
         "shelf-artists",
-        "shelf-discover",
         "shelf-albums",
         "shelf-categories",
         "shelf-playlists",
@@ -267,7 +266,8 @@ fn the_home_page_offers_picks_not_the_whole_library() {
         assert!(l.has(id), "{id}");
     }
     assert!(l.has("mix-Daily%20Mix") && l.has("mix-Best%20of%20American%20Rap"));
-    assert!(l.has("popular") && l.has("discover"));
+    assert!(l.has("popular"));
+    assert!(!l.has("shelf-discover"), "no \"worth hearing again\"");
     assert!(l.has("category-American%20Rap"), "a way to the category");
     assert!(l.has("playlist-4"));
     assert!(l.r.text_of(l.find_id("playlist-4")).contains("12 songs"));
@@ -801,6 +801,32 @@ fn a_host_that_is_not_a_page_is_sent_the_commands_and_tells_the_events() {
     r.fire(play, &Event::Click);
     let last = sent.borrow().last().cloned().expect("a command was sent");
     assert!(last.contains("\"op\":\"toggle\""), "{last}");
+}
+
+#[quench_test::test]
+fn on_a_phone_the_settings_are_a_tab_and_the_recent_shelf_holds_ten() {
+    let l = live_on("/songbook/ui", true);
+    l.take();
+    l.send(Msg::Home(home()));
+    // The tab bar has the settings, which open the box.
+    assert!(l.has("tab-nav-settings"));
+    l.click("tab-nav-settings");
+    assert!(l.has("dialog-settings"));
+    l.click("close");
+    // Fifteen songs were played; ten are shown.
+    let many: Vec<_> = (1..=15)
+        .map(|i| song(i, &format!("Song {i}"), &["Ann"], "Album"))
+        .collect();
+    l.hear(&json!({ "ev": "recent", "ids": (1..=15).collect::<Vec<i64>>() }));
+    l.send(Msg::Songs(
+        "meta".into(),
+        SongList {
+            total: 15,
+            songs: many,
+        },
+    ));
+    let shelf = l.find_id("recent");
+    assert_eq!(l.r.children(shelf).len(), 10);
 }
 
 quench_test::main!();
