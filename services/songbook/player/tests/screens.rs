@@ -248,7 +248,7 @@ fn home() -> songbook_core::Home {
 
 #[quench_test::test]
 fn the_home_page_offers_picks_not_the_whole_library() {
-    let l = live("/songbook/ui");
+    let l = live("/songbook/ui/home");
     let asked = l.take();
     assert!(asked.contains(&Request::Overview));
     assert!(asked.contains(&Request::Playlists));
@@ -285,7 +285,7 @@ fn the_home_page_offers_picks_not_the_whole_library() {
 
 #[quench_test::test]
 fn a_mix_plays_the_popular_songs_of_its_category_in_its_order() {
-    let l = live("/songbook/ui");
+    let l = live("/songbook/ui/home");
     l.take();
     l.send(Msg::Home(home()));
     l.click("mix-Best%20of%20American%20Rap");
@@ -322,7 +322,7 @@ fn a_mix_plays_the_popular_songs_of_its_category_in_its_order() {
 #[quench_test::test]
 fn what_was_chosen_to_play_is_on_the_home_page_and_plays_again_from_there() {
     use songbook_core::{RecentItem, SongQuery};
-    let l = live("/songbook/ui");
+    let l = live("/songbook/ui/home");
     let asked = l.take();
     assert!(
         asked.contains(&Request::Contexts),
@@ -380,7 +380,7 @@ fn the_artists_page_lists_all_of_them_and_finds_by_name() {
 
 #[quench_test::test]
 fn playing_everything_shuffled_asks_for_the_ids_and_then_commands_the_engine() {
-    let l = live("/songbook/ui");
+    let l = live("/songbook/ui/home");
     l.take();
     l.send(Msg::Overview(overview()));
     l.click("shuffle-everything");
@@ -465,7 +465,7 @@ fn the_play_and_shuffle_buttons_of_a_page_play_all_of_it() {
 
 #[quench_test::test]
 fn the_bar_shows_what_the_engine_plays_and_its_buttons_command_it() {
-    let l = live("/songbook/ui");
+    let l = live("/songbook/ui/home");
     l.take();
     assert!(
         l.r.attr(l.find_id("bar"), "class")
@@ -552,7 +552,7 @@ fn the_bar_shows_what_the_engine_plays_and_its_buttons_command_it() {
 
 #[quench_test::test]
 fn clicking_play_with_nothing_to_play_says_so() {
-    let l = live("/songbook/ui");
+    let l = live("/songbook/ui/home");
     l.click("play");
     assert_eq!(l.text_of("toast"), "Pick something to play");
     tick(4000.0);
@@ -687,7 +687,7 @@ fn keeping_songs_on_the_device_is_a_command_and_the_engine_says_which_are_kept()
 
 #[quench_test::test]
 fn the_saved_page_asks_for_the_songs_the_engine_keeps() {
-    let l = live("/songbook/ui");
+    let l = live("/songbook/ui/home");
     l.take();
     l.hear(&json!({ "ev": "cached", "ids": [2, 1] }));
     l.hear(&json!({ "ev": "storage", "used": 5_242_880, "quota": 104_857_600 }));
@@ -705,7 +705,7 @@ fn the_saved_page_asks_for_the_songs_the_engine_keeps() {
 
 #[quench_test::test]
 fn the_crossfade_is_set_in_the_settings_box() {
-    let l = live("/songbook/ui");
+    let l = live("/songbook/ui/home");
     l.take();
     l.click("settings");
     assert!(l.has("dialog-settings"));
@@ -727,7 +727,7 @@ fn the_crossfade_is_set_in_the_settings_box() {
 
 #[quench_test::test]
 fn the_songs_kept_after_playing_can_be_limited_where_the_engine_has_such_a_cache() {
-    let l = live("/songbook/ui");
+    let l = live("/songbook/ui/home");
     l.take();
     l.click("settings");
     // The browser's engine says nothing of a cache: no setting.
@@ -748,7 +748,7 @@ fn the_songs_kept_after_playing_can_be_limited_where_the_engine_has_such_a_cache
 
 #[quench_test::test]
 fn the_queue_shows_what_comes_next_and_a_row_jumps_to_it() {
-    let l = live("/songbook/ui");
+    let l = live("/songbook/ui/home");
     l.take();
     l.hear(&state(1, 0, true));
     l.hear(&json!({ "ev": "queue", "ids": [1, 2, 3], "index": 0, "len": 3 }));
@@ -781,28 +781,28 @@ fn the_queue_shows_what_comes_next_and_a_row_jumps_to_it() {
 #[quench_test::test]
 fn a_phone_has_no_way_to_the_admin_pages_and_a_computer_has() {
     // Only someone the service says may use the admin pages sees the way there, and not on a phone.
-    let computer = live_on("/songbook/ui", false);
+    let computer = live_on("/songbook/ui/home", false);
     assert!(
         !computer.has("admin-link"),
         "not before the service has said"
     );
     computer.send(Msg::Overview(overview()));
     assert!(computer.has("admin-link"));
-    let listener = live_on("/songbook/ui", false);
+    let listener = live_on("/songbook/ui/home", false);
     listener.send(Msg::Overview(Overview {
         admin: false,
         ..overview()
     }));
     assert!(!listener.has("admin-link"), "a listener has no admin link");
-    let phone = live_on("/songbook/ui", true);
+    let phone = live_on("/songbook/ui/home", true);
     phone.send(Msg::Overview(overview()));
     assert!(!phone.has("admin-link"));
-    assert!(live("/songbook/ui").has("logout"));
+    assert!(live("/songbook/ui/home").has("logout"));
 }
 
 #[quench_test::test]
 fn an_ended_session_and_an_unreachable_server_are_told() {
-    let l = live("/songbook/ui");
+    let l = live("/songbook/ui/home");
     l.take();
     l.send(Msg::Failed("timeout".into()));
     assert!(l.text_of("banner").contains("cannot be reached"));
@@ -834,7 +834,7 @@ fn a_host_that_is_not_a_page_is_sent_the_commands_and_tells_the_events() {
         Rc::new(|_| {}),
         Setup {
             base: "/songbook".into(),
-            history: Rc::new(MemoryHistory::new("/songbook/ui")),
+            history: Rc::new(MemoryHistory::new("/songbook/ui/home")),
             login_url: String::new(),
             mobile: true,
             engine: Some(Rc::new(move |text| log.borrow_mut().push(text))),
@@ -864,7 +864,7 @@ fn a_host_that_is_not_a_page_is_sent_the_commands_and_tells_the_events() {
 
 #[quench_test::test]
 fn on_a_phone_the_settings_are_a_tab_and_the_recent_shelf_holds_twelve() {
-    let l = live_on("/songbook/ui", true);
+    let l = live_on("/songbook/ui/home", true);
     l.take();
     l.send(Msg::Home(home()));
     // The tab bar has the settings, which open the box.

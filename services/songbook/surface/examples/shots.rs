@@ -83,7 +83,7 @@ fn main() {
             Rc::new(|_| {}),
             Setup {
                 base: "/songbook".into(),
-                history: Rc::new(MemoryHistory::new("/songbook/ui")),
+                history: Rc::new(MemoryHistory::new("/songbook/ui/home")),
                 login_url: String::new(),
                 mobile: true,
                 engine: Some(Rc::new(move |c| log.borrow_mut().push(c))),

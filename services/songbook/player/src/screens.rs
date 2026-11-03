@@ -164,7 +164,7 @@ fn artists_line(song: &SongInfo) -> String {
 // ── Frame ────────────────────────────────────────────────────────────────────
 
 const NAV: [(&str, &str, &str, &str); 4] = [
-    ("", "Home", "nav-home", "home"),
+    ("/home", "Home", "nav-home", "home"),
     ("/search", "Search", "nav-search", "search"),
     ("/playlists", "Playlists", "nav-playlists", "list"),
     ("/saved", "On this device", "nav-saved", "download"),
@@ -177,7 +177,7 @@ fn nav_items(env: &Env, router: &Router, short: bool) -> View {
         let mut nav = div().class("pl-nav");
         for (path, title, id, glyph) in NAV {
             let href = env.path(path);
-            let current = here == href || (path.is_empty() && here == format!("{href}/"));
+            let current = here == href;
             let mut item = link(&href)
                 .attr(
                     "id",

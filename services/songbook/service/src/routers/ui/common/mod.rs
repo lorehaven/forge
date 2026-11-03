@@ -91,7 +91,7 @@ impl FromRequest for AdminOrRedirect {
             return Ok(Self::Redirect(
                 quench_http::prelude::Response::new(quench_http::http::StatusCode::FOUND).header(
                     "Location",
-                    quench_starter::common::routes::with_base_path("/ui"),
+                    quench_starter::common::routes::with_base_path("/ui/home"),
                 ),
             ));
         }

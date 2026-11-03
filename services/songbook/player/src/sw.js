@@ -75,7 +75,7 @@
     if (path.indexOf(scope + 'api/v1/art/') === 0) { e.respondWith(art(r)); return; }
     if (path.indexOf(scope + 'api/v1/library/') === 0 || path.indexOf(scope + 'api/v1/playlists') === 0) { e.respondWith(data(r)); return; }
     if (path.indexOf(ui + '/assets/') === 0) { e.respondWith(asset(r)); return; }
-    var player = path === ui || path === ui + '/' || /^\/?.*\/ui\/(search|artists|artist|album|category|playlists|playlist|saved)(\/|$)/.test(path) && path.indexOf(ui + '/') === 0;
+    var player = path === ui + '/home' || /^\/?.*\/ui\/(search|artists|artist|album|category|playlists|playlist|saved)(\/|$)/.test(path) && path.indexOf(ui + '/') === 0;
     if (r.mode === 'navigate' && player) e.respondWith(page(r));
   });
 })();

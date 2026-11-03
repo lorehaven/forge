@@ -1,4 +1,4 @@
-//! The player: what everyone signed in sees at `/ui`. One page for every address of its router (the client draws the screen
+//! The player: what everyone signed in sees at `/ui/home`. One page for every address of its router (the client draws the screen
 //! from the address), and the files it loads.
 
 use crate::routers::ui::common::ActorOrRedirect;
@@ -24,19 +24,24 @@ fn page(who: ActorOrRedirect) -> Response {
 // One handler per screen, written out: the route census and the security scanner read the attributes, and cannot see
 // through a macro.
 #[get("/ui")]
-pub(super) async fn home(who: ActorOrRedirect) -> Response {
-    page(who)
+pub(super) async fn root() -> Response {
+    Response::new(StatusCode::FOUND).header("Location", with_base_path("/ui/home"))
 }
 
 #[get("/ui/")]
-pub(super) async fn home_slash(who: ActorOrRedirect) -> Response {
+pub(super) async fn root_slash() -> Response {
+    Response::new(StatusCode::FOUND).header("Location", with_base_path("/ui/home"))
+}
+
+#[get("/ui/home")]
+pub(super) async fn home(who: ActorOrRedirect) -> Response {
     page(who)
 }
 
 /// The address the home page had before the player was rewritten: portal links and bookmarks still point at it.
 #[get("/ui/library")]
 pub(super) async fn library_legacy() -> Response {
-    Response::new(StatusCode::FOUND).header("Location", with_base_path("/ui"))
+    Response::new(StatusCode::FOUND).header("Location", with_base_path("/ui/home"))
 }
 
 #[get("/ui/search")]
@@ -120,7 +125,8 @@ pub(super) async fn module() -> Response {
 
 pub(super) fn register_routes() {
     let _ = home as fn(_) -> _;
-    let _ = home_slash as fn(_) -> _;
+    let _ = root as fn() -> _;
+    let _ = root_slash as fn() -> _;
     let _ = search as fn(_) -> _;
     let _ = artists as fn(_) -> _;
     let _ = artist as fn(_) -> _;

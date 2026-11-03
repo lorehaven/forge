@@ -210,7 +210,7 @@ pub fn build(
         })
     };
 
-    let history = Rc::new(MemoryHistory::new(&format!("{BASE}/ui")));
+    let history = Rc::new(MemoryHistory::new(&format!("{BASE}/ui/home")));
     let back: BackSlot = Rc::default();
     let sign_in = {
         let (auth, pool, tx, busy) = (Arc::clone(&auth), pool, answers, busy.clone());

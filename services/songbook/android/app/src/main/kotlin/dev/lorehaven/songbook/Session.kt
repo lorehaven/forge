@@ -50,7 +50,7 @@ class Session private constructor(private val brain: Brain) {
     val api: String get() { load(); return base }
 
     /** Where the player (the web page) is. */
-    val player: String get() = "$server/songbook/ui"
+    val player: String get() = "$server/songbook/ui/home"
 
     /** Signs in. [IllegalArgumentException] says why in words (wrong password, account off); [Unreachable] when the server is not there. */
     fun login(address: String, username: String, password: String) {

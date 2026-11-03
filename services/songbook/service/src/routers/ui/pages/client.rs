@@ -1,5 +1,5 @@
 //! The admin client: the page that starts it (for a signed-in admin) and the files it loads (`forge-web` serves them).
-//! It lives under `/ui/admin`; the player, for everyone else, is at `/ui`.
+//! It lives under `/ui/admin`; the player, for everyone else, is at `/ui/home`.
 
 use crate::routers::ui::common::AdminOrRedirect;
 use forge_web::Client;

@@ -593,8 +593,7 @@ fn shell(
     };
     let ui = format!("{}/ui", setup.base);
     let table = Routes::new()
-        .route(&ui, page(screens::home))
-        .route(&format!("{ui}/"), page(screens::home))
+        .route(&format!("{ui}/home"), page(screens::home))
         .route(&format!("{ui}/search"), page(screens::search))
         .route(&format!("{ui}/artists"), page(screens::artists))
         .route(&format!("{ui}/artist/:name"), page(screens::artist))
