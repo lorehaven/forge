@@ -4,7 +4,8 @@ use crate::{Msg, Request};
 use quench_serde::{Deserialize, json};
 use songbook_core::api::encode;
 use songbook_core::{
-    AlbumInfo, Home, Overview, PlaylistBody, PlaylistInfo, Search, SongIds, SongIdsBody, SongList,
+    AlbumInfo, Home, Overview, PlaylistBody, PlaylistInfo, RecentItem, Search, SongIds,
+    SongIdsBody, SongList,
 };
 
 /// The listener API, under the service's own prefix.
@@ -51,6 +52,8 @@ pub fn call_for(request: &Request) -> Call {
         Request::Ids(q, _) => get(format!("{API}/library/ids{}", q.query())),
         Request::Search(text) => get(format!("{API}/library/search?q={}", encode(text))),
         Request::Playlists => get(format!("{API}/playlists")),
+        Request::Contexts => get(format!("{API}/history/contexts?limit=20")),
+        Request::Remember(item) => send("POST", format!("{API}/history/context"), item),
         Request::CreatePlaylist(name) => send(
             "POST",
             format!("{API}/playlists"),
@@ -109,6 +112,8 @@ pub fn interpret(request: &Request, status: u16, body: &str) -> Option<Msg> {
             Request::Ids(_, intent) => Some(read::<SongIds>(body, |i| Msg::Ids(intent.clone(), i))),
             Request::Search(text) => Some(read::<Search>(body, |s| Msg::Found(text.clone(), s))),
             Request::Playlists => Some(read::<Vec<PlaylistInfo>>(body, Msg::Playlists)),
+            Request::Contexts => Some(read::<Vec<RecentItem>>(body, Msg::Contexts)),
+            Request::Remember(_) => None,
             Request::CreatePlaylist(_)
             | Request::RenamePlaylist(..)
             | Request::AddToPlaylist(..)

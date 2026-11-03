@@ -55,6 +55,10 @@ Under `/api/v1` (not `/admin`), for any grant of `songbook`. Only songs that hav
 | `GET /library/search?q=` | | a few songs, albums and artists |
 | `GET /library/recent` | `limit` | what this person played last, newest first, each song once (the same on every device) |
 | `POST /history` | `{song_id}` | remembers that the person started a song (the player and the Android app tell it; the last 500 are kept in `meta/user.db`) |
+| `GET /history/contexts` | `limit` | what this person chose to start playing (a mix, an artist, an album, a playlist, a category or one song), newest first, each once: the home page's "Recently played" |
+| `POST /history/context` | a `RecentItem` (`kind`, `name`, `sub`, `art_kind`, `art_key`, `query`, `shuffle`) | remembers that the person chose to start it; the same thing again moves to the front (the last 60 are kept) |
+| `GET /resume` | | where this person stopped listening on any device: `{song_id, position_ms, queue, index, device, at}` (`song_id` 0: nowhere yet) |
+| `PUT /resume` | `{song_id, position_ms, queue, index, device}` | replaces it (`queue[index]` must be `song_id`; up to 2000 songs of the list are kept); the answer has the service's `at` |
 | `GET /stream/{id}` | `Range` | the audio file; `206` for a range, `bytes=N-` is answered in 4 MiB pieces |
 | `GET/POST /playlists`, `PUT/DELETE /playlists/{id}` | `{name}` | the signed-in person's playlists |
 | `POST /playlists/{id}/songs` | `{song_ids}` | append; `PUT` replaces the order |

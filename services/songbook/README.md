@@ -26,6 +26,11 @@ Everything about the index, the API, the jobs and the configuration is in [`serv
   category, artist and album, search, play a song or a whole album, artist or category in order or shuffled, make playlists,
   keep songs on the device (Cache Storage) so they play without the network, and a crossfade between songs. It plays in the
   background too (lock-screen controls through the media session).
+  Keyboard (in the browser): Space or K play and pause, the left and right arrows seek 5 seconds (J and L: 10), N and P go to
+  the next and the previous song, M mutes. They leave text fields alone, and a button reached with Tab keeps its own Space.
+  Where you stopped (the song, the exact point and the list) follows you to your other devices; "Recently played" lists what you
+  chose to start (a mix, an artist, an album, a playlist, a song), not every song.
+
 * **The admin**, at `/ui/admin/...` (`library`, `pipeline`, `discover`, `schedule`, `activity`), needs `songbook:write` and a
   computer: a phone or tablet is sent to the player.
 

@@ -12,8 +12,8 @@ use quench_http::prelude::{
 };
 use quench_http::stream::reader_stream;
 use songbook_core::{
-    AlbumQuery, PlayedBody, PlaylistBody, RecentQuery, SearchQuery, SongIdsBody, SongList,
-    SongQuery,
+    AlbumQuery, PlayedBody, PlaylistBody, RecentItem, RecentQuery, Resume, SearchQuery,
+    SongIdsBody, SongList, SongQuery,
 };
 use std::io::SeekFrom;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
@@ -148,6 +148,83 @@ pub async fn played(
     let now = quench_core::time::Time::now().timestamp();
     match app.playlists.played(&me, body.song_id, now) {
         Ok(()) => ok(&quench_serde::json!({})),
+        Err(e) => server_error(e),
+    }
+}
+
+/// What the person chose to start playing (a mix, an artist, an album, a playlist, one song), newest first.
+#[get("/api/v1/history/contexts")]
+pub async fn contexts(
+    Inject(app): Inject<App>,
+    Me(me): Me,
+    Query(q): Query<RecentQuery>,
+) -> Response {
+    let limit = if q.limit == 0 {
+        20
+    } else {
+        (q.limit as usize).min(60)
+    };
+    match app.playlists.contexts(&me, limit) {
+        Ok(items) => ok(&items),
+        Err(e) => server_error(e),
+    }
+}
+
+/// The person chose to start something: remembered, and the same thing again moves to the front.
+#[post("/api/v1/history/context")]
+pub async fn started(
+    Inject(app): Inject<App>,
+    Me(me): Me,
+    Json(mut item): Json<RecentItem>,
+) -> Response {
+    const KINDS: [&str; 6] = ["song", "album", "artist", "playlist", "category", "mix"];
+    if !KINDS.contains(&item.kind.as_str()) || item.name.trim().is_empty() {
+        return json_error(StatusCode::BAD_REQUEST, "a kind and a name are needed");
+    }
+    for field in [&mut item.name, &mut item.sub, &mut item.art_key] {
+        *field = field.chars().take(200).collect();
+    }
+    let now = quench_core::time::Time::now().timestamp();
+    match app.playlists.started(&me, &item, now) {
+        Ok(()) => ok(&quench_serde::json!({})),
+        Err(e) => server_error(e),
+    }
+}
+
+/// The most songs of a list that is remembered with the point in a song.
+const RESUME_QUEUE: usize = 2000;
+
+/// Where this person stopped listening, on any of their devices (`song_id` 0: nowhere yet).
+#[get("/api/v1/resume")]
+pub async fn resume(Inject(app): Inject<App>, Me(me): Me) -> Response {
+    match app.playlists.resume(&me) {
+        Ok(found) => ok(&found.unwrap_or_default()),
+        Err(e) => server_error(e),
+    }
+}
+
+/// Remembers where this person stopped: the song, the point in it and the list. The answer is what was kept (with the time).
+#[put("/api/v1/resume")]
+pub async fn set_resume(
+    Inject(app): Inject<App>,
+    Me(me): Me,
+    Json(mut body): Json<Resume>,
+) -> Response {
+    body.queue.truncate(RESUME_QUEUE);
+    let in_range = usize::try_from(body.index).is_ok_and(|i| i < body.queue.len());
+    if body.song_id <= 0
+        || !in_range
+        || body.queue[usize::try_from(body.index).unwrap_or(0)] != body.song_id
+    {
+        return json_error(
+            StatusCode::BAD_REQUEST,
+            "the song must be the one at `index` of `queue`",
+        );
+    }
+    body.device.truncate(64);
+    body.at = quench_core::time::Time::now().timestamp();
+    match app.playlists.set_resume(&me, &body, body.at) {
+        Ok(()) => ok(&body),
         Err(e) => server_error(e),
     }
 }
@@ -361,6 +438,10 @@ pub fn register_routes() {
     let _ = ids as fn(_, _, _) -> _;
     let _ = recent as fn(_, _, _) -> _;
     let _ = played as fn(_, _, _) -> _;
+    let _ = contexts as fn(_, _, _) -> _;
+    let _ = started as fn(_, _, _) -> _;
+    let _ = resume as fn(_, _) -> _;
+    let _ = set_resume as fn(_, _, _) -> _;
     let _ = search as fn(_, _) -> _;
     let _ = stream as fn(_, _, _) -> _;
     let _ = playlists as fn(_, _) -> _;

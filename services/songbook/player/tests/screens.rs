@@ -73,6 +73,14 @@ impl Live {
         std::mem::take(&mut *self.asked.borrow_mut())
     }
 
+    /// What was asked, without the notes of what was chosen to play (those are looked at on their own).
+    fn take_asked(&self) -> Vec<Request> {
+        self.take()
+            .into_iter()
+            .filter(|r| !matches!(r, Request::Remember(_)))
+            .collect()
+    }
+
     /// What the engine has been told, in order.
     fn commands(&self) -> Vec<Value> {
         let text = self.r.attr(self.find_id("sb-engine"), "data-cmd").unwrap();
@@ -282,13 +290,28 @@ fn a_mix_plays_the_popular_songs_of_its_category_in_its_order() {
     l.send(Msg::Home(home()));
     l.click("mix-Best%20of%20American%20Rap");
     let asked = l.take();
+    let chosen: Vec<_> = asked
+        .iter()
+        .filter_map(|r| match r {
+            Request::Remember(i) => Some((i.kind.clone(), i.name.clone(), i.shuffle)),
+            _ => None,
+        })
+        .collect();
+    let asked: Vec<_> = asked
+        .into_iter()
+        .filter(|r| !matches!(r, Request::Remember(_)))
+        .collect();
     assert!(
         matches!(&asked[..], [Request::Ids(q, Intent::Play { shuffle: false })]
         if q.category == "American Rap" && q.sort == "popular" && q.limit == 50),
         "{asked:?}"
     );
+    assert_eq!(
+        chosen,
+        vec![("mix".to_string(), "Best of American Rap".to_string(), false)]
+    );
     l.click("mix-Daily%20Mix");
-    let asked = l.take();
+    let asked = l.take_asked();
     assert!(
         matches!(&asked[..], [Request::Ids(q, Intent::Play { shuffle: true })]
         if q.category.is_empty() && q.sort == "popular" && q.limit == 150),
@@ -297,32 +320,49 @@ fn a_mix_plays_the_popular_songs_of_its_category_in_its_order() {
 }
 
 #[quench_test::test]
-fn what_was_played_last_is_on_the_home_page_and_plays_from_there() {
+fn what_was_chosen_to_play_is_on_the_home_page_and_plays_again_from_there() {
+    use songbook_core::{RecentItem, SongQuery};
     let l = live("/songbook/ui");
-    l.take();
-    l.hear(&json!({ "ev": "recent", "ids": [2, 1] }));
+    let asked = l.take();
+    assert!(
+        asked.contains(&Request::Contexts),
+        "the home page asks for them"
+    );
+    let album = RecentItem::of(
+        &SongQuery {
+            album: 4,
+            ..SongQuery::default()
+        },
+        false,
+        "Devils Night",
+        "D12",
+    );
+    let song = RecentItem::of(
+        &SongQuery {
+            ids: "9".into(),
+            ..SongQuery::default()
+        },
+        false,
+        "The Next Episode",
+        "Dr. Dre",
+    );
+    l.send(Msg::Contexts(vec![album, song]));
+    assert!(l.has("recent"));
+    assert!(l.r.html().contains("Devils Night") && l.r.html().contains("The Next Episode"));
+    // One card each, not one per song; a tap plays the same thing again and moves it to the front.
+    assert_eq!(l.r.children(l.find_id("recent")).len(), 2);
+    l.click_class("pl-card-button");
     let asked = l.take();
     assert!(
         asked
             .iter()
-            .any(|r| matches!(r, Request::Songs(q, key) if key == "meta" && q.ids.contains('2')))
+            .any(|r| matches!(r, Request::Ids(q, Intent::Play { shuffle: false }) if q.album == 4)),
+        "{asked:?}"
     );
-    l.send(Msg::Songs("meta".into(), songs()));
-    assert!(l.has("recent"));
-    l.click_class("pl-card-button");
-    let c = l
-        .commands()
-        .into_iter()
-        .find(|c| c.get("op").and_then(Value::as_str) == Some("load"))
-        .unwrap();
-    assert_eq!(
-        c.get("queue")
-            .and_then(Value::as_array)
-            .unwrap()
+    assert!(
+        asked
             .iter()
-            .filter_map(Value::as_i64)
-            .collect::<Vec<_>>(),
-        vec![2, 1]
+            .any(|r| matches!(r, Request::Remember(i) if i.name == "Devils Night"))
     );
 }
 
@@ -344,7 +384,7 @@ fn playing_everything_shuffled_asks_for_the_ids_and_then_commands_the_engine() {
     l.take();
     l.send(Msg::Overview(overview()));
     l.click("shuffle-everything");
-    let asked = l.take();
+    let asked = l.take_asked();
     assert!(
         matches!(&asked[..], [Request::Ids(q, Intent::Play { shuffle: true })] if *q == songbook_core::SongQuery::default())
     );
@@ -410,12 +450,15 @@ fn the_play_and_shuffle_buttons_of_a_page_play_all_of_it() {
     );
     l.send(Msg::Songs("artist:Nate Dogg".into(), songs()));
     l.click("play-all");
+    let asked = l.take();
     assert!(
-        matches!(&l.take()[..], [Request::Ids(q, Intent::Play { shuffle: false })] if q.artist == "Nate Dogg")
+        matches!(&asked[..], [Request::Remember(i), Request::Ids(q, Intent::Play { shuffle: false })]
+            if q.artist == "Nate Dogg" && i.kind == "artist" && i.name == "Nate Dogg"),
+        "{asked:?}"
     );
     l.click("shuffle-all");
     assert!(matches!(
-        &l.take()[..],
+        &l.take_asked()[..],
         [Request::Ids(_, Intent::Play { shuffle: true })]
     ));
 }
@@ -820,7 +863,7 @@ fn a_host_that_is_not_a_page_is_sent_the_commands_and_tells_the_events() {
 }
 
 #[quench_test::test]
-fn on_a_phone_the_settings_are_a_tab_and_the_recent_shelf_holds_ten() {
+fn on_a_phone_the_settings_are_a_tab_and_the_recent_shelf_holds_twelve() {
     let l = live_on("/songbook/ui", true);
     l.take();
     l.send(Msg::Home(home()));
@@ -829,20 +872,23 @@ fn on_a_phone_the_settings_are_a_tab_and_the_recent_shelf_holds_ten() {
     l.click("tab-nav-settings");
     assert!(l.has("dialog-settings"));
     l.click("close");
-    // Fifteen songs were played; ten are shown.
+    // Fifteen things were chosen to play; twelve are shown.
     let many: Vec<_> = (1..=15)
-        .map(|i| song(i, &format!("Song {i}"), &["Ann"], "Album"))
+        .map(|i| {
+            songbook_core::RecentItem::of(
+                &songbook_core::SongQuery {
+                    album: i,
+                    ..songbook_core::SongQuery::default()
+                },
+                false,
+                &format!("Album {i}"),
+                "Ann",
+            )
+        })
         .collect();
-    l.hear(&json!({ "ev": "recent", "ids": (1..=15).collect::<Vec<i64>>() }));
-    l.send(Msg::Songs(
-        "meta".into(),
-        SongList {
-            total: 15,
-            songs: many,
-        },
-    ));
+    l.send(Msg::Contexts(many));
     let shelf = l.find_id("recent");
-    assert_eq!(l.r.children(shelf).len(), 10);
+    assert_eq!(l.r.children(shelf).len(), 12);
 }
 
 quench_test::main!();

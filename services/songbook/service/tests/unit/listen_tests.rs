@@ -726,3 +726,159 @@ fn the_recent_songs_of_the_catalog_skip_what_has_no_file() {
         vec![ids[1], ids[0]]
     );
 }
+
+#[quench_test::test]
+fn where_a_person_stopped_is_theirs_and_the_newest_write_wins() {
+    let dir = Scratch::new();
+    let lists = Playlists::open(&dir.path().join("user.db")).unwrap();
+    assert!(lists.resume("ann").unwrap().is_none());
+    let first = songbook_core::Resume {
+        song_id: 7,
+        position_ms: 61_250,
+        queue: vec![5, 7, 9],
+        index: 1,
+        device: "laptop".into(),
+        at: 0,
+    };
+    lists.set_resume("ann", &first, 100).unwrap();
+    lists
+        .set_resume(
+            "ann",
+            &songbook_core::Resume {
+                song_id: 9,
+                position_ms: 5,
+                index: 2,
+                device: "phone".into(),
+                ..first
+            },
+            200,
+        )
+        .unwrap();
+    let got = lists.resume("ann").unwrap().unwrap();
+    assert_eq!(
+        (got.song_id, got.position_ms, got.index, got.at),
+        (9, 5, 2, 200)
+    );
+    assert_eq!((got.queue, got.device.as_str()), (vec![5, 7, 9], "phone"));
+    assert!(
+        lists.resume("bob").unwrap().is_none(),
+        "another person's is theirs"
+    );
+}
+
+#[quench_test::test]
+fn what_a_person_chose_to_start_is_kept_once_newest_first_and_trimmed() {
+    use songbook_core::{RecentItem, SongQuery};
+    let dir = Scratch::new();
+    let lists = Playlists::open(&dir.path().join("user.db")).unwrap();
+    let album = |id: i64, name: &str| {
+        RecentItem::of(
+            &SongQuery {
+                album: id,
+                ..SongQuery::default()
+            },
+            false,
+            name,
+            "D12",
+        )
+    };
+    lists
+        .started("ann", &album(1, "Devils Night"), 100)
+        .unwrap();
+    lists.started("ann", &album(2, "D12 World"), 200).unwrap();
+    lists
+        .started("ann", &album(1, "Devils Night"), 300)
+        .unwrap();
+    lists.started("bob", &album(9, "Other"), 400).unwrap();
+    let names: Vec<_> = lists
+        .contexts("ann", 10)
+        .unwrap()
+        .into_iter()
+        .map(|i| (i.kind, i.name, i.art_key, i.at))
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            (
+                "album".to_string(),
+                "Devils Night".to_string(),
+                "1".to_string(),
+                300
+            ),
+            (
+                "album".to_string(),
+                "D12 World".to_string(),
+                "2".to_string(),
+                200
+            ),
+        ],
+        "the same album again is once, and first"
+    );
+    // The same songs shuffled are another thing; and only the latest are kept.
+    let mut shuffled = album(1, "Devils Night");
+    shuffled.shuffle = true;
+    lists.started_keeping("ann", &shuffled, 500, 2).unwrap();
+    let kept = lists.contexts("ann", 10).unwrap();
+    assert_eq!(kept.len(), 2);
+    assert!(
+        kept[0].shuffle && kept[0].query.album == 1,
+        "round trip of the query"
+    );
+    assert_eq!(lists.contexts("bob", 10).unwrap().len(), 1);
+}
+
+#[quench_test::test]
+fn starting_a_query_is_named_by_what_it_picks() {
+    use songbook_core::{RecentItem, SongQuery};
+    let kind = |q: SongQuery| RecentItem::of(&q, false, "x", "").kind;
+    assert_eq!(
+        kind(SongQuery {
+            ids: "5".into(),
+            ..SongQuery::default()
+        }),
+        "song"
+    );
+    assert_eq!(
+        kind(SongQuery {
+            ids: "5,6".into(),
+            ..SongQuery::default()
+        }),
+        "mix"
+    );
+    assert_eq!(
+        kind(SongQuery {
+            album: 3,
+            ..SongQuery::default()
+        }),
+        "album"
+    );
+    assert_eq!(
+        kind(SongQuery {
+            artist: "ReTo".into(),
+            ..SongQuery::default()
+        }),
+        "artist"
+    );
+    assert_eq!(
+        kind(SongQuery {
+            playlist: 2,
+            ..SongQuery::default()
+        }),
+        "playlist"
+    );
+    assert_eq!(
+        kind(SongQuery {
+            category: "Rap".into(),
+            ..SongQuery::default()
+        }),
+        "category"
+    );
+    let mix = SongQuery {
+        category: "Rap".into(),
+        sort: "popular".into(),
+        limit: 100,
+        ..SongQuery::default()
+    };
+    assert_eq!(kind(mix), "mix");
+    assert_eq!(kind(SongQuery::default()), "mix", "everything");
+}

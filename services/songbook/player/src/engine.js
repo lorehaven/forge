@@ -18,7 +18,7 @@
   function save() {
     try {
       localStorage.setItem('sb.engine', JSON.stringify({ ids: S.ids, orig: S.orig, index: S.index, shuffle: S.shuffle,
-        repeat: S.repeat, fade: S.fade, vol: S.vol, pos: els[cur].currentTime || 0 }));
+        repeat: S.repeat, fade: S.fade, vol: S.vol, pos: els[cur].currentTime || 0, synced: S.synced || 0 }));
     } catch (e) { /* storage may be blocked */ }
   }
   function restore() {
@@ -26,7 +26,7 @@
       var v = JSON.parse(localStorage.getItem('sb.engine') || 'null');
       if (!v) return;
       S.ids = v.ids || []; S.orig = v.orig || S.ids; S.index = v.index; S.shuffle = !!v.shuffle;
-      S.repeat = v.repeat || 'off'; S.fade = v.fade || 0; S.vol = v.vol == null ? 1 : v.vol;
+      S.repeat = v.repeat || 'off'; S.fade = v.fade || 0; S.vol = v.vol == null ? 1 : v.vol; S.synced = v.synced || 0;
       if (S.index >= 0 && S.index < S.ids.length) { S.pending = v.pos || 0; }
     } catch (e) { /* a damaged copy is ignored */ }
     try { S.recent = JSON.parse(localStorage.getItem('sb.recent') || '[]').filter(Number.isFinite); } catch (e) { S.recent = []; }
@@ -68,6 +68,58 @@
     S.recent = [id].concat(S.recent.filter(function (x) { return x !== id; })).slice(0, 40);
     try { localStorage.setItem('sb.recent', JSON.stringify(S.recent)); } catch (e) { /* storage may be blocked */ }
     recent();
+  }
+
+  // ---- where the person stopped, on every device ------------------------------------------------------------------
+  // The service keeps one place per person: the song, the exact point in it and the list. This device writes it while it
+  // plays (and when it pauses or the page goes away), and takes a newer one written by another device, paused at that point.
+  function device() {
+    try {
+      var d = localStorage.getItem('sb.device');
+      if (!d) { d = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('sb.device', d); }
+      return d;
+    } catch (e) { return 'web'; }
+  }
+  var lastPush = 0;
+  function pushResume(force) {
+    var id = S.ids[S.index];
+    if (!id || !S.touched) return;
+    var now = Date.now();
+    if (!force && now - lastPush < 10000) return;
+    lastPush = now;
+    // At most a window of the list, with the song's place in it.
+    var from = Math.max(0, S.index - 100);
+    var body = JSON.stringify({ song_id: id, position_ms: Math.round((els[cur].currentTime || 0) * 1000),
+      queue: S.ids.slice(from, from + 2000), index: S.index - from, device: device() });
+    try {
+      fetch(base + '/api/v1/resume', { method: 'PUT', credentials: 'same-origin', keepalive: true,
+        headers: { 'Content-Type': 'application/json' }, body: body })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (r) { if (r && r.at) { S.synced = r.at; } })
+        .catch(function () { /* offline: the next write tells it */ });
+    } catch (e) { /* no fetch */ }
+  }
+  // Seeks once the song is loaded far enough to be seekable.
+  function seekWhenReady(e, pos) {
+    if (!pos) return;
+    var set = function () { try { e.currentTime = pos; } catch (x) { /* not seekable yet */ } };
+    if (e.readyState >= 1) set();
+    else e.addEventListener('loadedmetadata', function once() { e.removeEventListener('loadedmetadata', once); set(); });
+  }
+  function prepareAt(index, pos) { return prepare(cur, index).then(function () { seekWhenReady(els[cur], pos); }); }
+  function pullResume() {
+    fetch(base + '/api/v1/resume', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (r) {
+      if (!r || !r.song_id) return;
+      // Written by this device, or already taken: nothing to do. Playing here: this device is the one listened to.
+      if (r.device === device() || r.at <= (S.synced || 0)) { S.synced = Math.max(S.synced || 0, r.at); return; }
+      var e = els[cur];
+      if (!e.paused && !e.ended) return;
+      S.ids = r.queue.slice(); S.orig = S.ids.slice(); S.shuffle = false; S.index = r.index;
+      S.synced = r.at; S.touched = false;
+      stopFade(); els[1 - cur].pause();
+      prepareAt(S.index, r.position_ms / 1000).then(function () { meta(); state(); queue(); prepareNext(); save(); });
+      state(); queue();
+    }).catch(function () { /* offline: what is here stays */ });
   }
   function fail(message) { emit({ ev: 'error', message: message }); }
 
@@ -141,7 +193,7 @@
       level(cur, 1);
       if (at) { try { e.currentTime = at; } catch (x) { /* not seekable yet */ } }
       return e.play();
-    }).then(function () { loading = false; meta(); heard(S.ids[S.index]); state(); prepareNext(); save(); })
+    }).then(function () { loading = false; meta(); heard(S.ids[S.index]); state(); prepareNext(); save(); pushResume(true); })
       .catch(function (x) { loading = false; state(); fail('Cannot play this song' + (x && x.name === 'NotAllowedError' ? ': tap play' : '')); });
   }
   function stop() { stopFade(); els[cur].pause(); S.index = -1; state(); queue(); }
@@ -310,12 +362,16 @@
 
   function hook(e, i) {
     e.addEventListener('ended', function () { if (i === cur && !fading) advance(); });
+    e.addEventListener('play', function () { if (i === cur) S.touched = true; });
+    e.addEventListener('pause', function () { if (i === cur && !fading) pushResume(true); });
+    e.addEventListener('seeked', function () { if (i === cur) pushResume(false); });
     ['play', 'pause', 'waiting', 'playing', 'seeked', 'loadedmetadata'].forEach(function (n) { e.addEventListener(n, function () { if (i === cur) state(); }); });
     e.addEventListener('error', function () { if (i === cur && e.getAttribute('src')) { fail('Cannot play this song'); setTimeout(advance, 500); } });
   }
   hook(els[0], 0); hook(els[1], 1);
   setInterval(function () { if (!els[cur].paused) { tick(); } }, 250);
   setInterval(save, 5000);
+  setInterval(function () { if (!els[cur].paused) pushResume(false); else if (!document.hidden) pullResume(); }, 10000);
 
   if (ms()) {
     var h = function (n, f) { try { navigator.mediaSession.setActionHandler(n, f); } catch (e) { /* not supported */ } };
@@ -325,7 +381,51 @@
     h('seekbackward', function (d) { run({ op: 'seek', to: els[cur].currentTime - (d.seekOffset || 10) }); });
     h('seekforward', function (d) { run({ op: 'seek', to: els[cur].currentTime + (d.seekOffset || 10) }); });
   }
+  // ---- the keyboard -----------------------------------------------------------------------------------------------
+  // Space (or K) plays and pauses; the arrows (or J/L) seek 5 (10) seconds; N and P go to the next and the previous song;
+  // M mutes. They leave a text field alone, and anything with Ctrl, Alt or Meta held (the browser's own).
+  var muted = 0;
+  function typing(t) {
+    if (!t || !t.tagName) return false;
+    var tag = t.tagName.toLowerCase();
+    return tag === 'textarea' || tag === 'select' || t.isContentEditable ||
+      (tag === 'input' && !/^(range|checkbox|radio|button|submit)$/.test(t.type || 'text'));
+  }
+  // A button or link reached with Tab keeps its own Space and Enter; the mouse leaves no focus behind (below).
+  function interactive(t) {
+    if (!t || !t.tagName) return false;
+    var tag = t.tagName.toLowerCase();
+    return tag === 'button' || tag === 'a' || tag === 'summary' || (tag === 'input' && /^(range|checkbox|radio|button|submit)$/.test(t.type)) ||
+      (t.getAttribute && /^(button|link|menuitem|tab|switch|checkbox)$/.test(t.getAttribute('role') || ''));
+  }
+  document.addEventListener('click', function (ev) {
+    var t = ev.target && ev.target.closest ? ev.target.closest('button') : null;
+    if (t && ev.detail > 0 && t.blur) t.blur(); // a click, not Space or Enter on a focused button
+  }, true);
+  function seekBy(secs) { var e = els[cur]; if (S.index < 0) return; run({ op: 'seek', to: Math.min(isFinite(e.duration) ? e.duration : 1e9, (e.currentTime || 0) + secs) }); }
+  document.addEventListener('keydown', function (ev) {
+    if (ev.ctrlKey || ev.altKey || ev.metaKey || ev.defaultPrevented || typing(ev.target)) return;
+    var k = ev.key, done = true;
+    if ((k === ' ' || k === 'Spacebar') && interactive(ev.target)) return;
+    if (k === ' ' || k === 'Spacebar' || k === 'k' || k === 'K') run({ op: 'toggle' });
+    else if ((k === 'ArrowRight' || k === 'ArrowLeft') && ev.target && ev.target.type === 'range') done = false; // the slider moves by itself
+    else if (k === 'ArrowRight') seekBy(5);
+    else if (k === 'ArrowLeft') seekBy(-5);
+    else if (k === 'l' || k === 'L') seekBy(10);
+    else if (k === 'j' || k === 'J') seekBy(-10);
+    else if (k === 'n' || k === 'N') run({ op: 'next' });
+    else if (k === 'p' || k === 'P') run({ op: 'prev' });
+    else if (k === 'm' || k === 'M') { if (S.vol > 0) { muted = S.vol; run({ op: 'volume', v: 0 }); } else { run({ op: 'volume', v: muted || 1 }); } }
+    else done = false;
+    if (done) ev.preventDefault();
+  });
+  // The space bar's release would also "click" a focused element: the key was already used.
+  document.addEventListener('keyup', function (ev) {
+    if ((ev.key === ' ' || ev.key === 'Spacebar') && !(ev.ctrlKey || ev.altKey || ev.metaKey) && !typing(ev.target) && !interactive(ev.target)) ev.preventDefault();
+  });
   window.addEventListener('beforeunload', save);
+  window.addEventListener('pagehide', function () { pushResume(true); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) pullResume(); });
   restore();
 
   // The screens draw their elements after this script has run: wait for them.
@@ -337,7 +437,8 @@
     if ('serviceWorker' in navigator) navigator.serviceWorker.register(base + '/sw.js', { scope: base + '/' }).catch(function () { /* not available here */ });
     new MutationObserver(commands).observe(c, { attributes: true, attributeFilter: ['data-cmd'] });
     commands(); state(); queue(); recent(); syncRecent(); cachedList();
-    if (S.index >= 0) prepare(cur, S.index);
+    if (S.index >= 0) prepareAt(S.index, S.pending);
+    pullResume();
   }
   new MutationObserver(attach).observe(document.documentElement, { childList: true, subtree: true });
   attach();

@@ -5,10 +5,10 @@ use std::rc::Rc;
 
 use quench_ui::prelude::*;
 use quench_ui::router::{RouteContext, Router, link};
-use songbook_core::{AlbumInfo, AlbumQuery, ArtistInfo, Mix, SongInfo, SongQuery};
+use songbook_core::{AlbumInfo, AlbumQuery, ArtistInfo, Mix, RecentItem, SongInfo, SongQuery};
 
 use crate::engine::{Command, Repeat};
-use crate::live::{Dialog, Env, Intent, Problem, Request};
+use crate::live::{Dialog, Env, Problem, Request};
 
 fn aside() -> Element {
     element("aside")
@@ -546,7 +546,20 @@ fn song_row(env: &Env, list: &Rc<Vec<i64>>, index: usize, song: &SongInfo, kind:
                 )
                 .on_click({
                     let (env, list) = (env.clone(), Rc::clone(list));
-                    move || env.play(list.to_vec(), i64::try_from(index).unwrap_or(0), false)
+                    let (name, artists) = (song.title.clone(), artists_line(song));
+                    move || {
+                        // A song chosen on its own is what "Recently played" remembers, not the list around it.
+                        env.chose(RecentItem::of(
+                            &SongQuery {
+                                ids: id.to_string(),
+                                ..SongQuery::default()
+                            },
+                            false,
+                            &name,
+                            &artists,
+                        ));
+                        env.play(list.to_vec(), i64::try_from(index).unwrap_or(0), false);
+                    }
                 }),
         );
     row = row.child({
@@ -676,6 +689,12 @@ fn hero(
     let (kind, title, art) = about;
     let (play, shuffle, add, keep) = (env.clone(), env.clone(), env.clone(), env.clone());
     let (q1, q2, key1, key2) = (query.clone(), query, key.to_string(), key.to_string());
+    let (name1, name2, sub1, sub2) = (
+        title.to_string(),
+        title.to_string(),
+        sub.clone(),
+        sub.clone(),
+    );
     let mut actions = div()
         .class("pl-hero-actions")
         .child(
@@ -683,14 +702,14 @@ fn hero(
                 .attr("id", "play-all")
                 .class("pl-primary")
                 .child(labelled("play", "Play"))
-                .on_click(move || play.play_query(q1.clone(), false)),
+                .on_click(move || play.start(q1.clone(), false, &name1, &sub1)),
         )
         .child(
             button_("Shuffle")
                 .attr("id", "shuffle-all")
                 .class("pl-secondary")
                 .child(labelled("shuffle", "Shuffle"))
-                .on_click(move || shuffle.play_query(q2.clone(), true)),
+                .on_click(move || shuffle.start(q2.clone(), true, &name2, &sub2)),
         )
         .child(
             button_("Add to a playlist")
@@ -733,78 +752,38 @@ fn hero(
 
 // ── Cards ────────────────────────────────────────────────────────────────────
 
-fn card(
-    env: &Env,
-    href: &str,
-    title: &str,
-    sub: String,
-    id: String,
-    play: Option<(SongQuery, Intent)>,
-) -> View {
-    card_with(env, href, title, sub, id, play, None)
+fn card(href: &str, title: &str, sub: String, id: String) -> View {
+    card_with(href, title, sub, id, None)
 }
 
 /// A card with a picture (an address under the service) over its cover.
-fn card_with(
-    env: &Env,
-    href: &str,
-    title: &str,
-    sub: String,
-    id: String,
-    play: Option<(SongQuery, Intent)>,
-    art: Option<String>,
-) -> View {
-    let mut card = div().class("pl-card").attr("id", id).child(
+fn card_with(href: &str, title: &str, sub: String, id: String, art: Option<String>) -> View {
+    let card = div().class("pl-card").attr("id", id).child(
         link(href)
             .class("pl-card-main")
             .child(art.map_or_else(|| cover(title, false), |url| cover_art(title, false, url)))
             .child(div().class("pl-card-title").text(title.to_string()))
             .child(div().class("pl-card-sub").text(sub)),
     );
-    if let Some((query, intent)) = play {
-        let env = env.clone();
-        card = card.child(
-            button_("Play")
-                .class("pl-card-play")
-                .child(ico("play"))
-                .on_click(move || (env.ask)(Request::Ids(query.clone(), intent.clone()))),
-        );
-    }
     card.into_view()
 }
 
 fn album_card(env: &Env, a: &AlbumInfo) -> View {
     card_with(
-        env,
         &env.path(&format!("/album/{}", a.id)),
         &a.title,
         format!("{} · {}", a.year.get(..4).unwrap_or(&a.year), a.artist),
         format!("album-{}", a.id),
-        Some((
-            SongQuery {
-                album: a.id,
-                ..SongQuery::default()
-            },
-            Intent::Play { shuffle: false },
-        )),
         Some(env.art("album", &a.id.to_string(), 320)),
     )
 }
 
 fn artist_card(env: &Env, a: &ArtistInfo) -> View {
     card_with(
-        env,
         &env.path(&format!("/artist/{}", enc(&a.name))),
         &a.name,
         format!("{} songs", a.songs),
         format!("artist-{}", enc(&a.name)),
-        Some((
-            SongQuery {
-                artist: a.name.clone(),
-                ..SongQuery::default()
-            },
-            Intent::Play { shuffle: false },
-        )),
         Some(env.art("artist", &a.name, 320)),
     )
 }
@@ -854,9 +833,7 @@ fn rows(env: &Env, songs: &[SongInfo], id: &str) -> View {
 /// A card for something made from the library (a mix): tinted by its name, plays it when tapped.
 fn mix_card(env: &Env, mix: &Mix) -> View {
     let (play, query) = (env.clone(), mix.query());
-    let intent = Intent::Play {
-        shuffle: mix.shuffled(),
-    };
+    let (shuffled, name) = (mix.shuffled(), mix.name.clone());
     let (icon, sub) = if mix.kind == "mix" {
         ("shuffle", format!("Shuffled · {} songs", mix.songs))
     } else {
@@ -868,39 +845,45 @@ fn mix_card(env: &Env, mix: &Mix) -> View {
             button_(&format!("Play {}", mix.name))
                 .attr("id", format!("mix-{}", enc(&mix.name)))
                 .class("pl-card-main pl-card-button")
-                .on_click(move || (play.ask)(Request::Ids(query.clone(), intent.clone())))
+                .on_click(move || play.start(query.clone(), shuffled, &name, ""))
                 .child(mix_cover(&mix.name, icon))
                 .child(div().class("pl-card-title").text(mix.name.clone()))
                 .child(div().class("pl-card-sub").text(sub)),
         )
-        .child(span().class("pl-card-play").child(ico("play")))
         .into_view()
 }
 
-/// What was played last: a row of cards, a tap plays the list from there.
+/// What was chosen to play last (a mix, an artist, an album, a playlist, a song): a row of cards, a tap plays it again.
 fn recent_shelf(env: &Env) -> View {
     let env = env.clone();
     View::dynamic(move || {
-        let ids = env.m.recent.get();
-        let songs: Vec<SongInfo> = ids.iter().filter_map(|id| env.song(*id)).take(10).collect();
-        if songs.is_empty() {
+        let items = env.m.contexts.get();
+        if items.is_empty() {
             return View::Empty;
         }
-        let queue = Rc::new(songs.iter().map(|s| s.id).collect::<Vec<_>>());
         let mut grid = div().class("pl-hrow").attr("id", "recent");
-        for (i, song) in songs.iter().enumerate() {
-            let art = env.art("song", &song.id.to_string(), 320);
-            let (env, queue) = (env.clone(), Rc::clone(&queue));
+        for item in items.into_iter().take(12) {
+            let cover = match (item.art_kind.as_str(), item.kind.as_str()) {
+                ("", "mix") => mix_cover(&item.name, if item.shuffle { "shuffle" } else { "star" }),
+                ("", _) => cover(&item.name, false),
+                (kind, _) => cover_art(&item.name, false, env.art(kind, &item.art_key, 320)),
+            };
+            let sub = if item.sub.is_empty() {
+                kind_word(&item.kind).to_string()
+            } else {
+                format!("{} · {}", kind_word(&item.kind), item.sub)
+            };
+            let (env, again) = (env.clone(), item.clone());
             grid = grid.child(
                 div().class("pl-card").child(
-                    button_(&format!("Play {}", song.title))
+                    button_(&format!("Play {}", item.name))
                         .class("pl-card-main pl-card-button")
                         .on_click(move || {
-                            env.play(queue.to_vec(), i64::try_from(i).unwrap_or(0), false);
+                            env.start(again.query.clone(), again.shuffle, &again.name, &again.sub);
                         })
-                        .child(cover_art(&song.album, false, art))
-                        .child(div().class("pl-card-title").text(song.title.clone()))
-                        .child(div().class("pl-card-sub").text(artists_line(song))),
+                        .child(cover)
+                        .child(div().class("pl-card-title").text(item.name.clone()))
+                        .child(div().class("pl-card-sub").text(sub)),
                 ),
             );
         }
@@ -908,8 +891,21 @@ fn recent_shelf(env: &Env) -> View {
     })
 }
 
+/// What a kind of recent thing is called under its name.
+fn kind_word(kind: &str) -> &str {
+    match kind {
+        "song" => "Song",
+        "album" => "Album",
+        "artist" => "Artist",
+        "playlist" => "Playlist",
+        "category" => "Category",
+        _ => "Mix",
+    }
+}
+
 pub(crate) fn home(env: &Env, _: &RouteContext) -> View {
     (env.ask)(Request::Home);
+    (env.ask)(Request::Contexts);
     let (everything, shuffled) = (env.clone(), env.clone());
     let picks = {
         let env = env.clone();
@@ -986,18 +982,10 @@ pub(crate) fn home(env: &Env, _: &RouteContext) -> View {
             let mut grid = div().class("pl-grid").attr("id", "playlist-cards");
             for p in lists {
                 grid = grid.child(card(
-                    &env,
                     &env.path(&format!("/playlist/{}", p.id)),
                     &p.name,
                     format!("{} songs", p.songs),
                     format!("playlist-{}", p.id),
-                    Some((
-                        SongQuery {
-                            playlist: p.id,
-                            ..SongQuery::default()
-                        },
-                        Intent::Play { shuffle: false },
-                    )),
                 ));
             }
             shelf(
@@ -1020,14 +1008,18 @@ pub(crate) fn home(env: &Env, _: &RouteContext) -> View {
                         .attr("id", "shuffle-everything")
                         .class("pl-primary")
                         .child(labelled("shuffle", "Shuffle everything"))
-                        .on_click(move || shuffled.play_query(SongQuery::default(), true)),
+                        .on_click(move || {
+                            shuffled.start(SongQuery::default(), true, "Everything", "Shuffled");
+                        }),
                 )
                 .child(
                     button_("Play everything")
                         .attr("id", "play-everything")
                         .class("pl-secondary")
                         .child(labelled("play", "Play everything"))
-                        .on_click(move || everything.play_query(SongQuery::default(), false)),
+                        .on_click(move || {
+                            everything.start(SongQuery::default(), false, "Everything", "");
+                        }),
                 ),
         )
         .child(recent_shelf(env))
@@ -1358,18 +1350,10 @@ pub(crate) fn playlists(env: &Env, _: &RouteContext) -> View {
             let mut grid = div().class("pl-grid").attr("id", "playlist-cards");
             for p in lists {
                 grid = grid.child(card(
-                    &env,
                     &env.path(&format!("/playlist/{}", p.id)),
                     &p.name,
                     format!("{} songs", p.songs),
                     format!("playlist-{}", p.id),
-                    Some((
-                        SongQuery {
-                            playlist: p.id,
-                            ..SongQuery::default()
-                        },
-                        Intent::Play { shuffle: false },
-                    )),
                 ));
             }
             grid.into_view()

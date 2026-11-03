@@ -225,6 +225,112 @@ pub struct Home {
     pub albums: Vec<AlbumInfo>,
 }
 
+/// Where a person stopped listening.
+///
+/// The song, the exact point in it and the list it was in, so that another device can go on from there. `GET /resume`
+/// answers it (`song_id` 0: nothing yet); `PUT /resume` replaces it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Resume {
+    /// The song; 0 for none.
+    #[serde(default)]
+    pub song_id: i64,
+    /// Where in it, in milliseconds.
+    #[serde(default)]
+    pub position_ms: u64,
+    /// The list it was played from, in play order, and the song's place in it.
+    #[serde(default)]
+    pub queue: Vec<i64>,
+    #[serde(default)]
+    pub index: i64,
+    /// Which device wrote it (chosen by the device; the service only passes it on).
+    #[serde(default)]
+    pub device: String,
+    /// When the service took it (seconds); the client's own value is ignored.
+    #[serde(default)]
+    pub at: i64,
+}
+
+/// Something the person chose to start playing: a mix, an artist, an album, a playlist, a category or one song.
+///
+/// "Recently played" is a list of these, not of every song that played. It carries what the shelf shows (kind, name, picture)
+/// and the query to play it again. `POST /history/context` is told one; `GET /history/contexts` answers them, newest first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecentItem {
+    /// `song`, `album`, `artist`, `playlist`, `category` or `mix`.
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub name: String,
+    /// The line under the name (an album's artist, a playlist's size); may be empty.
+    #[serde(default)]
+    pub sub: String,
+    /// The picture: `album`, `artist` or `song` with `art_key` (its id, or the artist's name); both empty for none.
+    #[serde(default)]
+    pub art_kind: String,
+    #[serde(default)]
+    pub art_key: String,
+    /// Which songs, to play it again.
+    #[serde(default)]
+    pub query: SongQuery,
+    #[serde(default)]
+    pub shuffle: bool,
+    /// When the service took it (seconds); the client's own value is ignored.
+    #[serde(default)]
+    pub at: i64,
+}
+
+impl RecentItem {
+    /// What starting `query` is called: its kind and picture follow from what the query picks.
+    #[must_use]
+    pub fn of(query: &SongQuery, shuffle: bool, name: &str, sub: &str) -> Self {
+        let one_song = {
+            let ids: Vec<&str> = query
+                .ids
+                .split(',')
+                .filter(|i| !i.trim().is_empty())
+                .collect();
+            if ids.len() == 1 {
+                Some(ids[0].trim().to_string())
+            } else {
+                None
+            }
+        };
+        let (kind, art_kind, art_key) =
+            one_song.map_or_else(|| Self::classify(query), |id| ("song", "song", id));
+        Self {
+            kind: kind.into(),
+            name: name.into(),
+            sub: sub.into(),
+            art_kind: art_kind.into(),
+            art_key,
+            query: query.clone(),
+            shuffle,
+            at: 0,
+        }
+    }
+
+    fn classify(query: &SongQuery) -> (&'static str, &'static str, String) {
+        if query.album != 0 {
+            ("album", "album", query.album.to_string())
+        } else if !query.artist.trim().is_empty() {
+            ("artist", "artist", query.artist.clone())
+        } else if query.playlist != 0 {
+            ("playlist", "", String::new())
+        } else if !query.category.trim().is_empty() && query.sort != "popular" {
+            ("category", "", String::new())
+        } else {
+            // A mix: the popular songs of a category, or of everything.
+            ("mix", "", String::new())
+        }
+    }
+
+    /// The same thing started again (same kind, same songs, same order): what the list keeps once.
+    #[must_use]
+    pub fn key(&self) -> String {
+        format!("{}|{}|{}", self.kind, self.query.query(), self.shuffle)
+    }
+}
+
 /// A song the person has just started: what `POST /history` is told.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayedBody {

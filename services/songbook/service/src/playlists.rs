@@ -3,7 +3,7 @@
 
 use crate::index::{DbError, Result, Value, int, int_at, str_at, text};
 use quench_sqlite::Connection;
-use songbook_core::PlaylistInfo;
+use songbook_core::{PlaylistInfo, RecentItem, Resume, SongQuery};
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -15,10 +15,20 @@ CREATE TABLE IF NOT EXISTS playlist_songs(
 CREATE INDEX IF NOT EXISTS playlists_owner ON playlists(owner);
 CREATE TABLE IF NOT EXISTS plays(
   owner TEXT NOT NULL, song_id INTEGER NOT NULL, at INTEGER NOT NULL);
-CREATE INDEX IF NOT EXISTS plays_owner_at ON plays(owner, at);";
+CREATE INDEX IF NOT EXISTS plays_owner_at ON plays(owner, at);
+CREATE TABLE IF NOT EXISTS contexts(
+  owner TEXT NOT NULL, key TEXT NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL, sub TEXT NOT NULL, art_kind TEXT NOT NULL,
+  art_key TEXT NOT NULL, query TEXT NOT NULL, shuffle INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(owner, key));
+CREATE INDEX IF NOT EXISTS contexts_owner_at ON contexts(owner, at);
+CREATE TABLE IF NOT EXISTS resume(
+  owner TEXT PRIMARY KEY, song_id INTEGER NOT NULL, position_ms INTEGER NOT NULL, queue TEXT NOT NULL,
+  idx INTEGER NOT NULL, device TEXT NOT NULL, at INTEGER NOT NULL);";
 
 /// How many plays of a person are kept (the oldest go).
 pub const MAX_PLAYS: i64 = 500;
+
+/// How many started things of a person are kept (the oldest go).
+pub const MAX_CONTEXTS: i64 = 60;
 
 /// At most this many entries in one playlist, and this many playlists for a person.
 pub const MAX_SONGS: usize = 5000;
@@ -98,6 +108,123 @@ impl Playlists {
                 &[text(owner), text(owner), int(most)],
             )?;
             Ok(())
+        })
+    }
+
+    /// Remembers that `owner` chose to start `item` at `now`: the same thing again moves to the front.
+    pub fn started(&self, owner: &str, item: &RecentItem, now: i64) -> Result<()> {
+        self.started_keeping(owner, item, now, MAX_CONTEXTS)
+    }
+
+    /// [`started`](Self::started), keeping `most` things of this person.
+    pub fn started_keeping(
+        &self,
+        owner: &str,
+        item: &RecentItem,
+        now: i64,
+        most: i64,
+    ) -> Result<()> {
+        let query = quench_serde::json::to_string(&item.query);
+        self.with(|db| {
+            db.execute(
+                "INSERT INTO contexts(owner, key, kind, name, sub, art_kind, art_key, query, shuffle, at) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+                 ON CONFLICT(owner, key) DO UPDATE SET name = excluded.name, sub = excluded.sub, \
+                 art_kind = excluded.art_kind, art_key = excluded.art_key, at = excluded.at",
+                &[
+                    text(owner),
+                    text(&item.key()),
+                    text(&item.kind),
+                    text(&item.name),
+                    text(&item.sub),
+                    text(&item.art_kind),
+                    text(&item.art_key),
+                    text(&query),
+                    int(i64::from(item.shuffle)),
+                    int(now),
+                ],
+            )?;
+            db.execute(
+                "DELETE FROM contexts WHERE owner = ? AND key NOT IN (SELECT key FROM contexts WHERE owner = ? ORDER BY at DESC, rowid DESC LIMIT ?)",
+                &[text(owner), text(owner), int(most)],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// What `owner` chose to start last, newest first.
+    pub fn contexts(&self, owner: &str, limit: usize) -> Result<Vec<RecentItem>> {
+        self.with(|db| {
+            Ok(db
+                .query(
+                    "SELECT kind, name, sub, art_kind, art_key, query, shuffle, at FROM contexts WHERE owner = ? ORDER BY at DESC, rowid DESC LIMIT ?",
+                    &[text(owner), int(i64::try_from(limit).unwrap_or(20))],
+                )?
+                .rows
+                .iter()
+                .map(|r| RecentItem {
+                    kind: str_at(r, 0),
+                    name: str_at(r, 1),
+                    sub: str_at(r, 2),
+                    art_kind: str_at(r, 3),
+                    art_key: str_at(r, 4),
+                    query: quench_serde::json::from_str::<SongQuery>(&str_at(r, 5))
+                        .unwrap_or_default(),
+                    shuffle: int_at(r, 6) != 0,
+                    at: int_at(r, 7),
+                })
+                .collect())
+        })
+    }
+
+    /// Remembers where `owner` stopped (replacing what was there), at `now`.
+    pub fn set_resume(&self, owner: &str, r: &Resume, now: i64) -> Result<()> {
+        let queue = r
+            .queue
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        self.with(|db| {
+            db.execute(
+                "INSERT INTO resume(owner, song_id, position_ms, queue, idx, device, at) VALUES (?, ?, ?, ?, ?, ?, ?) \
+                 ON CONFLICT(owner) DO UPDATE SET song_id = excluded.song_id, position_ms = excluded.position_ms, \
+                 queue = excluded.queue, idx = excluded.idx, device = excluded.device, at = excluded.at",
+                &[
+                    text(owner),
+                    int(r.song_id),
+                    int(i64::try_from(r.position_ms).unwrap_or(i64::MAX)),
+                    text(&queue),
+                    int(r.index),
+                    text(&r.device),
+                    int(now),
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Where `owner` stopped last, if ever.
+    pub fn resume(&self, owner: &str) -> Result<Option<Resume>> {
+        self.with(|db| {
+            Ok(db
+                .query(
+                    "SELECT song_id, position_ms, queue, idx, device, at FROM resume WHERE owner = ?",
+                    &[text(owner)],
+                )?
+                .rows
+                .first()
+                .map(|r| Resume {
+                    song_id: int_at(r, 0),
+                    position_ms: u64::try_from(int_at(r, 1)).unwrap_or(0),
+                    queue: str_at(r, 2)
+                        .split(',')
+                        .filter_map(|id| id.parse().ok())
+                        .collect(),
+                    index: int_at(r, 3),
+                    device: str_at(r, 4),
+                    at: int_at(r, 5),
+                }))
         })
     }
 

@@ -8,8 +8,8 @@ use std::rc::Rc;
 use quench_ui::prelude::*;
 use quench_ui::router::{History, Router, Routes};
 use songbook_core::{
-    AlbumInfo, AlbumQuery, Home, Overview, PlaylistInfo, Search, SongIds, SongInfo, SongList,
-    SongQuery,
+    AlbumInfo, AlbumQuery, Home, Overview, PlaylistInfo, RecentItem, Search, SongIds, SongInfo,
+    SongList, SongQuery,
 };
 
 use crate::engine::{self, Command, Event, Outbox};
@@ -34,6 +34,10 @@ pub enum Request {
     DeletePlaylist(i64),
     AddToPlaylist(i64, Vec<i64>),
     SetPlaylist(i64, Vec<i64>),
+    /// What the person chose to start playing, newest first (the home page's "Recently played").
+    Contexts,
+    /// The person chose to start this: the service keeps it.
+    Remember(RecentItem),
 }
 
 /// What to do with the songs a query picked.
@@ -62,6 +66,8 @@ pub enum Msg {
     /// A playlist was made or changed.
     Playlist(PlaylistInfo),
     PlaylistGone(i64),
+    /// What the person chose to start playing, newest first.
+    Contexts(Vec<RecentItem>),
     /// The service refused; the text says why.
     Rejected(String),
     /// The service could not be reached.
@@ -145,6 +151,8 @@ pub(crate) struct Model {
     pub home: Signal<Option<Home>>,
     /// The songs played last, newest first.
     pub recent: Signal<Vec<i64>>,
+    /// What was chosen to play last (a mix, an artist, an album, a playlist, a song), newest first.
+    pub contexts: Signal<Vec<RecentItem>>,
     pub playlists: Signal<Vec<PlaylistInfo>>,
     /// The songs and albums of the page being shown, and the key of the page they were asked for.
     pub songs: Signal<(String, SongList)>,
@@ -178,6 +186,7 @@ impl Model {
             overview: create_signal(None),
             home: create_signal(None),
             recent: create_signal(Vec::new()),
+            contexts: create_signal(Vec::new()),
             playlists: create_signal(Vec::new()),
             songs: create_signal((String::new(), SongList::default())),
             albums: create_signal((String::new(), Vec::new())),
@@ -322,8 +331,20 @@ impl Env {
         });
     }
 
-    /// Plays what a query picks, all of it (`shuffle`: in random order).
-    pub fn play_query(&self, query: SongQuery, shuffle: bool) {
+    /// The person chose to start `item`: shown first in "Recently played" at once, and kept by the service.
+    pub fn chose(&self, item: RecentItem) {
+        let key = item.key();
+        self.m.contexts.update(|list| {
+            list.retain(|i| i.key() != key);
+            list.insert(0, item.clone());
+            list.truncate(30);
+        });
+        (self.ask)(Request::Remember(item));
+    }
+
+    /// Starts what `query` picks, and remembers that it was chosen (`name` and `sub` are what the list will say).
+    pub fn start(&self, query: SongQuery, shuffle: bool, name: &str, sub: &str) {
+        self.chose(RecentItem::of(&query, shuffle, name, sub));
         (self.ask)(Request::Ids(query, Intent::Play { shuffle }));
     }
 
@@ -375,6 +396,7 @@ fn receive(env: &Env, msg: Msg) {
                 env.close();
             }
         }
+        Msg::Contexts(list) => m.contexts.set(list),
         Msg::PlaylistGone(id) => m.playlists.update(|list| list.retain(|p| p.id != id)),
         Msg::Rejected(why) => env.say(why),
         Msg::Failed(why) => m.problem.set(Some(Problem::Failed(why))),
