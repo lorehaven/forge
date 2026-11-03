@@ -115,17 +115,25 @@ pub async fn run(root: &Path, prune: bool, log: &Log) -> Result<(), String> {
             root.display()
         ));
     }
-    let files = media_files(root);
+    let all = media_files(root);
+    // An mp3 is what the others become: nothing to do for it, so it is counted, not walked.
+    let (done, files): (Vec<PathBuf>, Vec<PathBuf>) = all.into_iter().partition(|p| {
+        p.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("mp3"))
+    });
     if files.is_empty() {
         log.line(format!(
-            "No supported media files found in {}",
-            root.display()
+            "Nothing to convert in {} ({} mp3 file(s) already)",
+            root.display(),
+            done.len()
         ));
         return Ok(());
     }
     log.line(format!(
-        "Found {} media file(s). Output format: mp3",
-        files.len()
+        "Found {} file(s) to convert to mp3 ({} mp3 file(s) already)",
+        files.len(),
+        done.len()
     ));
     let (mut converted, mut skipped, mut failed, mut pruned, mut silent) =
         (0u32, 0u32, 0u32, 0u32, 0u32);
@@ -137,10 +145,6 @@ pub async fn run(root: &Path, prune: bool, log: &Log) -> Result<(), String> {
             .unwrap_or(source)
             .display()
             .to_string();
-        if destination == *source {
-            skipped += 1;
-            continue;
-        }
         if destination.is_file() {
             skipped += 1;
             if prune {
