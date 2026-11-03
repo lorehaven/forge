@@ -18,10 +18,10 @@ All live under `services/daybook/` and are members of the Forge workspace. The c
 | `daybook-net` | 0.1.0 | The API over `gatehouse-client`; saved session and settings (`Store`). Feature `client` (default) adds the blocking client; the browser build leaves it off. |
 | `daybook-host` | 0.1.0 | The `Controller` and the `Platform` trait; with feature `native` (default) the `Remote` and the worker thread. |
 | `daybook-app` | 0.1.0 | The screens (quench-ui). No I/O. |
-| `daybook-desktop` | 0.1.9 | Linux window (Wayland), `notify-send` reminders. Binary `daybook`. |
+| `daybook-desktop` | 0.1.14 | Linux window (Wayland), `notify-send` reminders. Binary `daybook`. |
 | `daybook-surface` | 0.1.0 | Android program, built as `libquench_surface.so`; `--widget` refreshes the widget with no window. |
 | `daybook-web` | 0.1.6 | The browser build (wasm `cdylib`) over `fetch`. |
-| `daybook` | 0.3.2 | The HTTP service: API at `/api/v1`, browser client at `/ui`, sign-in forwarding at `/auth`. |
+| `daybook` | 0.3.9 | The HTTP service: API at `/api/v1`, browser client at `/ui`, sign-in forwarding at `/auth`. |
 
 Plus the Gradle project `android/` (package `dev.lorehaven.daybook`). See [Architecture](architecture.md).
 

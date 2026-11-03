@@ -11,7 +11,7 @@ permalink: /libs/rivet-package/
 
 | | |
 |---|---|
-| Version | 0.1.6 |
+| Version | 0.1.7 |
 | Edition | 2024 (workspace) |
 | License | MIT |
 | Library name | `rivet_package` |
@@ -23,7 +23,7 @@ permalink: /libs/rivet-package/
 
 ```toml
 [dependencies]
-rivet-package = { version = "0.1.6", registry = "ennor" }
+rivet-package = { version = "0.1.7", registry = "ennor" }
 ```
 
 Inside the workspace: `rivet-package = { workspace = true }` (`path = "libs/rivet-package"`, registry `ennor`, version `0.1.0` in `[workspace.dependencies]`). Users in the workspace: `cli/riveter`, `services/gantry/service`, `services/warehouse/service`.

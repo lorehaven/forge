@@ -12,7 +12,8 @@ use quench_http::prelude::{
 };
 use quench_http::stream::reader_stream;
 use songbook_core::{
-    AlbumQuery, PlayedBody, PlaylistBody, RecentQuery, SearchQuery, SongIdsBody, SongQuery,
+    AlbumQuery, PlayedBody, PlaylistBody, RecentQuery, SearchQuery, SongIdsBody, SongList,
+    SongQuery,
 };
 use std::io::SeekFrom;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
@@ -101,6 +102,10 @@ pub async fn recent(
         Ok(ids) => ids,
         Err(e) => return server_error(e),
     };
+    // Nothing played yet is an empty list: an empty `ids` would pick the whole library.
+    if ids.is_empty() {
+        return ok(&SongList::default());
+    }
     // Songs that have no file (any more) are left out.
     let list = catalog.songs(&SongQuery {
         ids: join(&ids),

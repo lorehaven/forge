@@ -11,7 +11,7 @@ permalink: /libs/gatehouse-auth/
 
 | | |
 |---|---|
-| Version | 0.1.7 |
+| Version | 0.1.8 |
 | Edition | 2024 (workspace) |
 | License | MIT |
 | Lints | workspace lints |
@@ -23,7 +23,7 @@ permalink: /libs/gatehouse-auth/
 
 ```toml
 [dependencies]
-gatehouse-auth = { version = "0.1.7", registry = "ennor" }
+gatehouse-auth = { version = "0.1.8", registry = "ennor" }
 ```
 
 In the workspace: `gatehouse-auth = { workspace = true }` (version `0.1.0` constraint, registry `ennor`).

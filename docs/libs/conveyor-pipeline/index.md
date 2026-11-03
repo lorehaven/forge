@@ -11,7 +11,7 @@ permalink: /libs/conveyor-pipeline/
 
 | | |
 |---|---|
-| Version | 0.2.1 |
+| Version | 0.2.4 |
 | Edition | 2024 (workspace) |
 | License | MIT |
 | Library name | `conveyor_pipeline` |
@@ -23,7 +23,7 @@ permalink: /libs/conveyor-pipeline/
 
 ```toml
 [dependencies]
-conveyor-pipeline = { version = "0.2.1", registry = "ennor" }
+conveyor-pipeline = { version = "0.2.4", registry = "ennor" }
 ```
 
 Inside the workspace: `conveyor-pipeline = { workspace = true }` (`path = "libs/conveyor-pipeline"`, version `0.2.0` in `[workspace.dependencies]`).

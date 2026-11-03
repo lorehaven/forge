@@ -90,10 +90,10 @@ Edges: `daybook-host -> daybook-core, daybook-net`; `forklift-host -> forklift-a
 | `forge-shell` | 0.1.0 | the frame of the browser clients: top bar, tokens, `shell.js` |
 | `forge-web` | 0.1.0 | serves a service's client: the page that starts a `quench-ui` module and the files it loads |
 | `forge-ui` | 0.1.0 | top bar pieces and Untitled UI tokens for the older server-rendered pages (no dependents now) |
-| `gatehouse-auth` | 0.1.7 | application-token credentials for the CLI tools (used by `anvil`, `riveter`) |
+| `gatehouse-auth` | 0.1.8 | application-token credentials for the CLI tools (used by `anvil`, `riveter`) |
 | `gatehouse-client` | 0.1.0 | blocking client session for gatehouse (used by the native apps) |
-| `conveyor-pipeline` | 0.2.1 | the pipeline language; shared by `conveyor` and `conveyor-cli` |
-| `rivet-package` | 0.1.6 | the `.rivet` package format; shared by `warehouse`, `gantry`, `riveter` |
+| `conveyor-pipeline` | 0.2.4 | the pipeline language; shared by `conveyor` and `conveyor-cli` |
+| `rivet-package` | 0.1.7 | the `.rivet` package format; shared by `warehouse`, `gantry`, `riveter` |
 
 ## The estate
 

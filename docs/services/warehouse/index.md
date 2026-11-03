@@ -12,7 +12,7 @@ Warehouse is the Forge estate's storage service. One address serves a Cargo regi
 
 | Crate | Path | Version | Role |
 |---|---|---|---|
-| `warehouse` | `services/warehouse/service` | 0.8.2 | the server (binary `warehouse-service`, library `warehouse_service`) |
+| `warehouse` | `services/warehouse/service` | 0.8.9 | the server (binary `warehouse-service`, library `warehouse_service`) |
 | `warehouse-core` | `services/warehouse/core` | 0.1.0 | wire model of the management API, drafts, formatting and the file tree; shared by service and client |
 | `warehouse-app` | `services/warehouse/app` | 0.1.0 | the screens (no I/O) |
 | `warehouse-web` | `services/warehouse/web` | 0.1.0 | the browser module that runs the app over `fetch` |

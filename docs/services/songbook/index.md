@@ -13,7 +13,7 @@ Songbook is the music library of the estate: a personal replacement for a stream
 | `songbook-core` | `services/songbook/core` | 0.1.0 | Wire model, song identity (`key`), file names. No I/O. |
 | `songbook-app` | `services/songbook/app` | 0.1.0 | Screens and the `Request`/`Msg` protocol (`quench-ui`). Translations are `service/i18n/*.ftl`. |
 | `songbook-web` | `services/songbook/web` | 0.1.0 | `wasm32` module: `fetch` transport, `Request` to URL mapping, `Msg` from the answer. |
-| `songbook` | `services/songbook/service` | 0.1.0 | The server: index, jobs, API, SSO and page routes. Binary `songbook-service`. |
+| `songbook` | `services/songbook/service` | 0.1.11 | The server: index, jobs, API, SSO and page routes. Binary `songbook-service`. |
 
 ## Facts
 

@@ -17,7 +17,7 @@ All under `services/forklift/`, members of the Forge workspace. There is no `web
 | `forklift-net` | 0.1.0 | Blocking calls to Gatehouse (`gatehouse-client`) and Warehouse; the on-disk `Store` (the manifest as a SQLite database through `quench-sqlite`) and the run lock. |
 | `forklift-host` | 0.1.0 | `Controller` (the backup's brain), the `Platform` trait, the `Worker` thread. Shared by both hosts. |
 | `forklift-app` | 0.1.0 | The screens (`quench-ui`) and the `Request`/`Msg` protocol. |
-| `forklift-desktop` | 0.1.3 | The Linux program `forklift` (library `forklift_desktop`): window, `Linux` platform, `--backup`. The app's version is this crate's (`.anvil/forklift.toml`: `version_file = "desktop/Cargo.toml"`). |
+| `forklift-desktop` | 0.1.8 | The Linux program `forklift` (library `forklift_desktop`): window, `Linux` platform, `--backup`. The app's version is this crate's (`.anvil/forklift.toml`: `version_file = "desktop/Cargo.toml"`). |
 | `forklift-surface` | 0.1.0 | The Android program (binary `forklift_surface`, shipped as `libquench_surface.so`): window mode and `--backup` over JSON lines. Re-exports `forklift_host::*`. |
 | `android/` | - | Gradle project `dev.lorehaven.forklift`: Kotlin host, plugins `files`, `device`, `restore`, jobs, foreground service. |
 

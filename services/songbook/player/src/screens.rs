@@ -101,6 +101,17 @@ fn cover_with(name: &str, label: &str, big: bool) -> Element {
         .child(span().text(label.to_string()))
 }
 
+/// The cover of a mix: its tint, with an icon for what kind of list it is.
+fn mix_cover(name: &str, icon: &str) -> Element {
+    div()
+        .class("pl-cover pl-cover-icon")
+        .css("background", {
+            let name = name.to_string();
+            move || tint(&name)
+        })
+        .child(ico(icon))
+}
+
 fn button_(label: &str) -> Element {
     button().attr("type", "button").attr("aria-label", label)
 }
@@ -823,10 +834,10 @@ fn mix_card(env: &Env, mix: &Mix) -> View {
     let intent = Intent::Play {
         shuffle: mix.shuffled(),
     };
-    let (label, sub) = if mix.kind == "mix" {
-        ("MIX", format!("Shuffled · {} songs", mix.songs))
+    let (icon, sub) = if mix.kind == "mix" {
+        ("shuffle", format!("Shuffled · {} songs", mix.songs))
     } else {
-        ("TOP", format!("Top {}", mix.songs))
+        ("star", format!("Top {}", mix.songs))
     };
     div()
         .class("pl-card")
@@ -835,7 +846,7 @@ fn mix_card(env: &Env, mix: &Mix) -> View {
                 .attr("id", format!("mix-{}", enc(&mix.name)))
                 .class("pl-card-main pl-card-button")
                 .on_click(move || (play.ask)(Request::Ids(query.clone(), intent.clone())))
-                .child(cover_with(&mix.name, label, false))
+                .child(mix_cover(&mix.name, icon))
                 .child(div().class("pl-card-title").text(mix.name.clone()))
                 .child(div().class("pl-card-sub").text(sub)),
         )

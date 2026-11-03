@@ -12,7 +12,7 @@ Gatehouse is the Forge estate's authentication service: one identity store (`aut
 
 | Crate | Path | Version | Role |
 |---|---|---|---|
-| `gatehouse` | `services/gatehouse/service` | 0.4.2 | the server (binary `gatehouse-service`, library `gatehouse_service`) |
+| `gatehouse` | `services/gatehouse/service` | 0.4.12 | the server (binary `gatehouse-service`, library `gatehouse_service`) |
 | `gatehouse-core` | `services/gatehouse/core` | 0.1.0 | the wire model of the page API, notices and form drafts; shared by service and client |
 | `gatehouse-app` | `services/gatehouse/app` | 0.1.0 | the screens (no I/O): sign-in, dashboard, account, administration |
 | `gatehouse-web` | `services/gatehouse/web` | 0.1.0 | the browser module (`cdylib`) that runs the app over `fetch` |
