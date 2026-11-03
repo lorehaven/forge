@@ -1041,13 +1041,13 @@ pub(crate) fn artists(env: &Env, _: &RouteContext) -> View {
             let words: Vec<String> = filter
                 .get()
                 .split_whitespace()
-                .map(str::to_lowercase)
+                .map(songbook_core::plain)
                 .collect();
             let found: Vec<&ArtistInfo> = o
                 .artists
                 .iter()
                 .filter(|a| {
-                    let name = a.name.to_lowercase();
+                    let name = songbook_core::plain(&a.name);
                     words.iter().all(|w| name.contains(w))
                 })
                 .collect();

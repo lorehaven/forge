@@ -64,6 +64,11 @@ fn fold(s: &str) -> String {
     s.trim().to_lowercase()
 }
 
+/// The form a search compares in: [`fold`] without accents (`ą` is `a`).
+fn plain(s: &str) -> String {
+    songbook_core::plain(s)
+}
+
 impl Catalog {
     /// Reads the index and the audio folder.
     pub fn load(index: &Index, data: &Path) -> Result<Self> {
@@ -204,7 +209,7 @@ impl Catalog {
                 .collect();
         }
         if !q.q.trim().is_empty() {
-            let words: Vec<String> = q.q.split_whitespace().map(fold).collect();
+            let words: Vec<String> = q.q.split_whitespace().map(plain).collect();
             return (0..self.songs.len())
                 .filter(|i| words.iter().all(|w| self.songs[*i].haystack.contains(w)))
                 .collect();
@@ -251,7 +256,7 @@ impl Catalog {
     #[must_use]
     pub fn albums(&self, q: &AlbumQuery) -> Vec<AlbumInfo> {
         let (artist, category) = (fold(&q.artist), fold(&q.category));
-        let words: Vec<String> = q.q.split_whitespace().map(fold).collect();
+        let words: Vec<String> = q.q.split_whitespace().map(plain).collect();
         let limit = if q.limit == 0 {
             ALBUMS
         } else {
@@ -262,7 +267,7 @@ impl Catalog {
             .filter(|a| artist.is_empty() || fold(&a.info.artist) == artist)
             .filter(|a| category.is_empty() || a.categories.iter().any(|c| fold(c) == category))
             .filter(|a| {
-                let hay = fold(&format!("{} {}", a.info.title, a.info.artist));
+                let hay = plain(&format!("{} {}", a.info.title, a.info.artist));
                 words.iter().all(|w| hay.contains(w))
             })
             .take(limit)
@@ -273,7 +278,7 @@ impl Catalog {
     /// What the search box finds: a few of each kind.
     #[must_use]
     pub fn search(&self, text: &str) -> Search {
-        let words: Vec<String> = text.split_whitespace().map(fold).collect();
+        let words: Vec<String> = text.split_whitespace().map(plain).collect();
         if words.is_empty() {
             return Search::default();
         }
@@ -291,7 +296,7 @@ impl Catalog {
             .artists
             .iter()
             .filter(|a| {
-                let name = fold(&a.name);
+                let name = plain(&a.name);
                 words.iter().all(|w| name.contains(w))
             })
             .take(12)
@@ -591,7 +596,7 @@ fn build(
             });
             let track = link.and_then(|l| opt_int_at(l, 6)).unwrap_or(0);
             let categories = cats.get(&id).cloned().unwrap_or_default();
-            let haystack = fold(&format!("{title} {album} {}", artists.join(" ")));
+            let haystack = plain(&format!("{title} {album} {}", artists.join(" ")));
             Song {
                 info: SongInfo {
                     id,

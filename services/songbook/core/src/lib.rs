@@ -17,5 +17,5 @@ pub use api::{
 pub use listen::{
     AlbumInfo, AlbumQuery, ArtistInfo, CategoryInfo, Home, Mix, Overview, PlayedBody, PlaylistBody,
     PlaylistInfo, RecentItem, RecentQuery, Resume, Search, SearchQuery, SongIds, SongIdsBody,
-    SongInfo, SongList, SongQuery,
+    SongInfo, SongList, SongQuery, plain,
 };

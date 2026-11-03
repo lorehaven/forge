@@ -103,3 +103,16 @@ fn a_disambiguated_long_name_keeps_its_title() {
         "{tagged}"
     );
 }
+
+#[quench_test::test]
+fn a_search_compares_letters_without_their_marks() {
+    use songbook_core::plain;
+    assert_eq!(plain("  Zażółć gęślą jaźń "), "zazolc gesla jazn");
+    assert_eq!(plain("Beyoncé Björk Sigur Rós"), "beyonce bjork sigur ros");
+    assert_eq!(plain("Straße Æon"), "strasse aeon");
+    // A decomposed letter (a + combining ogonek) is the same as the composed one.
+    assert_eq!(plain("a\u{328}"), plain("ą"));
+    // Letters that are not Latin are only lowercased.
+    assert_eq!(plain("Привет"), "привет");
+    assert_eq!(plain("ą"), plain("a"));
+}

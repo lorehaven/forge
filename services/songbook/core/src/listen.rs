@@ -39,6 +39,50 @@ fn query_of(pairs: &[(&str, String)]) -> String {
     }
 }
 
+/// `text` for comparing in a search.
+///
+/// Lowercase, with the accents and marks of Latin letters taken off, so that `ą` and `a`, `é` and `e`, `ł` and `l` find each
+/// other (`ß` becomes `ss`, `æ` `ae`). Other letters are only lowercased.
+#[must_use]
+pub fn plain(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.trim().chars().flat_map(char::to_lowercase) {
+        let base = match c {
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' | 'ǎ' => "a",
+            'ç' | 'ć' | 'ĉ' | 'ċ' | 'č' => "c",
+            'ď' | 'đ' | 'ð' => "d",
+            'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' => "e",
+            'ĝ' | 'ğ' | 'ġ' | 'ģ' => "g",
+            'ĥ' | 'ħ' => "h",
+            'ì' | 'í' | 'î' | 'ï' | 'ĩ' | 'ī' | 'ĭ' | 'į' | 'ı' | 'ǐ' => "i",
+            'ĵ' => "j",
+            'ķ' => "k",
+            'ĺ' | 'ļ' | 'ľ' | 'ŀ' | 'ł' => "l",
+            'ñ' | 'ń' | 'ņ' | 'ň' => "n",
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' | 'ŏ' | 'ő' | 'ǒ' => "o",
+            'ŕ' | 'ŗ' | 'ř' => "r",
+            'ś' | 'ŝ' | 'ş' | 'š' | 'ș' => "s",
+            'ţ' | 'ť' | 'ŧ' | 'ț' => "t",
+            'ù' | 'ú' | 'û' | 'ü' | 'ũ' | 'ū' | 'ŭ' | 'ů' | 'ű' | 'ų' | 'ǔ' => "u",
+            'ŵ' => "w",
+            'ý' | 'ÿ' | 'ŷ' => "y",
+            'ź' | 'ż' | 'ž' => "z",
+            'ß' => "ss",
+            'æ' => "ae",
+            'œ' => "oe",
+            'þ' => "th",
+            // A combining mark left over from a decomposed letter (`a` + U+0328): nothing to compare.
+            '\u{300}'..='\u{36f}' => "",
+            other => {
+                out.push(other);
+                continue;
+            }
+        };
+        out.push_str(base);
+    }
+    out
+}
+
 /// One song that can be played.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SongInfo {
