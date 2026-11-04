@@ -100,7 +100,7 @@ class DaybookWidgetProvider : AppWidgetProvider() {
             views.setOnClickPendingIntent(R.id.widget_add, launch(context, widgetId * 2, "daybook://add?list=$list"))
             views.setOnClickPendingIntent(R.id.widget_logo, launch(context, widgetId * 2 + 1, "daybook://open?list=$list"))
 
-            // A task: open the app on it. The row supplies the URI; this is the shared template.
+            // A task: its text opens the app on it, its check mark marks it done. The row supplies the URI; this is the shared template.
             views.setPendingIntentTemplate(R.id.widget_list, template(context))
             return views
         }
@@ -115,7 +115,7 @@ class DaybookWidgetProvider : AppWidgetProvider() {
 
         /** The click template of the task rows: it must be mutable because each row fills in its own data URI. */
         private fun template(context: Context): PendingIntent {
-            val intent = Intent(context, SurfaceActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            val intent = Intent(context, WidgetActionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
             return PendingIntent.getActivity(context, 0, intent, flags)
         }

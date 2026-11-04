@@ -452,7 +452,7 @@ Example `500` response:
 
 Change password, roles or grants
 
-Only the given fields change. Changing roles or grants, or changing another user at all, ends the target's sessions. Removing `admin` from yourself or from the last admin is refused. A password change mails a security notice to the confirmed address.
+Only the given fields change. Setting another user's password ends the target's sessions; changing roles or grants does not (new access reaches a session when its tokens are renewed). Removing `admin` from yourself or from the last admin is refused. A password change mails a security notice to the confirmed address.
 
 **Authentication:** `bearerAuth` or `sessionCookie`. **Permission:** `gatehouse:edit-user`.
 

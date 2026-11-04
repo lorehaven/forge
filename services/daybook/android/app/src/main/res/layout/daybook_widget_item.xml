@@ -3,27 +3,44 @@
     android:id="@+id/item_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:paddingBottom="7dp"
-    android:paddingEnd="4dp"
-    android:paddingStart="4dp"
-    android:paddingTop="7dp">
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
 
-    <TextView
-        android:id="@+id/item_title"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:ellipsize="end"
-        android:maxLines="2"
-        android:textColor="#FFF4F4F5"
-        android:textSize="14sp" />
+    <!-- The check mark: a ring that marks the task done when it is tapped (a target of 40dp, as a finger needs). -->
+    <ImageView
+        android:id="@+id/item_done"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:contentDescription="@string/widget_mark_done"
+        android:padding="11dp"
+        android:src="@drawable/ic_widget_check" />
 
-    <TextView
-        android:id="@+id/item_due"
-        android:layout_width="match_parent"
+    <LinearLayout
+        android:id="@+id/item_text"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="1dp"
-        android:maxLines="1"
-        android:textSize="12sp"
-        android:visibility="gone" />
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:paddingBottom="7dp"
+        android:paddingEnd="4dp"
+        android:paddingTop="7dp">
+
+        <TextView
+            android:id="@+id/item_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textColor="#FFF4F4F5"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/item_due"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:maxLines="1"
+            android:textSize="12sp"
+            android:visibility="gone" />
+    </LinearLayout>
 </LinearLayout>

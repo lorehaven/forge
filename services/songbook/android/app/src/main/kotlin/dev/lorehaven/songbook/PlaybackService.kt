@@ -139,6 +139,7 @@ class PlaybackService : MediaLibraryService() {
                 block()
             } catch (e: SignedOut) {
                 session.refresh()
+                SignedOutNotice.show(this@PlaybackService)
                 LibraryResult.ofError<T>(LibraryResult.RESULT_ERROR_SESSION_AUTHENTICATION_EXPIRED)
             } catch (e: java.io.IOException) {
                 LibraryResult.ofError<T>(LibraryResult.RESULT_ERROR_IO)
@@ -170,11 +171,14 @@ class PlaybackService : MediaLibraryService() {
         override fun onGetLibraryRoot(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?): ListenableFuture<LibraryResult<MediaItem>> =
             if (params?.isRecent == true) com.google.common.util.concurrent.Futures.immediateFuture(LibraryResult.ofItem(tree.recentRoot(), params))
             else if (params?.isSuggested == true) com.google.common.util.concurrent.Futures.immediateFuture(LibraryResult.ofItem(tree.suggestedRoot(), params))
-            else if (this.session.signedIn) com.google.common.util.concurrent.Futures.immediateFuture(LibraryResult.ofItem(tree.root(), params))
-            else com.google.common.util.concurrent.Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_SESSION_AUTHENTICATION_EXPIRED))
+            // Always answered, signed in or not: a media app whose root is refused is left out of Android Auto's list of apps (and
+            // is not offered as a shortcut), and it is not asked again when the person signs in. Signed out, the root holds one
+            // line that says what to do (see `Tree.children`).
+            else com.google.common.util.concurrent.Futures.immediateFuture(LibraryResult.ofItem(tree.root(), params))
 
         override fun onGetChildren(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, parentId: String, page: Int, pageSize: Int, params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
-            asynchronous {
+            if (parentId == Tree.ROOT && !this.session.signedIn) com.google.common.util.concurrent.Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.of(tree.signInNotice()), params))
+            else asynchronous {
                 val all = tree.children(parentId)
                 val from = (page * pageSize).coerceAtMost(all.size)
                 LibraryResult.ofItemList(ImmutableList.copyOf(all.subList(from, (from + pageSize).coerceAtMost(all.size))), params)

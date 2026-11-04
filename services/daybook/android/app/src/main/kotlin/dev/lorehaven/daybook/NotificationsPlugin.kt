@@ -124,16 +124,25 @@ object Reminders {
             context, 0, context.packageManager.getLaunchIntentForPackage(context.packageName),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        manager.notify(
-            args.optInt("id"),
-            android.app.Notification.Builder(context, channel)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(args.optString("title"))
-                .setContentText(args.optString("body"))
-                .setContentIntent(open)
-                .setAutoCancel(true)
-                .build()
-        )
+        val builder = android.app.Notification.Builder(context, channel)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(args.optString("title"))
+            .setContentText(args.optString("body"))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+        // Daybook's own addition to this plugin: a reminder of a task has a *Done* button, which marks the task done (see Complete.kt).
+        // (`quench plugin update` writes this file again from the template: this part has to be put back.)
+        val taskId = args.optString("task_id")
+        if (taskId.isNotEmpty()) {
+            val id = args.optInt("id")
+            val done = PendingIntent.getBroadcast(
+                context, id, Intent(context, CompleteReceiver::class.java).setAction(Complete.ACTION)
+                    .putExtra("task_id", taskId).putExtra("notification_id", id),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            builder.addAction(android.app.Notification.Action.Builder(null, "Done", done).build())
+        }
+        manager.notify(args.optInt("id"), builder.build())
         return true
     }
 

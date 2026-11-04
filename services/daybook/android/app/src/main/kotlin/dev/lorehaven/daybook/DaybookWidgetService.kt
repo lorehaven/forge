@@ -45,7 +45,9 @@ class DaybookWidgetService : RemoteViewsService() {
             val fill = Intent().setData(
                 Uri.parse("daybook://open?list=${Uri.encode(listId)}&task=${Uri.encode(task.id)}"),
             )
-            views.setOnClickFillInIntent(R.id.item_root, fill)
+            views.setOnClickFillInIntent(R.id.item_text, fill)
+            // The check mark: done.
+            views.setOnClickFillInIntent(R.id.item_done, Intent().setData(Uri.parse("daybook://complete?task=${Uri.encode(task.id)}")))
             return views
         }
 

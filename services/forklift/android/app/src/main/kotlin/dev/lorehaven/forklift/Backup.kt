@@ -276,14 +276,19 @@ object Backup {
         return context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
     }
 
+    /** How many files a page of the media library holds: `forklift_host::MEDIA_PAGE`. */
+    private const val MEDIA_PAGE = 2000
+
     private fun media(context: Context, kind: String, offset: Int): JSONArray {
         if (!canReadMedia(context, kind)) throw SecurityException("the media library is not allowed")
         val uri = if (kind == "video") MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val query = Bundle().apply {
-            putInt(ContentResolver.QUERY_ARG_LIMIT, 500)
+            // The program reads the library in pages of `MEDIA_PAGE` (2000) and stops at the first page that is shorter: a page of
+            // 500 made the background run see only the newest 500 photos and 500 videos, and take the rest for gone.
+            putInt(ContentResolver.QUERY_ARG_LIMIT, MEDIA_PAGE)
             putInt(ContentResolver.QUERY_ARG_OFFSET, offset)
-            putStringArray(ContentResolver.QUERY_ARG_SORT_COLUMNS, arrayOf(MediaStore.MediaColumns.DATE_MODIFIED))
-            putInt(ContentResolver.QUERY_ARG_SORT_DIRECTION, ContentResolver.QUERY_SORT_DIRECTION_DESCENDING)
+            // Newest first, and by id among the files of one second, so that pages by offset do not overlap or skip.
+            putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "${MediaStore.MediaColumns.DATE_MODIFIED} DESC, ${MediaStore.MediaColumns._ID} DESC")
         }
         val columns = arrayOf(
             MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE,
@@ -470,7 +475,7 @@ object Backup {
                         val status = message.getJSONObject("status")
                         onStatus(status.optString("headline"), status.optInt("waiting"))
                     }
-                    message.has("signed_out") -> notifyResult(context, "Forklift", "Sign in again to continue backing up")
+                    message.has("signed_out") -> SignedOutNotice.show(context)
                     message.optBoolean("finished") -> busy = message.has("skipped")
                 }
             }

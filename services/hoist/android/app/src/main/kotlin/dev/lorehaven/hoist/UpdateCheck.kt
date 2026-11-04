@@ -102,8 +102,8 @@ object UpdateCheck {
         if (status == "updates" && answer.optBoolean("notify")) {
             notify(context, "Hoist: " + answer.optString("title"), answer.optString("body"))
         } else if (status == "signed_out" && answer.optBoolean("notify")) {
-            // The session was lost: said once (the program remembers), until the person signs in again.
-            notify(context, answer.optString("title"), answer.optString("body"))
+            // The session was lost: said once, until the person opens the app again.
+            SignedOutNotice.show(context)
         }
     }
 

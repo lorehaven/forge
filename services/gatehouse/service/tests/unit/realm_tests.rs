@@ -391,7 +391,7 @@ async fn update_changes_the_password_and_does_not_end_the_actors_own_session() {
 }
 
 #[quench_test::test]
-async fn update_ends_sessions_when_someone_else_changes_the_users_access() {
+async fn a_change_of_access_or_an_admins_edit_does_not_end_the_users_sessions() {
     let db = db().await;
     let sessions = sessions();
     seed_user(&db, "alice", "password", vec![]).await;
@@ -409,6 +409,42 @@ async fn update_ends_sessions_when_someone_else_changes_the_users_access() {
         "alice",
         UserChanges {
             permissions: Some(Permissions::new()),
+            ..UserChanges::default()
+        },
+    )
+    .await
+    .expect("update");
+
+    assert_eq!(
+        sessions
+            .sessions_for("alice")
+            .await
+            .expect("sessions")
+            .len(),
+        1,
+        "the session goes on; its next renewal has the new access"
+    );
+}
+
+#[quench_test::test]
+async fn a_password_set_for_someone_else_ends_their_sessions() {
+    let db = db().await;
+    let sessions = sessions();
+    seed_user(&db, "alice", "password", vec![]).await;
+    sessions
+        .create("alice", 3600)
+        .await
+        .expect("create session");
+
+    update(
+        &db,
+        &default_catalog(),
+        &sessions,
+        "an-admin",
+        true,
+        "alice",
+        UserChanges {
+            password: Some("another-password".to_string()),
             ..UserChanges::default()
         },
     )

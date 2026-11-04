@@ -34,6 +34,8 @@ pub fn reminder_args(r: &Reminder) -> Value {
         ("title", Value::String(r.title.clone())),
         ("body", Value::String(r.body.clone())),
         ("channel", Value::String(CHANNEL.into())),
+        // What the *Done* button of the notification completes.
+        ("task_id", Value::String(r.task_id.clone())),
     ])
 }
 

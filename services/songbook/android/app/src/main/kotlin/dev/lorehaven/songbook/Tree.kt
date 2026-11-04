@@ -77,6 +77,9 @@ class Tree(private val session: Session, private val brain: Brain, private val o
     // ── The tree ─────────────────────────────────────────────────────────────
 
     fun root(): MediaItem = folder(ROOT, "Songbook")
+
+    /** What the root holds when nobody is signed in: one line that says what to do (the car cannot ask for a password). */
+    fun signInNotice(): MediaItem = item(JSONObject().put("id", "sign-in").put("title", "Open Songbook on your phone and sign in").put("browsable", false).put("kind", "folder"))
     fun recentRoot(): MediaItem = folder(RECENT_ROOT, "Recent")
     fun suggestedRoot(): MediaItem = folder(SUGGESTED_ROOT, "Suggested")
 

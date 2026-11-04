@@ -56,6 +56,8 @@ class SurfaceActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // The app is open: a "you are signed out" notice has done its work (a later sign-out is said again).
+        SignedOutNotice.clear(this)
         surface.setVisible(true)
     }
 

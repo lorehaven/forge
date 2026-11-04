@@ -41,6 +41,9 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/daybook_widget_info" />
         </receiver>
+        <receiver android:name=".CompleteReceiver" android:exported="false" />
+        <!-- A tap on a widget row (open the task, or mark it done): no screen of its own. -->
+        <activity android:name=".WidgetActionActivity" android:exported="false" android:excludeFromRecents="true" android:taskAffinity="" android:theme="@style/WidgetPickerTheme" />
         <service android:name=".DaybookWidgetService" android:exported="false" android:permission="android.permission.BIND_REMOTEVIEWS" />
         <activity android:name=".ListPickerActivity" android:excludeFromRecents="true" android:exported="false" android:taskAffinity="" android:theme="@style/WidgetPickerTheme" />
         <service android:name=".WidgetRefreshJobService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />

@@ -14,6 +14,8 @@ pub enum Outcome {
     Refreshed(usize),
     /// Nobody is signed in: the widget is emptied.
     SignedOut,
+    /// The saved login was refused (it is over): the widget is emptied and the person is told.
+    SessionEnded,
     /// The services could not be reached: the widget keeps what it had.
     Unreachable(String),
 }
@@ -35,7 +37,7 @@ pub fn refresh(store: &Store) -> Outcome {
             // The login is no good any more: sign out, as the window would.
             store.clear_token();
             store.clear_widget_snapshot();
-            Outcome::SignedOut
+            Outcome::SessionEnded
         }
         Err(e) => Outcome::Unreachable(e.to_string()),
     }

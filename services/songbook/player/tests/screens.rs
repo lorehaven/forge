@@ -710,7 +710,7 @@ fn the_crossfade_is_set_in_the_settings_box() {
     l.click("settings");
     assert!(l.has("dialog-settings"));
     assert_eq!(l.text_of("fade-label"), "Crossfade: off");
-    l.r.fire(l.find_id("fade"), &Event::Change("6".into()));
+    l.r.fire(l.find_id("fade"), &Event::Input("6".into()));
     let c = l.last_command();
     assert_eq!(
         (
@@ -719,8 +719,22 @@ fn the_crossfade_is_set_in_the_settings_box() {
         ),
         (Some("fade"), Some(6.0))
     );
-    l.hear(&json!({ "ev": "state", "playing": false, "id": 0, "index": -1, "len": 0, "pos": 0, "dur": 0, "shuffle": false, "repeat": "off", "fade": 6, "vol": 1 }));
+    // The label follows the slider at once, and an answer of the engine that is older does not pull it back.
     assert_eq!(l.text_of("fade-label"), "Crossfade: 6 s");
+    l.hear(&json!({ "ev": "state", "playing": false, "id": 0, "index": -1, "len": 0, "pos": 0, "dur": 0, "shuffle": false, "repeat": "off", "fade": 0, "vol": 1 }));
+    assert_eq!(l.text_of("fade-label"), "Crossfade: 6 s");
+    // The volume moves with the slider too (a phone's slider says `input`, nothing else).
+    assert_eq!(l.text_of("volume-label"), "Volume: 100%");
+    l.r.fire(l.find_id("volume"), &Event::Input("35".into()));
+    let c = l.last_command();
+    assert_eq!(
+        (
+            c.get("op").and_then(Value::as_str),
+            c.get("v").and_then(Value::as_f64)
+        ),
+        (Some("volume"), Some(0.35))
+    );
+    assert_eq!(l.text_of("volume-label"), "Volume: 35%");
     l.click("close");
     assert!(!l.has("dialog-settings"));
 }
@@ -735,7 +749,8 @@ fn the_songs_kept_after_playing_can_be_limited_where_the_engine_has_such_a_cache
     l.hear(&json!({ "ev": "cache", "used": 3_145_728, "limit": 5_368_709_120_u64 }));
     assert_eq!(l.text_of("cache-label"), "Songs kept after playing: 5 GB");
     assert!(l.text_of("cache-used").contains("3.0 MB"));
-    l.r.fire(l.find_id("cache"), &Event::Change("12".into()));
+    l.r.fire(l.find_id("cache"), &Event::Input("12".into()));
+    assert_eq!(l.text_of("cache-label"), "Songs kept after playing: 12 GB");
     let c = l.last_command();
     assert_eq!(
         (

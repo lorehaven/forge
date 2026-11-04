@@ -5,4 +5,5 @@
     <string name="widget_empty_tasks">No tasks</string>
     <string name="widget_empty_signed_out">Open Daybook to sign in</string>
     <string name="widget_fallback">Tap to open Daybook</string>
+    <string name="widget_mark_done">Mark as done</string>
 </resources>

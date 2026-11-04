@@ -1683,12 +1683,59 @@ fn add_to(env: &Env, songs: Vec<i64>) -> View {
         .into_view()
 }
 
+/// A slider that follows the finger: the engine is told on every move (`input`: a phone's slider says nothing else while it is
+/// dragged, and a browser's says it as well as `change`), and the value is kept here while it moves, because the engine's answer
+/// comes a moment later and would pull the slider back. Returns the slider and the value it shows now.
+fn slider(
+    id: &str,
+    min: u32,
+    max: u32,
+    current: impl Fn() -> f64 + 'static,
+    apply: impl Fn(f64) + 'static,
+) -> (Element, Rc<dyn Fn() -> f64>) {
+    let moved: Signal<Option<f64>> = create_signal(None);
+    let current: Rc<dyn Fn() -> f64> = Rc::new(current);
+    let live: Rc<dyn Fn() -> f64> = {
+        let (moved, current) = (moved.clone(), Rc::clone(&current));
+        Rc::new(move || moved.get().unwrap_or_else(|| current()))
+    };
+    let shown = Rc::clone(&live);
+    let element = input()
+        .attr("id", id.to_string())
+        .attr("type", "range")
+        .attr("min", min.to_string())
+        .attr("max", max.to_string())
+        .attr("step", "1")
+        .attr_fn("value", move || format!("{}", shown().round() as i64))
+        .on_input(move |v| {
+            if let Ok(value) = v.parse::<f64>() {
+                moved.set(Some(value));
+                apply(value);
+            }
+        });
+    (element, live)
+}
+
 fn settings(env: &Env) -> View {
-    let (fade, label, change) = (env.m.engine.clone(), env.m.engine.clone(), env.clone());
-    let (volume, set_volume) = (env.m.engine.clone(), env.clone());
     let storage = env.m.storage.clone();
     let kept = env.m.cached.clone();
     let app = env.link.is_some();
+    let (fade_now, fade_set) = (env.m.engine.clone(), env.clone());
+    let (fade, fade_live) = slider(
+        "fade",
+        0,
+        12,
+        move || fade_now.get().fade,
+        move |secs| fade_set.engine(&Command::Fade(secs)),
+    );
+    let (volume_now, volume_set) = (env.m.engine.clone(), env.clone());
+    let (volume, volume_live) = slider(
+        "volume",
+        0,
+        100,
+        move || volume_now.get().volume * 100.0,
+        move |percent| volume_set.engine(&Command::Volume(percent / 100.0)),
+    );
     div()
         .child(
             div()
@@ -1698,7 +1745,7 @@ fn settings(env: &Env) -> View {
                         .attr("for", "fade")
                         .attr("id", "fade-label")
                         .text_fn(move || {
-                            let secs = label.get().fade;
+                            let secs = fade_live();
                             if secs < 0.5 {
                                 "Crossfade: off".to_string()
                             } else {
@@ -1706,20 +1753,7 @@ fn settings(env: &Env) -> View {
                             }
                         }),
                 )
-                .child(
-                    input()
-                        .attr("id", "fade")
-                        .attr("type", "range")
-                        .attr("min", "0")
-                        .attr("max", "12")
-                        .attr("step", "1")
-                        .attr_fn("value", move || format!("{}", fade.get().fade as u64))
-                        .on_change(move |v| {
-                            if let Ok(secs) = v.parse::<f64>() {
-                                change.engine(&Command::Fade(secs));
-                            }
-                        }),
-                )
+                .child(fade)
                 .child(
                     p().class("pl-hint").text(
                         "The next song starts while this one ends, and they overlap this long.",
@@ -1729,23 +1763,13 @@ fn settings(env: &Env) -> View {
         .child(
             div()
                 .class("pl-setting")
-                .child(label_().attr("for", "volume").text("Volume"))
                 .child(
-                    input()
-                        .attr("id", "volume")
-                        .attr("type", "range")
-                        .attr("min", "0")
-                        .attr("max", "100")
-                        .attr("step", "1")
-                        .attr_fn("value", move || {
-                            format!("{}", (volume.get().volume * 100.0) as u64)
-                        })
-                        .on_change(move |v| {
-                            if let Ok(percent) = v.parse::<f64>() {
-                                set_volume.engine(&Command::Volume(percent / 100.0));
-                            }
-                        }),
-                ),
+                    label_()
+                        .attr("for", "volume")
+                        .attr("id", "volume-label")
+                        .text_fn(move || format!("Volume: {}%", volume_live().round() as i64)),
+                )
+                .child(volume),
         )
         .child(cache_setting(env))
         .child(logout(env, "logout-settings"))
@@ -1797,31 +1821,22 @@ fn cache_setting(env: &Env) -> View {
         move || shown.get().1 > 0,
         move || {
             let (label, used, change) = (label.clone(), used.clone(), change.clone());
+            let (cache_slider, cache_live) = slider(
+                "cache",
+                1,
+                50,
+                move || (label.get().1 >> 30) as f64,
+                move |gib| change.engine(&Command::CacheLimit(gib as u32)),
+            );
             div()
                 .class("pl-setting")
                 .child(
                     label_()
                         .attr("for", "cache")
                         .attr("id", "cache-label")
-                        .text_fn({
-                            let label = label.clone();
-                            move || format!("Songs kept after playing: {} GB", label.get().1 >> 30)
-                        }),
+                        .text_fn(move || format!("Songs kept after playing: {} GB", cache_live().round() as i64)),
                 )
-                .child(
-                    input()
-                        .attr("id", "cache")
-                        .attr("type", "range")
-                        .attr("min", "1")
-                        .attr("max", "50")
-                        .attr("step", "1")
-                        .attr_fn("value", move || format!("{}", label.get().1 >> 30))
-                        .on_change(move |v| {
-                            if let Ok(gib) = v.parse::<u32>() {
-                                change.engine(&Command::CacheLimit(gib));
-                            }
-                        }),
-                )
+                .child(cache_slider)
                 .child(p().class("pl-hint").attr("id", "cache-used").text_fn(move || {
                     format!(
                         "A song you heard plays again without the network, until this is full and the oldest go. Used now: {}.",

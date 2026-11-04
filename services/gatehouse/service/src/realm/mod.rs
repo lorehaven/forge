@@ -154,13 +154,6 @@ pub struct UserChanges {
     pub preferred_locale: Option<String>,
 }
 
-impl UserChanges {
-    /// Whether this changes access (vs. only identity) - decides session revocation.
-    const fn changes_access(&self) -> bool {
-        self.roles.is_some() || self.permissions.is_some()
-    }
-}
-
 fn repo(db: &Db) -> Repository<User> {
     db.repository::<User>()
 }
@@ -364,8 +357,11 @@ pub async fn update(
         user.preferred_locale = Some(preferred_locale.clone());
     }
 
-    // Access changes end sessions immediately, except an admin's own password.
-    let revoke = changes.changes_access() || username != actor;
+    // Nothing ends a session by itself when access changes: a session's tokens are made from the user's record each time they are
+    // renewed (minutes), so new roles and grants reach a signed-in app with no new sign-in, and a person's app sessions (which
+    // live for months) are not lost whenever someone saves their user. Only a password set for *someone else* ends their
+    // sessions: that is the case of an account that may be in the wrong hands.
+    let revoke = changes.password.is_some() && username != actor;
 
     let updated = repo
         .update(&user)

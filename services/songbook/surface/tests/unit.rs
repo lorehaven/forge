@@ -297,4 +297,73 @@ fn nobody_signed_in_sees_the_sign_in_and_signing_in_shows_the_player_which_asks_
     );
 }
 
+/// A drag or a tap on a slider of the settings reaches the engine as it moves: the native renderer says `input` for a slider
+/// and nothing else, so the settings must listen for that.
+#[quench_test::test]
+fn a_tap_on_a_settings_slider_in_the_native_renderer_sets_the_volume() {
+    use songbook_player::{Player, Setup, player};
+    let commands: Rc<RefCell<Vec<String>>> = Rc::default();
+    let log = Rc::clone(&commands);
+    let renderer = Rc::new(NativeRenderer::new());
+    songbook_surface::add_styles(&renderer);
+    renderer.set_viewport(420.0, 800.0);
+    let Player { view, .. } = player(
+        Rc::new(|_| {}),
+        Setup {
+            base: "/songbook".into(),
+            history: Rc::new(quench_ui::router::MemoryHistory::new("/songbook/ui")),
+            login_url: String::new(),
+            mobile: true,
+            engine: Some(Rc::new(move |c| log.borrow_mut().push(c))),
+            sign_out: None,
+        },
+    );
+    let _m = mount(&renderer, &renderer.root(), view);
+    let find_node = |id: &str| {
+        let mut stack = vec![renderer.root()];
+        while let Some(n) = stack.pop() {
+            if renderer.attr(n, "id").as_deref() == Some(id) {
+                return Some(n);
+            }
+            stack.extend(renderer.children(n));
+        }
+        None
+    };
+    tap(
+        &renderer,
+        find_node("tab-nav-settings").expect("the settings tab"),
+    );
+    let slider = find_node("volume").expect("the volume slider");
+    // The middle of the slider: about half the volume.
+    let mut canvas = quench_raster::Canvas::new(420, 800);
+    renderer.render(&mut canvas);
+    let mut spot = None;
+    for y in (0..800).step_by(2) {
+        for x in (0..420).step_by(2) {
+            if renderer.element_at(x as f32, y as f32) == Some(slider) {
+                spot.get_or_insert((x, y));
+            }
+        }
+    }
+    let (x0, y) = spot.expect("the slider is on the screen");
+    let right = (0..420)
+        .rev()
+        .find(|x| renderer.element_at(*x as f32, y as f32) == Some(slider))
+        .unwrap();
+    let middle = f32::midpoint(x0 as f32, right as f32);
+    renderer.pointer_down(middle, y as f32 + 1.0);
+    renderer.pointer_up(middle, y as f32 + 1.0);
+    let sent = commands.borrow().clone();
+    let last = sent.last().expect("a command was sent");
+    assert!(last.contains("\"op\":\"volume\""), "{sent:?}");
+    let v: f64 = last
+        .split("\"v\":")
+        .nth(1)
+        .unwrap()
+        .trim_end_matches('}')
+        .parse()
+        .unwrap();
+    assert!((0.4..0.6).contains(&v), "{v}");
+}
+
 quench_test::main!();

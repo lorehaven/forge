@@ -45,6 +45,21 @@ fn watch_launches(store: Store, deliver: Rc<dyn Fn(daybook_core::Msg)>) {
 }
 
 fn main() -> std::io::Result<()> {
+    // `--complete <task id>`: the reminder's *Done* button and the widget's check mark.
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--complete" {
+            let outcome = daybook_surface::complete::complete(
+                &Store::standard(),
+                &args.next().unwrap_or_default(),
+            );
+            println!("{}", outcome.word());
+            if let daybook_surface::complete::Outcome::Failed(why) = &outcome {
+                eprintln!("{why}");
+            }
+            return Ok(());
+        }
+    }
     if std::env::args().any(|a| a == "--widget") {
         let outcome = daybook_surface::widget::refresh(&Store::standard());
         println!("{outcome:?}");

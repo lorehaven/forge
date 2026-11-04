@@ -7,7 +7,7 @@ import android.content.Context
  * token sealed with the device's key, and renews the access token as it runs out. This only remembers what it last said, so
  * that screens can ask quickly.
  */
-class Session private constructor(private val brain: Brain) {
+class Session private constructor(private val context: Context, private val brain: Brain) {
     @Volatile private var loaded = false
     @Volatile private var signed = false
     @Volatile private var host = ""
@@ -63,6 +63,8 @@ class Session private constructor(private val brain: Brain) {
         brain.call("token").takeIf { !it.isNull("token") }?.getString("token")
     } catch (e: SignedOut) {
         signed = false
+        // The session ended while nobody was looking (the car, the background): the person is told.
+        SignedOutNotice.show(context)
         throw e
     }
 
@@ -77,7 +79,7 @@ class Session private constructor(private val brain: Brain) {
         @Volatile private var instance: Session? = null
 
         fun of(context: Context): Session = instance ?: synchronized(this) {
-            instance ?: Session(Brain.of(context)).also { instance = it }
+            instance ?: Session(context.applicationContext, Brain.of(context)).also { instance = it }
         }
     }
 }

@@ -68,6 +68,8 @@ class WidgetRefreshJobService : JobService() {
         val output = started.inputStream.bufferedReader().readText().trim()
         if (!started.waitFor(60, TimeUnit.SECONDS)) started.destroy()
         Log.i(TAG, "widget refresh: $output")
+        // The saved login was refused: nobody is looking, so the person is told.
+        if (output.contains("SessionEnded")) SignedOutNotice.show(this)
     }
 
     private companion object {

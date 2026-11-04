@@ -71,4 +71,4 @@ Enrolment: `GET /api/v1/ui/mfa-enroll` returns a fresh base32 secret, the `otpau
 
 ## Sessions
 
-Cache-store keys: `session:{sid}`, `refresh:{token hash}`, `user:{username}` (set of sids), `reuse:{old hash}`; see [data](data.md#cache-store). Revoking is deleting. A change of a user's roles or grants, a password reset, an invitation acceptance, a deletion, or an administrator's edit of another user ends all that user's sessions. Disabling an account does not end sessions. A person's own password change does not either.
+Cache-store keys: `session:{sid}`, `refresh:{token hash}`, `user:{username}` (set of sids), `reuse:{old hash}`; see [data](data.md#cache-store). Revoking is deleting. A password reset, an invitation acceptance, a deletion, or a password an administrator sets for another user ends all that user's sessions. A change of roles or grants does not: the tokens of a session are made from the user's record each time they are renewed, so new access arrives within the access token's life, and an app's long-lived session is not lost when someone saves the user. Disabling an account does not end sessions. A person's own password change does not either.

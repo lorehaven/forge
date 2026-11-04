@@ -83,7 +83,8 @@ fn read_queue(text: &str) -> Vec<Queued> {
 
 /// Whether the services could not be reached (no connection, or a proxy answering for a service that is down or restarting: 502-504), as opposed to
 /// answering with a refusal.
-fn is_unreachable(error: &NetError) -> bool {
+#[must_use]
+pub fn is_unreachable(error: &NetError) -> bool {
     matches!(error, NetError::Network(_) | NetError::Status(502..=504))
 }
 

@@ -23,6 +23,9 @@ use crate::pictures::{self, Wanted};
 use crate::pool::Pool;
 use crate::signin;
 
+/// The server the sign-in offers until another is typed (the same as the other apps').
+pub const DEFAULT_SERVER: &str = "https://ennor.ddns.net";
+
 /// The service's path prefix.
 pub const BASE: &str = "/songbook";
 
@@ -246,7 +249,7 @@ pub fn build(
             if !signed.get() {
                 let server = auth.settings().server;
                 let server = if server.is_empty() {
-                    "https://".to_string()
+                    DEFAULT_SERVER.to_string()
                 } else {
                     server
                 };
