@@ -662,7 +662,7 @@ dependencies = [
 
 [[package]]
 name = "hoist-desktop"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "hoist-app",
  "hoist-core",
