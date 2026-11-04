@@ -127,7 +127,7 @@ dependencies = [
 
 [[package]]
 name = "daybook"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "daybook-web",
  "forge-web",
@@ -478,7 +478,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse"
-version = "0.4.13"
+version = "0.4.14"
 dependencies = [
  "forge-web",
  "gatehouse-core",
@@ -1616,7 +1616,7 @@ dependencies = [
 
 [[package]]
 name = "songbook"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "forge-web",
  "quench-auth",
