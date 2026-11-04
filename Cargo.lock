@@ -168,7 +168,7 @@ dependencies = [
 
 [[package]]
 name = "daybook-desktop"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "daybook-app",
  "daybook-core",
