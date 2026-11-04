@@ -34,6 +34,22 @@ ARG DOCKER_CLI_VERSION=27.5.1
 RUN curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" \
     | tar -xz --strip-components=1 -C /usr/local/bin docker/docker
 
+# The golden-file parity jobs of sci-rust (`numpy-parity`, `numpy-bench`, `python-parity`) run the generators with
+# python3 and compare against files made with one NumPy version (2.5.4, which needs Python >= 3.12; Debian bookworm
+# ships 3.11 and NumPy 1.24, whose results differ). `uv` brings its own Python and the pinned NumPy into /opt/numpy, and
+# that venv leads PATH, so `python3` in a job is that one. Bump NUMPY_VERSION together with sci-rust's
+# num-rs/tests/golden/ndarray_cases.tsv (its first line names the version).
+ARG UV_VERSION=0.13.7
+ARG PYTHON_VERSION=3.14
+ARG NUMPY_VERSION=2.5.4
+RUN curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" \
+    | tar -xz --strip-components=1 -C /usr/local/bin uv-x86_64-unknown-linux-gnu/uv uv-x86_64-unknown-linux-gnu/uvx
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
+RUN uv venv --python "${PYTHON_VERSION}" /opt/numpy \
+    && uv pip install --python /opt/numpy/bin/python "numpy==${NUMPY_VERSION}" \
+    && chmod -R a+rX /opt/numpy /opt/uv-python
+ENV PATH=/opt/numpy/bin:${PATH}
+
 RUN rustup component add clippy rustfmt
 
 # `anvil format` runs `cargo +nightly fmt` - some workspaces' rustfmt.toml
