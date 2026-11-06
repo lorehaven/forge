@@ -48,10 +48,16 @@ treats a server that answers the library without a sign-in as an *open* session)
 simulate the server being away) that proxies to it. The
 emulator reaches the computer as `10.0.2.2`; debug builds allow plain HTTP for that, release builds are HTTPS only.
 
+## Where the music was left, and playing again
+
+* **The same place on every device**: the service keeps one place per person (the song, the point in it and the list; `GET/PUT /api/v1/resume`). This phone writes it while it plays (every ten seconds, on pause, and when the song changes) and takes a newer one written by another device (the web player, another phone), paused at that point, so "play" goes on from there (`Follow.kt`, `Sync`). Playing here, this device is the one listened to. Android Auto's "continue" uses the same place.
+* **After an interruption**: when something else took the sound away (a game's advertisement, a video) and then stops, the music plays again (`FocusResume`). A short loss (a navigation voice) the player gets over by itself; a pause of your own, and a loss of more than five minutes (you went to another player), are left alone.
+* **When a car connects**: a car's Bluetooth (hands-free or car audio) makes the phone play again (`CarConnectReceiver`; it asks once for the Bluetooth permission to tell a car from a headset). Android Auto does it by itself if its setting to start music is on.
+
 ## Try it in Android Auto
 
 1. On the phone: install the app, sign in (server `https://host`, your account), allow notifications.
-2. Android Auto's developer settings (tap the version ten times) -> **Unknown sources** (needed for an app that is not from Google Play).
+2. Android Auto's developer settings (tap the version ten times) -> **Unknown sources** (needed for an app that is not from Google Play). If Songbook is not in the list of apps (Settings -> Customize launcher), switch that off and on, and clear Android Auto's cache (phone Settings -> Apps -> Android Auto -> Storage); `adb logcat -s SongbookAuto` says whether Android Auto asked the app for its library (`com.google.android.projection.gearhead`).
 3. Car, or the Desktop Head Unit (`sdkmanager "extras;google;auto"`, then `adb forward tcp:5277 tcp:5277`, start the head unit
    server in Android Auto's developer settings, run `desktop-head-unit`): Songbook is under **Music**.
 

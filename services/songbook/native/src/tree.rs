@@ -484,6 +484,22 @@ impl Tree {
         ))
     }
 
+    /// Where this person stopped listening, on any device.
+    ///
+    /// # Errors
+    /// The service could not be asked.
+    pub fn resume(&self) -> Result<Option<songbook_core::Resume>> {
+        self.api.resume()
+    }
+
+    /// Remembers where this device stopped.
+    ///
+    /// # Errors
+    /// The service could not be asked.
+    pub fn set_resume(&self, resume: &songbook_core::Resume) -> Result<songbook_core::Resume> {
+        self.api.set_resume(resume)
+    }
+
     /// A song was started: kept on this phone, and told to the service (which may be out of reach; the phone remembers).
     pub fn played(&self, song: &SongInfo) {
         self.store.add_recent(song, REMEMBERED);

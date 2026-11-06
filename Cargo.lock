@@ -1667,7 +1667,7 @@ dependencies = [
 
 [[package]]
 name = "songbook-player"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "quench-serde",
  "quench-test",

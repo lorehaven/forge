@@ -34,6 +34,14 @@ class SurfaceActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
+        // To know that a connecting Bluetooth device is a car (and play again): asked once.
+        val asked = getSharedPreferences("asked", MODE_PRIVATE)
+        if (Build.VERSION.SDK_INT >= 31 && !asked.getBoolean("bluetooth", false) &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+        ) {
+            asked.edit().putBoolean("bluetooth", true).apply()
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 2)
+        }
         // Back is a callback from Android 13 on (and always for an app made for 16), not `onBackPressed`.
         if (Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { surface.back() }

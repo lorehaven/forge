@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- To know that a connecting Bluetooth device is a car (and play again): asked once, and not needed for anything else. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <!-- quench:permissions -->
 
     <application
@@ -20,6 +22,10 @@
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
+        <!-- The icon of the app's notifications on the car's screen. -->
+        <meta-data
+            android:name="com.google.android.gms.car.notification.SmallIcon"
+            android:resource="@drawable/ic_stat_song" />
 
         <!-- The screen is drawn by the app's Rust program (the native renderer): see SurfaceActivity. -->
         <activity android:name=".SurfaceActivity" android:exported="true" android:launchMode="singleTop" android:windowSoftInputMode="adjustResize" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|uiMode|density|fontScale|layoutDirection|locale">
@@ -39,6 +45,12 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+        <!-- A car's Bluetooth connects: the music goes on (see CarConnectReceiver). -->
+        <receiver android:name=".CarConnectReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+            </intent-filter>
+        </receiver>
         <service
             android:name=".SongDownloadService"
             android:exported="false"

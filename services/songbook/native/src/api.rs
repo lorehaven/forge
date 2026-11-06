@@ -2,7 +2,7 @@
 
 use quench_serde::json;
 use songbook_core::{
-    AlbumQuery, Home, Overview, PlaylistInfo, Search, SongInfo, SongList, SongQuery,
+    AlbumQuery, Home, Overview, PlaylistInfo, Resume, Search, SongInfo, SongList, SongQuery,
 };
 
 use crate::auth::{Auth, Failure};
@@ -22,6 +22,10 @@ pub trait Api: Send + Sync {
     fn playlists(&self) -> Result<Vec<PlaylistInfo>>;
     /// Tells the service a song was started.
     fn played(&self, song: i64) -> Result<()>;
+    /// Where this person stopped listening, on any of their devices (`None`: nowhere yet).
+    fn resume(&self) -> Result<Option<Resume>>;
+    /// Remembers where this device stopped; the answer is what the service kept (with its time).
+    fn set_resume(&self, resume: &Resume) -> Result<Resume>;
 }
 
 fn parse<T: quench_serde::Deserialize>(text: &str) -> Result<T> {
@@ -66,6 +70,22 @@ impl Api for Auth {
 
     fn playlists(&self) -> Result<Vec<PlaylistInfo>> {
         parse(&self.get("/playlists")?)
+    }
+
+    fn resume(&self) -> Result<Option<Resume>> {
+        let found: Resume = parse(&self.get("/resume")?)?;
+        Ok((found.song_id > 0).then_some(found))
+    }
+
+    fn set_resume(&self, resume: &Resume) -> Result<Resume> {
+        let (status, text) = self.call_api("PUT", "/resume", Some(&json::to_string(resume)))?;
+        match status {
+            200..=299 => parse(&text),
+            401 => Err(Failure::SignedOut),
+            other => Err(Failure::Unreachable(format!(
+                "The server answered {other}."
+            ))),
+        }
     }
 
     fn played(&self, song: i64) -> Result<()> {

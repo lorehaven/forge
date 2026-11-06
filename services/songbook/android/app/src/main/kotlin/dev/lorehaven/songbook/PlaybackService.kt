@@ -34,6 +34,8 @@ class PlaybackService : MediaLibraryService() {
     private var crossfader: Crossfader? = null
     private val work: ListeningExecutorService = MoreExecutors.listeningDecorator(Executors.newCachedThreadPool())
     private val main = Handler(Looper.getMainLooper())
+    private var sync: Sync? = null
+    private var focus: FocusResume? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -54,21 +56,21 @@ class PlaybackService : MediaLibraryService() {
         crossfader = Crossfader(player, Settings.of(this)) {
             ExoPlayer.Builder(this).setMediaSourceFactory(sources).setAudioAttributes(attributes, false).build()
         }.also { it.start() }
+        // Where the person stopped, on every device; and playing again when what took the sound away is over.
+        sync = Sync(this, player, brain, tree, work, main).also { it.start() }
+        focus = FocusResume(this, player, main).also { it.start() }
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val item = mediaItem ?: return
+                // A list another device left, put in place paused: nothing is played by putting it there.
+                if (item.mediaId == sync?.placedId && reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                    if (item.mediaMetadata.title == null) fillIn(tree, player, item)
+                    return
+                }
                 // A song the player's screens queued is only an address: its title, artist and picture are looked up now, so
                 // that the lock screen, the car and the history have them.
                 if (item.mediaMetadata.title == null && item.mediaId.startsWith("s:")) {
-                    work.execute {
-                        val filled = try { tree.fill(item) } catch (e: java.io.IOException) { null } ?: return@execute
-                        // Remembered now: replacing the item may or may not be reported as a new song.
-                        remember(filled, reason, 0)
-                        main.post {
-                            val at = (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == item.mediaId }
-                            if (at != null) player.replaceMediaItem(at, filled)
-                        }
-                    }
+                    fillIn(tree, player, item, reason)
                     return
                 }
                 remember(item, reason, 0)
@@ -89,6 +91,19 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private var stopWatching: (() -> Unit)? = null
+
+    /** Looks up the details of a song the screens (or another device) queued by its id alone, and puts them in its place in the queue. */
+    private fun fillIn(tree: Tree, player: Player, item: MediaItem, reason: Int? = null) {
+        work.execute {
+            val filled = try { tree.fill(item) } catch (e: java.io.IOException) { null } ?: return@execute
+            // Remembered now: replacing the item may or may not be reported as a new song (a song only put in place is not a play).
+            if (reason != null) remember(filled, reason, 0)
+            main.post {
+                val at = (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == item.mediaId }
+                if (at != null) player.replaceMediaItem(at, filled)
+            }
+        }
+    }
 
     /** The song last told to the service, so that filling in its details does not count as playing it twice. */
     private var lastTold: String? = null
@@ -119,6 +134,8 @@ class PlaybackService : MediaLibraryService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = librarySession
 
     override fun onDestroy() {
+        sync?.stop()
+        focus?.stop()
         stopWatching?.invoke()
         librarySession?.player?.let { p -> p.currentMediaItem?.let { Resume.save(Brain.of(this), it, p.currentPosition) } }
         crossfader?.release()
@@ -164,12 +181,25 @@ class PlaybackService : MediaLibraryService() {
         /** The person comes back (the car connects, a headset button is pressed): the music as it was left. */
         override fun onPlaybackResumption(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, isForPlayback: Boolean): ListenableFuture<MediaSession.MediaItemsWithStartPosition> =
             work.submit<MediaSession.MediaItemsWithStartPosition> {
+                // The place the service keeps (written by this device as it plays and by the person's other devices) is the newest
+                // there is; without the network, what this phone kept.
+                val server = try {
+                    brain.call("resume_get").optJSONObject("resume")?.takeIf { it.optLong("song_id") > 0 }
+                } catch (e: java.io.IOException) {
+                    null
+                }
+                val ids = server?.optJSONArray("queue")
+                val at = server?.optInt("index") ?: -1
+                if (server != null && ids != null && at in 0 until ids.length()) {
+                    return@submit MediaSession.MediaItemsWithStartPosition((0 until ids.length()).map { tree.bareItem(ids.getLong(it)) }, at, server.optLong("position_ms"))
+                }
                 val saved = Resume.load(brain) ?: throw UnsupportedOperationException("nothing was played yet")
                 Resume.queue(tree, saved) ?: throw UnsupportedOperationException("the list is gone")
             }
 
         override fun onGetLibraryRoot(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?): ListenableFuture<LibraryResult<MediaItem>> =
-            if (params?.isRecent == true) com.google.common.util.concurrent.Futures.immediateFuture(LibraryResult.ofItem(tree.recentRoot(), params))
+            // (Who asks is logged: Android Auto asks as `com.google.android.projection.gearhead`; `adb logcat -s SongbookAuto` shows it does.)
+            if (android.util.Log.i("SongbookAuto", "the root is asked for by ${browser.packageName}") >= 0 && params?.isRecent == true) com.google.common.util.concurrent.Futures.immediateFuture(LibraryResult.ofItem(tree.recentRoot(), params))
             else if (params?.isSuggested == true) com.google.common.util.concurrent.Futures.immediateFuture(LibraryResult.ofItem(tree.suggestedRoot(), params))
             // Always answered, signed in or not: a media app whose root is refused is left out of Android Auto's list of apps (and
             // is not offered as a shortcut), and it is not asked again when the person signs in. Signed out, the root holds one

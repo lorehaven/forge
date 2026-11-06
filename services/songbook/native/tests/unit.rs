@@ -5,8 +5,8 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 
 use songbook_core::{
-    AlbumInfo, ArtistInfo, CategoryInfo, Home, Mix, Overview, PlaylistInfo, Search, SongInfo,
-    SongQuery,
+    AlbumInfo, ArtistInfo, CategoryInfo, Home, Mix, Overview, PlaylistInfo, Resume, Search,
+    SongInfo, SongQuery,
 };
 use songbook_native::api::{Api, Result};
 use songbook_native::store::{Last, Store};
@@ -28,6 +28,7 @@ fn song(id: i64, title: &str, artist: &str) -> SongInfo {
 struct Fake {
     played: Mutex<Vec<i64>>,
     down: bool,
+    resume: Mutex<Option<Resume>>,
 }
 
 impl Api for Fake {
@@ -131,6 +132,17 @@ impl Api for Fake {
             songs: 2,
         }])
     }
+    fn resume(&self) -> Result<Option<Resume>> {
+        Ok(self.resume.lock().unwrap().clone())
+    }
+    fn set_resume(&self, resume: &Resume) -> Result<Resume> {
+        let kept = Resume {
+            at: 1_800_000_000,
+            ..resume.clone()
+        };
+        *self.resume.lock().unwrap() = Some(kept.clone());
+        Ok(kept)
+    }
     fn played(&self, id: i64) -> Result<()> {
         self.played.lock().unwrap().push(id);
         Ok(())
@@ -148,6 +160,7 @@ fn tree(name: &str, down: bool) -> (Tree, Store, Arc<Fake>) {
     let api = Arc::new(Fake {
         played: Mutex::new(vec![]),
         down,
+        resume: Mutex::default(),
     });
     (Tree::new(api.clone(), store.clone()), store, api)
 }
@@ -253,6 +266,7 @@ fn recently_played_joins_the_servers_list_with_this_phones_and_survives_the_serv
         let api = Arc::new(Fake {
             played: Mutex::new(vec![]),
             down: true,
+            resume: Mutex::default(),
         });
         (Tree::new(api, store), ())
     };
@@ -478,6 +492,7 @@ fn the_shell_asks_in_lines_and_is_answered_in_lines() {
     let api = Arc::new(Fake {
         played: Mutex::new(vec![]),
         down: false,
+        resume: Mutex::default(),
     });
     let brain = Brain::with(store.clone(), Arc::new(Auth::new(store)), api);
     // Not signed in: the library is refused, with the code the shell acts on.
@@ -493,6 +508,39 @@ fn the_shell_asks_in_lines_and_is_answered_in_lines() {
     );
     let l = brain.handle(r#"{"id":4,"op":"last_load"}"#);
     assert!(l.contains(r#""last":null"#), "{l}");
+}
+
+#[quench_test::test]
+fn where_the_person_stopped_goes_to_the_service_and_comes_back() {
+    let store = dir("resume");
+    // An open session (a development server): signed in with no password.
+    store.set_settings(&songbook_native::store::Settings {
+        server: "http://127.0.0.1:1".into(),
+        user: String::new(),
+        open: true,
+    });
+    let api = Arc::new(Fake {
+        played: Mutex::new(vec![]),
+        down: false,
+        resume: Mutex::default(),
+    });
+    let brain = Brain::with(store.clone(), Arc::new(Auth::new(store)), api);
+    let nothing = brain.handle(r#"{"id":1,"op":"resume_get"}"#);
+    assert!(nothing.contains(r#""resume":null"#), "{nothing}");
+    let put = brain.handle(
+        r#"{"id":2,"op":"resume_put","song_id":7,"position_ms":61000,"queue":[5,6,7,8],"index":2,"device":"phone"}"#,
+    );
+    assert!(put.contains(r#""at":1800000000"#), "{put}");
+    let got = brain.handle(r#"{"id":3,"op":"resume_get"}"#);
+    for part in [
+        r#""song_id":7"#,
+        r#""position_ms":61000"#,
+        r#""queue":[5,6,7,8]"#,
+        r#""index":2"#,
+        r#""device":"phone""#,
+    ] {
+        assert!(got.contains(part), "{part} in {got}");
+    }
 }
 
 quench_test::main!();

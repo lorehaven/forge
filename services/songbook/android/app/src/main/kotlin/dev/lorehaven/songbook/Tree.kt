@@ -111,6 +111,20 @@ class Tree(private val session: Session, private val brain: Brain, private val o
     /** The songs for words said or typed (the voice search of the car). */
     fun search(text: String): List<MediaItem> = items(brain.call("search", "q" to text).optJSONArray("items"))
 
+    /** A song of the player's queue by its id alone (`s:q:<id>`: an address and a picture; its details are looked up when it plays). */
+    fun bareItem(id: Long): MediaItem = MediaItem.Builder()
+        .setMediaId("s:q:$id")
+        .setUri(streamUri(id))
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setArtworkUri(Uri.parse("${session.api}/art/song/$id?w=320"))
+                .setIsPlayable(true)
+                .setIsBrowsable(false)
+                .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                .build(),
+        )
+        .build()
+
     /** A queue item the player's screens made (`s:q:<id>`: an address and nothing else) with what the service knows of the song. */
     fun fill(item: MediaItem): MediaItem? {
         val id = item.mediaId.substringAfterLast(':').toLongOrNull() ?: return null

@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use quench_serde::{Value, json};
-use songbook_core::SongInfo;
+use songbook_core::{Resume, SongInfo};
 
 use crate::api::Api;
 use crate::auth::{Auth, Failure};
@@ -28,6 +28,11 @@ impl std::fmt::Debug for Brain {
 
 fn text<'a>(request: &'a Value, key: &str) -> &'a str {
     request.get(key).and_then(Value::as_str).unwrap_or("")
+}
+
+/// A value of the protocol as JSON.
+fn as_value<T: quench_serde::Serialize>(value: &T) -> Value {
+    quench_serde::json::parse(&quench_serde::json::to_string(value)).unwrap_or(Value::Null)
 }
 
 fn song_of(request: &Value, key: &str) -> Option<SongInfo> {
@@ -125,6 +130,30 @@ impl Brain {
                     .map(|a| a.iter().filter_map(Value::as_i64).collect())
                     .unwrap_or_default();
                 Ok(json!({ "items": items(&self.tree.songs(&ids)?) }))
+            }
+            "resume_get" => {
+                self.signed_in()?;
+                let found = self.tree.resume()?;
+                Ok(json!({ "resume": as_value(&found) }))
+            }
+            "resume_put" => {
+                self.signed_in()?;
+                let ids = |key: &str| -> Vec<i64> {
+                    r.get(key)
+                        .and_then(Value::as_array)
+                        .map(|a| a.iter().filter_map(Value::as_i64).collect())
+                        .unwrap_or_default()
+                };
+                let resume = Resume {
+                    song_id: r.get("song_id").and_then(Value::as_i64).unwrap_or(0),
+                    position_ms: r.get("position_ms").and_then(Value::as_u64).unwrap_or(0),
+                    queue: ids("queue"),
+                    index: r.get("index").and_then(Value::as_i64).unwrap_or(0),
+                    device: text(r, "device").to_string(),
+                    at: 0,
+                };
+                let kept = self.tree.set_resume(&resume)?;
+                Ok(json!({ "at": kept.at }))
             }
             "played" => {
                 if let Some(song) = song_of(r, "song") {
