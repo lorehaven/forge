@@ -25,6 +25,7 @@ Every command except `config check` loads leniently: a missing, unparsable or in
 ```text
 .anvil/docker.toml      [docker] and its modules
 .anvil/install.toml     [install]
+.anvil/build.toml       [build] (target/ size limit)
 .anvil/release.toml     [release]
 .anvil/artifacts.toml   [artifacts] (warehouse_url)
 .anvil/hoist.toml       [artifacts.programs.hoist]
@@ -66,6 +67,12 @@ Add `.anvil/` to `.dockerignore`. Keys not listed below are silently ignored by 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `packages` | array of string | `[]` | Packages `install --all` installs; the first one is the default for `install` without `-p`. Packages here are also installed after `cargo publish` in `release`. |
+
+## [build]
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `max_target_gb` | integer, at least 1 | unset | Whole gibibytes `target/` may use. When set, `build`, `test`, `nextest` and `lint` prune it down to this after they run, and `clean --max-size` with no value uses it. Unset: never pruned automatically. See [Keeping target/ small](commands-workspace.md#keeping-target-small). |
 
 ## [release]
 
@@ -184,9 +191,10 @@ All paths are dotted, sorted alphabetically.
 
 | Message | When |
 |---|---|
-| `unknown field <k>` | A key not listed in the tables above, at the top level or in `docker`, `docker.modules.<m>.<package>`, `install`, `release`, `artifacts`, `artifacts.programs.<p>`, `...image`, `...targets[i]`, `docs`, `docs.books.<b>`, `docs.books.<b>.openapi`. (`docker.modules.<m>` accepts any other key as a package override and checks it as one.) |
+| `unknown field <k>` | A key not listed in the tables above, at the top level or in `docker`, `docker.modules.<m>.<package>`, `install`, `build`, `release`, `artifacts`, `artifacts.programs.<p>`, `...image`, `...targets[i]`, `docs`, `docs.books.<b>`, `docs.books.<b>.openapi`. (`docker.modules.<m>` accepts any other key as a package override and checks it as one.) |
 | `missing required field <k>` | `dockerfile`/`packages` of a module; `program`, `version_file`, `targets` of a program (`targets` only if no `image`); `dockerfile`, `module`, `name` of an image; `platform`, `file`, `build` of a target. |
 | `expected a table / a string / an array of strings, found <type>` | Wrong type. |
+| `must be a whole number of gibibytes, at least 1` | `build.max_target_gb` is not a positive integer. |
 | `must not be empty` | An empty string, or an empty `packages` list in a module. |
 | `package <p> is also built by module <m>` | One package in two modules. |
 | `overrides package <p>, which is not in this module's packages list` | Override without matching package. |

@@ -9,6 +9,7 @@ Workspace build, test and release tool for Cargo projects.
 - Build Docker images for the workspace's services.
 - Release packages in dependency order: crates, images and app artifacts.
 - Build and publish a documentation book (`anvil docs release`).
+- Keep `target/` under a size limit (`[build] max_target_gb`, `anvil clean --max-size`).
 
 ## Example
 ```sh

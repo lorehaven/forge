@@ -87,7 +87,7 @@ Credentials are kept in `.anvil/secret.toml` (or `.anvil.secret.toml` when the w
 
 ## Where to go next
 
-* [Workspace commands](commands-workspace.md): `build`, `clean`, `test`, `nextest`, `lint`, `format`, `list`, `upgrade`, `audit`, `machete`, `deny`, `semver-check`, `run`.
+* [Workspace commands](commands-workspace.md): `build`, `clean` (incl. pruning `target/` to a size limit), `test`, `nextest`, `lint`, `format`, `list`, `upgrade`, `audit`, `machete`, `deny`, `semver-check`, `run`.
 * [Release and Docker commands](commands-release.md): `install`, `release`, `docker ...`.
 * [Documentation commands](commands-docs.md): `docs list|check|build|release`.
 * [Credentials, config and artifacts](commands-credentials.md): `login`, `keystore-password`, `registry-token`, `config check`, `artifact release|list`.

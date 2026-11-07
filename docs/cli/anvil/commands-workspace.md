@@ -5,7 +5,7 @@ grand_parent: Command-line tools
 nav_order: 1
 ---
 
-Commands that wrap `cargo` and the dependency checkers. None of them reads the configuration file. `--silent` and `--tail[=N]` apply to all that stream output (see [index](index.md#global-options)).
+Commands that wrap `cargo` and the dependency checkers. Only `[build] max_target_gb` is read from the configuration (by `build`, `test`, `nextest`, `lint` and `clean`; see [Keeping target/ small](#keeping-target-small)). `--silent` and `--tail[=N]` apply to all that stream output (see [index](index.md#global-options)).
 
 ## anvil build
 
@@ -37,10 +37,28 @@ anvil build operation completed successfully (3.21s)
 ## anvil clean
 
 ```text
-anvil clean
+anvil clean [--max-size [<SIZE>]] [--dry-run]
 ```
 
-Runs `cargo clean` (whole `target/`). No flags besides the global ones. Log: `target/anvil-logs/clean.log`, which lives in `target/` and is therefore deleted by the clean itself.
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--max-size [<SIZE>]` | size | off | Instead of removing everything, prune `target/` down to `SIZE` (`20G`, `512M`, `1.5GiB`; a bare number is gigabytes). With no value, the `[build] max_target_gb` of the configuration; with neither, an error. |
+| `--dry-run` | flag | off | Say what would be removed and remove nothing. Alone it implies `--max-size` with the configured limit. |
+
+Without `--max-size` or `--dry-run`: runs `cargo clean` (whole `target/`). Log: `target/anvil-logs/clean.log`, which lives in `target/` and is therefore deleted by the clean itself. With them nothing is run through cargo and no log is written; anvil prints each directory it removes and `target: 11.5 GiB -> 4.2 GiB (limit 5.0 GiB)`.
+
+### Keeping target/ small
+
+Cargo never prunes `target/`, and a workspace built with several profiles, features and targets grows without bound. Anvil trims it, in this order, until it fits:
+
+1. every profile's `incremental/` cache, the biggest first;
+2. whole profile directories (`target/<profile>` and `target/<triple>/<profile>`, recognised by their `.fingerprint/`), the least recently built first.
+
+Anything else under `target/` (`docs/`, `anvil-logs/`) is never touched. The directory is `$CARGO_TARGET_DIR` if set, else `target/` of the working directory.
+
+With `[build] max_target_gb = N` in the [configuration](configuration.md#build), `build`, `test`, `nextest` and `lint` do this by themselves after they finish, whether they succeeded or not. The profile they just built (`release` for `build --release`, else `debug`) is spared, so a build never deletes its own output: only its `incremental/` may go, and if it alone is over the limit anvil prints a warning and leaves it. Pruning is housekeeping: an error in it is a warning, never a failed command, and `--json` runs do not prune (their stdout carries only the report). `anvil clean --max-size` has no profile to spare and removes `debug` last.
+
+Smaller output to begin with: `[profile.dev] debug = "line-tables-only"` (in `~/.cargo/config.toml` or `Cargo.toml`) keeps file and line numbers in backtraces and drops the rest of the debuginfo, which is most of what a dev binary weighs.
 
 ## anvil test
 
