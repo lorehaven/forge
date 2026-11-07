@@ -4,4 +4,5 @@ pub mod cargo_meta;
 pub mod cli;
 pub mod commands;
 pub mod config;
+pub mod target_gc;
 pub mod util;

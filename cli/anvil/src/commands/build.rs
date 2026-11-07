@@ -1,6 +1,7 @@
 use quench_core::{Context, Result};
 use std::process::Command;
 
+use crate::config::Config;
 use crate::util::{run_command, run_command_json};
 
 #[must_use]
@@ -44,7 +45,42 @@ pub fn build(all: bool, all_features: bool, release: bool, package: Option<Strin
     run_command(cmd, "build")
 }
 
-pub fn clean() -> Result<()> {
+/// After a build, test or lint: keeps `target/` within the configured limit, sparing the profile just built.
+/// Pruning is housekeeping, so a failure to do it is reported and never fails the command.
+pub fn auto_prune(config: &Config, built: &str) {
+    let Some(gb) = config.build.max_target_gb else {
+        return;
+    };
+    if let Err(err) = crate::target_gc::run(gb * (1 << 30), &[built], true, false) {
+        quench_cli::prelude::print_status(
+            quench_cli::prelude::Tone::Warn,
+            "anvil",
+            &format!("could not prune target/: {err}"),
+        );
+    }
+}
+
+/// `anvil clean`: everything, or with `max_size` only as much as brings `target/` under it (`"config"` is the
+/// configuration's `[build] max_target_gb`).
+///
+/// # Errors
+/// No limit is known, or cargo or the pruning fails.
+pub fn clean(config: &Config, max_size: Option<&str>, dry_run: bool) -> Result<()> {
+    if let Some(size) = max_size.or_else(|| dry_run.then_some("config")) {
+        let limit = if size == "config" {
+            config
+                .build
+                .max_target_gb
+                .map(|gb| gb * (1 << 30))
+                .context(
+                    "no limit: pass --max-size <SIZE> or set `max_target_gb` under `[build]`",
+                )?
+        } else {
+            crate::target_gc::parse_size(size)?
+        };
+        crate::target_gc::run(limit, &[], false, dry_run)?;
+        return Ok(());
+    }
     let mut cmd = Command::new("cargo");
     cmd.arg("clean");
 

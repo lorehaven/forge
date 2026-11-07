@@ -32,7 +32,8 @@ impl fmt::Display for ConfigIssue {
     }
 }
 
-const TOP_FIELDS: &[&str] = &["docker", "install", "release", "artifacts", "docs"];
+const TOP_FIELDS: &[&str] = &["docker", "install", "release", "artifacts", "docs", "build"];
+const BUILD_FIELDS: &[&str] = &["max_target_gb"];
 const ARTIFACTS_FIELDS: &[&str] = &["warehouse_url", "programs"];
 const DOCS_FIELDS: &[&str] = &[
     "out",
@@ -239,6 +240,20 @@ pub fn validate_value(root: &Value) -> Vec<ConfigIssue> {
         }
         if let Some(url) = t.get("gatehouse_url") {
             expect_string(url, "release.gatehouse_url", &mut issues);
+        }
+    }
+
+    if let Some(build) = table.get("build")
+        && let Some(t) = expect_table(build, "build", &mut issues)
+    {
+        unknown_fields(t, BUILD_FIELDS, "build", &mut issues);
+        if let Some(limit) = t.get("max_target_gb")
+            && limit.as_u64().is_none_or(|n| n == 0)
+        {
+            issues.push(ConfigIssue {
+                path: "build.max_target_gb".to_string(),
+                message: "must be a whole number of gibibytes, at least 1".to_string(),
+            });
         }
     }
 

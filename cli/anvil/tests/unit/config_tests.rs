@@ -445,3 +445,13 @@ fn no_configuration_at_all_is_an_error_for_the_strict_loader_and_an_empty_config
     assert!(format!("{:#}", merge(&root).unwrap_err()).contains("no .anvil.toml"));
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[quench_test::test]
+fn build_max_target_gb_is_read_and_unset_by_default() {
+    assert_eq!(Config::default().build.max_target_gb, None);
+    let config: Config = quench_serde::from_value(
+        &quench_serde::toml::parse("[build]\nmax_target_gb = 20\n").unwrap(),
+    )
+    .unwrap();
+    assert_eq!(config.build.max_target_gb, Some(20));
+}

@@ -35,14 +35,26 @@ fn main() -> Result<()> {
             all_features,
             release,
             package,
-        } => commands::build::build(all, all_features, release, package)?,
-        Commands::Clean => commands::build::clean()?,
+        } => {
+            let result = commands::build::build(all, all_features, release, package);
+            commands::build::auto_prune(&config, if release { "release" } else { "debug" });
+            result?;
+        }
+        Commands::Clean { max_size, dry_run } => {
+            commands::build::clean(&config, max_size.as_deref(), dry_run)?;
+        }
         Commands::Lint {
             all_targets,
             all_features,
             deny_warnings,
             json,
-        } => commands::lint::lint(all_targets, all_features, deny_warnings, json)?,
+        } => {
+            let result = commands::lint::lint(all_targets, all_features, deny_warnings, json);
+            if !json {
+                commands::build::auto_prune(&config, "debug");
+            }
+            result?;
+        }
         Commands::Format { check } => commands::lint::format(check)?,
         Commands::List { format } => commands::workspace::list(&format)?,
         Commands::Upgrade { incompatible } => commands::workspace::upgrade(incompatible)?,
@@ -60,14 +72,26 @@ fn main() -> Result<()> {
             ignored,
             list,
             json,
-        } => commands::build::test(all, package, test_name, ignored, list, json)?,
+        } => {
+            let result = commands::build::test(all, package, test_name, ignored, list, json);
+            if !json {
+                commands::build::auto_prune(&config, "debug");
+            }
+            result?;
+        }
         Commands::Nextest {
             all,
             package,
             test_name,
             ignored,
             json,
-        } => commands::build::nextest(all, package, test_name, ignored, json)?,
+        } => {
+            let result = commands::build::nextest(all, package, test_name, ignored, json);
+            if !json {
+                commands::build::auto_prune(&config, "debug");
+            }
+            result?;
+        }
         Commands::Install { all, package } => commands::install::install(&config, package, all)?,
         Commands::Release {
             all,

@@ -30,6 +30,8 @@ mod login_tests;
 mod release_tests;
 #[path = "unit/run_tests.rs"]
 mod run_tests;
+#[path = "unit/target_gc_tests.rs"]
+mod target_gc_tests;
 #[path = "unit/util_tests.rs"]
 mod util_tests;
 #[path = "unit/workspace_tests.rs"]

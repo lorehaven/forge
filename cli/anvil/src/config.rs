@@ -22,6 +22,19 @@ pub struct Config {
 
     #[serde(default)]
     pub docs: DocsConfig,
+
+    #[serde(default)]
+    pub build: BuildConfig,
+}
+
+/// `anvil build|test|nextest|lint` and `anvil clean`: how big `target/` may get.
+#[derive(Debug, Default, Deserialize)]
+pub struct BuildConfig {
+    /// After a build, test or lint, prune `target/` to at most this many gibibytes: `incremental/` caches first, then
+    /// the profiles not just built, the least recently built first. Unset: never pruned. `anvil clean --max-size`
+    /// does the same on request.
+    #[serde(default)]
+    pub max_target_gb: Option<u64>,
 }
 
 /// `anvil docs`: documentation books that are checked, built with Jekyll and sent to the warehouse.

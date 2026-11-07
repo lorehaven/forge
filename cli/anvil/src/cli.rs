@@ -44,7 +44,16 @@ pub enum Commands {
         package: Option<String>,
     },
     /// Clean the workspace or packages
-    Clean,
+    Clean {
+        /// Instead of removing everything, prune `target/` to this size (`20G`, `512M`; a bare number is gigabytes):
+        /// `incremental/` caches first, then whole profiles, the least recently built first. With no value, the
+        /// `[build] max_target_gb` of the configuration.
+        #[arg(long, value_name = "SIZE", num_args = 0..=1, default_missing_value = "config")]
+        max_size: Option<String>,
+        /// Say what `--max-size` would remove and remove nothing (alone, it implies `--max-size` of the configuration)
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Lint the workspace with clippy
     Lint {
         /// Apply clippy to all targets
