@@ -29,6 +29,8 @@ pub struct SearchCrate {
     description: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     bins: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    categories: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -76,19 +78,20 @@ pub async fn handle(Query(query): Query<SearchQuery>) -> Response {
             let max_version = find_max_version(&entry.path()).await;
 
             if let Some(version) = max_version {
-                let bins = if query.bins {
-                    binaries_of(&entry.path(), &name, &version).await
+                let info = if query.bins {
+                    manifest_info_of(&entry.path(), &name, &version).await
                 } else {
-                    Vec::new()
+                    ManifestInfo::default()
                 };
-                if query.bins && bins.is_empty() {
+                if query.bins && info.bins.is_empty() {
                     continue;
                 }
                 matches.push(SearchCrate {
                     name: name.clone(),
                     max_version: version,
                     description: None,
-                    bins,
+                    bins: info.bins,
+                    categories: info.categories,
                 });
             }
         }
@@ -110,41 +113,64 @@ pub async fn handle(Query(query): Query<SearchQuery>) -> Response {
     .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-/// The binary names a published version builds, from the `[[bin]]` tables of the `Cargo.toml` inside its `.crate`.
-///
-/// The answer is cached beside the crate as `bins.json`, so a version is unpacked once; crates published before this
-/// existed are read the first time they are asked for, with no republish. A crate with no `[[bin]]` table (or an
-/// unreadable archive) has none.
-pub async fn binaries_of(crate_dir: &std::path::Path, name: &str, version: &str) -> Vec<String> {
-    let version_dir = crate_dir.join(version);
-    let cache = version_dir.join("bins.json");
-    if let Ok(text) = tokio::fs::read_to_string(&cache).await
-        && let Ok(bins) = quench_serde::json::from_str::<Vec<String>>(&text)
-    {
-        return bins;
-    }
-    let Ok(archive) = tokio::fs::read(version_dir.join(format!("{name}-{version}.crate"))).await else {
-        return Vec::new();
-    };
-    let bins = binaries_in_archive(&archive, name, version);
-    let _ = tokio::fs::write(&cache, quench_serde::json::to_string(&bins)).await;
-    bins
+/// What a published version's manifest says about how it is used.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManifestInfo {
+    /// The `name` of each `[[bin]]` table.
+    pub bins: Vec<String>,
+    /// The `categories` of `[package]`.
+    pub categories: Vec<String>,
 }
 
-/// [`binaries_of`] on the bytes of a `.crate` (a gzip tar holding `<name>-<version>/Cargo.toml`).
+/// [`ManifestInfo`] of a published version, from the `Cargo.toml` inside its `.crate`.
+///
+/// The answer is cached beside the crate as `manifest-info.json`, so a version is unpacked once; crates published
+/// before this existed are read the first time they are asked for, with no republish. An unreadable archive has
+/// no binaries and no categories.
+pub async fn manifest_info_of(
+    crate_dir: &std::path::Path,
+    name: &str,
+    version: &str,
+) -> ManifestInfo {
+    let version_dir = crate_dir.join(version);
+    let cache = version_dir.join("manifest-info.json");
+    if let Ok(text) = tokio::fs::read_to_string(&cache).await
+        && let Ok(info) = quench_serde::json::from_str::<ManifestInfo>(&text)
+    {
+        return info;
+    }
+    let Ok(archive) = tokio::fs::read(version_dir.join(format!("{name}-{version}.crate"))).await
+    else {
+        return ManifestInfo::default();
+    };
+    let info = manifest_info_in_archive(&archive, name, version);
+    let _ = tokio::fs::write(&cache, quench_serde::json::to_string(&info)).await;
+    info
+}
+
+/// [`manifest_info_of`] on the bytes of a `.crate` (a gzip tar holding `<name>-<version>/Cargo.toml`).
 #[must_use]
-pub fn binaries_in_archive(archive: &[u8], name: &str, version: &str) -> Vec<String> {
+pub fn manifest_info_in_archive(archive: &[u8], name: &str, version: &str) -> ManifestInfo {
     const LIMIT: usize = 512 * 1024 * 1024;
     let Ok(tar) = quench_archive::gzip::decompress(archive, LIMIT) else {
-        return Vec::new();
+        return ManifestInfo::default();
     };
     let manifest = format!("{name}-{version}/Cargo.toml");
     for entry in quench_archive::tar::Reader::new(&tar).flatten() {
         if entry.path == manifest {
-            return binaries_in_manifest(&String::from_utf8_lossy(entry.data));
+            return manifest_info(&String::from_utf8_lossy(entry.data));
         }
     }
-    Vec::new()
+    ManifestInfo::default()
+}
+
+/// The binaries and categories a manifest declares.
+#[must_use]
+pub fn manifest_info(manifest: &str) -> ManifestInfo {
+    ManifestInfo {
+        bins: binaries_in_manifest(manifest),
+        categories: categories_in_manifest(manifest),
+    }
 }
 
 /// The `name` of every `[[bin]]` table in a manifest, in order.
@@ -166,6 +192,35 @@ pub fn binaries_in_manifest(manifest: &str) -> Vec<String> {
         }
     }
     bins
+}
+
+/// The `categories = [...]` of `[package]`, on one line or spread over several.
+#[must_use]
+pub fn categories_in_manifest(manifest: &str) -> Vec<String> {
+    let mut in_package = false;
+    let mut collecting = false;
+    let mut text = String::new();
+    for line in manifest.lines().map(str::trim) {
+        if collecting {
+            text.push_str(line);
+        } else if line.starts_with('[') {
+            in_package = line == "[package]";
+        } else if in_package
+            && let Some(rest) = line.strip_prefix("categories")
+            && let Some(value) = rest.trim_start().strip_prefix('=')
+        {
+            collecting = true;
+            text.push_str(value);
+        }
+        if collecting && text.contains(']') {
+            break;
+        }
+    }
+    text.split('"')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_string)
+        .collect()
 }
 
 pub fn register_routes() {

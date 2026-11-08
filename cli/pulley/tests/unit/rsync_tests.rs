@@ -1,5 +1,7 @@
 use pulley::config::Job;
-use pulley::rsync::{Change, classify_line, dry_run, run_command, run_command_async, update};
+use pulley::rsync::{
+    Change, classify_line, dry_run, is_remote, run_command, run_command_async, update,
+};
 use std::process::Command;
 
 fn job(src: &std::path::Path, dest: &std::path::Path) -> Job {
@@ -177,4 +179,19 @@ fn update_with_skip_excludes_the_named_entry() {
 
     assert!(dest.path().join("keep.txt").exists());
     assert!(!dest.path().join("skip.txt").exists());
+}
+
+#[quench_test::test]
+fn is_remote_recognises_ssh_and_daemon_sources() {
+    assert!(is_remote("losseheil@192.168.0.9:/mnt/backup/genealogy/"));
+    assert!(is_remote("host:dir"));
+    assert!(is_remote("rsync://host/module/"));
+}
+
+#[quench_test::test]
+fn is_remote_leaves_local_paths_alone() {
+    assert!(!is_remote("/mnt/backup/genealogy/"));
+    assert!(!is_remote("relative/dir"));
+    assert!(!is_remote("./odd:name/dir"));
+    assert!(!is_remote("/a/b:c"));
 }

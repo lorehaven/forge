@@ -3,6 +3,25 @@ use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
 use std::thread::JoinHandle;
 
+/// Whether rsync reads `path` as a remote location (`user@host:/dir`, `host:dir`, `rsync://host/module`) rather
+/// than a local directory: a `:` before the first `/`, as rsync itself decides.
+#[must_use]
+pub fn is_remote(path: &str) -> bool {
+    path.starts_with("rsync://")
+        || path
+            .split('/')
+            .next()
+            .is_some_and(|first| first.contains(':'))
+}
+
+/// Pins `cmd` to the source directory (see `dry_run`) - only when that is a local directory; a remote source has
+/// none to enter, and spawning in it fails with `ENOENT`.
+fn pin_working_dir(cmd: &mut Command, src: &str) {
+    if !is_remote(src) {
+        cmd.current_dir(src);
+    }
+}
+
 pub fn dry_run(job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
     println!("Executing dry-run");
 
@@ -12,7 +31,7 @@ pub fn dry_run(job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
     // rsync's own `getcwd()` never depends on whatever this process's ambient
     // working directory happens to be at the moment it is spawned. Two jobs
     // never race on it, since each pins to its own source.
-    cmd.current_dir(&job.src);
+    pin_working_dir(&mut cmd, &job.src);
     cmd.arg("-avz")
         .arg("--dry-run")
         .arg("--itemize-changes")
@@ -92,7 +111,7 @@ pub fn update(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
 
     let mut cmd = Command::new("rsync");
     // See the matching comment in `dry_run`.
-    cmd.current_dir(&job.src);
+    pin_working_dir(&mut cmd, &job.src);
     cmd.arg("-avzu").arg("--progress");
 
     if job.delete {

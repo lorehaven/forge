@@ -176,8 +176,8 @@ fn parse_search_output_errors_with_stderr_when_the_command_fails() {
 #[quench_test::test]
 fn parse_tools_lists_each_crate_with_its_first_binary_sorted_by_package() {
     let json = r#"{"crates":[
-        {"name":"warehouse-cli","max_version":"0.1.18","bins":["warehouse"]},
-        {"name":"loupe","max_version":"0.1.0","bins":["loupe","loupe-extra"]},
+        {"name":"warehouse-cli","max_version":"0.1.18","bins":["warehouse"],"categories":["development-tools"]},
+        {"name":"loupe","max_version":"0.1.0","bins":["loupe","loupe-extra"],"categories":["command-line-utilities"]},
         {"name":"no-bins","max_version":"1.0.0"}
     ],"meta":{"total":3}}"#;
     assert_eq!(
@@ -192,8 +192,8 @@ fn parse_tools_lists_each_crate_with_its_first_binary_sorted_by_package() {
 #[quench_test::test]
 fn parse_tools_leaves_out_the_toolbox_itself() {
     let json = r#"{"crates":[
-        {"name":"forge-toolbox","max_version":"0.1.19","bins":["forge-toolbox"]},
-        {"name":"anvil","max_version":"0.4.34","bins":["anvil"]}
+        {"name":"forge-toolbox","max_version":"0.1.19","bins":["forge-toolbox"],"categories":["development-tools"]},
+        {"name":"anvil","max_version":"0.4.34","bins":["anvil"],"categories":["development-tools"]}
     ]}"#;
     let tools = parse_tools(json).unwrap();
     assert_eq!(tools, vec![("anvil".to_string(), "anvil".to_string())]);
@@ -216,4 +216,18 @@ fn tools_url_points_at_the_registry_search_api_asking_for_binaries() {
 #[quench_test::test]
 fn the_fallback_list_includes_loupe() {
     assert!(MONITORED_CRATES.iter().any(|c| c.package == "loupe"));
+}
+
+#[quench_test::test]
+fn parse_tools_drops_services_and_gui_crates() {
+    let json = r#"{"crates":[
+        {"name":"warehouse-service","bins":["warehouse-service"],"categories":["development-tools"]},
+        {"name":"quench-desktop","bins":["quench-desktop-fixture"],"categories":["gui"]},
+        {"name":"mystery","bins":["mystery"]},
+        {"name":"pulley","bins":["pulley"],"categories":["development-tools"]}
+    ]}"#;
+    assert_eq!(
+        parse_tools(json).unwrap(),
+        vec![("pulley".to_string(), "pulley".to_string())]
+    );
 }

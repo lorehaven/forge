@@ -194,11 +194,14 @@ fn binaries_in_manifest_reads_each_bin_table_name() {
 
 #[quench_test::test]
 fn binaries_in_manifest_is_empty_for_a_library() {
-    assert!(search::binaries_in_manifest("[package]\nname = \"lib\"\n[lib]\nname = \"lib\"\n").is_empty());
+    assert!(
+        search::binaries_in_manifest("[package]\nname = \"lib\"\n[lib]\nname = \"lib\"\n")
+            .is_empty()
+    );
 }
 
 #[quench_test::test]
-async fn binaries_of_unpacks_the_crate_once_and_caches_the_answer() {
+async fn manifest_info_of_unpacks_the_crate_once_and_caches_the_answer() {
     let mut tar = quench_archive::tar::Builder::new();
     tar.append_file(
         "tool-1.0.0/Cargo.toml",
@@ -211,9 +214,19 @@ async fn binaries_of_unpacks_the_crate_once_and_caches_the_answer() {
     std::fs::create_dir(&version_dir).unwrap();
     std::fs::write(version_dir.join("tool-1.0.0.crate"), archive).unwrap();
 
-    assert_eq!(search::binaries_of(dir.path(), "tool", "1.0.0").await, vec!["tl".to_string()]);
+    assert_eq!(
+        search::manifest_info_of(dir.path(), "tool", "1.0.0")
+            .await
+            .bins,
+        vec!["tl".to_string()]
+    );
     std::fs::remove_file(version_dir.join("tool-1.0.0.crate")).unwrap();
-    assert_eq!(search::binaries_of(dir.path(), "tool", "1.0.0").await, vec!["tl".to_string()]);
+    assert_eq!(
+        search::manifest_info_of(dir.path(), "tool", "1.0.0")
+            .await
+            .bins,
+        vec!["tl".to_string()]
+    );
 }
 
 #[quench_test::test]
@@ -222,7 +235,35 @@ async fn search_with_bins_lists_only_crates_that_build_a_binary() {
     let (app, container) = app().await;
     // an unreadable crate has no binaries, so an empty `q` with `bins` finds nothing but is not rejected
     let response = app
-        .call(support::req(Method::GET, "/api/v1/crates?bins=true", &container))
+        .call(support::req(
+            Method::GET,
+            "/api/v1/crates?bins=true",
+            &container,
+        ))
         .await;
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[quench_test::test]
+fn categories_in_manifest_reads_one_line_and_multi_line_lists_of_the_package_only() {
+    let one = "[package]\nname = \"a\"\ncategories = [\"command-line-utilities\", \"development-tools\"]\n";
+    assert_eq!(
+        search::categories_in_manifest(one),
+        vec![
+            "command-line-utilities".to_string(),
+            "development-tools".to_string()
+        ]
+    );
+    let many =
+        "[package]\ncategories = [\n    \"gui\",\n    \"os::linux-apis\",\n]\nkeywords = [\"x\"]\n";
+    assert_eq!(
+        search::categories_in_manifest(many),
+        vec!["gui".to_string(), "os::linux-apis".to_string()]
+    );
+    assert!(
+        search::categories_in_manifest(
+            "[package]\nname = \"a\"\n[metadata]\ncategories = [\"x\"]\n"
+        )
+        .is_empty()
+    );
 }

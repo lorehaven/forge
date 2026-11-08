@@ -413,7 +413,7 @@ pub fn tools_url() -> String {
 
 /// Asks the registry which crates install a binary, as `(package, binary)` sorted by package.
 ///
-/// `forge-toolbox` is left out: it reports on itself through [`format_toolbox_note`].
+/// Only command-line tools are kept, see [`is_cli_tool`].
 ///
 /// # Errors
 /// The registry cannot be reached, answers an error, or sends something that is not a crate list.
@@ -435,6 +435,21 @@ pub fn discover_tools() -> Result<Vec<(String, String)>> {
     parse_tools(&String::from_utf8_lossy(&body))
 }
 
+/// Whether a registry crate is a command-line tool toolbox should offer.
+///
+/// It says so with the
+/// `command-line-utilities` or `development-tools` category, and is not a `-service` (those ship as images) or
+/// `forge-toolbox` itself (it reports on itself through [`format_toolbox_note`]). A GUI, fixture or library-with-a-demo
+/// crate carries neither category.
+#[must_use]
+pub fn is_cli_tool(name: &str, categories: &[String]) -> bool {
+    name != "forge-toolbox"
+        && !name.ends_with("-service")
+        && categories
+            .iter()
+            .any(|c| c == "command-line-utilities" || c == "development-tools")
+}
+
 /// The parsing half of [`discover_tools`]: the `crates` of a search response that list a binary.
 ///
 /// # Errors
@@ -449,13 +464,15 @@ pub fn parse_tools(json: &str) -> Result<Vec<(String, String)>> {
         name: String,
         #[serde(default)]
         bins: Vec<String>,
+        #[serde(default)]
+        categories: Vec<String>,
     }
     let listing: Listing =
         quench_serde::json::from_str(json).context("Registry tool listing is not a crate list")?;
     let mut tools: Vec<(String, String)> = listing
         .crates
         .into_iter()
-        .filter(|item| item.name != "forge-toolbox")
+        .filter(|item| is_cli_tool(&item.name, &item.categories))
         .filter_map(|item| item.bins.into_iter().next().map(|bin| (item.name, bin)))
         .collect();
     if tools.is_empty() {
