@@ -76,6 +76,15 @@ async fn normalize_manifest_body_keeps_an_explicit_nonzero_size_as_is() {
 }
 
 #[quench_test::test]
+async fn normalize_manifest_body_returns_a_complete_manifest_byte_for_byte() {
+    // Whitespace and key order a re-serialization would not reproduce: the digest clients
+    // compute is over these exact bytes.
+    let json = "{\n   \"schemaVersion\": 2,\n   \"mediaType\": \"application/vnd.docker.distribution.manifest.v2+json\",\n   \"config\": {\"size\": 42, \"digest\": \"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"}\n}";
+    let body = normalize_manifest_body(json.as_bytes()).await.unwrap();
+    assert_eq!(body, json.as_bytes());
+}
+
+#[quench_test::test]
 async fn populate_descriptor_size_rejects_a_descriptor_that_is_not_an_object() {
     let mut descriptor = Value::String("not an object".to_string());
     let err = populate_descriptor_size(&mut descriptor, DescriptorKind::Blob)
@@ -169,12 +178,7 @@ async fn handle_rejects_an_invalid_manifest_body() {
 async fn handle_stores_the_manifest_by_digest_and_writes_the_tag() {
     let storage = WithStorageRoot::new();
     let body = br#"{"schemaVersion": 2}"#;
-    // The handler re-serializes the manifest via `normalize_manifest_body`
-    // before hashing it (so descriptor `size` fields can be filled in),
-    // so the stored digest is over that normalized form, not the raw
-    // request body byte-for-byte - compute it the same way.
-    let normalized = normalize_manifest_body(body).await.unwrap();
-    let expected_digest = format!("sha256:{}", sha256_hex(&normalized));
+    let expected_digest = format!("sha256:{}", sha256_hex(body));
 
     let (app, container) = app().await;
     let resp = app
@@ -203,6 +207,44 @@ async fn handle_stores_the_manifest_by_digest_and_writes_the_tag() {
         .join("tags")
         .join("latest");
     assert_eq!(std::fs::read_to_string(&tag_path).unwrap(), expected_digest);
+    drop(storage);
+}
+
+#[quench_test::test]
+async fn handle_reports_the_digest_of_the_bytes_the_client_sent() {
+    let storage = WithStorageRoot::new();
+    let blob_digest = write_blob(&storage, b"config");
+    let body = format!(
+        "{{\n   \"schemaVersion\": 2,\n   \"config\": {{\"size\": 6, \"digest\": \"{blob_digest}\"}}\n}}"
+    );
+    let expected_digest = format!("sha256:{}", sha256_hex(body.as_bytes()));
+
+    let (app, container) = app().await;
+    let resp = app
+        .call(put(
+            "/v2/my-repo/manifests/latest",
+            Some(DOCKER_MANIFEST_V2),
+            body.as_bytes(),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let (headers, _) = support::parts(resp).await;
+    assert_eq!(
+        headers.get("docker-content-digest").unwrap(),
+        expected_digest.as_str()
+    );
+    let hex = expected_digest.strip_prefix("sha256:").unwrap();
+    let stored = std::fs::read(
+        storage
+            .dir
+            .path()
+            .join("manifests")
+            .join("sha256")
+            .join(hex),
+    )
+    .unwrap();
+    assert_eq!(stored, body.as_bytes());
     drop(storage);
 }
 

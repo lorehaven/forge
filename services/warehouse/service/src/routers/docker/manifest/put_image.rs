@@ -114,6 +114,12 @@ pub async fn handle(
         .header("docker-content-digest", digest)
 }
 
+/// Validates a manifest and fills in any descriptor `size` that is missing or zero.
+///
+/// The body is returned byte-for-byte unless a size had to be filled in: a manifest's digest is
+/// the hash of its exact bytes, and clients (`docker push`, containerd) check the digest the
+/// registry reports against the one they computed, so re-serializing an already complete
+/// manifest breaks the push with "failed commit on ref ... got digest ..., expected ...".
 pub async fn normalize_manifest_body(body: &[u8]) -> Result<Vec<u8>, &'static str> {
     let mut value: Value =
         quench_serde::json::from_slice(body).map_err(|_| "invalid manifest payload")?;
@@ -122,23 +128,29 @@ pub async fn normalize_manifest_body(body: &[u8]) -> Result<Vec<u8>, &'static st
         return Err("unsupported manifest schema");
     }
 
+    let mut changed = false;
+
     if let Some(manifests) = value.get_mut("manifests").and_then(Value::as_array_mut) {
         for descriptor in manifests {
-            populate_descriptor_size(descriptor, DescriptorKind::Manifest).await?;
+            changed |= populate_descriptor_size(descriptor, DescriptorKind::Manifest).await?;
         }
     }
 
     if let Some(config) = value.get_mut("config") {
-        populate_descriptor_size(config, DescriptorKind::Blob).await?;
+        changed |= populate_descriptor_size(config, DescriptorKind::Blob).await?;
     }
 
     if let Some(layers) = value.get_mut("layers").and_then(Value::as_array_mut) {
         for layer in layers {
-            populate_descriptor_size(layer, DescriptorKind::Blob).await?;
+            changed |= populate_descriptor_size(layer, DescriptorKind::Blob).await?;
         }
     }
 
-    Ok(quench_serde::json::to_vec(&value))
+    if changed {
+        Ok(quench_serde::json::to_vec(&value))
+    } else {
+        Ok(body.to_vec())
+    }
 }
 
 #[derive(Debug)]
@@ -147,16 +159,18 @@ pub enum DescriptorKind {
     Manifest,
 }
 
+/// Fills in the descriptor's `size` from the stored blob or manifest when it is missing or zero.
+/// Returns whether the descriptor was changed.
 pub async fn populate_descriptor_size(
     descriptor: &mut Value,
     kind: DescriptorKind,
-) -> Result<(), &'static str> {
+) -> Result<bool, &'static str> {
     let Some(object) = descriptor.as_object_mut() else {
         return Err("invalid manifest descriptor");
     };
 
     if object.get("size").and_then(Value::as_u64).unwrap_or(0) > 0 {
-        return Ok(());
+        return Ok(false);
     }
 
     let digest = object
@@ -179,7 +193,7 @@ pub async fn populate_descriptor_size(
         .map_err(|_| "manifest references missing content")?;
 
     object.insert("size".to_string(), Value::UInt(metadata.len()));
-    Ok(())
+    Ok(true)
 }
 
 #[must_use]
