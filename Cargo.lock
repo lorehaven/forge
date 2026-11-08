@@ -318,7 +318,7 @@ dependencies = [
 
 [[package]]
 name = "forge-toolbox"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "quench-args",
  "quench-cli",
@@ -830,7 +830,7 @@ dependencies = [
 
 [[package]]
 name = "pulley"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "quench-args",
  "quench-cli",
@@ -1882,7 +1882,7 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "warehouse"
-version = "0.8.13"
+version = "0.8.14"
 dependencies = [
  "forge-web",
  "quench-archive",
