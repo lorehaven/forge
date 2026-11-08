@@ -29,7 +29,7 @@ quench-cli = { workspace = true, features = ["tui"] }
 quench-client = { workspace = true, features = ["blocking"] }
 quench-core = { workspace = true }
 quench-crypto = { workspace = true }
-quench-html = { workspace = true, default-features = false, features = ["markdown"] }
+quench-html = { workspace = true }
 quench-image = { workspace = true }
 quench-markdown-term = { workspace = true, features = ["tex"] }
 quench-serde = { workspace = true }
