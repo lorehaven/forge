@@ -555,7 +555,7 @@ dependencies = [
 
 [[package]]
 name = "gauge"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "forge-web",
  "gauge-core",
