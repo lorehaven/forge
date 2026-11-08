@@ -136,8 +136,10 @@ pub struct Fault {
 }
 
 /// What a drive says about itself (SMART). Counters are totals over the drive's life; `None` when the drive does
-/// not report it (NVMe drives report only `healthy`).
+/// not report it. The ATA sector counters are `None` on NVMe, which reports wear, spare and media errors instead
+/// (from `nvme_metrics.py`; without it an NVMe drive has only `healthy`, `model` and `temp_c`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DiskHealth {
     /// `sda`, `nvme0`: the device the SMART data is of, without `/dev/`.
     pub device: String,
@@ -152,6 +154,22 @@ pub struct DiskHealth {
     pub pending: Option<f64>,
     /// Sectors that could not be read (ATA 198).
     pub uncorrectable: Option<f64>,
+    /// The share of the rated endurance used: NVMe "percentage used" (0 to 100, and past it on a drive worn out), or
+    /// a SATA SSD's life attribute turned around (100 minus the life left).
+    pub wear_pct: Option<f64>,
+    /// NVMe spare capacity left, in percent, and the level under which the drive raises its critical warning.
+    pub spare_pct: Option<f64>,
+    pub spare_threshold_pct: Option<f64>,
+    /// NVMe unrecovered data integrity errors.
+    pub media_errors: Option<f64>,
+}
+
+impl DiskHealth {
+    /// `nvme0`, as opposed to `sda`.
+    #[must_use]
+    pub fn is_nvme(&self) -> bool {
+        self.device.starts_with("nvme")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -479,9 +497,16 @@ fn alerts(view: &View, prev: Option<&Reading>, cur: &Reading) -> Vec<Alert> {
 /// `hot`: spinning disks are rated to about 60 °C.
 pub const DISK_HOT_C: f64 = 55.0;
 pub const DISK_HOT_SEVERE_C: f64 = 60.0;
+/// The same for NVMe, whose composite temperature runs 40-60 °C under load; most drives start throttling at 70-80.
+pub const NVME_HOT_C: f64 = 70.0;
+pub const NVME_HOT_SEVERE_C: f64 = 80.0;
+/// Wear (NVMe percentage used, SATA SSD life used) from which it is an alert, and from which (the rated endurance used up) a severe one.
+pub const WEAR_WARN_PCT: f64 = 80.0;
+pub const WEAR_SEVERE_PCT: f64 = 100.0;
 
 /// A drive that calls itself failing; one with bad sectors (remapped ones are a warning, ones it cannot read or
-/// has yet to remap are severe); a drive that runs hot. These are levels, not changes: SMART is read every few
+/// has yet to remap are severe); an SSD near or past its rated endurance; an NVMe drive with media errors (severe); a
+/// drive that runs hot. These are levels, not changes: SMART is read every few
 /// minutes, and a disk with 163 remapped sectors is worth seeing every time, not once.
 fn disk_alerts(d: &DiskHealth, add: &mut impl FnMut(String, &str, String, bool)) {
     if !d.healthy {
@@ -515,12 +540,33 @@ fn disk_alerts(d: &DiskHealth, add: &mut impl FnMut(String, &str, String, bool))
             pending + unreadable > 0.0,
         );
     }
-    if let Some(c) = d.temp_c.filter(|c| *c >= DISK_HOT_C) {
+    if let Some(w) = d.wear_pct.filter(|w| *w >= WEAR_WARN_PCT) {
+        add(
+            format!("smart_wear:{}", d.device),
+            "smart_wear",
+            format!("{} · {w:.0}% used", d.device),
+            w >= WEAR_SEVERE_PCT,
+        );
+    }
+    if let Some(n) = d.media_errors.filter(|n| *n > 0.0) {
+        add(
+            format!("smart_media:{}", d.device),
+            "smart_media",
+            format!("{} · {n:.0} media errors", d.device),
+            true,
+        );
+    }
+    let (hot, severe) = if d.is_nvme() {
+        (NVME_HOT_C, NVME_HOT_SEVERE_C)
+    } else {
+        (DISK_HOT_C, DISK_HOT_SEVERE_C)
+    };
+    if let Some(c) = d.temp_c.filter(|c| *c >= hot) {
         add(
             format!("hot:{}", d.device),
             "hot",
             format!("{} {c:.0} °C", d.device),
-            c >= DISK_HOT_SEVERE_C,
+            c >= severe,
         );
     }
 }

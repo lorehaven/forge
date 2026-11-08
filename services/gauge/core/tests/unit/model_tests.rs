@@ -210,6 +210,59 @@ fn a_disk_the_forecast_fills_soon_is_an_alert_and_the_nearer_the_worse() {
 }
 
 #[quench_test::test]
+fn nvme_wear_media_errors_and_heat_raise_alerts_at_their_own_levels() {
+    let nvme = |device: &str| DiskHealth {
+        device: device.into(),
+        healthy: true,
+        temp_c: Some(45.0),
+        wear_pct: Some(3.0),
+        media_errors: Some(0.0),
+        ..DiskHealth::default()
+    };
+    let cur = Reading {
+        at: 2.0,
+        disk_health: vec![
+            // 60 °C would be an alert on a spinning disk; on NVMe it is a normal load temperature.
+            DiskHealth {
+                temp_c: Some(60.0),
+                ..nvme("nvme0")
+            },
+            DiskHealth {
+                wear_pct: Some(84.0),
+                temp_c: Some(72.0),
+                ..nvme("nvme1")
+            },
+            DiskHealth {
+                wear_pct: Some(103.0),
+                media_errors: Some(3.0),
+                temp_c: Some(81.0),
+                ..nvme("nvme2")
+            },
+        ],
+        ..Reading::default()
+    };
+    let alerts: Vec<(String, String, bool)> = View::from_readings(None, &cur)
+        .alerts
+        .into_iter()
+        .map(|a| (a.key, a.detail, a.severe))
+        .collect();
+    assert_eq!(
+        alerts,
+        [
+            ("smart_wear:nvme1".into(), "nvme1 · 84% used".into(), false),
+            ("hot:nvme1".into(), "nvme1 72 °C".into(), false),
+            ("smart_wear:nvme2".into(), "nvme2 · 103% used".into(), true),
+            (
+                "smart_media:nvme2".into(),
+                "nvme2 · 3 media errors".into(),
+                true
+            ),
+            ("hot:nvme2".into(), "nvme2 81 °C".into(), true),
+        ]
+    );
+}
+
+#[quench_test::test]
 fn a_failing_drive_bad_sectors_and_a_hot_drive_raise_alerts() {
     let drive = |device: &str| DiskHealth {
         device: device.into(),

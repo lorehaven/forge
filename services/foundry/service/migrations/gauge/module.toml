@@ -1,5 +1,5 @@
 name = "gauge"
-version = "0.4.0"
-description = "Gauge - host metrics dashboard; keeps a month of one-minute samples per host of hourly filesystem fullness, and the alert log"
+version = "0.5.0"
+description = "Gauge - host metrics dashboard; keeps a month of one-minute samples per host of hourly filesystem fullness, the alert log, and the last view of each host"
 default_schema = "gauge"
 requires = ["quench-core@^0.1"]

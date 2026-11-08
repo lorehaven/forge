@@ -9,6 +9,7 @@ use quench_ui::i18n::I18n;
 use quench_ui::prelude::*;
 use quench_ui::router::{History, RouteContext, Router, Routes};
 
+use crate::screens::Now;
 use crate::{fleet, screens};
 
 /// What the app asks its host for.
@@ -58,6 +59,8 @@ pub struct Setup {
     pub history: Rc<dyn History>,
     /// Unix seconds now, for "last seen ... ago".
     pub now: Rc<dyn Fn() -> f64>,
+    /// A moment (unix seconds) as the viewer's local date and time, for "the last data, from ...".
+    pub stamp: Rc<dyn Fn(f64) -> String>,
     /// How often the open screen asks again.
     pub refresh_ms: u32,
 }
@@ -137,6 +140,13 @@ fn poll(every_ms: u32, ask: Rc<dyn Fn()>) {
 #[allow(clippy::too_many_lines)]
 fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     let i18n = Rc::new(I18n::new(&LOCALES, &setup.language).expect("the translations parse"));
+    let clock: Rc<dyn Fn() -> Now> = {
+        let (now, stamp) = (Rc::clone(&setup.now), Rc::clone(&setup.stamp));
+        Rc::new(move || Now {
+            at: now(),
+            stamp: Rc::clone(&stamp),
+        })
+    };
     let hosts: Signal<Option<Vec<HostCard>>> = create_signal(None);
     let detail: Signal<Option<HostDetail>> = create_signal(None);
     let problem: Signal<Option<Problem>> = create_signal(None);
@@ -190,7 +200,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             hosts.clone(),
             Rc::clone(requests),
             base.clone(),
-            Rc::clone(&setup.now),
+            Rc::clone(&clock),
         );
         move |_: &RouteContext| -> View {
             requests(Request::Hosts);
@@ -202,7 +212,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                 base.clone(),
                 Rc::clone(&now),
             );
-            View::dynamic(move || screens::hosts(&i18n, hosts.get().as_deref(), &base, now()))
+            View::dynamic(move || screens::hosts(&i18n, hosts.get().as_deref(), &base, &now()))
         }
     };
     let host = {
@@ -212,7 +222,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             problem.clone(),
             Rc::clone(requests),
             base.clone(),
-            Rc::clone(&setup.now),
+            Rc::clone(&clock),
         );
         let (range, stored, no_history) = (range.clone(), stored.clone(), no_history.clone());
         move |ctx: &RouteContext| -> View {
@@ -267,7 +277,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                             unavailable: no_history.get(),
                             pick: Rc::clone(&pick),
                         };
-                        screens::host(&i18n, &d, &base, now(), &looking)
+                        screens::host(&i18n, &d, &base, &now(), &looking)
                     }
                     _ => p()
                         .attr("id", "waiting")
@@ -279,13 +289,13 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         }
     };
     // The screens across hosts show what the list of hosts already carries, and poll it like the home screen does.
-    let across = |screen: fn(&I18n, Option<&[HostCard]>, &str, f64) -> View| {
+    let across = |screen: fn(&I18n, Option<&[HostCard]>, &str, &Now) -> View| {
         let (i18n, hosts, requests, base, now) = (
             Rc::clone(&i18n),
             hosts.clone(),
             Rc::clone(requests),
             base.clone(),
-            Rc::clone(&setup.now),
+            Rc::clone(&clock),
         );
         move |_: &RouteContext| -> View {
             requests(Request::Hosts);
@@ -297,7 +307,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                 base.clone(),
                 Rc::clone(&now),
             );
-            View::dynamic(move || screen(&i18n, hosts.get().as_deref(), &base, now()))
+            View::dynamic(move || screen(&i18n, hosts.get().as_deref(), &base, &now()))
         }
     };
     // Storage also wants the forecast, which changes by the hour: asked for on arrival and then once a minute.
@@ -308,7 +318,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             forecast.clone(),
             Rc::clone(requests),
             base.clone(),
-            Rc::clone(&setup.now),
+            Rc::clone(&clock),
         );
         move |_: &RouteContext| -> View {
             requests(Request::Hosts);
@@ -330,7 +340,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     hosts.get().as_deref(),
                     forecast.get().as_deref(),
                     &base,
-                    now(),
+                    &now(),
                 )
             })
         }
@@ -343,7 +353,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             alert_log.clone(),
             Rc::clone(requests),
             base.clone(),
-            Rc::clone(&setup.now),
+            Rc::clone(&clock),
         );
         move |_: &RouteContext| -> View {
             requests(Request::Hosts);
@@ -365,7 +375,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     hosts.get().as_deref(),
                     alert_log.get().as_deref(),
                     &base,
-                    now(),
+                    &now(),
                 )
             })
         }

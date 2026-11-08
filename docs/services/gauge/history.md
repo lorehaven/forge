@@ -9,14 +9,16 @@ Optional persistence of what the store sees. Source: `service/src/domain/history
 
 ## Flow
 
-The store sends two kinds of notes down an unbounded channel: a `Tick` per scrape that drew a point (host, point, filesystems) and an alert change (opened or closed). One task (`keep`) consumes them and wakes every 30 seconds.
+The store sends three kinds of notes down an unbounded channel: a `Tick` per scrape that drew a point (host, point, filesystems), an alert change (opened or closed), and a host's latest view (`View`, at most every 60 seconds per host, `SAVE_EVERY_SECS`; the first successful scrape always sends one). One task (`keep`) consumes them and wakes every 30 seconds.
 
 1. Minutes. A `Rollup` per host folds points into one-minute buckets (mean and maximum of each of the 13 series; gap points are ignored; non-finite values skipped). A minute is written when a later minute starts or at a sweep whose clock minute is later. Write: one `INSERT ... ON CONFLICT (host, t) DO NOTHING` per host per minute. A failed write logs `history: <host>: could not store a minute: <error>` and is dropped.
 2. Filesystems. At most every 600 seconds per host the hour's row of every filesystem is upserted.
 3. Forecast. Every 600 seconds the forecast is recomputed from the last seven days of `filesystem_samples` and stored in the shared cell that the store reads for `fills_soon` alerts and the API serves.
 4. Alerts. `Opened` inserts a row (ignored if one is open for that host and key); `Closed` sets `closed` on the open row.
-5. Pruning. At the first sweep and then at most hourly: deletes older than `HISTORY_DAYS` (default 30, 1..365) from `samples`, `filesystem_samples` and `alert_events`; logs `history: dropped N samples older than D days` when something went.
-6. At start, after connecting: every `alert_events` row with `closed IS NULL` is closed at the current time (`history: closed N alerts a previous run left open`). An alert that spans a restart is therefore two rows and the downtime counts as part of the first.
+5. Last views. A `View` note upserts the host's row of `last_views` (`host` primary key, `t`, `view` as the JSON of `gauge_core::View`). A failed write logs `history: <host>: could not keep the view: <error>`.
+6. Pruning. At the first sweep and then at most hourly: deletes older than `HISTORY_DAYS` (default 30, 1..365) from `samples`, `filesystem_samples`, `alert_events` and `last_views`; logs `history: dropped N samples older than D days` when something went.
+7. At start, after connecting: every `alert_events` row with `closed IS NULL` is closed at the current time (`history: closed N alerts a previous run left open`). An alert that spans a restart is therefore two rows and the downtime counts as part of the first.
+8. At start, after connecting: every `last_views` row is handed to the store (`Store::restore`), which takes it only for a host that has had no successful scrape since the start. Such a host shows that view with `last_ok` set to the row's `t`, and is not up (`up` means the last scrape answered: `error` is none and there is a live reading), so the client marks it as the last data. A restored view opens no alerts. A row this version cannot parse (written by a Gauge whose `View` differed) is skipped (`history: <host>: the kept view is unreadable (<error>), skipped`) and overwritten by the host's next scrape.
 
 ## Reading a range
 

@@ -24,6 +24,7 @@ ui_uptime = Laufzeit
 ui_temps = Temperaturen
 ui_back = ← Hosts
 ui_waiting = Warte auf die erste Messung…
+ui_stale = zeigt die letzten Daten, von { $when } ({ $ago }), nicht live
 ui_col_device = Gerät
 ui_col_used = Belegt
 ui_col_size = Größe
@@ -75,10 +76,14 @@ ui_col_model = Modell
 ui_col_health = Zustand
 ui_col_power_on = Betriebszeit
 ui_col_sectors = Sektoren (umgelagert / ausstehend / nicht korrigierbar)
+ui_col_wear = Verschleiß (verbrauchte Lebensdauer)
+ui_spare = Reserve
 ui_smart_ok = OK
 ui_smart_failing = Fällt aus
 ui_alert_smart_failed = Laufwerk fällt aus (SMART)
 ui_alert_smart_sectors = Defekte Sektoren
+ui_alert_smart_wear = Laufwerk verschlissen
+ui_alert_smart_media = Medienfehler
 
 # ── Screens across hosts ─────────────────────────────────────────────────────
 

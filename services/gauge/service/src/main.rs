@@ -40,6 +40,7 @@ async fn main() -> std::io::Result<()> {
         quench_core::env::get_any(&["DATABASE_URL", "POSTGRES_URL"], ""),
         history::retention_days(),
         forecast,
+        store.clone(),
     );
     collector::spawn(&config, &store);
 

@@ -1,0 +1,47 @@
+# smartmon.sh: the verdict only, and empty model fields (as on ossiriand).
+smartmon_device_active{disk="/dev/nvme0",type="nvme"} 1
+smartmon_device_info{device_model="",disk="/dev/nvme0",firmware_version="EIFM80.0",lun_id="",model_family="",product="",revision="",serial_number="TEST",type="nvme",vendor=""} 1
+smartmon_device_smart_available{disk="/dev/nvme0",type="nvme"} 1
+smartmon_device_smart_enabled{disk="/dev/nvme0",type="nvme"} 1
+smartmon_device_smart_healthy{disk="/dev/nvme0",type="nvme"} 1
+# node_exporter's own nvme and hwmon collectors.
+node_hwmon_chip_names{chip="nvme_nvme0",chip_name="nvme"} 1
+node_hwmon_temp_celsius{chip="nvme_nvme0",sensor="temp1"} 39.85
+node_hwmon_temp_celsius{chip="nvme_nvme0",sensor="temp2"} 52.85
+node_hwmon_chip_names{chip="nvme_nvme1",chip_name="nvme"} 1
+node_hwmon_temp_celsius{chip="nvme_nvme1",sensor="temp1"} 44.85
+node_nvme_info{cntlid="1",device="nvme0",firmware_revision="EIFM80.0",model="MSI M480 PRO 2TB",serial="TEST",state="live"} 1
+node_nvme_info{cntlid="1",device="nvme1",firmware_revision="1B2QGXA7",model="Samsung SSD 980 PRO 1TB",serial="TEST",state="live"} 1
+# nvme_metrics.py (prometheus_client output). nvme1 has no smartmon row: smartmon.sh is not run for it.
+# HELP nvme_available_spare_ratio Device available spare ratio
+# TYPE nvme_available_spare_ratio gauge
+nvme_available_spare_ratio{device="nvme0n1"} 1.0
+nvme_available_spare_ratio{device="nvme1n1"} 0.05
+# HELP nvme_available_spare_threshold_ratio Device available spare threshold ratio
+# TYPE nvme_available_spare_threshold_ratio gauge
+nvme_available_spare_threshold_ratio{device="nvme0n1"} 0.1
+nvme_available_spare_threshold_ratio{device="nvme1n1"} 0.1
+# HELP nvme_critical_warning Device critical warning bitmap field
+# TYPE nvme_critical_warning gauge
+nvme_critical_warning{device="nvme0n1"} 0.0
+nvme_critical_warning{device="nvme1n1"} 1.0
+# HELP nvme_device_info Device information
+# TYPE nvme_device_info gauge
+nvme_device_info{device="nvme0n1",firmware="EIFM80.0",model="MSI M480 PRO 2TB",serial="TEST"} 1.0
+nvme_device_info{device="nvme1n1",firmware="1B2QGXA7",model="Samsung SSD 980 PRO 1TB",serial="TEST"} 1.0
+# HELP nvme_media_errors_total Device media errors total
+# TYPE nvme_media_errors_total counter
+nvme_media_errors_total{device="nvme0n1"} 0.0
+nvme_media_errors_total{device="nvme1n1"} 3.0
+# HELP nvme_percentage_used_ratio Device percentage used ratio
+# TYPE nvme_percentage_used_ratio gauge
+nvme_percentage_used_ratio{device="nvme0n1"} 0.03
+nvme_percentage_used_ratio{device="nvme1n1"} 0.84
+# HELP nvme_power_on_hours_total Device power-on hours
+# TYPE nvme_power_on_hours_total counter
+nvme_power_on_hours_total{device="nvme0n1"} 9123.0
+nvme_power_on_hours_total{device="nvme1n1"} 20311.0
+# HELP nvme_temperature_celsius Device temperature in degrees Celsius
+# TYPE nvme_temperature_celsius gauge
+nvme_temperature_celsius{device="nvme0n1"} 40.0
+nvme_temperature_celsius{device="nvme1n1"} 45.0

@@ -4,6 +4,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gauge_app::{Gauge, Msg, Request, Setup, gauge};
+use quench_core::time::Time;
+use quench_tz::Zone;
 use quench_ui::prelude::*;
 use quench_ui::router::History;
 use quench_ui_web::browser as env;
@@ -20,6 +22,17 @@ const REFRESH_MS: u32 = 10_000;
 #[allow(clippy::cast_precision_loss)] // milliseconds since 1970 are far below 2^53
 fn now() -> f64 {
     env::wall_ms() as f64 / 1000.0
+}
+
+/// `t` (unix seconds) as a date and time on the clock of `zone`: `2026-11-08 09:52`.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)] // unix milliseconds of any date Gauge shows fit in an i64
+pub fn stamp(zone: &Zone, t: f64) -> String {
+    let c = zone.civil_at(Time::from_unix_millis((t * 1000.0) as i64));
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        c.year, c.month, c.day, c.hour, c.minute
+    )
 }
 
 /// The app: the screens over `fetch`. The service is the one the page came from, and the cookie is the one the sign-in set.
@@ -64,6 +77,10 @@ pub fn app() -> View {
             language,
             history: Rc::new(history),
             now: Rc::new(now),
+            stamp: {
+                let zone = Zone::named(&env::time_zone()).unwrap_or_else(|_| Zone::utc());
+                Rc::new(move |t| stamp(&zone, t))
+            },
             refresh_ms: REFRESH_MS,
         },
     );

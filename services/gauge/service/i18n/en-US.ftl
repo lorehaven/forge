@@ -24,6 +24,7 @@ ui_uptime = Uptime
 ui_temps = Temperatures
 ui_back = ← Hosts
 ui_waiting = Waiting for the first scrape…
+ui_stale = showing the last data, from { $when } ({ $ago }), not live
 ui_col_device = Device
 ui_col_used = Used
 ui_col_size = Size
@@ -75,10 +76,14 @@ ui_col_model = Model
 ui_col_health = Health
 ui_col_power_on = Powered on
 ui_col_sectors = Sectors (reallocated / pending / uncorrectable)
+ui_col_wear = Wear (endurance used)
+ui_spare = spare
 ui_smart_ok = OK
 ui_smart_failing = Failing
 ui_alert_smart_failed = Drive failing (SMART)
 ui_alert_smart_sectors = Bad sectors
+ui_alert_smart_wear = Drive worn out
+ui_alert_smart_media = Media errors
 
 # ── Screens across hosts ─────────────────────────────────────────────────────
 

@@ -57,6 +57,10 @@ fn every_point_drawn_is_also_sent_to_the_tap() {
     }])
     .with_tap(tap);
     store.record("h", Ok(reading(100.0, 100.0, 100.0, 0.0)));
+    let Ok(Note::View(saved)) = notes.try_recv() else {
+        panic!("the first view is kept")
+    };
+    assert_eq!((saved.host.as_str(), saved.at), ("h", 100.0));
     assert!(
         notes.try_recv().is_err(),
         "the first scrape has no rates, so no point"
@@ -167,5 +171,75 @@ fn a_disk_the_forecast_fills_soon_raises_an_alert_on_the_next_scrape() {
     assert!(
         !alerts[0].severe,
         "five days is a warning, under three is severe"
+    );
+}
+
+#[quench_test::test]
+fn the_view_is_kept_about_once_a_minute() {
+    use gauge_service::domain::config::{Kind, Target};
+    use gauge_service::domain::store::{Note, Store};
+    let (tap, mut notes) = tokio::sync::mpsc::unbounded_channel();
+    let store = Store::new(&[Target {
+        name: "h".into(),
+        kind: Kind::Node,
+        url: "u".into(),
+        also: None,
+    }])
+    .with_tap(tap);
+    let mut kept = Vec::new();
+    for at in (10..=23).map(|i| f64::from(i) * 10.0) {
+        store.record("h", Ok(reading(at, at, at, 0.0)));
+        while let Ok(n) = notes.try_recv() {
+            if let Note::View(saved) = n {
+                kept.push(saved.at);
+            }
+        }
+    }
+    assert_eq!(kept, [100.0, 160.0, 220.0]);
+}
+
+#[quench_test::test]
+fn a_kept_view_shows_as_the_last_data_until_the_host_answers() {
+    use gauge_service::domain::config::{Kind, Target};
+    use gauge_service::domain::model::View;
+    use gauge_service::domain::store::Store;
+    let target = |name: &str| Target {
+        name: name.into(),
+        kind: Kind::Node,
+        url: "u".into(),
+        also: None,
+    };
+    let store = Store::new(&[target("down"), target("live"), target("new")]);
+    let kept = View {
+        cpu_pct: Some(42.0),
+        ..View::default()
+    };
+    store.record("down", Err("connection refused".into()));
+    store.record("live", Ok(reading(500.0, 500.0, 500.0, 0.0)));
+    for name in ["down", "live", "new"] {
+        store.restore(name, 100.0, kept.clone());
+    }
+
+    let down = store.get("down").unwrap();
+    assert!(!down.up(), "a kept view is not live");
+    assert_eq!(down.view.as_ref().unwrap().cpu_pct, Some(42.0));
+    assert_eq!(down.last_ok, Some(100.0));
+    assert_eq!(down.error.as_deref(), Some("connection refused"));
+
+    let live = store.get("live").unwrap();
+    assert!(live.up());
+    assert_eq!(live.last_ok, Some(500.0), "a live view is not replaced");
+
+    // Not scraped yet: the kept view shows, as not live, until the first scrape answers.
+    let new = store.get("new").unwrap();
+    assert!(!new.up() && new.view.is_some());
+    assert_eq!(new.error.as_deref(), Some("waiting for the first scrape"));
+    store.record("new", Ok(reading(600.0, 600.0, 600.0, 0.0)));
+    let new = store.get("new").unwrap();
+    assert!(new.up());
+    assert_eq!(new.last_ok, Some(600.0));
+    assert!(
+        new.view.as_ref().unwrap().cpu_pct.is_none(),
+        "the live view"
     );
 }

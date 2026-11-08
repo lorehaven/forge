@@ -1,0 +1,17 @@
+[[migrations]]
+id = "0004-last-views"
+author = "gauge-service"
+since = "0.5.0"
+
+# Each host's latest view (what its page shows), so a host that is down when Gauge restarts still shows its last
+# numbers, marked as not live. One row per host, upserted about once a minute while the host answers; `view` is the
+# JSON of `gauge_core::View` (a row Gauge can no longer read after an upgrade is ignored and overwritten). Pruned
+# with the samples: a host silent for longer than the retention has nothing left to show.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.last_views (
+    host TEXT PRIMARY KEY,
+    t TIMESTAMPTZ NOT NULL,
+    view TEXT NOT NULL
+);
+"""

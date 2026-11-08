@@ -597,8 +597,10 @@ version = "0.1.0"
 dependencies = [
  "gauge-app",
  "gauge-core",
+ "quench-core",
  "quench-serde",
  "quench-test",
+ "quench-tz",
  "quench-ui",
  "quench-ui-web",
 ]

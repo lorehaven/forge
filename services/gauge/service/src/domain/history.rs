@@ -7,7 +7,8 @@
 
 use super::alert_log::AlertChange;
 use super::model::Filesystem;
-use super::store::{ForecastCell, Note, Point};
+use super::model::View;
+use super::store::{ForecastCell, Note, Point, Saved, Store};
 use gauge_core::Range;
 use gauge_core::{Alert, AlertEvent, DiskForecast, forecast};
 use quench_db::prelude::Db;
@@ -404,6 +405,53 @@ impl History {
             .collect()
     }
 
+    /// Keeps a host's latest view, replacing the one before.
+    pub async fn save_view(&self, saved: &Saved) -> Result<(), String> {
+        let pool = self.pool.get().ok_or("no database")?;
+        let json = quench_serde::json::to_string(&saved.view);
+        pool.execute(
+            &format!(
+                "INSERT INTO {}.last_views (host, t, view) VALUES ($1, to_timestamp($2::float8), $3) \
+                 ON CONFLICT (host) DO UPDATE SET t = EXCLUDED.t, view = EXCLUDED.view",
+                schema()
+            ),
+            &[&saved.host, &saved.at, &json],
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    }
+
+    /// Every host's kept view, with when it is from. A view this version cannot read (kept by an older one whose
+    /// `View` differed) is skipped: the next scrape of that host overwrites it.
+    pub async fn last_views(&self) -> Result<Vec<(String, f64, View)>, String> {
+        let pool = self.pool.get().ok_or("no database")?;
+        let rows = pool
+            .query(
+                &format!(
+                    "SELECT host, extract(epoch FROM t)::float8 AS at, view FROM {}.last_views",
+                    schema()
+                ),
+                &[],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        let e = |e: quench_pg::Error| e.to_string();
+        let mut out = Vec::new();
+        for row in &rows {
+            let host: String = row.get("host").map_err(e)?;
+            let at: f64 = row.get("at").map_err(e)?;
+            let json: String = row.get("view").map_err(e)?;
+            match quench_serde::json::from_str::<View>(&json) {
+                Ok(view) => out.push((host, at, view)),
+                Err(err) => quench_log::info!(
+                    "history: {host}: the kept view is unreadable ({err}), skipped"
+                ),
+            }
+        }
+        Ok(out)
+    }
+
     /// Drops what is older than `days`, from every table.
     pub async fn prune(&self, now: f64, days: u64) -> Result<u64, String> {
         let pool = self.pool.get().ok_or("no database")?;
@@ -413,6 +461,7 @@ impl History {
             ("samples", "t"),
             ("filesystem_samples", "t"),
             ("alert_events", "COALESCE(closed, opened)"),
+            ("last_views", "t"),
         ] {
             dropped += pool
                 .execute(
@@ -492,14 +541,16 @@ pub fn grid(first: f64, step: f64, slots: u64, found: &[(f64, Values)]) -> Vec<P
 
 /// Starts the writer.
 ///
-/// It connects in the background (the database may start after Gauge), then folds the live points into minutes,
-/// writes them and prunes once an hour. Without a `DATABASE_URL` it only drains the points.
+/// It connects in the background (the database may start after Gauge), hands the store the views kept from before
+/// the restart, then folds the live points into minutes, writes them and prunes once an hour. Without a
+/// `DATABASE_URL` it only drains the points.
 pub fn spawn(
     history: &History,
     mut points: UnboundedReceiver<Note>,
     url: String,
     days: u64,
     forecast: ForecastCell,
+    store: Store,
 ) {
     let history = history.clone();
     tokio::spawn(async move {
@@ -514,6 +565,14 @@ pub fn spawn(
             Ok(0) => {}
             Ok(n) => quench_log::info!("history: closed {n} alerts a previous run left open"),
             Err(e) => quench_log::warn!("history: could not close old alerts: {e}"),
+        }
+        match history.last_views().await {
+            Ok(views) => {
+                for (host, at, view) in views {
+                    store.restore(&host, at, view);
+                }
+            }
+            Err(e) => quench_log::warn!("history: could not read the kept views: {e}"),
         }
         quench_log::info!("history: keeping {days} days in Postgres");
         keep(&history, &mut points, days, &forecast).await;
@@ -554,6 +613,12 @@ async fn keep(
                     Note::Tick(tick) => tick,
                     Note::Alert(change) => {
                         write_alert(history, &change).await;
+                        continue;
+                    }
+                    Note::View(saved) => {
+                        if let Err(e) = history.save_view(&saved).await {
+                            quench_log::warn!("history: {}: could not keep the view: {e}", saved.host);
+                        }
                         continue;
                     }
                 };

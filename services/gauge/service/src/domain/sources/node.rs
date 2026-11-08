@@ -313,7 +313,9 @@ fn faults(x: &Exposition) -> Vec<Fault> {
 }
 
 /// SMART, from the `smartmon` textfile script (`node_exporter`'s `--collector.textfile.directory`). One drive per
-/// `smartmon_device_smart_healthy`; attributes are the raw values, which are counts, hours and degrees.
+/// `smartmon_device_smart_healthy`; attributes are the raw values, which are counts, hours and degrees. nvme drives
+/// are then filled in from what else describes them (see [`nvme_health`]), and an nvme drive that only
+/// `nvme_metrics.py` reports gets a row of its own.
 fn disk_health(x: &Exposition) -> Vec<DiskHealth> {
     let mut out: Vec<DiskHealth> = x
         .named("smartmon_device_smart_healthy")
@@ -324,6 +326,11 @@ fn disk_health(x: &Exposition) -> Vec<DiskHealth> {
                 return None;
             }
             let raw = |attr: &str| of_disk(&format!("smartmon_{attr}_raw_value")).map(|a| a.value);
+            // SATA SSDs: the normalized value of the vendor's life attribute is the life left, 100 when new.
+            let wear_pct = SSD_LIFE_LEFT
+                .iter()
+                .find_map(|attr| of_disk(&format!("smartmon_{attr}_value")))
+                .map(|left| (100.0 - left.value).max(0.0));
             let model = of_disk("smartmon_device_info").and_then(|i| {
                 ["device_model", "product", "model_family"]
                     .iter()
@@ -339,11 +346,103 @@ fn disk_health(x: &Exposition) -> Vec<DiskHealth> {
                 reallocated: raw("reallocated_sector_ct"),
                 pending: raw("current_pending_sector"),
                 uncorrectable: raw("offline_uncorrectable"),
+                wear_pct,
+                ..DiskHealth::default()
             })
         })
         .collect();
+    for ns in x
+        .named("nvme_critical_warning")
+        .filter_map(|s| s.label("device"))
+    {
+        let ctrl = nvme_controller(ns);
+        if !out.iter().any(|d| d.device == ctrl) {
+            out.push(DiskHealth {
+                device: ctrl.to_string(),
+                healthy: true,
+                ..DiskHealth::default()
+            });
+        }
+    }
+    for d in out.iter_mut().filter(|d| d.is_nvme()) {
+        nvme_health(x, d);
+    }
     out.sort_by(|a, b| a.device.cmp(&b.device));
     out
+}
+
+/// The SATA SSD attributes whose normalized value is the life left in percent: Samsung (177), Intel (233),
+/// Crucial and Micron (202). The first one a drive reports is used.
+const SSD_LIFE_LEFT: [&str; 3] = [
+    "wear_leveling_count",
+    "media_wearout_indicator",
+    "percent_lifetime_remain",
+];
+
+/// What `smartmon.sh` leaves out for an nvme drive (it exports only the verdict), from:
+/// * `node_exporter` itself: `node_nvme_info` (the model) and the drive's hwmon chip `nvme_<controller>` (`temp1` is
+///   the composite temperature);
+/// * `nvme_metrics.py`, another textfile script (`nvme_*`, one series per namespace: `nvme0n1`): temperature, hours,
+///   wear, spare, media errors and the critical warning bitmap. A non-zero critical warning (spare under its
+///   threshold, too hot, reliability degraded, read-only, backup failed) is the drive saying it is failing, so it
+///   overrides a passed verdict.
+fn nvme_health(x: &Exposition, d: &mut DiskHealth) {
+    let ctrl = d.device.clone();
+    let of_ns = |name: &str| {
+        x.named(name).find(|s| {
+            s.label("device")
+                .is_some_and(|ns| nvme_controller(ns) == ctrl)
+        })
+    };
+    let num = |name: &str| of_ns(name).map(|s| s.value);
+    let pct = |name: &str| num(name).map(|r| r * 100.0);
+    let model = |s: &Sample| {
+        s.label("model")
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .map(str::to_string)
+    };
+    d.model = d.model.take().or_else(|| {
+        x.named("node_nvme_info")
+            .find(|s| s.label("device") == Some(ctrl.as_str()))
+            .and_then(model)
+            .or_else(|| of_ns("nvme_device_info").and_then(model))
+    });
+    let chip = format!("nvme_{ctrl}");
+    let hwmon = || {
+        let of_chip = || {
+            x.named("node_hwmon_temp_celsius")
+                .filter(|s| s.label("chip") == Some(chip.as_str()))
+        };
+        of_chip()
+            .find(|s| s.label("sensor") == Some("temp1"))
+            .or_else(|| of_chip().next())
+            .map(|s| s.value)
+    };
+    d.temp_c = d
+        .temp_c
+        .or_else(|| num("nvme_temperature_celsius"))
+        .or_else(hwmon);
+    d.power_on_hours = d
+        .power_on_hours
+        .or_else(|| num("nvme_power_on_hours_total"));
+    d.wear_pct = pct("nvme_percentage_used_ratio");
+    d.spare_pct = pct("nvme_available_spare_ratio");
+    d.spare_threshold_pct = pct("nvme_available_spare_threshold_ratio");
+    d.media_errors = num("nvme_media_errors_total");
+    if num("nvme_critical_warning").is_some_and(|w| w > 0.0) {
+        d.healthy = false;
+    }
+}
+
+/// The controller an nvme namespace belongs to: `nvme0n1` → `nvme0`. A name that is not a namespace is returned
+/// as it is.
+#[must_use]
+pub fn nvme_controller(ns: &str) -> &str {
+    let digits = ns.strip_prefix("nvme").map_or(0, |rest| {
+        rest.bytes().take_while(u8::is_ascii_digit).count()
+    });
+    if digits == 0 { ns } else { &ns[..4 + digits] }
 }
 
 fn chip_label(x: &Exposition, chip: &str) -> String {

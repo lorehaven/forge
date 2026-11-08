@@ -1,5 +1,8 @@
 //! The latest view and a short history per host, in memory. A restart starts the charts over; Gauge is a
 //! window onto what the agents report, not a time-series database.
+//!
+//! The latest view is also handed to the history about once a minute, so a host that is down across a restart can
+//! still show its last numbers.
 
 use super::alert_log::{AlertChange, AlertLog};
 use super::config::{Kind, Target};
@@ -12,11 +15,24 @@ pub const HISTORY: usize = 360;
 
 pub use gauge_core::Point;
 
-/// What the store tells the history: a scrape that drew a point, or an alert that opened or closed.
+/// What the store tells the history: a scrape that drew a point, an alert that opened or closed, or a host's
+/// latest view to keep.
 #[derive(Debug, Clone)]
 pub enum Note {
     Tick(Tick),
     Alert(AlertChange),
+    View(Box<Saved>),
+}
+
+/// How often a host's latest view is handed to the history to keep.
+pub const SAVE_EVERY_SECS: f64 = 60.0;
+
+/// A host's view as of `at`, to keep for after a restart.
+#[derive(Debug, Clone)]
+pub struct Saved {
+    pub host: String,
+    pub at: f64,
+    pub view: View,
 }
 
 /// What the stored history says about how the disks fill; the history refreshes it, the store reads it for alerts.
@@ -35,18 +51,25 @@ pub struct Host {
     pub name: String,
     pub kind: Kind,
     pub url: String,
+    /// The last reading, while the host answers: what rates are computed against. `None` once a scrape fails.
     pub last: Option<Reading>,
+    /// The latest view: live while the host answers, then the last one it had (also one kept from before a
+    /// restart, see [`Store::restore`]); `last_ok` says when it is from.
     pub view: Option<View>,
     pub history: VecDeque<Point>,
     /// Why the last scrape failed; `None` while the host answers.
     pub error: Option<String>,
     pub last_ok: Option<f64>,
+    /// When the view was last handed to the history to keep.
+    pub saved_at: Option<f64>,
 }
 
 impl Host {
+    /// The host answered its last scrape, so its view is live. A host with a view and no live reading shows that
+    /// view as its last data, not as now.
     #[must_use]
     pub const fn up(&self) -> bool {
-        self.error.is_none() && self.view.is_some()
+        self.error.is_none() && self.last.is_some()
     }
 }
 
@@ -73,6 +96,7 @@ impl Store {
                 history: VecDeque::new(),
                 error: Some("waiting for the first scrape".into()),
                 last_ok: None,
+                saved_at: None,
             })
             .collect();
         Self {
@@ -169,6 +193,18 @@ impl Store {
                         host.history.pop_front();
                     }
                 }
+                if let Some(tap) = &self.tap
+                    && host
+                        .saved_at
+                        .is_none_or(|at| reading.at - at >= SAVE_EVERY_SECS)
+                {
+                    host.saved_at = Some(reading.at);
+                    let _ = tap.send(Note::View(Box::new(Saved {
+                        host: host.name.clone(),
+                        at: reading.at,
+                        view: view.clone(),
+                    })));
+                }
                 host.last_ok = Some(reading.at);
                 host.last = Some(reading);
                 host.view = Some(view);
@@ -178,6 +214,20 @@ impl Store {
         };
         drop(hosts);
         self.tell(changes);
+    }
+
+    /// A view kept from before a restart, for a host that has not answered since: it shows as the host's last data,
+    /// from `at`. A host that has answered already keeps its live view, and the kept view feeds no alerts.
+    pub fn restore(&self, name: &str, at: f64, view: View) {
+        let mut hosts = self.lock();
+        if let Some(host) = hosts
+            .iter_mut()
+            .find(|h| h.name == name && h.last.is_none() && h.view.is_none())
+        {
+            host.view = Some(view);
+            host.last_ok = Some(at);
+            host.saved_at = Some(at);
+        }
     }
 }
 

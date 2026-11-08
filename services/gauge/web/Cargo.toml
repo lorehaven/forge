@@ -20,7 +20,9 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 gauge-app = { workspace = true }
 gauge-core = { workspace = true }
+quench-core = { workspace = true }
 quench-serde = { workspace = true }
+quench-tz = { workspace = true }
 quench-ui = { workspace = true }
 quench-ui-web = { workspace = true }
 
@@ -31,3 +33,4 @@ harness = false
 
 [dev-dependencies]
 quench-test = { workspace = true }
+quench-tz = { workspace = true }

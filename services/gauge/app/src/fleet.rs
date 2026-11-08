@@ -9,7 +9,7 @@ use quench_ui::prelude::*;
 use quench_ui::router::link;
 
 use crate::screens::{
-    alert_text, busiest_gpu, event_text, head, meter, outage, rows, section, stat, state,
+    Now, alert_text, busiest_gpu, event_text, head, meter, outage, rows, section, stat, state,
     worst_disk,
 };
 
@@ -65,7 +65,7 @@ fn page(
         .into_view()
 }
 
-fn host_title(host: &HostSummary, base: &str, t: &I18n, now: f64) -> Element {
+fn host_title(host: &HostSummary, base: &str, t: &I18n, now: &Now) -> Element {
     div()
         .class("gg-head")
         .child(
@@ -74,10 +74,10 @@ fn host_title(host: &HostSummary, base: &str, t: &I18n, now: f64) -> Element {
                 .text(host.name.clone()),
         )
         .child(state(t, host.up))
-        .child(outage(host, now).map(|e| p().class("gg-sub").text(e)))
+        .child(outage(t, host, now).map(|e| p().class("gg-sub").text(e)))
 }
 
-fn host_section(host: &HostSummary, base: &str, t: &I18n, now: f64) -> Element {
+fn host_section(host: &HostSummary, base: &str, t: &I18n, now: &Now) -> Element {
     div()
         .class(if host.up {
             "gg-section"
@@ -166,7 +166,7 @@ pub fn storage(
     hosts: Option<&[HostCard]>,
     forecast: Option<&[DiskForecast]>,
     base: &str,
-    now: f64,
+    now: &Now,
 ) -> View {
     let forecast = forecast.unwrap_or(&[]);
     page(t, "storage", "ui_nav_storage", hosts, |hosts| {
@@ -302,7 +302,7 @@ fn hottest(view: &Metrics) -> Option<f64> {
 }
 
 /// One row per host, one bar per signal.
-pub fn fleet(t: &I18n, hosts: Option<&[HostCard]>, base: &str, _now: f64) -> View {
+pub fn fleet(t: &I18n, hosts: Option<&[HostCard]>, base: &str, _now: &Now) -> View {
     page(t, "fleet", "ui_nav_fleet", hosts, |hosts| {
         let mut body = element("tbody");
         for (host, view) in known(hosts) {
@@ -360,7 +360,7 @@ pub fn fleet(t: &I18n, hosts: Option<&[HostCard]>, base: &str, _now: f64) -> Vie
 // ── GPUs ────────────────────────────────────────────────────────────────────────────────────────
 
 /// Every GPU of every host.
-pub fn gpus(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: f64) -> View {
+pub fn gpus(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: &Now) -> View {
     page(t, "gpus", "ui_nav_gpus", hosts, |hosts| {
         let mut out = div().class("gg-page");
         let mut any = false;
@@ -421,7 +421,7 @@ pub fn gpus(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: f64) -> View 
 // ── Network ─────────────────────────────────────────────────────────────────────────────────────
 
 /// Every interface of every host.
-pub fn network(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: f64) -> View {
+pub fn network(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: &Now) -> View {
     page(t, "network", "ui_nav_network", hosts, |hosts| {
         let known = known(hosts);
         let sum = |f: fn(&gauge_core::Rate) -> f64| -> f64 {
@@ -480,7 +480,7 @@ pub fn network(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: f64) -> Vi
 // ── Power and thermals ──────────────────────────────────────────────────────────────────────────
 
 /// Temperatures, fans and the watts the hosts report.
-pub fn power(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: f64) -> View {
+pub fn power(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: &Now) -> View {
     page(t, "power", "ui_nav_power", hosts, |hosts| {
         let known = known(hosts);
         let gpu_w = |v: &Metrics| -> Option<f64> {
@@ -545,7 +545,7 @@ pub fn alerts(
     hosts: Option<&[HostCard]>,
     log: Option<&[AlertEvent]>,
     base: &str,
-    now: f64,
+    now: &Now,
 ) -> View {
     let Some(list) = hosts else {
         return page(t, "alerts", "ui_nav_alerts", None, |_| div());
@@ -558,7 +558,7 @@ pub fn alerts(
                 format!(
                     " · {} {}",
                     t.t("ui_alert_for"),
-                    format::duration(now - e.opened)
+                    format::duration(now.at - e.opened)
                 )
             })
             .unwrap_or_default()
@@ -575,7 +575,7 @@ pub fn alerts(
                 format!(
                     "{} — {}",
                     t.t("ui_alert_down"),
-                    outage(host, now).unwrap_or_default()
+                    outage(t, host, now).unwrap_or_default()
                 ),
             ));
         } else if let Some(view) = &host.view {
@@ -629,7 +629,7 @@ pub fn alerts(
                     .child(span().text(event_text(t, &e.kind, &e.detail)))
                     .child(span().class("gg-log-when").text(format!(
                         "{} · {} {}",
-                        format::ago(now - closed),
+                        format::ago(now.at - closed),
                         t.t("ui_alert_lasted"),
                         format::duration(closed - e.opened)
                     ))),

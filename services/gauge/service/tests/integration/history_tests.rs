@@ -13,7 +13,7 @@
 use gauge_core::Range;
 use gauge_service::domain::history::{self, Bucket, FIELDS, History};
 use gauge_service::domain::model::Filesystem;
-use gauge_service::domain::store::{ForecastCell, Note, Point, Tick};
+use gauge_service::domain::store::{ForecastCell, Note, Point, Saved, Store, Tick};
 use quench_db::prelude::{Database, Db};
 use std::sync::OnceLock;
 use tokio::sync::{Mutex, MutexGuard};
@@ -30,9 +30,11 @@ async fn database() -> Option<(History, MutexGuard<'static, ()>)> {
     }
     let guard = lock().lock().await;
     let db = Db::connect(&url).await.expect("connect");
-    db.execute("TRUNCATE gauge.samples, gauge.filesystem_samples, gauge.alert_events")
-        .await
-        .expect("truncate");
+    db.execute(
+        "TRUNCATE gauge.samples, gauge.filesystem_samples, gauge.alert_events, gauge.last_views",
+    )
+    .await
+    .expect("truncate");
     Some((History::connect(&url).await.expect("history"), guard))
 }
 
@@ -188,7 +190,14 @@ async fn the_writer_folds_live_points_into_minutes_and_stores_them() {
     let url = std::env::var("GAUGE_TEST_DATABASE_URL").unwrap();
     let (tap, points) = tokio::sync::mpsc::unbounded_channel();
     let writer = History::default();
-    history::spawn(&writer, points, url, 30, ForecastCell::default());
+    history::spawn(
+        &writer,
+        points,
+        url,
+        30,
+        ForecastCell::default(),
+        Store::default(),
+    );
 
     let now: f64 = 1_800_000_000.0;
     let minute = (now / 60.0).floor() * 60.0 - 600.0;
@@ -388,4 +397,69 @@ async fn what_a_previous_run_left_open_is_closed_at_start_and_old_events_are_pru
         "older than the retention is not shown"
     );
     assert_eq!(history.prune(now, 30).await.expect("prune"), 1);
+}
+
+#[quench_test::test]
+async fn a_kept_view_replaces_the_one_before_and_comes_back_after_a_restart() {
+    use gauge_service::domain::config::{Kind, Target};
+    use gauge_service::domain::model::View;
+    let Some((history, _guard)) = database().await else {
+        return skipped("a_kept_view_replaces_the_one_before_and_comes_back_after_a_restart");
+    };
+    let saved = |at: f64, cpu: f64| Saved {
+        host: "lorien".into(),
+        at,
+        view: View {
+            cpu_pct: Some(cpu),
+            ..View::default()
+        },
+    };
+    history
+        .save_view(&saved(1_800_000_000.0, 10.0))
+        .await
+        .unwrap();
+    history
+        .save_view(&saved(1_800_000_060.0, 20.0))
+        .await
+        .unwrap();
+    let views = history.last_views().await.unwrap();
+    assert_eq!(views.len(), 1);
+    let (host, at, view) = &views[0];
+    assert_eq!((host.as_str(), *at), ("lorien", 1_800_000_060.0));
+    assert_eq!(view.cpu_pct, Some(20.0));
+
+    // A row an older Gauge wrote, which this one cannot read, is skipped rather than failing the rest.
+    let url = std::env::var("GAUGE_TEST_DATABASE_URL").unwrap();
+    let db = Db::connect(&url).await.unwrap();
+    db.execute("INSERT INTO gauge.last_views (host, t, view) VALUES ('old', now(), '{\"cpu_pct\": \"x\"}')")
+        .await
+        .unwrap();
+    assert_eq!(history.last_views().await.unwrap().len(), 1);
+
+    // What a restart does: the history task hands the kept views to the new store.
+    let store = Store::new(&[Target {
+        name: "lorien".into(),
+        kind: Kind::Pcp,
+        url: "u".into(),
+        also: None,
+    }]);
+    let (_tap, points) = tokio::sync::mpsc::unbounded_channel();
+    history::spawn(
+        &History::default(),
+        points,
+        url,
+        30,
+        ForecastCell::default(),
+        store.clone(),
+    );
+    for _ in 0..50 {
+        if store.get("lorien").unwrap().view.is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let host = store.get("lorien").unwrap();
+    assert!(!host.up());
+    assert_eq!(host.last_ok, Some(1_800_000_060.0));
+    assert_eq!(host.view.unwrap().cpu_pct, Some(20.0));
 }

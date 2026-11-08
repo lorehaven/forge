@@ -181,3 +181,15 @@ fn the_alert_log_is_asked_for_and_read_back() {
         Msg::NoHistory
     ));
 }
+
+#[quench_test::test]
+fn a_moment_is_written_on_the_viewers_clock() {
+    use gauge_web::browser::stamp;
+    use quench_tz::Zone;
+    let warsaw = Zone::named("Europe/Warsaw").unwrap();
+    // 2026-11-08 08:52:30 UTC: winter time, one hour ahead.
+    assert_eq!(stamp(&warsaw, 1_794_127_950.0), "2026-11-08 09:52");
+    // 2026-07-01 12:00 UTC: summer time, two hours ahead.
+    assert_eq!(stamp(&warsaw, 1_782_907_200.0), "2026-07-01 14:00");
+    assert_eq!(stamp(&Zone::utc(), 1_794_127_950.0), "2026-11-08 08:52");
+}

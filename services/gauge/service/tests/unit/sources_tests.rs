@@ -133,6 +133,79 @@ fn smartmon_drives_are_read_with_their_counters_and_nvme_has_only_its_verdict() 
     assert!(nvme.temp_c.is_none() && nvme.reallocated.is_none());
 }
 
+const NVME: &str = include_str!("../fixtures/node_nvme.txt");
+
+#[quench_test::test]
+fn nvme_without_nvme_metrics_takes_model_and_temperature_from_node_exporter() {
+    // smartmon and node_exporter only: the `nvme_*` series of nvme_metrics.py left out.
+    let text = NVME
+        .lines()
+        .filter(|l| !l.starts_with("nvme_"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let r = node::reading(&parse(&text), 1.0);
+    let nvme = &r.disk_health[0];
+    assert_eq!(nvme.device, "nvme0");
+    assert!(nvme.healthy);
+    assert_eq!(nvme.model.as_deref(), Some("MSI M480 PRO 2TB"));
+    // temp1 is the composite; temp2 (a hotter sensor on the controller) is not the drive's temperature.
+    assert_eq!(nvme.temp_c, Some(39.85));
+    assert!(nvme.power_on_hours.is_none() && nvme.wear_pct.is_none());
+    // No smartmon row and no nvme_metrics for nvme1: nothing says how it is, so it is not listed.
+    assert_eq!(r.disk_health.len(), 1);
+}
+
+#[quench_test::test]
+fn nvme_metrics_fills_wear_spare_and_errors_and_adds_drives_smartmon_does_not_list() {
+    let r = node::reading(&parse(NVME), 1.0);
+    let names: Vec<&str> = r.disk_health.iter().map(|d| d.device.as_str()).collect();
+    assert_eq!(names, ["nvme0", "nvme1"]);
+
+    let a = &r.disk_health[0];
+    assert!(a.healthy);
+    assert_eq!(a.temp_c, Some(40.0));
+    assert_eq!(a.power_on_hours, Some(9123.0));
+    assert_eq!(a.wear_pct, Some(3.0));
+    assert_eq!(a.spare_pct, Some(100.0));
+    assert_eq!(a.spare_threshold_pct, Some(10.0));
+    assert_eq!(a.media_errors, Some(0.0));
+    assert!(a.reallocated.is_none() && a.pending.is_none());
+
+    // A critical warning makes the drive failing even with no smartmon verdict to go by.
+    let b = &r.disk_health[1];
+    assert!(!b.healthy);
+    assert_eq!(b.model.as_deref(), Some("Samsung SSD 980 PRO 1TB"));
+    assert_eq!(b.wear_pct, Some(84.0));
+    assert_eq!(b.media_errors, Some(3.0));
+}
+
+#[quench_test::test]
+fn a_sata_ssd_has_its_wear_from_the_life_left_attribute() {
+    let text = r#"smartmon_device_smart_available{disk="/dev/sda",type="sat"} 1
+smartmon_device_smart_healthy{disk="/dev/sda",type="sat"} 1
+smartmon_device_info{device_model="Samsung SSD 870 EVO 1TB",disk="/dev/sda",type="sat"} 1
+smartmon_wear_leveling_count_value{disk="/dev/sda",smart_id="177",type="sat"} 97
+smartmon_wear_leveling_count_raw_value{disk="/dev/sda",smart_id="177",type="sat"} 2.100000e+01
+smartmon_device_smart_available{disk="/dev/sdb",type="sat"} 1
+smartmon_device_smart_healthy{disk="/dev/sdb",type="sat"} 1
+smartmon_percent_lifetime_remain_value{disk="/dev/sdb",smart_id="202",type="sat"} 18
+smartmon_device_smart_available{disk="/dev/sdc",type="sat"} 1
+smartmon_device_smart_healthy{disk="/dev/sdc",type="sat"} 1
+"#;
+    let r = node::reading(&parse(text), 1.0);
+    let wear: Vec<Option<f64>> = r.disk_health.iter().map(|d| d.wear_pct).collect();
+    // 97 left is 3 used (not the raw 21, which is a count of erase cycles); a spinning disk has none.
+    assert_eq!(wear, [Some(3.0), Some(82.0), None]);
+}
+
+#[quench_test::test]
+fn an_nvme_namespace_belongs_to_its_controller() {
+    assert_eq!(node::nvme_controller("nvme0n1"), "nvme0");
+    assert_eq!(node::nvme_controller("nvme12n3"), "nvme12");
+    assert_eq!(node::nvme_controller("nvme0"), "nvme0");
+    assert_eq!(node::nvme_controller("sda"), "sda");
+}
+
 #[quench_test::test]
 fn a_pcp_host_takes_its_smart_data_from_the_side_agent() {
     let mut main = pcp::reading(&parse("mem_physmem 1\n"), 1.0);

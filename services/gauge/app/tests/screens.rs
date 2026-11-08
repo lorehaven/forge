@@ -68,6 +68,7 @@ fn live(path: &str) -> Live {
             login_url: "/gauge/ui/login".into(),
             history: history.clone(),
             now: Rc::new(|| 1_800_000_000.0),
+            stamp: Rc::new(|t| format!("<{t}>")),
             refresh_ms: 10_000,
         },
     );
@@ -255,16 +256,50 @@ fn there_is_a_card_per_host_by_name_with_its_numbers() {
 }
 
 #[quench_test::test]
-fn a_host_that_stopped_answering_says_why_and_since_when() {
+fn a_host_that_stopped_answering_shows_its_last_numbers_and_says_from_when() {
     let l = live("/gauge/ui/home");
     (l.deliver)(Msg::Hosts(vec![card("lorien", false)]));
     let text = l.r.text();
     assert!(text.contains("unreachable"), "{text}");
     assert!(
+        text.contains(
+            "connection refused — showing the last data, from <1799992700> (2h 1m ago), not live"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("42%"),
+        "the last numbers are still shown: {text}"
+    );
+    assert!(l.r.html().contains("gg-stale"));
+}
+
+#[quench_test::test]
+fn a_host_with_nothing_to_show_says_only_why_and_since_when() {
+    let l = live("/gauge/ui/home");
+    let mut down = card("lorien", false);
+    down.host.view = None;
+    (l.deliver)(Msg::Hosts(vec![down]));
+    let text = l.r.text();
+    assert!(
         text.contains("connection refused - last seen 2h 1m ago"),
         "{text}"
     );
-    assert!(l.r.html().contains("gg-stale"));
+    assert!(!text.contains("not live"), "{text}");
+}
+
+#[quench_test::test]
+fn a_host_page_with_the_last_data_says_it_is_not_live() {
+    let l = live("/gauge/ui/hosts/lorien");
+    let mut d = detail("lorien");
+    d.host = summary("lorien", false);
+    (l.deliver)(Msg::Detail(Box::new(d)));
+    let text = l.r.text();
+    assert!(
+        text.contains("showing the last data, from <1799992700> (2h 1m ago), not live"),
+        "{text}"
+    );
+    assert!(text.contains("42%"), "{text}");
 }
 
 #[quench_test::test]

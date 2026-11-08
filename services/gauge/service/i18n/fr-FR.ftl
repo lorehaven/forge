@@ -24,6 +24,7 @@ ui_uptime = Disponibilité
 ui_temps = Températures
 ui_back = ← Hôtes
 ui_waiting = En attente de la première mesure…
+ui_stale = affiche les dernières données, du { $when } ({ $ago }), pas en direct
 ui_col_device = Périphérique
 ui_col_used = Utilisé
 ui_col_size = Taille
@@ -75,10 +76,14 @@ ui_col_model = Modèle
 ui_col_health = État
 ui_col_power_on = Sous tension
 ui_col_sectors = Secteurs (réalloués / en attente / non corrigibles)
+ui_col_wear = Usure (endurance consommée)
+ui_spare = réserve
 ui_smart_ok = OK
 ui_smart_failing = Défaillant
 ui_alert_smart_failed = Disque défaillant (SMART)
 ui_alert_smart_sectors = Secteurs défectueux
+ui_alert_smart_wear = Disque usé
+ui_alert_smart_media = Erreurs de support
 
 # ── Screens across hosts ─────────────────────────────────────────────────────
 

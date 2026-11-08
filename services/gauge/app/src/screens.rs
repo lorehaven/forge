@@ -4,7 +4,7 @@ use gauge_core::chart::{self, Series};
 use gauge_core::format::{self, Level};
 use gauge_core::model::{Alert, Gpu, Point, View as Metrics};
 use gauge_core::{HostCard, HostDetail, HostHistory, HostSummary, Range};
-use quench_ui::i18n::I18n;
+use quench_ui::i18n::{I18n, Value};
 use quench_ui::prelude::*;
 use quench_ui::router::{Router, link};
 use std::rc::Rc;
@@ -40,13 +40,34 @@ pub(crate) fn state(t: &I18n, up: bool) -> Element {
         .child(span().text(t.t(if up { "ui_state_up" } else { "ui_state_down" })))
 }
 
-/// Why a host is not answering, and how long ago it last did; `None` while it is up.
-pub(crate) fn outage(host: &HostSummary, now: f64) -> Option<String> {
-    let error = host.error.as_ref()?;
-    Some(host.last_ok.map_or_else(
-        || error.clone(),
-        |at| format!("{error} - last seen {}", format::ago(now - at)),
-    ))
+/// The time the screens are drawn at, and how they write a moment as the viewer's local date and time.
+pub struct Now {
+    /// Unix seconds.
+    pub at: f64,
+    pub stamp: Rc<dyn Fn(f64) -> String>,
+}
+
+/// Why a host shows no live numbers; `None` while it is up. When its page still shows numbers (the last ones it
+/// had, or ones kept from before Gauge restarted), says from when they are, so they are not taken for now.
+pub(crate) fn outage(t: &I18n, host: &HostSummary, now: &Now) -> Option<String> {
+    if host.up {
+        return None;
+    }
+    let error = host.error.clone().unwrap_or_else(|| t.t("ui_state_down"));
+    Some(match host.last_ok {
+        Some(at) if host.view.is_some() => format!(
+            "{error} — {}",
+            t.tr(
+                "ui_stale",
+                &[
+                    ("when", Value::Text((now.stamp)(at))),
+                    ("ago", Value::Text(format::ago(now.at - at))),
+                ]
+            )
+        ),
+        Some(at) => format!("{error} - last seen {}", format::ago(now.at - at)),
+        None => error,
+    })
 }
 
 fn chart_image(series: &[Series<'_>], max: f64, slots: usize, label: &str) -> Element {
@@ -122,7 +143,7 @@ fn alert_badge(t: &I18n, view: Option<&Metrics>) -> Option<Element> {
 }
 
 /// One card of the hosts screen. `base` is the service's path prefix (`/gauge`).
-fn card(t: &I18n, card: &HostCard, base: &str, now: f64) -> Element {
+fn card(t: &I18n, card: &HostCard, base: &str, now: &Now) -> Element {
     let host = &card.host;
     let view = host.view.as_ref();
     let mut sub = format!("{} · {}", host.kind, host.url);
@@ -151,7 +172,7 @@ fn card(t: &I18n, card: &HostCard, base: &str, now: f64) -> Element {
                 .child(state(t, host.up)),
         )
         .child(p().class("gg-sub").text(sub))
-        .child(outage(host, now).map(|e| p().class("fui-notice fui-notice-error").text(e)))
+        .child(outage(t, host, now).map(|e| p().class("fui-notice fui-notice-error").text(e)))
         .child(meter(t, "ui_cpu", view.and_then(|v| v.cpu_pct)))
         .child(meter(t, "ui_memory", view.and_then(Metrics::mem_pct)))
         .child(
@@ -183,7 +204,7 @@ fn card(t: &I18n, card: &HostCard, base: &str, now: f64) -> Element {
 }
 
 /// The hosts screen: one card per host, by name.
-pub fn hosts(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: f64) -> View {
+pub fn hosts(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: &Now) -> View {
     let Some(hosts) = hosts else {
         return p()
             .attr("id", "waiting")
@@ -785,8 +806,9 @@ fn temps_section(t: &I18n, view: &Metrics) -> Element {
     )
 }
 
-/// SMART per drive. Sector counters show as `reallocated / pending / uncorrectable`; a drive that reports none
-/// (NVMe through `smartmon`) shows a dash.
+/// SMART per drive. Sector counters show as `reallocated / pending / uncorrectable`, wear as the share of the rated
+/// endurance used (NVMe adds the spare left); a drive that reports none (NVMe has no sectors, a spinning disk no
+/// wear) shows a dash.
 fn disk_health_section(t: &I18n, view: &Metrics) -> Element {
     let or_dash = |v: Option<String>| v.unwrap_or_else(|| DASH.to_string());
     let body = rows(view.disk_health.iter().map(|d| {
@@ -799,6 +821,10 @@ fn disk_health_section(t: &I18n, view: &Metrics) -> Element {
                 c.unwrap_or(0.0)
             )),
         };
+        let wear = d.wear_pct.map(|w| match d.spare_pct {
+            Some(spare) => format!("{w:.0}% · {} {spare:.0}%", t.t("ui_spare")),
+            None => format!("{w:.0}%"),
+        });
         vec![
             d.device.clone(),
             or_dash(d.model.clone()),
@@ -811,6 +837,7 @@ fn disk_health_section(t: &I18n, view: &Metrics) -> Element {
             or_dash(d.temp_c.map(|c| format!("{c:.0} °C"))),
             or_dash(d.power_on_hours.map(|h| format::duration(h * 3600.0))),
             or_dash(sectors),
+            or_dash(wear),
         ]
     }));
     section(t, "ui_disk_health", None).child(
@@ -825,6 +852,7 @@ fn disk_health_section(t: &I18n, view: &Metrics) -> Element {
                     "ui_col_temp",
                     "ui_col_power_on",
                     "ui_col_sectors",
+                    "ui_col_wear",
                 ],
             ))
             .child(body),
@@ -899,7 +927,7 @@ fn ranges(t: &I18n, looking: &Looking<'_>, waiting: bool) -> Element {
 }
 
 /// The host screen: every number Gauge has for it, and charts of the last hour, or of the stored history.
-pub fn host(t: &I18n, detail: &HostDetail, base: &str, now: f64, looking: &Looking<'_>) -> View {
+pub fn host(t: &I18n, detail: &HostDetail, base: &str, now: &Now, looking: &Looking<'_>) -> View {
     let summary = &detail.host;
     let stored = looking
         .stored
@@ -933,7 +961,7 @@ pub fn host(t: &I18n, detail: &HostDetail, base: &str, now: f64, looking: &Looki
                 )
                 .child(state(t, summary.up)),
         )
-        .child(outage(summary, now).map(|e| p().class("fui-notice fui-notice-error").text(e)));
+        .child(outage(t, summary, now).map(|e| p().class("fui-notice fui-notice-error").text(e)));
     let Some(view) = summary.view.as_ref() else {
         return page
             .child(
