@@ -30,6 +30,11 @@ pub fn pct(value: f64) -> String {
 
 #[must_use]
 pub fn duration(secs: f64) -> String {
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "clamped to 0 or more first; the fraction is meant to go, and `as` saturates a value past `u64::MAX`"
+    )]
     let s = secs.max(0.0) as u64;
     let (d, h, m) = (s / 86_400, s % 86_400 / 3600, s % 3600 / 60);
     if d > 0 {

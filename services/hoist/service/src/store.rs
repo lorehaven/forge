@@ -3,6 +3,8 @@
 //! Every refresh rewrites the table inside one transaction: readers never see a half-merged catalogue, and a run
 //! that fails part way leaves the previous hour's data in place.
 
+use std::fmt::Write as _;
+
 use quench_core::Error;
 use quench_db::prelude::Db;
 use quench_pg::{Pool, ToSql};
@@ -23,7 +25,7 @@ pub fn schema() -> String {
     quench_core::env::get_or("DB_SCHEMA", "hoist")
 }
 
-fn pool(db: &Db) -> Result<&Pool, StoreError> {
+const fn pool(db: &Db) -> Result<&Pool, StoreError> {
     match db {
         Db::Postgres(postgres) => Ok(postgres.pool()),
         Db::InMemory(_) => Err(StoreError::NotPostgres),
@@ -69,6 +71,10 @@ const CHUNK: usize = 200;
 ///
 /// # Errors
 /// [`StoreError`]; nothing is changed then.
+#[allow(
+    clippy::significant_drop_tightening,
+    reason = "the transaction borrows the connection, so the connection is held until the commit"
+)]
 pub async fn replace_all(db: &Db, packages: &[MergedPackage]) -> Result<(), StoreError> {
     let schema = schema();
     let mut conn = pool(db)?.get().await?;
@@ -87,7 +93,7 @@ pub async fn replace_all(db: &Db, packages: &[MergedPackage]) -> Result<(), Stor
                 if f > 0 {
                     sql.push(',');
                 }
-                sql.push_str(&format!("${}", i * FIELDS + f + 1));
+                let _ = write!(sql, "${}", i * FIELDS + f + 1);
             }
             sql.push(')');
             params.extend_from_slice(&[

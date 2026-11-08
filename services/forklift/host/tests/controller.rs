@@ -450,7 +450,7 @@ fn a_large_file_waits_for_the_charger() {
 #[quench_test::test]
 fn paging_goes_on_while_a_page_is_full() {
     let fake = Fake::default();
-    *fake.images.borrow_mut() = (0..i64::from(MEDIA_PAGE) + 1)
+    *fake.images.borrow_mut() = (0..=i64::from(MEDIA_PAGE))
         .map(|i| file(&i.to_string(), 10, i))
         .collect();
     let w = world(

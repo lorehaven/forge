@@ -1,7 +1,13 @@
 //! Renders every component into a static page for review (`cargo run -p forge-ui --example gallery -- <out-dir>`).
 //! Serve `<out-dir>` with any static file server and open `/ui/gallery.html`; resize to check the mobile layout.
 
-use forge_ui::*;
+use forge_ui::{
+    Card, NavItem, NavSection, PageHeader, SUPPORTED_LOCALES, ShellConfig, Tone, UiShell, Variant,
+    alert, badge, button_el, checkbox_field, close_modal, empty_state, field, form_el, icon,
+    icon_button, link_card, modal, open_modal, progress, search_input, select_el, stat,
+    status_badge_key, submit_button, t, table_el, tabs, td_el, text_input, textarea_el, tr_el, txt,
+    write_css,
+};
 use quench_web::prelude::*;
 use std::path::Path;
 
@@ -70,6 +76,10 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the gallery is one page showing every component in turn; splitting it only scatters the sample"
+)]
 fn body() -> Element {
     let runs = vec![
         ("build-api", Tone::Success, "g_ok", "2m 14s"),

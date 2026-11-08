@@ -106,7 +106,7 @@ fn block(env: &Env, prefix: &str, index: usize, b: &Block) -> View {
 }
 
 /// The message text as blocks. `prefix` keeps the ids of its code blocks apart from other messages'.
-pub(crate) fn render(env: &Env, prefix: &str, text: &str) -> Vec<View> {
+pub fn render(env: &Env, prefix: &str, text: &str) -> Vec<View> {
     parse(text)
         .iter()
         .enumerate()

@@ -274,7 +274,7 @@ fn changes_made_offline_wait_and_go_to_the_server_in_order_when_it_answers() {
     r.fake.answer(Err(NetError::Network("no route".into())));
     assert!(r.out.borrow().contains(&Msg::Offline(true)));
     assert!(r.data().task("a").unwrap().is_completed, "kept, not undone");
-    assert!(r.notices().is_empty());
+    assert_eq!(r.notices(), [] as [String; 0]);
 
     // More work: nothing is sent, all of it shows at once.
     save_new(&r, "Milk");
@@ -290,7 +290,7 @@ fn changes_made_offline_wait_and_go_to_the_server_in_order_when_it_answers() {
     assert!(milk.starts_with("local-"));
     // ...also a change to what was made offline.
     r.c.request(Request::SetCompleted {
-        id: milk.clone(),
+        id: milk,
         done: true,
     });
     r.c.request(Request::Delete { id: "a".into() });
@@ -321,7 +321,7 @@ fn changes_made_offline_wait_and_go_to_the_server_in_order_when_it_answers() {
     assert!(matches!(last, Op::Load));
     assert!(r.out.borrow().contains(&Msg::Offline(false)));
     assert_eq!(r.data().tasks.len(), 1);
-    assert!(r.c.settings().list == ListRef::Inbox);
+    assert_eq!(r.c.settings().list, ListRef::Inbox);
 }
 
 #[quench_test::test]
@@ -404,7 +404,7 @@ fn a_session_that_ended_signs_out_and_cancels_the_reminders() {
     r.fake.answer(Err(NetError::Unauthorized));
     assert!(r.out.borrow().contains(&Msg::SignedOut));
     assert_eq!(*r.fake.signed_out.borrow(), 1);
-    assert!(r.fake.reminders.borrow().last().unwrap().is_empty());
+    assert_eq!(r.fake.reminders.borrow().last().unwrap().as_slice(), []);
     assert!(matches!(
         r.fake.calls.borrow().last().unwrap().0,
         Op::Logout

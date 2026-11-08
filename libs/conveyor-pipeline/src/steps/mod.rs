@@ -112,10 +112,10 @@ fn split(program: &'static str, args: &str) -> Result<Vec<String>, StepError> {
 }
 
 fn tool(program: &'static str, args: &str) -> Result<Vec<String>, StepError> {
-    let split = split(program, args)?;
+    let words = split(program, args)?;
 
-    let mut argv = Vec::with_capacity(split.len() + 1);
-    argv.push(program.to_string());
-    argv.extend(split);
-    Ok(argv)
+    let mut command = Vec::with_capacity(words.len() + 1);
+    command.push(program.to_string());
+    command.extend(words);
+    Ok(command)
 }

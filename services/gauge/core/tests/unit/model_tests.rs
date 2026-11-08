@@ -29,7 +29,10 @@ fn rates_come_from_two_readings() {
 fn a_reset_counter_is_not_a_rate() {
     let a = reading(100.0, 10.0, 100.0, 5000.0);
     let b = reading(110.0, 11.0, 110.0, 10.0);
-    assert!(View::from_readings(Some(&a), &b).nics.is_empty());
+    assert_eq!(
+        View::from_readings(Some(&a), &b).nics,
+        [] as [gauge_core::Rate; 0]
+    );
 }
 
 #[quench_test::test]
@@ -83,7 +86,12 @@ fn pressure_and_disk_load_are_shares_of_the_interval() {
         "0.1 s over 100 reads"
     );
     assert_eq!(d.write_ms, None);
-    assert!((v.swap_out_per_sec.unwrap() - 1000.0 * 4096.0).abs() < 1e-6);
+    assert!(
+        1000.0f64
+            .mul_add(-4096.0, v.swap_out_per_sec.unwrap())
+            .abs()
+            < 1e-6
+    );
 }
 
 #[quench_test::test]

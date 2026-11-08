@@ -9,7 +9,7 @@ use quench_ui::prelude::*;
 use super::{Env, nothing, panel, waiting};
 use crate::live::State;
 
-pub(crate) fn credentials(env: &Env, state: &State) -> View {
+pub fn credentials(env: &Env, state: &State) -> View {
     let (inner_env, state) = (env.clone(), state.clone());
     let body = View::dynamic(move || {
         let env = &inner_env;

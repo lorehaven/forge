@@ -80,8 +80,11 @@ fn stand_in() -> (String, Arc<Mutex<Vec<Seen>>>, Stored) {
                     auth,
                 });
                 let (status, reply): (u16, Vec<u8>) = if target.starts_with("/gatehouse/") {
-                    let mut n = issued.lock().unwrap();
-                    *n += 1;
+                    let n = {
+                        let mut issued = issued.lock().unwrap();
+                        *issued += 1;
+                        *issued
+                    };
                     (200, format!("{{\"access_token\":\"access-{n}\",\"refresh_token\":\"refresh-{n}\",\"expires_in\":900}}").into_bytes())
                 } else if method == "PUT" {
                     let path = target.split("path=").nth(1).unwrap_or_default().to_string();

@@ -10,6 +10,7 @@ const COMPONENTS: &str = include_str!("../assets/components.css");
 const LEGACY: &str = include_str!("../assets/legacy.css");
 
 /// The library CSS followed by `rules`, in cascade order.
+#[must_use]
 pub fn stylesheet(rules: &[CssRule]) -> String {
     let mut css = [TOKENS, BASE, LAYOUT, COMPONENTS, LEGACY].join("\n");
     for rule in rules {
@@ -20,6 +21,7 @@ pub fn stylesheet(rules: &[CssRule]) -> String {
 }
 
 /// The library CSS followed by `extra_css` (a service's own stylesheet text) and then `rules`.
+#[must_use]
 pub fn stylesheet_with(extra_css: &str, rules: &[CssRule]) -> String {
     let mut css = stylesheet(&[]);
     css.push('\n');

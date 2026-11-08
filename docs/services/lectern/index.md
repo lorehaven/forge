@@ -22,8 +22,10 @@ There is no `core`, `app` or `web` crate and no WebAssembly client: the pages of
    ```text
    <book>/latest.json                        manifest of the newest release + archive_path
    <book>/<version>/manifest.json
-   <book>/<version>/<book>-<version>.tar.gz  the built site
+   <book>/<version>/<book>-<version>.tar.gz  the built site (and the Markdown under _source/)
    ```
+
+   The archive also holds the book's Markdown sources under `_source/`, for [loupe](../../cli/loupe/index.md#released-books); Lectern leaves that prefix out when it unpacks a release, so those files are neither served nor counted.
 
 2. For a book whose `latest.json` names a version it does not hold, it downloads the archive, checks it against `archive_sha256` and unpacks it in memory (at most 512 MiB). A release that fails any step is logged and the version already served stays in service.
 3. A book that disappears from the storage disappears from the service at the next look.

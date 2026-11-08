@@ -17,6 +17,7 @@ use quench_tz::Zone;
 pub const DEFAULT_SERVER: &str = "https://ennor.ddns.net";
 
 /// How a thread tells the program's thread.
+#[derive(Debug)]
 pub enum Event {
     /// The answer to a call of the worker.
     Worker(u64, Answer),
@@ -45,6 +46,15 @@ pub struct Alarms {
     later: Later,
     now: Rc<dyn Fn() -> Time>,
     show: Show,
+}
+
+impl std::fmt::Debug for Alarms {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Alarms")
+            .field("list", &self.list)
+            .field("generation", &self.generation)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Alarms {
@@ -112,6 +122,12 @@ pub struct Linux {
     remote: Arc<Remote>,
     later: Later,
     alarms: Rc<Alarms>,
+}
+
+impl std::fmt::Debug for Linux {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Linux").finish_non_exhaustive()
+    }
 }
 
 impl Linux {

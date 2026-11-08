@@ -1,7 +1,9 @@
-//! The app against a host: it asks for the data and for every change (`Request`) and is told what came (`Msg`). The host
-//! does the talking to the service; the app owns the routes (`{base}/ui/home`, `/apps/{package}`, `/targets/{package}`,
-//! `/operations`, `/operations/{id}`, `/plans/{id}`, `/resource?...`), the sidebar, the polling of a running operation and
-//! the language.
+//! The app against a host.
+//!
+//! It asks for the data and for every change (`Request`) and is told what came (`Msg`). The host does the talking to
+//! the service; the app owns the routes (`{base}/ui/home`, `/apps/{package}`, `/targets/{package}`, `/operations`,
+//! `/operations/{id}`, `/plans/{id}`, `/resource?...`), the sidebar, the polling of a running operation and the
+//! language.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -19,7 +21,7 @@ use crate::screens::{self, Env};
 const POLL_MS: u32 = 3000;
 
 /// What the app asks its host for.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     /// Who the person is and what they may do anywhere: once, when the app starts.
     Startup,
@@ -60,7 +62,7 @@ pub enum Request {
 }
 
 /// What the host tells the app.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
     Info(Info),
     Groups(Vec<Group>),
@@ -96,6 +98,16 @@ pub struct Setup {
     /// Where signing in starts (a full page load, not a route of the app).
     pub login_url: String,
     pub history: Rc<dyn History>,
+}
+
+impl std::fmt::Debug for Setup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Setup")
+            .field("base", &self.base)
+            .field("language", &self.language)
+            .field("login_url", &self.login_url)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The app and the function that feeds it.
@@ -302,7 +314,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             state.enter();
             state.deployments.set(Vec::new());
             (env.ask)(Request::Package(name.clone()));
-            screens::package(&env, &state, name)
+            screens::package(&env, &state, &name)
         }
     };
     let target = {
@@ -371,7 +383,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             screens::resource(&env, &state, resource)
         }
     };
-    let routes = Routes::new()
+    let screen = Routes::new()
         .route(&format!("{base}/ui/home"), home.clone())
         .route(&format!("{base}/ui/home/"), home.clone())
         .route(&format!("{base}/ui"), home.clone())
@@ -427,7 +439,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     main()
                         .class("gt-main")
                         .child(screens::banner(&env, &state, &setup.login_url))
-                        .child(routes.view(&router)),
+                        .child(screen.view(&router)),
                 ),
         )
         .into_view()

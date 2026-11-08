@@ -63,7 +63,7 @@ fn levels_are_counted_and_an_unapplied_filter_shows_all() {
     ];
     assert_eq!(counts(&all), [0, 2, 0, 0, 1]);
     assert_eq!(chosen_levels(&[], false), LEVELS.to_vec());
-    assert!(chosen_levels(&[], true).is_empty());
+    assert_eq!(chosen_levels(&[], true), [] as [&str; 0]);
     assert_eq!(chosen_levels(&["HIGH", "low"], true), ["high", "low"]);
 }
 

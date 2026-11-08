@@ -6,7 +6,7 @@ use crate::draft::Draft;
 use crate::model::{Label, ListRef};
 
 /// What the app asks.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     Login {
         server: String,
@@ -59,7 +59,7 @@ pub enum Request {
 }
 
 /// What the host tells the app.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
     LoggedIn,
     LoginFailed(String),

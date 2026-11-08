@@ -59,6 +59,10 @@ fn open_token(stored: &str) -> Option<String> {
 }
 
 #[cfg(not(feature = "client"))]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "the same signature as the `client` build's, whose vault can fail to open a token"
+)]
 fn open_token(stored: &str) -> Option<String> {
     Some(stored.trim().to_string())
 }

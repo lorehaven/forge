@@ -157,7 +157,7 @@ pub fn plan(remote: &[Remote], present: &Present, folders: &[Folder]) -> Plan {
 impl Plan {
     /// The numbers a screen shows.
     #[must_use]
-    pub fn summary(&self) -> PlanSummary {
+    pub const fn summary(&self) -> PlanSummary {
         PlanSummary {
             files: self.files.len(),
             bytes: self.bytes,

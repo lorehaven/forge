@@ -1,6 +1,8 @@
-//! `--complete <task id>`: marks a task done with no window (from the reminder's *Done* button and from the widget). It reads the
-//! tasks with the saved login, sends the task as done, writes the widget's snapshot and ends. With the services out of reach
-//! the change waits in the outbox, which the app sends the next time it starts, and the widget already shows it done.
+//! `--complete <task id>`: marks a task done with no window (from the reminder's *Done* button and from the widget).
+//!
+//! It reads the tasks with the saved login, sends the task as done, writes the widget's snapshot and ends. With the
+//! services out of reach the change waits in the outbox, which the app sends the next time it starts, and the widget
+//! already shows it done.
 
 use daybook_core::widget::snapshot;
 use daybook_core::{Data, Task};
@@ -29,7 +31,7 @@ pub enum Outcome {
 impl Outcome {
     /// The one word the Kotlin side reads.
     #[must_use]
-    pub fn word(&self) -> &'static str {
+    pub const fn word(&self) -> &'static str {
         match self {
             Self::Completed => "completed",
             Self::Queued => "queued",

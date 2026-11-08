@@ -25,7 +25,7 @@ fn can_manage(state: &State) -> bool {
 // ── Storages ─────────────────────────────────────────────────────────────────
 
 #[must_use]
-pub(crate) fn storages(env: &Env, state: &State) -> View {
+pub fn storages(env: &Env, state: &State) -> View {
     env.ask(Request::Storages);
 
     let left = {
@@ -365,7 +365,11 @@ fn create_form(env: &Env) -> Element {
 type Tree = Option<(String, String, FileNode, bool)>;
 
 #[must_use]
-pub(crate) fn browse(env: &Env, state: &State) -> View {
+#[allow(
+    clippy::too_many_lines,
+    reason = "builds the whole browse screen (storage, path and listing) as one view tree"
+)]
+pub fn browse(env: &Env, state: &State) -> View {
     // A storage is the way in; without one the storages list is where one is picked.
     if env.query("storage").is_empty() {
         env.router.replace(&env.path("/files/storages"));

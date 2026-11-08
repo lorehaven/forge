@@ -29,6 +29,14 @@ pub struct Env {
     pub router: Router,
 }
 
+impl std::fmt::Debug for Env {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Env")
+            .field("base", &self.base)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Env {
     /// `{base}/ui{rest}`.
     pub(crate) fn path(&self, rest: &str) -> String {
@@ -111,7 +119,7 @@ pub(crate) fn sidebar(env: &Env, state: &State) -> View {
             let at = env.path(path);
             let prefix = at
                 .rsplit_once('/')
-                .map_or(at.clone(), |(dir, _)| dir.to_string());
+                .map_or_else(|| at.clone(), |(dir, _)| dir.to_string());
             let router = env.router.clone();
             link(&at)
                 .class("fui-nav-item")
@@ -398,7 +406,7 @@ pub(crate) fn confirm_dialog(env: &Env, state: &State) -> View {
                         div()
                             .class("wh-modal-body")
                             .child(p().text(env.t.t(open.text)))
-                            .child(div().class("wh-confirm-target").text(open.target.clone()))
+                            .child(div().class("wh-confirm-target").text(open.target))
                             .child(
                                 div()
                                     .class("wh-actions")

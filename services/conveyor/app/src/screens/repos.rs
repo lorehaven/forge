@@ -11,14 +11,25 @@ use quench_ui::router::link;
 use super::{Env, back, enabled_badge, labelled, nothing, panel, project_label, waiting};
 use crate::live::{Follow, Notice, Request, State};
 
-/// The repository `owner/name`, once the repositories are there: `None` while they load, `Some(None)` if there is none.
-fn find(state: &State, owner: &str, name: &str) -> Option<Option<Repo>> {
+/// What is known of one repository.
+#[derive(Debug, Clone, PartialEq)]
+enum Found {
+    /// The repositories are still loading.
+    Loading,
+    /// The repositories are there, and this one is not.
+    Missing,
+    Repo(Box<Repo>),
+}
+
+/// The repository `owner/name`, once the repositories are there.
+fn find(state: &State, owner: &str, name: &str) -> Found {
     state.repos.with(|repos| {
-        repos.as_ref().map(|repos| {
+        repos.as_ref().map_or(Found::Loading, |repos| {
             repos
                 .iter()
                 .find(|r| r.owner == owner && r.name == name)
                 .cloned()
+                .map_or(Found::Missing, |repo| Found::Repo(Box::new(repo)))
         })
     })
 }
@@ -55,7 +66,7 @@ fn project_options(all: &[Project], ids: &[String]) -> Vec<(String, String)> {
 
 // ── The list ─────────────────────────────────────────────────────────────────
 
-pub(crate) fn repos(env: &Env, state: &State) -> View {
+pub fn repos(env: &Env, state: &State) -> View {
     let (env, state) = (env.clone(), state.clone());
     div()
         .attr("id", "repos")
@@ -201,6 +212,10 @@ fn follow_panel(env: &Env, state: &State) -> View {
 }
 
 /// Omitted, not disabled, when there is nowhere the caller may register a repository.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function builds the registration panel, every field wired to its signal"
+)]
 fn create_panel(env: &Env, state: &State) -> View {
     let (env, state) = (env.clone(), state.clone());
     let draft = RepoDraft::default();
@@ -330,7 +345,7 @@ fn create_panel(env: &Env, state: &State) -> View {
 
 // ── Edit ─────────────────────────────────────────────────────────────────────
 
-pub(crate) fn edit(env: &Env, state: &State, owner: &str, name: &str) -> View {
+pub fn edit(env: &Env, state: &State, owner: &str, name: &str) -> View {
     // Rebuilt when the repository changes (a save), not when something else does.
     let found = {
         let (state, owner, name) = (state.clone(), owner.to_string(), name.to_string());
@@ -352,11 +367,11 @@ pub(crate) fn edit(env: &Env, state: &State, owner: &str, name: &str) -> View {
             .class("cv-page cv-narrow")
             .child(list_back);
         match found.get() {
-            None => page.child(waiting(&env)).into_view(),
-            Some(None) => page
+            Found::Loading => page.child(waiting(&env)).into_view(),
+            Found::Missing => page
                 .child(nothing(&env, "ui_repos_not_found", "not-found"))
                 .into_view(),
-            Some(Some(repo)) => {
+            Found::Repo(repo) => {
                 let (Some(access), Some(projects)) = (access.get(), projects.get()) else {
                     return page.child(waiting(&env)).into_view();
                 };
@@ -374,6 +389,10 @@ pub(crate) fn edit(env: &Env, state: &State, owner: &str, name: &str) -> View {
     })
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function builds the edit form, every field wired to its signal"
+)]
 fn edit_form(
     env: &Env,
     state: &State,
@@ -441,7 +460,7 @@ fn edit_form(
         }
     };
     let enabled_box = {
-        let (on, toggle) = (enabled.clone(), enabled.clone());
+        let (on, toggle) = (enabled.clone(), enabled);
         lock(
             input()
                 .attr("type", "checkbox")
@@ -544,7 +563,7 @@ fn edit_form(
 
 // ── Run with parameters ──────────────────────────────────────────────────────
 
-pub(crate) fn launch(env: &Env, state: &State, owner: &str, name: &str) -> View {
+pub fn launch(env: &Env, state: &State, owner: &str, name: &str) -> View {
     let found = {
         let (state, owner, name) = (state.clone(), owner.to_string(), name.to_string());
         create_memo(move || find(&state, &owner, &name))
@@ -561,13 +580,13 @@ pub(crate) fn launch(env: &Env, state: &State, owner: &str, name: &str) -> View 
     View::dynamic(move || {
         let page = div().attr("id", "launch").class("cv-page cv-narrow");
         let repo = match found.get() {
-            None => return page.child(waiting(&env)).into_view(),
-            Some(None) => {
+            Found::Loading => return page.child(waiting(&env)).into_view(),
+            Found::Missing => {
                 return page
                     .child(nothing(&env, "ui_scan_repo_not_found", "not-found"))
                     .into_view();
             }
-            Some(Some(repo)) => repo,
+            Found::Repo(repo) => *repo,
         };
         let known = match stages.get() {
             Some((id, known)) if id == repo.id => known,

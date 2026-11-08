@@ -135,4 +135,4 @@ Executing dry-run
 Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }
 ```
 
-and exit code 1 (see the [report](../../_reports/cli.md)). A remote *destination* is not affected.
+and exit code 1 (see `docs/_reports/cli.md` in the repository). A remote *destination* is not affected.

@@ -43,6 +43,7 @@ pub fn run_role(estate: &Estate, role: Role, selection: &[String]) -> Result<()>
 
 /// Containers a role's tasks need, so `foreman db` can bring up the database
 /// without starting everything else the estate sits on.
+#[must_use]
 pub fn containers_for_role(estate: &Estate, role: Role) -> Vec<String> {
     let mut wanted: Vec<String> = Vec::new();
     for (_, task) in estate.config.tasks_with_role(role) {

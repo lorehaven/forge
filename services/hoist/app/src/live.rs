@@ -1,6 +1,8 @@
-//! The app against the real services: sign in, the registry's catalog, downloads. The app does no I/O itself: it
-//! asks for things through a `requests` function and is told what happened through `deliver` (both carry plain
-//! data), so the host decides how to do the work (a worker thread, a test double) and where the answers come in.
+//! The app against the real services: sign in, the registry's catalog, downloads.
+//!
+//! The app does no I/O itself: it asks for things through a `requests` function and is told what happened through
+//! `deliver` (both carry plain data), so the host decides how to do the work (a worker thread, a test double) and
+//! where the answers come in.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -125,6 +127,10 @@ type Inbox = Rc<std::cell::RefCell<Option<Rc<dyn Fn(Msg)>>>>;
 
 /// Builds the app. The views are built when they are mounted.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function wires the app: its signals, the handling of every message and every screen's callbacks"
+)]
 pub fn hoist(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Hoist {
     let inbox: Inbox = Rc::default();
     let forward = Rc::clone(&inbox);
@@ -312,13 +318,9 @@ pub fn hoist(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Hoist {
             requests(Request::Catalog);
         }
         let act: Act = {
-            let (requests, raw, message, busy) = (
-                Rc::clone(&requests),
-                raw.clone(),
-                message.clone(),
-                busy.clone(),
-            );
-            let (installed, self_program) = (Rc::clone(&installed), self_program.clone());
+            let (requests, raw, message, busy) =
+                (Rc::clone(&requests), raw, message.clone(), busy.clone());
+            let (installed, self_program) = (Rc::clone(&installed), self_program);
             let selected = selected.clone();
             Rc::new(move |action: Action| {
                 let wanted = match &action {
@@ -368,9 +370,9 @@ pub fn hoist(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Hoist {
             move || login_form(&server, Rc::clone(&login_requests), login_busy.clone());
         let (signed, panels_entries, panels_screen) =
             (signed_in.clone(), entries.clone(), screen.clone());
-        let panels_device = device.clone();
+        let panels_device = device;
         let (panels_selected, panels_updates, panels_search) =
-            (selected.clone(), updates_open.clone(), search.clone());
+            (selected.clone(), updates_open.clone(), search);
         // Settings are kept as they change: a valid server address (a moment after the last key) and the switch.
         {
             let (server, auto, requests) = (
@@ -458,12 +460,12 @@ pub fn hoist(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Hoist {
             let (signed, screen, selected, updates_open, entries) = (
                 signed_in.clone(),
                 screen.clone(),
-                selected.clone(),
-                updates_open.clone(),
-                entries.clone(),
+                selected,
+                updates_open,
+                entries,
             );
             let bar_confirm = confirm_out.clone();
-            let bar_public = public.clone();
+            let bar_public = public;
             let bar_look = Rc::clone(&look);
             View::dynamic(move || {
                 if !signed.get() {
@@ -542,7 +544,7 @@ pub fn hoist(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Hoist {
         if setup.toast_ms > 0 {
             crate::toast::dismiss_after(&message, setup.toast_ms);
         }
-        let shown = message.clone();
+        let shown = message;
         let working = crate::toast::lingering(&busy, setup.loader_min_ms);
         div()
             .attr("id", "hoist")
@@ -603,7 +605,7 @@ pub fn hoist(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Hoist {
             })
             .child(View::show(
                 {
-                    let signed = signed_in.clone();
+                    let signed = signed_in;
                     move || signed.get()
                 },
                 move || {
@@ -648,7 +650,7 @@ fn schedule_check(
 /// pressing it once more), so a mistyped password can be seen.
 fn password_field(text: &str, field: &Field) -> Element {
     let shown = create_signal(false);
-    let (kind, flip, icon_when) = (shown.clone(), shown.clone(), shown.clone());
+    let (kind, flip, icon_when) = (shown.clone(), shown.clone(), shown);
     let control = field
         .input()
         .class("q-textfield-input hoist-password-input")

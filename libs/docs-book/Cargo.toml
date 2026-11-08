@@ -1,0 +1,32 @@
+[package]
+name = "docs-book"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "A documentation book (a Jekyll site of Markdown pages with just-the-docs navigation): its pages, navigation tree, link resolution and checks"
+keywords = ["docs", "jekyll", "markdown", "navigation"]
+categories = ["text-processing"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = "README.md"
+autotests = false
+
+[lib]
+name = "docs_book"
+path = "src/lib.rs"
+
+[dependencies]
+quench-serde = { workspace = true, features = ["yaml"] }
+quench-core = { workspace = true }
+
+[lints]
+workspace = true
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dev-dependencies]
+quench-test = { workspace = true }

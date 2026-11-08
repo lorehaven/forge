@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use crate::config::{Config, Service};
 use crate::vars::{self, Scope};
 
+#[derive(Debug)]
 pub struct Estate {
     pub root: PathBuf,
     pub config_path: PathBuf,
@@ -17,6 +18,7 @@ pub struct Estate {
 
 /// A service with the defaults folded in, so callers never have to remember
 /// which settings fall back to what.
+#[derive(Debug)]
 pub struct Resolved {
     pub name: String,
     pub package: String,
@@ -39,6 +41,7 @@ pub struct Resolved {
 }
 
 impl Resolved {
+    #[must_use]
     pub fn url(&self) -> String {
         format!(
             "{}://{}:{}{}",
@@ -46,6 +49,7 @@ impl Resolved {
         )
     }
 
+    #[must_use]
     pub fn health_url(&self) -> String {
         format!("{}{}", self.url(), self.health_path)
     }
@@ -75,22 +79,27 @@ impl Estate {
         })
     }
 
-    pub fn scope(&self) -> Scope<'_> {
+    #[must_use]
+    pub const fn scope(&self) -> Scope<'_> {
         Scope::new(&self.vars)
     }
 
+    #[must_use]
     pub fn run_dir(&self) -> PathBuf {
         self.root.join(&self.config.project.run_dir)
     }
 
+    #[must_use]
     pub fn log_dir(&self) -> PathBuf {
         self.run_dir().join("logs")
     }
 
+    #[must_use]
     pub fn pid_file(&self, name: &str) -> PathBuf {
         self.run_dir().join(format!("{name}.pid"))
     }
 
+    #[must_use]
     pub fn log_file(&self, name: &str) -> PathBuf {
         self.log_dir().join(format!("{name}.log"))
     }
@@ -100,6 +109,7 @@ impl Estate {
             .with_context(|| format!("creating {}", self.log_dir().display()))
     }
 
+    #[must_use]
     pub fn service_names(&self) -> Vec<String> {
         self.config
             .services
@@ -164,11 +174,12 @@ impl Estate {
 
     /// What to start: the names asked for, plus what they cannot start without.
     pub fn resolve_selection<S: AsRef<str>>(&self, names: &[S]) -> Result<Vec<String>> {
-        let named = self.resolve_names(names)?;
-        self.with_dependencies(&named)
+        let chosen = self.resolve_names(names)?;
+        self.with_dependencies(&chosen)
     }
 
-    pub fn is_whole_estate(&self, selection: &[String]) -> bool {
+    #[must_use]
+    pub const fn is_whole_estate(&self, selection: &[String]) -> bool {
         selection.len() >= self.config.services.len()
     }
 
@@ -203,14 +214,14 @@ impl Estate {
         let mut seen: BTreeMap<String, usize> = BTreeMap::new();
         let mut notes = Vec::new();
 
-        let mut push =
-            |key: String, value: String, env: &mut Vec<(String, String)>| match seen.get(&key) {
-                Some(index) => env[*index] = (key, value),
-                None => {
-                    seen.insert(key.clone(), env.len());
-                    env.push((key, value));
-                }
-            };
+        let mut push = |key: String, value: String, env: &mut Vec<(String, String)>| {
+            if let Some(index) = seen.get(&key) {
+                env[*index] = (key, value);
+            } else {
+                seen.insert(key.clone(), env.len());
+                env.push((key, value));
+            }
+        };
 
         for (key, value) in scope.expand_map(&defaults.env)? {
             push(key, value, &mut env);
@@ -277,6 +288,7 @@ impl Estate {
     }
 
     /// Certificate files a service borrows, if it is configured to borrow any.
+    #[must_use]
     pub fn cert_files(&self, service: &Service) -> Vec<String> {
         if !service.cert_files.is_empty() {
             return service.cert_files.clone();
@@ -287,6 +299,7 @@ impl Estate {
         vec!["cert.pem".to_string(), "key.pem".to_string()]
     }
 
+    #[must_use]
     pub fn path(&self, relative: &str) -> PathBuf {
         self.root.join(relative)
     }

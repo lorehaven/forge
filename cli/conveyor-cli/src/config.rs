@@ -1,5 +1,6 @@
-//! `~/.config/conveyor/config.toml` - the lowest-priority source for the
-//! same handful of settings `Client::new` already reads from CLI flags and
+//! `~/.config/conveyor/config.toml`, the lowest-priority source of settings.
+//!
+//! The same handful of settings `Client::new` already reads from CLI flags and
 //! env vars. Precedence, low to high: config file, env var, CLI flag - a
 //! flag on the command line always wins, matching how `CONVEYOR_INSECURE`
 //! already only ever adds to a flag rather than overriding it.
@@ -45,6 +46,7 @@ impl FileConfig {
     }
 }
 
+#[must_use]
 pub fn config_path() -> Option<PathBuf> {
     if let Some(xdg) = non_empty_env("XDG_CONFIG_HOME") {
         return Some(PathBuf::from(xdg).join("conveyor").join("config.toml"));
@@ -53,6 +55,7 @@ pub fn config_path() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".config/conveyor/config.toml"))
 }
 
+#[must_use]
 pub fn non_empty_env(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.is_empty())
 }

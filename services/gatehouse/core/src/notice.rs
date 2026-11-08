@@ -76,8 +76,9 @@ pub const LOGIN_ERRORS: [&str; 8] = [
     "ui_login_confirm_email_invalid",
 ];
 
-/// What the sign-in page says about where the person comes from: wrong credentials, a refused account, or good news
-/// (a successful reset...). A successful reset is more specific than "link sent", so it comes first.
+/// What the sign-in page says about where the person comes from.
+///
+/// Wrong credentials, a refused account, or good news (a successful reset...). A successful reset is more specific than "link sent", so it comes first.
 #[must_use]
 pub fn login(query: &Query) -> Option<Notice> {
     if query.get("err") == Some("1") {

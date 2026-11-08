@@ -30,7 +30,7 @@ fn the_quants_follow_the_source() {
 fn a_launch_needs_a_model() {
     let draft = LaunchDraft::new("native");
     assert_eq!(draft.to_body().unwrap_err(), DraftError::ModelRequired);
-    assert!(!DraftError::ModelRequired.message().is_empty());
+    assert_ne!(DraftError::ModelRequired.message(), "");
 }
 
 #[quench_test::test]
@@ -53,7 +53,7 @@ fn what_does_not_read_is_left_to_the_defaults() {
     draft.model = "m".into();
     draft.port = "abc".into();
     draft.max_model_len = "x".into();
-    draft.gpu_util = "".into();
+    draft.gpu_util = String::new();
     draft.host = "  ".into();
     let body = draft.to_body().unwrap();
     assert_eq!((body.host.as_str(), body.port), ("0.0.0.0", 8000));

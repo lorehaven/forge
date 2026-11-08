@@ -1,5 +1,6 @@
-//! The markdown subset an answer is written in, read into blocks the client draws as elements. Nothing here produces markup: text
-//! stays text, so a model (or a web page it quoted) cannot put HTML or script in the page.
+//! The markdown subset an answer is written in, read into blocks the client draws as elements.
+//!
+//! Nothing here produces markup: text stays text, so a model (or a web page it quoted) cannot put HTML or script in the page.
 //!
 //! The subset is the one the service used to render on the server: code fences with a language, headings, bullet and numbered
 //! lists, `|` tables, rules, paragraphs, and inline code, bold, italic and links. Answers that ran a tool carry the tool's result
@@ -81,16 +82,13 @@ fn text_part(text: &str, blocks: &mut Vec<Block>) {
     let mut rest = text;
     while let Some(start) = rest.find(TOOL_OPEN) {
         lines(&rest[..start], blocks);
-        match card_end(&rest[start..]) {
-            Some(len) => {
-                blocks.push(tool_card(&rest[start..start + len]));
-                rest = &rest[start + len..];
-            }
-            None => {
-                // A card that never closed (still arriving): show what there is as text.
-                lines(&rest[start..], blocks);
-                return;
-            }
+        if let Some(len) = card_end(&rest[start..]) {
+            blocks.push(tool_card(&rest[start..start + len]));
+            rest = &rest[start + len..];
+        } else {
+            // A card that never closed (still arriving): show what there is as text.
+            lines(&rest[start..], blocks);
+            return;
         }
     }
     lines(rest, blocks);

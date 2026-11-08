@@ -1,8 +1,9 @@
-//! What the app keeps in its data directory: the session, the settings and the manifest. The small files are written
-//! whole to a temporary name and renamed into place, so a crash leaves the old content or the new, never half; the
-//! session file can be read only by the user. The manifest is a SQLite database (`manifest.db`, made by
-//! `quench-sqlite`): a save writes only the records that changed, in one transaction, so a crash leaves the old
-//! manifest or the new one and a big library is not rewritten for a few changed files.
+//! What the app keeps in its data directory: the session, the settings and the manifest.
+//!
+//! The small files are written whole to a temporary name and renamed into place, so a crash leaves the old content or
+//! the new, never half; the session file can be read only by the user. The manifest is a SQLite database
+//! (`manifest.db`, made by `quench-sqlite`): a save writes only the records that changed, in one transaction, so a
+//! crash leaves the old manifest or the new one and a big library is not rewritten for a few changed files.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
@@ -334,8 +335,8 @@ impl Store {
     }
 
     pub fn set_manifest(&self, manifest: &Manifest) {
-        let items = manifest.items().cloned().collect();
-        self.write_manifest(items, ASKED.fetch_add(1, Ordering::SeqCst) + 1);
+        let items: Vec<Item> = manifest.items().cloned().collect();
+        self.write_manifest(&items, ASKED.fetch_add(1, Ordering::SeqCst) + 1);
     }
 
     /// [`set_manifest`](Self::set_manifest) without waiting for the disk (the records are copied here, the writing,
@@ -353,13 +354,14 @@ impl Store {
             .entry(self.dir.clone())
             .or_insert(0) += 1;
         std::thread::spawn(move || {
-            store.write_manifest(items, number);
+            store.write_manifest(&items, number);
             let mut pending = PENDING
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(n) = pending.get_mut(&store.dir) {
                 *n = n.saturating_sub(1);
             }
+            drop(pending);
             WRITTEN_SIGNAL.notify_all();
         });
     }
@@ -374,9 +376,14 @@ impl Store {
                 .wait(pending)
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
         }
+        drop(pending);
     }
 
-    fn write_manifest(&self, items: Vec<Item>, number: u64) {
+    #[allow(
+        clippy::significant_drop_tightening,
+        reason = "`WRITTEN` is held for the whole write: an older save must not reach the disk after a newer one"
+    )]
+    fn write_manifest(&self, items: &[Item], number: u64) {
         let mut written = WRITTEN
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -393,9 +400,9 @@ impl Store {
             return;
         }
         if let Some(mut conn) = self.open_db()
-            && persist(&mut conn, &items).is_ok()
+            && persist(&mut conn, items).is_ok()
         {
-            self.write_counts(&items);
+            self.write_counts(items);
         }
     }
 

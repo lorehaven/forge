@@ -34,8 +34,8 @@ pub fn fit(samples: &[(f64, f64)], size: f64) -> Option<Fit> {
         .fold((0.0, 0.0), |(t, u), s| (t + s.0 / n, u + s.1 / n));
     let (mut num, mut den) = (0.0, 0.0);
     for (t, u) in samples {
-        num += (t - mean_t) * (u - mean_u);
-        den += (t - mean_t) * (t - mean_t);
+        num = f64::mul_add(t - mean_t, u - mean_u, num);
+        den = f64::mul_add(t - mean_t, t - mean_t, den);
     }
     if den <= 0.0 {
         return None;

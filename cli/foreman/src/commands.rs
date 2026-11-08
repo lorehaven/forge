@@ -157,10 +157,12 @@ pub fn reset(estate: &Estate) -> Result<()> {
     tasks::run_role(estate, Role::Reset, &[])
 }
 
+/// Runs the test suite.
+///
 /// The suite usually starts its own copies of the services on the same ports as
 /// the development estate, so the two cannot be up at once. Rather than fail
 /// with a confusing bind error, take the estate down first and say so.
-pub fn test(estate: &Estate, args: &[String]) -> Result<i32> {
+pub fn test(estate: &Estate, args: &[String]) -> Result<u8> {
     let Some(test) = &estate.config.test else {
         bail!("no [test] section in {}", estate.config_path.display());
     };
@@ -184,16 +186,17 @@ pub fn test(estate: &Estate, args: &[String]) -> Result<i32> {
     // A bare service name is the common case; anything starting with `-` is
     // passed straight through to the suite.
     let mut suite_args: Vec<String> = Vec::new();
-    let mut rest = args;
-    if let Some(first) = args.first()
+    let rest = if let Some(first) = args.first()
         && !first.starts_with('-')
         && !test.service_arg.is_empty()
     {
         estate.service(first)?;
         let scope = estate.scope().with("service", first).with("name", first);
         suite_args.extend(scope.expand_all(&test.service_arg)?);
-        rest = &args[1..];
-    }
+        &args[1..]
+    } else {
+        args
+    };
     suite_args.extend(rest.iter().cloned());
 
     let command = estate.scope().expand_all(&test.command)?;
@@ -221,7 +224,7 @@ pub fn test(estate: &Estate, args: &[String]) -> Result<i32> {
         ui::info("test", estate.scope().expand(note)?);
     }
 
-    Ok(if passed { 0 } else { 1 })
+    Ok(u8::from(!passed))
 }
 
 pub fn run_task(estate: &Estate, task: &str, names: &[String]) -> Result<()> {
@@ -274,7 +277,9 @@ pub fn list(estate: &Estate) -> Result<()> {
     Ok(())
 }
 
-/// What one service would actually be started with. The shared environment,
+/// What one service would actually be started with.
+///
+/// The shared environment,
 /// the service's own additions and the conditional blocks all end up in one
 /// list here, which is the only place you can see the result of that merge
 /// before it becomes a running process.

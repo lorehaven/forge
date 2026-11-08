@@ -18,6 +18,7 @@ pub fn require_docker() -> Result<()> {
     Ok(())
 }
 
+#[must_use]
 pub fn is_running(container: &Container) -> bool {
     let filter = format!("name=^{}$", container.container_name());
     matches!(

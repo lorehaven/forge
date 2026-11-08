@@ -3,6 +3,10 @@
 use quench_serde::{Deserialize, Serialize};
 
 /// Which registries this deployment serves.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "the JSON the management API sends: one independent switch per registry"
+)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Features {
     pub docker: bool,

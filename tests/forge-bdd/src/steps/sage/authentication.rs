@@ -17,7 +17,7 @@ async fn send_without_auth(world: &mut ForgeWorld) -> Result<(), String> {
             world.last_status = Some(resp.status().as_u16());
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
@@ -44,7 +44,7 @@ async fn send_with_invalid_token(world: &mut ForgeWorld) -> Result<(), String> {
             world.last_status = Some(resp.status().as_u16());
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
@@ -66,7 +66,7 @@ async fn send_with_expired_token(world: &mut ForgeWorld) -> Result<(), String> {
     match world
         .client
         .post(&url)
-        .header("Authorization", format!("Bearer {}", expired_token))
+        .header("Authorization", format!("Bearer {expired_token}"))
         .json(&body)
         .send()
         .await
@@ -75,7 +75,7 @@ async fn send_with_expired_token(world: &mut ForgeWorld) -> Result<(), String> {
             world.last_status = Some(resp.status().as_u16());
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
@@ -103,11 +103,11 @@ async fn send_with_valid_token(world: &mut ForgeWorld) -> Result<(), String> {
             world.last_status = Some(status);
             let body_text = resp.text().await.unwrap_or_default();
             if status >= 400 {
-                eprintln!("DEBUG TEST: status={}, body={}", status, body_text);
+                eprintln!("DEBUG TEST: status={status}, body={body_text}");
             }
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
@@ -129,7 +129,7 @@ async fn send_with_missing_scope(world: &mut ForgeWorld) -> Result<(), String> {
     match world
         .client
         .post(&url)
-        .header("Authorization", format!("Bearer {}", token_without_scope))
+        .header("Authorization", format!("Bearer {token_without_scope}"))
         .json(&body)
         .send()
         .await
@@ -138,7 +138,7 @@ async fn send_with_missing_scope(world: &mut ForgeWorld) -> Result<(), String> {
             world.last_status = Some(resp.status().as_u16());
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
@@ -159,7 +159,7 @@ async fn send_with_wrong_service(world: &mut ForgeWorld, _service: String) -> Re
     match world
         .client
         .post(&url)
-        .header("Authorization", format!("Bearer {}", wrong_service_token))
+        .header("Authorization", format!("Bearer {wrong_service_token}"))
         .json(&body)
         .send()
         .await
@@ -168,6 +168,6 @@ async fn send_with_wrong_service(world: &mut ForgeWorld, _service: String) -> Re
             world.last_status = Some(resp.status().as_u16());
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }

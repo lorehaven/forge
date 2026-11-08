@@ -1,6 +1,8 @@
-//! The task form: a dialog that is also the way to the pickers and menus it needs (each one takes the dialog's place and
-//! returns to the form), so a phone never stacks one modal on another. The rules (what a changed due date does to the
-//! reminder, what a repeat needs) are `daybook_core::Draft`'s; this is only the screen.
+//! The task form: a dialog that is also the way to the pickers and menus it needs.
+//!
+//! Each one takes the dialog's place and returns to the form, so a phone never stacks one modal on another.
+//! The rules (what a changed due date does to the reminder, what a repeat needs) are `daybook_core::Draft`'s; this is
+//! only the screen.
 
 use std::rc::Rc;
 
@@ -22,7 +24,7 @@ use crate::pickers::{date_picker, time_picker};
 type Choice = (String, String, Rc<dyn Fn()>);
 
 /// What the form is for.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     /// A new task, in the view being looked at.
     New(ListRef),
@@ -46,7 +48,15 @@ pub struct Context {
     pub confirm_delete: Signal<Option<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl std::fmt::Debug for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Context")
+            .field("zone", &self.zone)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Step {
     Form,
     DueDate,
@@ -174,7 +184,11 @@ fn row(
     line.into_view()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "one function builds the whole form, every row wired to the draft and the steps"
+)]
 fn main_form(
     ctx: &Context,
     close: &Signal<bool>,
@@ -188,16 +202,18 @@ fn main_form(
     let (zone, clock) = (ctx.zone.clone(), Rc::clone(&ctx.clock));
     let go = |to: Step| {
         let step = step.clone();
-        move || step.set(to.clone())
+        move || step.set(to)
     };
     let due_text = {
         let (draft, zone, clock) = (draft.clone(), zone.clone(), Rc::clone(&clock));
-        move || match draft.get().due() {
-            None => "None".to_string(),
-            Some(due) => {
-                let at = due.instant(&zone).unwrap_or_default();
-                format_due(at, due.all_day(), clock(), &zone)
-            }
+        move || {
+            draft.get().due().map_or_else(
+                || "None".to_string(),
+                |due| {
+                    let at = due.instant(&zone).unwrap_or_default();
+                    format_due(at, due.all_day(), clock(), &zone)
+                },
+            )
         }
     };
     let due_clear: Rc<dyn Fn()> = {
@@ -419,7 +435,7 @@ fn main_form(
     let _ = go;
     // What the title says about when, as it is typed.
     let hint = {
-        let (title, zone, clock) = (title.clone(), zone.clone(), Rc::clone(&clock));
+        let (title, zone, clock) = (title.clone(), zone, Rc::clone(&clock));
         p().attr("id", "due-hint")
             .attr("aria-live", "polite")
             .class("dbk-hint")
@@ -514,6 +530,10 @@ fn menu(heading: &str, options: Vec<Choice>, back: Rc<dyn Fn()>) -> View {
         .into_view()
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one match builds every picker and menu that takes the form's place"
+)]
 fn sub_step(
     ctx: &Context,
     draft: &Signal<Draft>,
@@ -530,7 +550,7 @@ fn sub_step(
     };
     let go = |to: Step| -> Rc<dyn Fn()> {
         let step = step.clone();
-        Rc::new(move || step.set(to.clone()))
+        Rc::new(move || step.set(to))
     };
     match which {
         Step::Form => div().into_view(),
@@ -577,7 +597,7 @@ fn sub_step(
                         d.set_due(Due {
                             date,
                             clock: Some((h, m)),
-                        })
+                        });
                     });
                     s1.set(Step::Form);
                 }),
@@ -703,6 +723,10 @@ fn sub_step(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function builds the custom repeat screen, each control wired to the draft"
+)]
 fn repeat_custom(draft: &Signal<Draft>, step: &Signal<Step>, zone_name: &str) -> View {
     let start = draft
         .get_untracked()
@@ -721,7 +745,7 @@ fn repeat_custom(draft: &Signal<Draft>, step: &Signal<Step>, zone_name: &str) ->
                 .class("dbk-step")
                 .text("−")
                 .on_click(move || {
-                    minus.update(|r| r.interval = r.interval.saturating_sub(1).max(1))
+                    minus.update(|r| r.interval = r.interval.saturating_sub(1).max(1));
                 }),
         )
         .child(

@@ -269,7 +269,10 @@ fn notification_ids_are_stable_and_positive() {
     assert_eq!(notification_id("abc"), notification_id("abc"));
     assert_ne!(notification_id("abc"), notification_id("abd"));
     assert!(notification_id("some-long-id-0123456789") >= 0);
-    assert_eq!(notification_id(""), 0x811c_9dc5_u32 as i32 & 0x7FFF_FFFF);
+    assert_eq!(
+        notification_id(""),
+        0x811c_9dc5_u32.cast_signed() & 0x7FFF_FFFF
+    );
 }
 
 #[quench_test::test]

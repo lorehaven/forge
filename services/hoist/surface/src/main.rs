@@ -1,4 +1,4 @@
-//! Hoist on Android, drawn by the native renderer with no WebView: the same screens and the same worker as on the
+//! Hoist on Android, drawn by the native renderer with no `WebView`: the same screens and the same worker as on the
 //! desktop, with the install done by the app's `packages` plugin (the system's package installer) through the
 //! surface bridge, and what is installed asked of the system's package manager.
 //!
@@ -154,6 +154,10 @@ fn background_check() -> std::io::Result<()> {
     Ok(())
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function wires the whole program: the renderer, the store, the worker and the app's callbacks"
+)]
 fn main() -> std::io::Result<()> {
     if std::env::args().any(|a| a == "--check") {
         return background_check();
@@ -273,7 +277,7 @@ fn main() -> std::io::Result<()> {
                         let installed = Installed {
                             program: artifact.program.clone(),
                             version_code: artifact.version_code,
-                            version_name: artifact.version_name.clone(),
+                            version_name: artifact.version_name,
                         };
                         store.record(&installed);
                         deliver(Msg::Installed {

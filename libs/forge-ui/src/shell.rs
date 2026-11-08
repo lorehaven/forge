@@ -12,8 +12,12 @@ use quench_web::prelude::*;
 
 pub const SUPPORTED_LOCALES: [&str; 5] = ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"];
 
+#[must_use]
 pub fn supported_locales() -> Vec<String> {
-    SUPPORTED_LOCALES.iter().map(|s| s.to_string()).collect()
+    SUPPORTED_LOCALES
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect()
 }
 
 const FAVICON: &[u8] = include_bytes!("../assets/favicon.png");
@@ -70,11 +74,13 @@ pub struct Sidebar {
 }
 
 impl Sidebar {
+    #[must_use]
     pub fn under(mut self, parent_href: impl Into<String>, children: Vec<NavChild>) -> Self {
         self.children.push((parent_href.into(), children));
         self
     }
 
+    #[must_use]
     pub fn replacing_nav(mut self, nav: Element) -> Self {
         self.nav = Some(nav);
         self
@@ -88,13 +94,15 @@ pub struct NavSection {
 }
 
 impl NavSection {
-    pub fn new(items: Vec<NavItem>) -> Self {
+    #[must_use]
+    pub const fn new(items: Vec<NavItem>) -> Self {
         Self {
             heading_key: None,
             items,
         }
     }
 
+    #[must_use]
     pub fn titled(heading_key: &str, items: Vec<NavItem>) -> Self {
         Self {
             heading_key: Some(heading_key.to_string()),
@@ -121,6 +129,7 @@ pub struct ShellConfig {
 }
 
 impl ShellConfig {
+    #[must_use]
     pub fn new(brand_name: &str, css_file: &str, brand_icon: &str) -> Self {
         Self {
             title: brand_name.to_string(),
@@ -134,16 +143,19 @@ impl ShellConfig {
     }
 
     /// Adds the services-dashboard icon to the top bar, first in line.
+    #[must_use]
     pub fn dashboard(mut self, href: impl Into<String>) -> Self {
         self.dashboard_href = Some(href.into());
         self
     }
 
+    #[must_use]
     pub fn nav(mut self, sections: Vec<NavSection>) -> Self {
         self.nav = sections;
         self
     }
 
+    #[must_use]
     pub fn profile(mut self, href: impl Into<String>) -> Self {
         self.profile_href = Some(href.into());
         self
@@ -173,11 +185,13 @@ pub struct UiShell {
 
 impl UiShell {
     /// The signed-in frame: sidebar + top bar + scrolling content.
+    #[must_use]
     pub fn new(cfg: ShellConfig) -> Self {
         Self::build(cfg, Frame::Sidebar)
     }
 
     /// The signed-out frame: centred card under a slim bar with language and theme.
+    #[must_use]
     pub fn auth(cfg: ShellConfig) -> Self {
         Self::build(cfg, Frame::Auth)
     }
@@ -213,22 +227,26 @@ impl UiShell {
     }
 
     /// Full HTML document with `content` inside the page column.
+    #[must_use]
     pub fn page(&self, content: Element) -> String {
         self.page_with(content, PageWidth::Normal)
     }
 
     /// Like [`page`](Self::page) but without the max-width cap - for tables, trees and boards.
+    #[must_use]
     pub fn page_wide(&self, content: Element) -> String {
         self.page_with(content, PageWidth::Wide)
     }
 
     /// The content fills the whole area below the top bar, edge to edge, and scrolls its own panes -
     /// for chat-style screens.
+    #[must_use]
     pub fn page_fill(&self, content: Element) -> String {
         self.page_with(content, PageWidth::Fill)
     }
 
     /// Like the other `page*` methods, with `sidebar` applied to this request's sidebar.
+    #[must_use]
     pub fn page_in(&self, content: Element, width: PageWidth, sidebar: &Sidebar) -> String {
         self.page_with_sidebar(content, width, sidebar)
     }
@@ -395,6 +413,7 @@ pub const PALETTES: [&str; 6] = ["green", "teal", "blue", "purple", "rose", "ora
 
 /// Theme menu: light/dark and a colour palette, each remembered in a cookie. The active mode and
 /// palette are highlighted by CSS from `html[data-fui-theme]` / `html[data-fui-palette]`.
+#[must_use]
 pub fn theme_menu() -> Element {
     let trigger = element("summary")
         .class("fui-icon-btn")
@@ -462,6 +481,7 @@ pub fn theme_menu() -> Element {
 /// The user's picture is served at `<profile_href>/avatar` (gatehouse's account page); it is loaded
 /// hidden and swaps in for the icon only once it has actually loaded, so a user with no picture
 /// (a 404) keeps the icon. The frame is static across users, which is why this is decided in the browser.
+#[must_use]
 pub fn user_menu(profile_href: &str, logout_href: &str) -> Element {
     let avatar = element("img")
         .attr(
@@ -489,6 +509,7 @@ pub fn user_menu(profile_href: &str, logout_href: &str) -> Element {
         )
 }
 
+#[must_use]
 pub fn menu_item(href: &str, icon_name: &str, key: &str) -> Element {
     a().attr("href", href)
         .class("fui-dropdown-item")
@@ -498,12 +519,14 @@ pub fn menu_item(href: &str, icon_name: &str, key: &str) -> Element {
 
 /// Where "edit profile" leads from a service other than gatehouse: gatehouse owns
 /// the account page, so the link is absolute, built from `GATEHOUSE_URL`.
+#[must_use]
 pub fn gatehouse_profile_url() -> String {
     let base = quench_core::env::get_or("GATEHOUSE_URL", "");
     format!("{}/ui/account", base.trim_end_matches('/'))
 }
 
 /// The services dashboard: gatehouse's home page, absolute, built from `GATEHOUSE_URL`.
+#[must_use]
 pub fn gatehouse_dashboard_url() -> String {
     let base = quench_core::env::get_or("GATEHOUSE_URL", "");
     format!("{}/ui/home", base.trim_end_matches('/'))

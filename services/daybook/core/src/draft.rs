@@ -114,7 +114,7 @@ impl Draft {
 
     /// Sets the due date. A reminder that follows it moves with it; one that is for the other kind of date (a time against
     /// all day) is dropped.
-    pub fn set_due(&mut self, due: Due) {
+    pub const fn set_due(&mut self, due: Due) {
         if let Remind::Preset(p) = self.remind
             && !p.applies(due.all_day())
         {
@@ -133,7 +133,7 @@ impl Draft {
     }
 
     /// Chooses a preset; needs a due date of the right kind.
-    pub fn set_preset(&mut self, preset: Preset) -> bool {
+    pub const fn set_preset(&mut self, preset: Preset) -> bool {
         match self.due {
             Some(due) if preset.applies(due.all_day()) => {
                 self.remind = Remind::Preset(preset);

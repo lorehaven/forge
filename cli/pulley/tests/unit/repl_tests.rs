@@ -28,11 +28,11 @@ fn job_with_dirs(id: &str, src: &std::path::Path, dest: &std::path::Path) -> Job
     }
 }
 
-fn repl_with(jobs: Vec<Job>) -> Repl {
+const fn repl_with(jobs: Vec<Job>) -> Repl {
     Repl::new(Config { jobs })
 }
 
-fn assert_continues(control: ReplControl) {
+fn assert_continues(control: &ReplControl) {
     assert!(matches!(control, ReplControl::Continue(_)));
 }
 
@@ -86,39 +86,39 @@ fn handle_command_quit_and_exit_end_the_session() {
 #[quench_test::test]
 fn handle_command_empty_line_just_reprompts() {
     let mut repl = repl_with(vec![]);
-    assert_continues(repl.handle_command(""));
-    assert_continues(repl.handle_command("   "));
+    assert_continues(&repl.handle_command(""));
+    assert_continues(&repl.handle_command("   "));
 }
 
 #[quench_test::test]
 fn handle_command_help_and_list_do_not_panic() {
     let mut repl = repl_with(vec![job("a")]);
-    assert_continues(repl.handle_command("help"));
-    assert_continues(repl.handle_command("list"));
+    assert_continues(&repl.handle_command("help"));
+    assert_continues(&repl.handle_command("list"));
 }
 
 #[quench_test::test]
 fn handle_command_list_on_an_empty_config_does_not_panic() {
     let mut repl = repl_with(vec![]);
-    assert_continues(repl.handle_command("list"));
+    assert_continues(&repl.handle_command("list"));
 }
 
 #[quench_test::test]
 fn handle_command_unknown_command_warns_and_continues() {
     let mut repl = repl_with(vec![]);
-    assert_continues(repl.handle_command("frobnicate"));
+    assert_continues(&repl.handle_command("frobnicate"));
 }
 
 #[quench_test::test]
 fn handle_command_run_with_no_args_prints_usage_and_continues() {
     let mut repl = repl_with(vec![job("a")]);
-    assert_continues(repl.handle_command("run"));
+    assert_continues(&repl.handle_command("run"));
 }
 
 #[quench_test::test]
 fn handle_command_run_with_an_unknown_job_id_finds_nothing() {
     let mut repl = repl_with(vec![job("a")]);
-    assert_continues(repl.handle_command("run does-not-exist"));
+    assert_continues(&repl.handle_command("run does-not-exist"));
 }
 
 #[quench_test::test]
@@ -129,7 +129,7 @@ fn handle_command_reload_does_not_panic_regardless_of_real_config_state() {
     // doesn't control - a parse error there is reported and handled,
     // not propagated as a panic.
     let mut repl = repl_with(vec![]);
-    assert_continues(repl.handle_command("reload"));
+    assert_continues(&repl.handle_command("reload"));
 }
 
 #[quench_test::test]
@@ -139,7 +139,7 @@ fn run_jobs_with_no_confirm_syncs_without_prompting() {
     std::fs::write(src.path().join("a.txt"), "hello").unwrap();
 
     let job = job_with_dirs("sync-me", src.path(), dest.path());
-    let repl = repl_with(vec![job.clone()]);
+    let repl = repl_with(vec![job]);
 
     repl.run_jobs(&["sync-me"]).expect("run_jobs");
     assert_eq!(

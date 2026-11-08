@@ -46,5 +46,5 @@ fn a_cycle_or_a_missing_need_cannot_hang_or_hide_a_stage() {
     let levels = stage_levels(&jobs);
     let stages: usize = levels.iter().map(Vec::len).sum();
     assert_eq!(stages, 3);
-    assert!(stage_levels(&[]).is_empty());
+    assert_eq!(stage_levels(&[]), [] as [Vec<Vec<&conveyor_core::Job>>; 0]);
 }

@@ -135,9 +135,11 @@ pub struct Fault {
     pub count: f64,
 }
 
-/// What a drive says about itself (SMART). Counters are totals over the drive's life; `None` when the drive does
-/// not report it. The ATA sector counters are `None` on NVMe, which reports wear, spare and media errors instead
-/// (from `nvme_metrics.py`; without it an NVMe drive has only `healthy`, `model` and `temp_c`).
+/// What a drive says about itself (SMART).
+///
+/// Counters are totals over the drive's life; `None` when the drive does
+/// not report it. The ATA sector counters are `None` on `NVMe`, which reports wear, spare and media errors instead
+/// (from `nvme_metrics.py`; without it an `NVMe` drive has only `healthy`, `model` and `temp_c`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DiskHealth {
@@ -154,13 +156,13 @@ pub struct DiskHealth {
     pub pending: Option<f64>,
     /// Sectors that could not be read (ATA 198).
     pub uncorrectable: Option<f64>,
-    /// The share of the rated endurance used: NVMe "percentage used" (0 to 100, and past it on a drive worn out), or
+    /// The share of the rated endurance used: `NVMe` "percentage used" (0 to 100, and past it on a drive worn out), or
     /// a SATA SSD's life attribute turned around (100 minus the life left).
     pub wear_pct: Option<f64>,
-    /// NVMe spare capacity left, in percent, and the level under which the drive raises its critical warning.
+    /// `NVMe` spare capacity left, in percent, and the level under which the drive raises its critical warning.
     pub spare_pct: Option<f64>,
     pub spare_threshold_pct: Option<f64>,
-    /// NVMe unrecovered data integrity errors.
+    /// `NVMe` unrecovered data integrity errors.
     pub media_errors: Option<f64>,
 }
 
@@ -240,10 +242,12 @@ pub struct LinkView {
     pub errors_per_sec: f64,
 }
 
-/// Something that needs a look. `kind` picks the wording, `detail` is what it is about (and changes as it gets
+/// Something that needs a look.
+///
+/// `kind` picks the wording, `detail` is what it is about (and changes as it gets
 /// worse), `key` is what it is *of* - the same alert has the same key from one scrape to the next, which is how an
 /// alert that opens and closes is told from one that merely changes.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Alert {
     pub key: String,
     pub kind: String,
@@ -486,7 +490,7 @@ fn alerts(view: &View, prev: Option<&Reading>, cur: &Reading) -> Vec<Alert> {
         add(
             "swapping".into(),
             "swapping",
-            format!("{:.0} MiB/s", swapping / 1048576.0),
+            format!("{:.0} MiB/s", swapping / 1_048_576.0),
             false,
         );
     }
@@ -497,15 +501,15 @@ fn alerts(view: &View, prev: Option<&Reading>, cur: &Reading) -> Vec<Alert> {
 /// `hot`: spinning disks are rated to about 60 °C.
 pub const DISK_HOT_C: f64 = 55.0;
 pub const DISK_HOT_SEVERE_C: f64 = 60.0;
-/// The same for NVMe, whose composite temperature runs 40-60 °C under load; most drives start throttling at 70-80.
+/// The same for `NVMe`, whose composite temperature runs 40-60 °C under load; most drives start throttling at 70-80.
 pub const NVME_HOT_C: f64 = 70.0;
 pub const NVME_HOT_SEVERE_C: f64 = 80.0;
-/// Wear (NVMe percentage used, SATA SSD life used) from which it is an alert, and from which (the rated endurance used up) a severe one.
+/// Wear (`NVMe` percentage used, SATA SSD life used) from which it is an alert, and from which (the rated endurance used up) a severe one.
 pub const WEAR_WARN_PCT: f64 = 80.0;
 pub const WEAR_SEVERE_PCT: f64 = 100.0;
 
 /// A drive that calls itself failing; one with bad sectors (remapped ones are a warning, ones it cannot read or
-/// has yet to remap are severe); an SSD near or past its rated endurance; an NVMe drive with media errors (severe); a
+/// has yet to remap are severe); an SSD near or past its rated endurance; an `NVMe` drive with media errors (severe); a
 /// drive that runs hot. These are levels, not changes: SMART is read every few
 /// minutes, and a disk with 163 remapped sectors is worth seeing every time, not once.
 fn disk_alerts(d: &DiskHealth, add: &mut impl FnMut(String, &str, String, bool)) {

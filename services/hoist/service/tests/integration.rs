@@ -342,7 +342,7 @@ async fn the_real_stores_can_be_fetched_merged_and_stored() {
     assert!(count > 1000, "{count}");
     let categories = store::categories(&db).await.unwrap();
     println!("categories: {:?}", &categories[..categories.len().min(8)]);
-    assert!(!categories.is_empty());
+    assert_ne!(categories, [] as [(String, i64); 0]);
 }
 
 quench_test::main!();

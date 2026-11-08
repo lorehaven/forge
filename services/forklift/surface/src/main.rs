@@ -1,4 +1,4 @@
-//! Forklift on Android, drawn by the native renderer with no WebView: the screens of `forklift-app`, the backup's
+//! Forklift on Android, drawn by the native renderer with no `WebView`: the screens of `forklift-app`, the backup's
 //! controller, and the device's side done by the app's plugins (`files`, `device`) through the surface bridge.
 //!
 //! Standard output is the surface protocol's: log to standard error.
@@ -42,7 +42,7 @@ fn text(v: &Value, key: &str) -> String {
         .to_string()
 }
 
-/// A MediaStore row's id: the last segment of its URI.
+/// A `MediaStore` row's id: the last segment of its URI.
 fn media_id(uri: &str) -> String {
     uri.rsplit('/').next().unwrap_or(uri).to_string()
 }
@@ -99,7 +99,7 @@ enum Answer {
 
 struct Android {
     /// Where the last page of the media library ended: `(kind, modified in seconds, id)`. The next page is asked for
-    /// by that key (MediaStore walks every row an offset skips, so reading a big library by offsets is quadratic).
+    /// by that key (`MediaStore` walks every row an offset skips, so reading a big library by offsets is quadratic).
     media_end: MediaEnd,
     bridge: Bridge,
     worker: Rc<Worker>,
@@ -375,6 +375,10 @@ fn watch_background(
     });
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function wires the whole program: the window, the app, the controller and the platform share them"
+)]
 fn main() -> std::io::Result<()> {
     if std::env::args().any(|a| a == "--backup") {
         return background_backup();
@@ -578,7 +582,7 @@ fn main() -> std::io::Result<()> {
                 } else {
                     settings.server.clone()
                 },
-                ..settings.clone()
+                ..settings
             },
             has_session,
             // What the dashboard showed last time is there at the first frame.
@@ -604,7 +608,7 @@ fn main() -> std::io::Result<()> {
             Rc::clone(&paused),
             Rc::clone(&lock),
             bridge.clone(),
-            store.clone(),
+            store,
         );
         let store = reading.clone();
         let make: Rc<dyn Fn(Manifest)> = Rc::new(move |manifest| {

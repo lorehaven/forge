@@ -3,8 +3,10 @@
 use crate::domain::Job;
 use std::collections::{HashMap, HashSet};
 
-/// Level *n* needs only the levels below it: the stages of a level run concurrently. Each level holds its stages, each stage its
-/// jobs. Grouped from the `Job` rows, not the pipeline file, so an old run renders the same.
+/// Level *n* needs only the levels below it: the stages of a level run concurrently.
+///
+/// Each level holds its stages, each stage its jobs. Grouped from the `Job` rows, not the pipeline file, so an old run
+/// renders the same.
 #[must_use]
 pub fn stage_levels(jobs: &[Job]) -> Vec<Vec<Vec<&Job>>> {
     let mut stage_order: Vec<&str> = Vec::new();

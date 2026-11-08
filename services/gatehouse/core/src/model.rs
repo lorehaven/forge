@@ -62,6 +62,10 @@ pub struct Subscription {
 
 /// The person's own account page.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "the service's JSON answer: independent facts about the account (avatar, verified, MFA, notice address)"
+)]
 pub struct Account {
     pub username: String,
     #[serde(default)]
@@ -141,6 +145,10 @@ pub struct CatalogService {
 
 /// One user as the administrator sees them, with what the viewer may do about it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "the service's JSON answer: independent account states and what the viewer may do, each on its own"
+)]
 pub struct AdminUser {
     pub username: String,
     /// `user`, `admin` or `service`: the most privileged role held.

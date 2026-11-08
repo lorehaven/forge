@@ -6,6 +6,7 @@
 use quench_web::prelude::*;
 
 /// Translatable text node: `<span data-i18n="key">`.
+#[must_use]
 pub fn t(key: &str) -> Element {
     span().attr("data-i18n", key)
 }
@@ -16,6 +17,7 @@ pub fn txt(text: impl ToString) -> Element {
 }
 
 /// A Font Awesome solid icon by name, e.g. `icon("plus")`.
+#[must_use]
 pub fn icon(name: &str) -> Element {
     i().class("fa-solid").class(format!("fa-{name}"))
 }
@@ -34,7 +36,7 @@ pub enum Variant {
 }
 
 impl Variant {
-    fn class(self) -> &'static str {
+    const fn class(self) -> &'static str {
         match self {
             Self::Primary => "fui-btn-primary",
             Self::Secondary => "fui-btn-secondary",
@@ -47,6 +49,7 @@ impl Variant {
 }
 
 /// `<button type="button">` with a translated label.
+#[must_use]
 pub fn button_el(variant: Variant, label_key: &str) -> Element {
     button()
         .attr("type", "button")
@@ -56,11 +59,13 @@ pub fn button_el(variant: Variant, label_key: &str) -> Element {
 }
 
 /// Submit button (`<button type="submit">`).
+#[must_use]
 pub fn submit_button(variant: Variant, label_key: &str) -> Element {
     button_el(variant, label_key).attr("type", "submit")
 }
 
 /// A link that looks like a button.
+#[must_use]
 pub fn link_button(variant: Variant, href: &str, label_key: &str) -> Element {
     a().attr("href", href)
         .class("fui-btn")
@@ -69,6 +74,7 @@ pub fn link_button(variant: Variant, href: &str, label_key: &str) -> Element {
 }
 
 /// Square icon-only button. `label_key` is the screen-reader / tooltip text.
+#[must_use]
 pub fn icon_button(icon_name: &str, label_key: &str) -> Element {
     button()
         .attr("type", "button")
@@ -79,6 +85,7 @@ pub fn icon_button(icon_name: &str, label_key: &str) -> Element {
 }
 
 /// Icon-only link.
+#[must_use]
 pub fn icon_link(icon_name: &str, href: &str, label_key: &str) -> Element {
     a().attr("href", href)
         .class("fui-icon-btn")
@@ -100,7 +107,7 @@ pub enum Tone {
 }
 
 impl Tone {
-    fn badge_class(self) -> &'static str {
+    const fn badge_class(self) -> &'static str {
         match self {
             Self::Gray => "",
             Self::Brand => "fui-badge-brand",
@@ -111,7 +118,7 @@ impl Tone {
         }
     }
 
-    fn alert_class(self) -> &'static str {
+    const fn alert_class(self) -> &'static str {
         match self {
             Self::Gray | Self::Brand => "",
             Self::Success => "fui-alert-success",
@@ -121,7 +128,7 @@ impl Tone {
         }
     }
 
-    fn alert_icon(self) -> &'static str {
+    const fn alert_icon(self) -> &'static str {
         match self {
             Self::Success => "circle-check",
             Self::Warning => "triangle-exclamation",
@@ -145,6 +152,7 @@ pub fn status_badge(tone: Tone, text: impl ToString) -> Element {
 }
 
 /// Pill with a translated label and a status dot.
+#[must_use]
 pub fn status_badge_key(tone: Tone, key: &str) -> Element {
     badge_of(tone, t(key))
 }
@@ -160,7 +168,7 @@ fn badge_of(tone: Tone, label: Element) -> Element {
 // ------------------------------------------------------------------ cards
 
 /// Bordered surface. `.title_key(..)` / `.action(..)` add a header row.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Card {
     title_key: Option<String>,
     description_key: Option<String>,
@@ -171,41 +179,49 @@ pub struct Card {
 }
 
 impl Card {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn title_key(mut self, key: &str) -> Self {
         self.title_key = Some(key.to_string());
         self
     }
 
+    #[must_use]
     pub fn description_key(mut self, key: &str) -> Self {
         self.description_key = Some(key.to_string());
         self
     }
 
+    #[must_use]
     pub fn action(mut self, el: Element) -> Self {
         self.actions.push(el);
         self
     }
 
+    #[must_use]
     pub fn body(mut self, el: Element) -> Self {
         self.body.push(el);
         self
     }
 
+    #[must_use]
     pub fn footer(mut self, el: Element) -> Self {
         self.footer = Some(el);
         self
     }
 
     /// No body padding - for tables and lists that run edge to edge.
-    pub fn flush(mut self) -> Self {
+    #[must_use]
+    pub const fn flush(mut self) -> Self {
         self.flush = true;
         self
     }
 
+    #[must_use]
     pub fn build(self) -> Element {
         let mut card = div().class("fui-card");
         if self.title_key.is_some() || !self.actions.is_empty() {
@@ -235,6 +251,7 @@ impl Card {
 }
 
 /// Whole-card link with an icon tile, title, description and chevron - the home page tile.
+#[must_use]
 pub fn link_card(
     icon_name: &str,
     href: &str,
@@ -254,6 +271,7 @@ pub fn link_card(
 }
 
 /// Number with a caption.
+#[must_use]
 pub fn stat(label: Element, value: Element) -> Element {
     div()
         .class("fui-stat")
@@ -263,7 +281,7 @@ pub fn stat(label: Element, value: Element) -> Element {
 
 // ------------------------------------------------------------ page header
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct PageHeader {
     title: Option<Element>,
     subtitle: Option<Element>,
@@ -272,6 +290,7 @@ pub struct PageHeader {
 }
 
 impl PageHeader {
+    #[must_use]
     pub fn new(title_key: &str) -> Self {
         Self {
             title: Some(t(title_key)),
@@ -287,27 +306,32 @@ impl PageHeader {
         }
     }
 
+    #[must_use]
     pub fn subtitle_key(mut self, key: &str) -> Self {
         self.subtitle = Some(t(key));
         self
     }
 
+    #[must_use]
     pub fn subtitle(mut self, text: impl ToString) -> Self {
         self.subtitle = Some(txt(text));
         self
     }
 
     /// A crumb; `href: None` marks the current page.
+    #[must_use]
     pub fn crumb(mut self, label: Element, href: Option<&str>) -> Self {
         self.breadcrumbs.push((label, href.map(str::to_string)));
         self
     }
 
+    #[must_use]
     pub fn action(mut self, el: Element) -> Self {
         self.actions.push(el);
         self
     }
 
+    #[must_use]
     pub fn build(self) -> Element {
         let mut text = div().class("fui-page-header-text");
         if !self.breadcrumbs.is_empty() {
@@ -344,6 +368,7 @@ impl PageHeader {
 
 // ------------------------------------------------------------------ forms
 
+#[must_use]
 pub fn form_el(method: &str, action: &str) -> Element {
     form()
         .attr("method", method)
@@ -352,6 +377,7 @@ pub fn form_el(method: &str, action: &str) -> Element {
 }
 
 /// Label + control + optional hint, stacked.
+#[must_use]
 pub fn field(label_key: &str, control: Element, hint_key: Option<&str>) -> Element {
     div()
         .class("fui-field")
@@ -361,6 +387,7 @@ pub fn field(label_key: &str, control: Element, hint_key: Option<&str>) -> Eleme
 }
 
 /// Like [`field`], but the label's `for` points at `control_id` (set the same id on the control).
+#[must_use]
 pub fn field_for(
     control_id: &str,
     label_key: &str,
@@ -379,6 +406,7 @@ pub fn field_for(
         .child_opt(hint_key.map(|k| div().class("fui-hint").attr("data-i18n", k)))
 }
 
+#[must_use]
 pub fn text_input(name: &str, input_type: &str) -> Element {
     input()
         .attr("type", input_type)
@@ -387,6 +415,7 @@ pub fn text_input(name: &str, input_type: &str) -> Element {
         .class("fui-input")
 }
 
+#[must_use]
 pub fn select_el(name: &str) -> Element {
     select()
         .attr("name", name)
@@ -394,6 +423,7 @@ pub fn select_el(name: &str) -> Element {
         .class("fui-select")
 }
 
+#[must_use]
 pub fn textarea_el(name: &str) -> Element {
     textarea()
         .attr("name", name)
@@ -402,6 +432,7 @@ pub fn textarea_el(name: &str) -> Element {
 }
 
 /// Search box with a leading magnifier.
+#[must_use]
 pub fn search_input(name: &str, placeholder_key: &str) -> Element {
     div()
         .class("fui-input-group")
@@ -415,6 +446,7 @@ pub fn search_input(name: &str, placeholder_key: &str) -> Element {
         )
 }
 
+#[must_use]
 pub fn checkbox_field(name: &str, label_key: &str) -> Element {
     label()
         .class("fui-check")
@@ -426,6 +458,7 @@ pub fn checkbox_field(name: &str, label_key: &str) -> Element {
 
 /// `<table>` in a horizontally scrolling wrapper. `header_keys` are i18n keys; rows are built by the caller
 /// (`tr().child(td()...)`). Pass `stack: true` to collapse rows into label/value pairs on phones.
+#[must_use]
 pub fn table_el(header_keys: &[&str], rows: Vec<Element>, stack: bool) -> Element {
     let mut head = element("tr");
     for key in header_keys {
@@ -445,15 +478,18 @@ pub fn table_el(header_keys: &[&str], rows: Vec<Element>, stack: bool) -> Elemen
     div().class("fui-table-wrap").child(table)
 }
 
+#[must_use]
 pub fn tr_el() -> Element {
     element("tr")
 }
 
+#[must_use]
 pub fn td_el() -> Element {
     element("td")
 }
 
 /// `<dl>` of label/value pairs.
+#[must_use]
 pub fn key_values(pairs: Vec<(Element, Element)>) -> Element {
     let mut dl = element("dl").class("fui-kv");
     for (k, v) in pairs {
@@ -467,6 +503,7 @@ pub fn key_values(pairs: Vec<(Element, Element)>) -> Element {
 // ----------------------------------------------------------- feedback / empty
 
 /// Inline message with a tone-matched icon.
+#[must_use]
 pub fn alert(tone: Tone, body: Element) -> Element {
     div()
         .class("fui-alert")
@@ -483,6 +520,7 @@ pub fn alert(tone: Tone, body: Element) -> Element {
         .child(div().class("fui-alert-body").child(body))
 }
 
+#[must_use]
 pub fn empty_state(icon_name: &str, title_key: &str, description_key: Option<&str>) -> Element {
     div()
         .class("fui-empty")
@@ -491,6 +529,7 @@ pub fn empty_state(icon_name: &str, title_key: &str, description_key: Option<&st
         .child_opt(description_key.map(|k| div().attr("data-i18n", k)))
 }
 
+#[must_use]
 pub fn progress(percent: u8) -> Element {
     div()
         .class("fui-progress")
@@ -506,6 +545,7 @@ pub fn code_block(text: impl ToString) -> Element {
 // ------------------------------------------------------------------ tabs
 
 /// Link tabs: each `(label_key, href, active)`.
+#[must_use]
 pub fn tabs(items: &[(&str, String, bool)]) -> Element {
     let mut bar = div().class("fui-tabs").attr("role", "tablist");
     for (key, href, active) in items {
@@ -521,6 +561,7 @@ pub fn tabs(items: &[(&str, String, bool)]) -> Element {
 // ------------------------------------------------------------------ modal
 
 /// Dialog that is hidden until `open_modal(id)` runs. Slides up as a sheet on phones.
+#[must_use]
 pub fn modal(id: &str, title_key: &str, body: Element, footer: Option<Element>) -> Element {
     div()
         .class("fui-modal")
@@ -543,11 +584,13 @@ pub fn modal(id: &str, title_key: &str, body: Element, footer: Option<Element>) 
 }
 
 /// `onclick` code that opens the modal with this id.
+#[must_use]
 pub fn open_modal(id: &str) -> String {
     format!("fuiOpenModal('{id}')")
 }
 
 /// `onclick` code that closes the modal with this id.
+#[must_use]
 pub fn close_modal(id: &str) -> String {
     format!("fuiCloseModal('{id}')")
 }

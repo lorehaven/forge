@@ -1,5 +1,7 @@
 //! Dispatches `pulley service` to whichever service manager actually runs
-//! this system, detected at call time. Adding another one (OpenRC, s6, ...)
+//! this system, detected at call time.
+//!
+//! Adding another one (`OpenRC`, s6, ...)
 //! means adding a submodule that implements `Backend` and a branch in
 //! `detect()` — nothing else in the crate needs to change.
 
@@ -16,7 +18,7 @@ pub trait Backend {
 
 /// No-op here: journald/runit's own log chain already captures a service's
 /// output, so there's no console window to hide.
-pub fn hide_console_window() {}
+pub const fn hide_console_window() {}
 
 pub fn install() -> Result<(), Box<dyn std::error::Error>> {
     detect()?.install()
@@ -47,8 +49,7 @@ pub fn detect() -> Result<Box<dyn Backend>, Box<dyn std::error::Error>> {
     )
 }
 
+#[must_use]
 pub fn is_pid1(name: &str) -> bool {
-    std::fs::read_to_string("/proc/1/comm")
-        .map(|comm| comm.trim() == name)
-        .unwrap_or(false)
+    std::fs::read_to_string("/proc/1/comm").is_ok_and(|comm| comm.trim() == name)
 }

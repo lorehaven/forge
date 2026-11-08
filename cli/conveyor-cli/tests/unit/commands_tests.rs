@@ -137,7 +137,7 @@ fn validate_reports_a_missing_file() {
 use quench_test::mock::matchers::{body_json_string, method, path};
 use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 
-async fn client_for(server: &MockServer) -> Client {
+fn client_for(server: &MockServer) -> Client {
     Client::for_tests(server.uri())
 }
 
@@ -147,7 +147,7 @@ async fn resolve_repo_returns_a_bare_reference_unchanged_without_a_lookup() {
     // unexpected request, proving the id-shaped fast path never calls
     // the network.
     let server = MockServer::start().await;
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     assert_eq!(resolve_repo(&client, "abc-123").await.unwrap(), "abc-123");
 }
 
@@ -167,7 +167,7 @@ async fn resolve_repo_looks_up_an_owner_slash_name_reference() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     assert_eq!(
         resolve_repo(&client, "lorehaven/forge").await.unwrap(),
         "repo-1"
@@ -186,7 +186,7 @@ async fn resolve_repo_errors_when_the_slug_is_not_registered() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     let err = resolve_repo(&client, "lorehaven/forge").await.unwrap_err();
     assert!(err.to_string().contains("is not registered"), "{err}");
 }
@@ -213,7 +213,7 @@ async fn repo_add_posts_the_split_slug_and_resolved_project() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     repo(
         &client,
         &RepoCommands::Add(RepoAddArgs {
@@ -231,7 +231,7 @@ async fn repo_add_posts_the_split_slug_and_resolved_project() {
 #[quench_test::test]
 async fn repo_add_rejects_a_slug_without_a_slash() {
     let server = MockServer::start().await;
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     let err = repo(
         &client,
         &RepoCommands::Add(RepoAddArgs {
@@ -259,7 +259,7 @@ async fn repo_list_prints_nothing_special_when_empty() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     repo(&client, &RepoCommands::List).await.expect("repo list");
 }
 
@@ -301,7 +301,7 @@ async fn repo_enable_and_disable_resolve_then_post_the_flag() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     repo(
         &client,
         &RepoCommands::Enable(RepoEnableArgs {
@@ -349,7 +349,7 @@ async fn repo_move_and_set_branch_and_remove_resolve_then_act() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     repo(
         &client,
         &RepoCommands::Move(RepoMoveArgs {
@@ -419,7 +419,7 @@ async fn project_add_list_show_rename_move_remove() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     project(
         &client,
         &ProjectCommands::Add(ProjectAddArgs {
@@ -493,7 +493,7 @@ async fn project_add_list_show_rename_move_remove() {
 #[quench_test::test]
 async fn project_move_requires_a_parent_or_to_root() {
     let server = MockServer::start().await;
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     let err = project(
         &client,
         &ProjectCommands::Move(ProjectMoveArgs {
@@ -521,7 +521,7 @@ async fn run_queues_a_run_and_prints_its_id() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     run(
         &client,
         &RunArgs {
@@ -556,7 +556,7 @@ async fn run_with_wait_polls_until_the_run_succeeds() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     run(
         &client,
         &RunArgs {
@@ -593,7 +593,7 @@ async fn run_with_wait_fails_when_the_run_fails() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     let err = run(
         &client,
         &RunArgs {
@@ -633,7 +633,7 @@ async fn runs_lists_recent_runs_and_can_scope_to_a_repo() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     runs(
         &client,
         &RunsArgs {
@@ -671,7 +671,7 @@ async fn show_prints_the_run_its_jobs_and_its_artifacts() {
             .mount(&server)
             .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     show(
         &client,
         &ShowArgs {
@@ -691,7 +691,7 @@ async fn cancel_posts_the_cancel_endpoint() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     cancel(
         &client,
         &CancelArgs {
@@ -732,7 +732,7 @@ async fn logs_prints_stored_lines_for_every_job_in_a_run() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     logs(
         &client,
         &LogsArgs {
@@ -761,7 +761,7 @@ async fn logs_treats_an_id_that_is_not_a_run_as_a_job_id() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     logs(
         &client,
         &LogsArgs {
@@ -798,7 +798,7 @@ async fn logs_follow_reads_the_sse_stream_until_the_done_event() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     logs(
         &client,
         &LogsArgs {
@@ -835,7 +835,7 @@ async fn secret_set_list_and_remove_at_estate_scope() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     secret(
         &client,
         &SecretCommands::Set(SecretSetArgs {
@@ -887,7 +887,7 @@ async fn secret_set_scoped_to_a_repo_resolves_it_first() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     secret(
         &client,
         &SecretCommands::Set(SecretSetArgs {
@@ -924,7 +924,7 @@ async fn credential_set_show_and_remove_scoped_to_a_project() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     credential(
         &client,
         &CredentialCommands::Set(CredentialSetArgs {
@@ -969,7 +969,7 @@ async fn credential_show_reports_none_set_for_a_null_response() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     credential(
         &client,
         &CredentialCommands::Show(CredentialScopeArgs {
@@ -984,7 +984,7 @@ async fn credential_show_reports_none_set_for_a_null_response() {
 #[quench_test::test]
 async fn credential_rejects_both_repo_and_project_scope() {
     let server = MockServer::start().await;
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     let err = credential(
         &client,
         &CredentialCommands::Show(CredentialScopeArgs {
@@ -1000,7 +1000,7 @@ async fn credential_rejects_both_repo_and_project_scope() {
 #[quench_test::test]
 async fn credential_requires_a_scope() {
     let server = MockServer::start().await;
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     let err = credential(
         &client,
         &CredentialCommands::Show(CredentialScopeArgs {
@@ -1029,7 +1029,7 @@ async fn run_sends_the_chosen_stages_split_and_trimmed() {
         .mount(&server)
         .await;
 
-    let client = client_for(&server).await;
+    let client = client_for(&server);
     run(
         &client,
         &RunArgs {

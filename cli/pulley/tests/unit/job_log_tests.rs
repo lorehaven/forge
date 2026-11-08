@@ -39,11 +39,11 @@ fn prune_old_logs_keeps_a_file_exactly_at_the_cutoff() {
     // the boundary, so this file survives one more day than a strict
     // reading of "keep 7 days" might suggest.
     let cutoff_date = today.add_days(-7).unwrap();
-    fs::write(dir.join(format!("{}.log", cutoff_date)), "boundary").unwrap();
+    fs::write(dir.join(format!("{cutoff_date}.log")), "boundary").unwrap();
 
     prune_old_logs(&dir, today);
 
-    assert!(dir.join(format!("{}.log", cutoff_date)).exists());
+    assert!(dir.join(format!("{cutoff_date}.log")).exists());
 
     fs::remove_dir_all(&dir).ok();
 }

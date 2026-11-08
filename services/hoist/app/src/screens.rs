@@ -1,6 +1,7 @@
-//! The screens: the catalog and the settings. Each is a function of its data and of what to do when the user
-//! asks for something, so it runs the same in the browser, in a WebView host and on the native renderer, and a
-//! test can drive it with no host at all.
+//! The screens: the catalog and the settings.
+//!
+//! Each is a function of its data and of what to do when the user asks for something, so it runs the same in the
+//! browser, in a `WebView` host and on the native renderer, and a test can drive it with no host at all.
 
 use std::rc::Rc;
 
@@ -82,9 +83,9 @@ fn meta(entry: &Entry) -> String {
 
 /// One row: tapping the words opens the program's page; the button does what the program needs (install, update,
 /// open).
-fn row(entry: Entry, act: &Act) -> View {
+fn row(entry: &Entry, act: &Act) -> View {
     let (act_main, act_button) = (Rc::clone(act), Rc::clone(act));
-    let (program, action) = (entry.latest.program.clone(), action_for(&entry));
+    let (program, action) = (entry.latest.program.clone(), action_for(entry));
     let title = entry.latest.title().to_string();
     li().class("hoist-row")
         .child(
@@ -102,7 +103,7 @@ fn row(entry: Entry, act: &Act) -> View {
                                 .class("hoist-row-package")
                                 .text(entry.latest.program.clone()),
                         )
-                        .child(span().class("hoist-row-meta").text(meta(&entry))),
+                        .child(span().class("hoist-row-meta").text(meta(entry))),
                 )
                 .on_click(move || act_main(Action::Details(program.clone()))),
         )
@@ -143,7 +144,7 @@ fn others(device: &[DeviceApp], entries: &[Entry], query: &str) -> Vec<DeviceApp
         .collect()
 }
 
-fn device_row(app: DeviceApp, act: &Act) -> View {
+fn device_row(app: &DeviceApp, act: &Act) -> View {
     let (program, act) = (app.program.clone(), Rc::clone(act));
     let label = if app.label.is_empty() {
         app.program.clone()
@@ -180,9 +181,10 @@ fn device_row(app: DeviceApp, act: &Act) -> View {
         .into_view()
 }
 
-/// The catalog: a search field, one row per program of the registry that matches it, and below them, under their
-/// own heading, the other apps of the device that match it. The rows are made again when what they show changes (an
-/// install makes "Update" into "Open").
+/// The catalog: a search field and one row per program of the registry that matches it.
+///
+/// Below them, under their own heading, are the other apps of the device that match it. The rows are made again when
+/// what they show changes (an install makes "Update" into "Open").
 #[must_use]
 pub fn catalog(
     entries: &Signal<Vec<Entry>>,
@@ -237,7 +239,7 @@ pub fn catalog(
                             e.installed.as_ref().map_or(0, |i| i.version_code)
                         )
                     },
-                    move |entry: Entry| row(entry, &act_rows),
+                    move |entry: Entry| row(&entry, &act_rows),
                 )))
                 .child(View::show(
                     move || {
@@ -256,7 +258,7 @@ pub fn catalog(
                             .child(ul().class("hoist-list").child(View::keyed(
                                 move || others(&rest.get(), &entries.get(), &query.get()),
                                 |d: &DeviceApp| format!("{}@{}", d.program, d.version_name),
-                                move |app: DeviceApp| device_row(app, &act),
+                                move |app: DeviceApp| device_row(&app, &act),
                             )))
                             .into_view()
                     },
@@ -313,7 +315,7 @@ pub fn updates(entries: &Signal<Vec<Entry>>, act: &Act) -> View {
                     .collect::<Vec<_>>()
             },
             |e: &Entry| format!("{}@{}", e.latest.program, e.latest.version_code),
-            move |entry: Entry| row(entry, &act_rows),
+            move |entry: Entry| row(&entry, &act_rows),
         )))
         .into_view()
 }
@@ -409,7 +411,7 @@ pub fn detail(entry: &Entry, act: &Act) -> View {
 }
 
 /// What the settings screen edits.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Settings {
     pub registry_url: quench_ui::form::Field,
     pub auto_check: Signal<bool>,
@@ -448,8 +450,9 @@ fn setting(id: &str, title: &str, note: &str, control: Option<Element>) -> Eleme
 }
 
 /// The settings: the server, whether to look for updates in the background, a way to look now, signing out, and the
-/// version. Nothing needs saving: `on_change` is told when the server address (once it is a valid one) or the
-/// switch changes.
+/// version.
+///
+/// Nothing needs saving: `on_change` is told when the server address (once it is a valid one) or the switch changes.
 #[must_use]
 pub fn settings(
     settings: &Settings,
@@ -458,7 +461,7 @@ pub fn settings(
     sign_out: impl Fn() + 'static,
 ) -> View {
     let server = settings.registry_url.clone();
-    let shown = server.clone();
+    let shown = server;
     div()
         .attr("id", "settings")
         .class("hoist-screen hoist-scrolls")

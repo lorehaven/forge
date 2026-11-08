@@ -1,5 +1,7 @@
-//! The session for a host that cannot block: the session lives behind a mutex, a worker thread does the talking to the
-//! servers, and the answer comes back as a message for the program's own thread to give to the waiting callback.
+//! The session for a host that cannot block.
+//!
+//! The session lives behind a mutex, a worker thread does the talking to the servers, and the answer comes back as a
+//! message for the program's own thread to give to the waiting callback.
 
 use std::any::Any;
 use std::cell::{Cell, RefCell};
@@ -43,6 +45,14 @@ pub struct Worker {
     answers: Reply,
     waiting: RefCell<HashMap<u64, Callback>>,
     next: Cell<u64>,
+}
+
+impl std::fmt::Debug for Worker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Worker")
+            .field("next", &self.next)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Worker {
@@ -104,11 +114,10 @@ impl Worker {
     /// An access token (`force`: a new one whatever the old one says).
     pub fn token(&self, force: bool, then: impl FnOnce(Result<String, NetError>) + 'static) {
         self.run(
-            move |session| match session {
-                None => Err(NetError::Unauthorized),
-                Some(s) => {
+            move |session| {
+                session.map_or(Err(NetError::Unauthorized), |s| {
                     (if force { s.refresh() } else { Ok(()) }).and_then(|()| s.fresh_token())
-                }
+                })
             },
             then,
         );
@@ -123,9 +132,8 @@ impl Worker {
     ) {
         let storage = storage.to_string();
         self.run(
-            move |session| match session {
-                None => Err(NetError::Unauthorized),
-                Some(s) => s.changes(&storage, since),
+            move |session| {
+                session.map_or(Err(NetError::Unauthorized), |s| s.changes(&storage, since))
             },
             then,
         );
@@ -139,16 +147,17 @@ impl Worker {
     ) {
         let storage = storage.to_string();
         self.run(
-            move |session| match session {
-                None => Err(NetError::Unauthorized),
-                Some(s) => s.list_all(&storage, "").map(|all| {
-                    all.into_iter()
-                        .map(|e| Remote {
-                            path: e.path,
-                            size: e.size.unwrap_or(0),
-                        })
-                        .collect()
-                }),
+            move |session| {
+                session.map_or(Err(NetError::Unauthorized), |s| {
+                    s.list_all(&storage, "").map(|all| {
+                        all.into_iter()
+                            .map(|e| Remote {
+                                path: e.path,
+                                size: e.size.unwrap_or(0),
+                            })
+                            .collect()
+                    })
+                })
             },
             then,
         );
@@ -176,9 +185,8 @@ impl Worker {
         then: impl FnOnce(Result<Vec<forklift_net::Storage>, NetError>) + 'static,
     ) {
         self.run(
-            move |session| match session {
-                None => Err(NetError::Unauthorized),
-                Some(s) => s.storages(),
+            move |session| {
+                session.map_or(Err(NetError::Unauthorized), forklift_net::Session::storages)
             },
             then,
         );

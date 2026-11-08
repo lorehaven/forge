@@ -1,4 +1,4 @@
-//! Daybook on Android, drawn by the native renderer with no WebView: the screens of `daybook-app`, the shared controller,
+//! Daybook on Android, drawn by the native renderer with no `WebView`: the screens of `daybook-app`, the shared controller,
 //! and the device's side done by the app's plugins (`notifications`) through the surface bridge.
 //!
 //! Standard output is the surface protocol's: log to standard error.
@@ -131,7 +131,7 @@ fn main() -> std::io::Result<()> {
             } else {
                 settings.server.clone()
             },
-            list: settings.list.clone(),
+            list: settings.list,
             has_session,
             zone: Zone::local(),
             clock: Rc::new(Time::now),

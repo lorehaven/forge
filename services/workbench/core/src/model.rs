@@ -104,14 +104,14 @@ pub struct Me {
 }
 
 /// A project with its issues: what the board shows.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Board {
     pub project: Project,
     pub issues: Vec<Issue>,
 }
 
 /// An issue with everything its page shows (the client puts it together from several calls).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IssueView {
     pub issue: Issue,
     pub project: Project,

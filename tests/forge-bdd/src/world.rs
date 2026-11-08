@@ -27,28 +27,28 @@ impl Target {
     /// Tag that selects this service's scenarios, and the name used on the CLI.
     pub const fn tag(self) -> &'static str {
         match self {
-            Target::Sage => "sage",
-            Target::Switchboard => "switchboard",
-            Target::Warehouse => "warehouse",
-            Target::Gatehouse => "gatehouse",
-            Target::Conveyor => "conveyor",
-            Target::Workbench => "workbench",
-            Target::Daybook => "daybook",
+            Self::Sage => "sage",
+            Self::Switchboard => "switchboard",
+            Self::Warehouse => "warehouse",
+            Self::Gatehouse => "gatehouse",
+            Self::Conveyor => "conveyor",
+            Self::Workbench => "workbench",
+            Self::Daybook => "daybook",
         }
     }
 
-    pub const ALL: [Target; 7] = [
-        Target::Sage,
-        Target::Switchboard,
-        Target::Warehouse,
-        Target::Gatehouse,
-        Target::Conveyor,
-        Target::Workbench,
-        Target::Daybook,
+    pub const ALL: [Self; 7] = [
+        Self::Sage,
+        Self::Switchboard,
+        Self::Warehouse,
+        Self::Gatehouse,
+        Self::Conveyor,
+        Self::Workbench,
+        Self::Daybook,
     ];
 
     pub fn parse(value: &str) -> Option<Self> {
-        Target::ALL
+        Self::ALL
             .into_iter()
             .find(|target| target.tag() == value.trim_start_matches('@'))
     }
@@ -342,6 +342,11 @@ pub async fn mint_test_token_at(
     iat: Option<i64>,
     exp: Option<i64>,
 ) -> String {
+    #[derive(quench_serde::Deserialize)]
+    struct TokenResponse {
+        access_token: String,
+    }
+
     let response = client
         .post(format!("{gatehouse_url}/api/v1/test/token"))
         .json(&quench_serde::json!({
@@ -355,18 +360,13 @@ pub async fn mint_test_token_at(
         .await
         .unwrap_or_else(|e| panic!("failed to reach gatehouse's test token endpoint: {e}"));
 
-    if !response.status().is_success() {
-        panic!(
-            "gatehouse refused to mint a test token (status {}) - is GATEHOUSE_TEST_MODE=true? {}",
-            response.status(),
-            response.text().await.unwrap_or_default()
-        );
-    }
+    assert!(
+        response.status().is_success(),
+        "gatehouse refused to mint a test token (status {}) - is GATEHOUSE_TEST_MODE=true? {}",
+        response.status(),
+        response.text().await.unwrap_or_default()
+    );
 
-    #[derive(quench_serde::Deserialize)]
-    struct TokenResponse {
-        access_token: String,
-    }
     response
         .json::<TokenResponse>()
         .await

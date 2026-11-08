@@ -18,7 +18,7 @@ fn no_redirect_client() -> quench_client::transport::Client {
 }
 
 #[given("workbench API is available")]
-async fn available(world: &mut ForgeWorld) {
+const fn available(world: &mut ForgeWorld) {
     world.target = crate::world::Target::Workbench;
 }
 
@@ -85,7 +85,7 @@ async fn authenticated_post(world: &mut ForgeWorld, path: String, step: &quench_
     let mut request = no_redirect_client()
         .post(&url)
         .header("Content-Type", "application/json")
-        .body(body.to_string());
+        .body(body.clone());
     if let Some(token) = &world.access_token {
         request = request.bearer_auth(token);
     }

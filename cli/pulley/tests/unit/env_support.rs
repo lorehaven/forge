@@ -8,6 +8,9 @@ use std::sync::Mutex;
 
 pub static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+/// Goes through `quench_core::env` rather than `std::env::set_var` directly since this crate forbids
+/// `unsafe_code`.
+#[derive(Debug)]
 pub struct EnvGuard {
     key: &'static str,
     previous: Option<String>,
@@ -16,27 +19,25 @@ pub struct EnvGuard {
 impl EnvGuard {
     pub fn set(key: &'static str, value: &str) -> Self {
         let previous = std::env::var(key).ok();
-        // SAFETY: serialized by ENV_LOCK, held for the guard's lifetime.
-        unsafe { std::env::set_var(key, value) };
+        // Serialized by ENV_LOCK, held for the guard's lifetime.
+        quench_core::env::set(key, value);
         Self { key, previous }
     }
 
     pub fn unset(key: &'static str) -> Self {
         let previous = std::env::var(key).ok();
-        // SAFETY: serialized by ENV_LOCK, held for the guard's lifetime.
-        unsafe { std::env::remove_var(key) };
+        // Serialized by ENV_LOCK, held for the guard's lifetime.
+        quench_core::env::remove(key);
         Self { key, previous }
     }
 }
 
 impl Drop for EnvGuard {
     fn drop(&mut self) {
-        // SAFETY: serialized by ENV_LOCK, held for the guard's lifetime.
-        unsafe {
-            match &self.previous {
-                Some(value) => std::env::set_var(self.key, value),
-                None => std::env::remove_var(self.key),
-            }
+        // Serialized by ENV_LOCK, held for the guard's lifetime.
+        match &self.previous {
+            Some(value) => quench_core::env::set(self.key, value),
+            None => quench_core::env::remove(self.key),
         }
     }
 }

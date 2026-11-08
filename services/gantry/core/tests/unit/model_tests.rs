@@ -33,7 +33,10 @@ fn rows_are_filtered_by_kind_state_and_a_piece_of_the_name() {
     assert_eq!(group.filtered("deployment", "", "").len(), 2);
     assert_eq!(group.filtered("", "edited", "")[0].name, "sage-config");
     assert_eq!(group.filtered("", "", " TRAIN ")[0].name, "trainer");
-    assert!(group.filtered("ConfigMap", "missing", "").is_empty());
+    assert_eq!(
+        group.filtered("ConfigMap", "missing", ""),
+        [] as [gantry_core::Row; 0]
+    );
 }
 
 #[quench_test::test]

@@ -95,8 +95,7 @@ impl Fixture {
 
     fn binary(&self, package: &str) -> PathBuf {
         let target_dir = std::env::var("CARGO_TARGET_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| self.workspace_root.join("target"));
+            .map_or_else(|_| self.workspace_root.join("target"), PathBuf::from);
         target_dir.join("debug").join(package)
     }
 
@@ -119,7 +118,7 @@ impl Fixture {
     /// Environment every service shares: one realm (gatehouse, always
     /// started alongside whatever was selected - see `main.rs`), an
     /// in-memory database so the suite needs no Postgres.
-    fn common_env(&self, command: &mut Command, service_name: &str) {
+    fn common_env(command: &mut Command, service_name: &str) {
         command
             .env("SERVICE_NAME", service_name)
             .env("SERVER_CERT_PATH", "cert.pem")
@@ -178,7 +177,7 @@ impl Fixture {
         command
             .current_dir(self.service_dir("conveyor-service"))
             .envs(std::env::vars());
-        self.common_env(&mut command, "conveyor");
+        Self::common_env(&mut command, "conveyor");
         command
             .env("SERVER_ADDR", "127.0.0.1:9999")
             .env("SERVER_HTTP_REDIRECT_ADDR", "127.0.0.1:9998")
@@ -214,7 +213,7 @@ impl Fixture {
         command
             .current_dir(self.service_dir("workbench-service"))
             .envs(std::env::vars());
-        self.common_env(&mut command, "workbench");
+        Self::common_env(&mut command, "workbench");
         command
             .env("SERVER_ADDR", "127.0.0.1:10443")
             .env("SERVER_HTTP_REDIRECT_ADDR", "127.0.0.1:10080")
@@ -243,7 +242,7 @@ impl Fixture {
         command
             .current_dir(self.service_dir("daybook-service"))
             .envs(std::env::vars());
-        self.common_env(&mut command, "daybook");
+        Self::common_env(&mut command, "daybook");
         command
             .env("SERVER_ADDR", "127.0.0.1:12443")
             .env("BASE_PATH", "/daybook")
@@ -266,7 +265,7 @@ impl Fixture {
         command
             .current_dir(self.service_dir("sage-service"))
             .envs(std::env::vars());
-        self.common_env(&mut command, "sage");
+        Self::common_env(&mut command, "sage");
         command
             .env("SERVER_ADDR", "127.0.0.1:7777")
             .env("SERVER_HTTP_REDIRECT_ADDR", "127.0.0.1:7778")
@@ -306,7 +305,7 @@ impl Fixture {
         command
             .current_dir(self.service_dir("switchboard-service"))
             .envs(std::env::vars());
-        self.common_env(&mut command, "switchboard");
+        Self::common_env(&mut command, "switchboard");
         command
             .env("SERVER_ADDR", "127.0.0.1:8554")
             .env("SERVER_HTTP_REDIRECT_ADDR", "127.0.0.1:8081")
@@ -341,7 +340,7 @@ impl Fixture {
         command
             .current_dir(self.service_dir("warehouse-service"))
             .envs(std::env::vars());
-        self.common_env(&mut command, "warehouse");
+        Self::common_env(&mut command, "warehouse");
         command
             .env("SERVER_ADDR", "127.0.0.1:8443")
             .env("SERVER_HTTP_REDIRECT_ADDR", "127.0.0.1:8080")
@@ -372,7 +371,7 @@ impl Fixture {
         command
             .current_dir(self.service_dir("gatehouse-service"))
             .envs(std::env::vars());
-        self.common_env(&mut command, "gatehouse");
+        Self::common_env(&mut command, "gatehouse");
         command
             .env("SERVER_ADDR", "127.0.0.1:5443")
             .env("SERVER_HTTP_REDIRECT_ADDR", "127.0.0.1:5080")

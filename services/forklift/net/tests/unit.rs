@@ -1,6 +1,7 @@
 // The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
 #![allow(clippy::unwrap_used, clippy::too_many_lines)]
 
+use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
@@ -68,7 +69,7 @@ fn answer(mut stream: TcpStream, log: &Mutex<Vec<Seen>>, handler: &Handler) {
         body.len()
     );
     for (k, v) in headers {
-        head.push_str(&format!("{k}: {v}\r\n"));
+        let _ = write!(head, "{k}: {v}\r\n");
     }
     head.push_str("\r\n");
     let _ = stream.write_all(head.as_bytes());
@@ -249,8 +250,7 @@ fn a_file_is_put_whole_with_the_bearer_and_its_path() {
         )
     });
     let mut s = Session::resume(&base, "r");
-    s.put("moto", "photos/2026/03/1-a.jpg", b"abc".to_vec())
-        .unwrap();
+    s.put("moto", "photos/2026/03/1-a.jpg", b"abc").unwrap();
     let seen = log.lock().unwrap().last().unwrap().clone();
     assert_eq!(seen.method, "PUT");
     assert_eq!(
@@ -276,7 +276,7 @@ fn the_server_s_refusals_are_told_apart() {
         let (base, _) = stand_in(move |_| (status, vec![], String::new()));
         let mut s = Session::resume(&base, "r");
         assert_eq!(
-            s.put("moto", "p", vec![1]).unwrap_err(),
+            s.put("moto", "p", &[1]).unwrap_err(),
             expected,
             "status {status}"
         );
@@ -295,7 +295,7 @@ fn a_refused_token_is_refreshed_once_and_the_put_is_made_again() {
         }
     });
     let mut s = Session::resume(&base, "r");
-    s.put("moto", "p", vec![1]).unwrap();
+    s.put("moto", "p", &[1]).unwrap();
     let puts: Vec<_> = log
         .lock()
         .unwrap()
@@ -540,7 +540,7 @@ fn library(n: usize, prefix: &str) -> forklift_core::Manifest {
             name: format!("IMG_{i}.jpg"),
             uri: format!("content://media/external/images/media/{i}"),
             size: 1_000 + i as u64,
-            modified_ms: 1_700_000_000_000 + i as i64,
+            modified_ms: 1_700_000_000_000 + i64::try_from(i).unwrap(),
         })
         .collect();
     m.scan("photos", &files, false);

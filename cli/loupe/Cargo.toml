@@ -1,0 +1,49 @@
+[package]
+name = "loupe"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Loupe - Markdown files and documentation books in the terminal: a pager with links, search, table of contents, book navigation and typeset formulas"
+keywords = ["markdown", "terminal", "pager", "docs"]
+categories = ["command-line-utilities"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = "README.md"
+autotests = false
+
+[[bin]]
+name = "loupe"
+path = "src/main.rs"
+
+[lib]
+name = "loupe"
+path = "src/lib.rs"
+
+[dependencies]
+docs-book = { workspace = true }
+gatehouse-auth = { workspace = true }
+quench-archive = { workspace = true }
+quench-args = { workspace = true }
+quench-cli = { workspace = true, features = ["tui"] }
+quench-client = { workspace = true, features = ["blocking"] }
+quench-core = { workspace = true }
+quench-crypto = { workspace = true }
+quench-html = { workspace = true, default-features = false, features = ["markdown"] }
+quench-image = { workspace = true }
+quench-markdown-term = { workspace = true, features = ["tex"] }
+quench-serde = { workspace = true }
+quench-tex = { workspace = true, features = ["typeset"] }
+quench-text = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[lints]
+workspace = true

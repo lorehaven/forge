@@ -858,7 +858,7 @@ fn the_alerts_screen_asks_for_the_log_and_says_how_long_each_alert_has_gone_on()
         "lorien",
         "fault:btrfs nvme0n1 corruption",
         "fault",
-        3.0 * 3600.0 + 120.0,
+        3.0f64.mul_add(3600.0, 120.0),
         None,
     )]));
     let text = l.r.text();

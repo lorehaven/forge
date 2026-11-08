@@ -137,7 +137,12 @@ async fn logout(world: &mut ForgeWorld) {
 }
 
 #[then(expr = "the access token should be valid for {string}")]
-async fn token_audience(world: &mut ForgeWorld, service: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn token_audience(world: &mut ForgeWorld, service: String) {
     let claims = decode_claims(world);
     let audiences: Vec<String> = claims
         .get("aud")
@@ -158,7 +163,11 @@ async fn token_audience(world: &mut ForgeWorld, service: String) {
 }
 
 #[then("the access token should carry a session id")]
-async fn token_session_id(world: &mut ForgeWorld) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn token_session_id(world: &mut ForgeWorld) {
     let claims = decode_claims(world);
     assert!(
         claims.get("sid").and_then(Value::as_str).is_some(),
@@ -250,7 +259,11 @@ async fn open_ui_root(world: &mut ForgeWorld) {
 }
 
 #[then("the refresh token should have changed")]
-async fn refresh_rotated(world: &mut ForgeWorld) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn refresh_rotated(world: &mut ForgeWorld) {
     let previous = world.session_cookie.as_ref().expect("no previous token");
     let current = world.refresh_token.as_ref().expect("no current token");
     assert_ne!(previous, current, "refresh token was not rotated");
@@ -315,7 +328,11 @@ async fn visit_logout(world: &mut ForgeWorld) {
 }
 
 #[then("a realm session cookie should be set")]
-async fn realm_cookie_set(world: &mut ForgeWorld) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn realm_cookie_set(world: &mut ForgeWorld) {
     let cookies = set_cookie_header(world);
     assert!(
         cookies.contains(SESSION_COOKIE),
@@ -328,7 +345,11 @@ async fn realm_cookie_set(world: &mut ForgeWorld) {
 }
 
 #[then("no realm session cookie should be set")]
-async fn realm_cookie_not_set(world: &mut ForgeWorld) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn realm_cookie_not_set(world: &mut ForgeWorld) {
     let cookies = set_cookie_header(world);
     assert!(
         !cookies.contains(SESSION_COOKIE),
@@ -339,7 +360,11 @@ async fn realm_cookie_not_set(world: &mut ForgeWorld) {
 /// `SameSite=Lax` and a root path are what let the cookie survive the redirect
 /// back from gatehouse to a relying party.
 #[then("the session cookie should be scoped to the whole site")]
-async fn cookie_scope(world: &mut ForgeWorld) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn cookie_scope(world: &mut ForgeWorld) {
     let cookies = set_cookie_header(world);
     assert!(
         cookies.contains("Path=/"),
@@ -356,7 +381,11 @@ async fn cookie_scope(world: &mut ForgeWorld) {
 }
 
 #[then("the realm session cookie should be cleared")]
-async fn cookie_cleared(world: &mut ForgeWorld) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn cookie_cleared(world: &mut ForgeWorld) {
     let cookies = set_cookie_header(world);
     assert!(
         cookies.contains(&format!("{SESSION_COOKIE}=;"))
@@ -413,7 +442,7 @@ async fn administering(world: &mut ForgeWorld) {
         "could not sign in as the realm admin: {:?}",
         world.last_body
     );
-    world.admin_token = world.access_token.clone();
+    world.admin_token.clone_from(&world.access_token);
 }
 
 fn admin_token(world: &ForgeWorld) -> String {
@@ -424,6 +453,10 @@ fn admin_token(world: &ForgeWorld) -> String {
 }
 
 #[given(expr = "no user {string} exists")]
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
 async fn ensure_absent(world: &mut ForgeWorld, username: String) {
     let url = format!("{}/api/v1/users/{username}", world.gatehouse_url);
     let res = world
@@ -730,7 +763,12 @@ async fn ask_my_access(world: &mut ForgeWorld) {
 }
 
 #[then(expr = "the access token should not be valid for {string}")]
-async fn token_audience_absent(world: &mut ForgeWorld, service: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn token_audience_absent(world: &mut ForgeWorld, service: String) {
     let claims = decode_claims(world);
     let audiences: Vec<String> = claims
         .get("aud")
@@ -751,14 +789,24 @@ async fn token_audience_absent(world: &mut ForgeWorld, service: String) {
 }
 
 #[then(expr = "the access token scope should be {string}")]
-async fn token_scope(world: &mut ForgeWorld, expected: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn token_scope(world: &mut ForgeWorld, expected: String) {
     let claims = decode_claims(world);
     let scope = claims.get("scope").and_then(Value::as_str).unwrap_or("");
     assert_eq!(scope, expected, "unexpected scope in {claims}");
 }
 
 #[then(expr = "the response should report {string} on {string}")]
-async fn reports_level(world: &mut ForgeWorld, level: String, service: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn reports_level(world: &mut ForgeWorld, level: String, service: String) {
     let body = world.last_json.clone().expect("no JSON response");
     let effective = body
         .get("effective")
@@ -785,7 +833,11 @@ async fn reports_level(world: &mut ForgeWorld, level: String, service: String) {
 /// check: an HTML page legitimately contains `name="password"` wherever it offers
 /// a box to type a new one.
 #[then("the response should never contain a password hash")]
-async fn no_hashes(world: &mut ForgeWorld) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn no_hashes(world: &mut ForgeWorld) {
     let body = world.last_body.clone().unwrap_or_default();
     assert!(
         !body.contains("$argon2"),
@@ -928,7 +980,12 @@ async fn submit_self_demote(world: &mut ForgeWorld) {
 /// The pages redirect after every write, carrying the outcome. Asserting on the
 /// `Location` is how a scenario reads it without following the redirect.
 #[then(expr = "the redirect should report {string}")]
-async fn redirect_reports(world: &mut ForgeWorld, marker: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn redirect_reports(world: &mut ForgeWorld, marker: String) {
     let location = world
         .last_response_headers
         .get(&quench_client::transport::header::LOCATION)
@@ -943,7 +1000,12 @@ async fn redirect_reports(world: &mut ForgeWorld, marker: String) {
 /// One control per service, named after it. Its absence would mean the matrix is
 /// not being driven by `SERVICE_AUDIENCES`.
 #[then(expr = "the page should offer an access control for {string}")]
-async fn offers_control(world: &mut ForgeWorld, service: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn offers_control(world: &mut ForgeWorld, service: String) {
     let body = world.last_body.clone().unwrap_or_default();
     let field = format!("name=\"perm_{service}_");
     assert!(
@@ -979,10 +1041,10 @@ async fn register(world: &mut ForgeWorld, username: String, password: String, em
 #[when(expr = "I follow the verification link emailed to {string}")]
 async fn follow_verification_link(world: &mut ForgeWorld, email: String) {
     let marker = format!("email(verification) to={email}");
-    let line = crate::services::wait_for_gatehouse_log(&marker)
+    let log_entry = crate::services::wait_for_gatehouse_log(&marker)
         .await
         .unwrap_or_else(|| panic!("no verification email logged for {email}"));
-    let link = extract_link(&line);
+    let link = extract_link(&log_entry);
     let res = no_redirect_client()
         .get(&link)
         .send()
@@ -1020,10 +1082,10 @@ async fn request_password_reset(world: &mut ForgeWorld, username: String) {
 )]
 async fn follow_reset_link(world: &mut ForgeWorld, email: String, new_password: String) {
     let marker = format!("email(password-reset) to={email}");
-    let line = crate::services::wait_for_gatehouse_log(&marker)
+    let log_entry = crate::services::wait_for_gatehouse_log(&marker)
         .await
         .unwrap_or_else(|| panic!("no password-reset email logged for {email}"));
-    let link = extract_link(&line);
+    let link = extract_link(&log_entry);
     let token = link
         .split_once("token=")
         .expect("reset link had no token")
@@ -1089,10 +1151,10 @@ async fn invite_user(world: &mut ForgeWorld, username: String, email: String) {
 #[when(expr = "I accept the invitation emailed to {string} and choose the password {string}")]
 async fn accept_invitation(world: &mut ForgeWorld, email: String, password: String) {
     let marker = format!("email(invite) to={email}");
-    let line = crate::services::wait_for_gatehouse_log(&marker)
+    let log_entry = crate::services::wait_for_gatehouse_log(&marker)
         .await
         .unwrap_or_else(|| panic!("no invitation email logged for {email}"));
-    let link = extract_link(&line);
+    let link = extract_link(&log_entry);
     let token = link
         .split_once("token=")
         .expect("invitation link had no token")
@@ -1151,10 +1213,10 @@ async fn notify_as_me(world: &mut ForgeWorld, username: String, template: String
 #[when(expr = "I follow the unsubscribe link emailed to {string}")]
 async fn follow_unsubscribe_link(world: &mut ForgeWorld, email: String) {
     let marker = format!("email(notification) to={email}");
-    let line = crate::services::wait_for_gatehouse_log(&marker)
+    let log_entry = crate::services::wait_for_gatehouse_log(&marker)
         .await
         .unwrap_or_else(|| panic!("no notification logged for {email}"));
-    let link = line
+    let link = log_entry
         .split_once("(unsubscribe: ")
         .and_then(|(_, rest)| rest.split_once(')'))
         .map(|(link, _)| link.to_string())
@@ -1357,7 +1419,12 @@ async fn attempt_wrong_password(world: &mut ForgeWorld, username: String, times:
 /// The JSON login endpoint's failure body is `{"error": "..."}` - see
 /// `services/gatehouse/service/src/api/auth.rs`'s `LoginError`.
 #[then(expr = "the response body should report {string}")]
-async fn body_reports_error(world: &mut ForgeWorld, expected: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn body_reports_error(world: &mut ForgeWorld, expected: String) {
     let error = world
         .last_json
         .as_ref()
@@ -1383,7 +1450,7 @@ fn totp_code(secret: &str) -> String {
 /// Pulls a form field's `value="..."` out of rendered HTML - good enough for
 /// the one hidden `secret`/`pending` field these pages carry, without a real
 /// HTML parser. Scans the whole `<input ...>` tag containing `name="field"`
-/// rather than assuming `value` comes right after `name`: quench_web does not
+/// rather than assuming `value` comes right after `name`: `quench_web` does not
 /// guarantee attribute order, and it is not always `name` then `value`.
 fn extract_form_value(body: &str, field: &str) -> Option<String> {
     let name_pos = body.find(&format!("name=\"{field}\""))?;

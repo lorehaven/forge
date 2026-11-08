@@ -1,6 +1,7 @@
 // The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
 #![allow(clippy::unwrap_used, clippy::too_many_lines)]
 
+use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
@@ -32,6 +33,10 @@ fn respond(stream: &mut TcpStream, status: &str, body: &[u8]) {
     let _ = stream.write_all(body);
 }
 
+#[allow(
+    clippy::significant_drop_tightening,
+    reason = "the fake server answers each request from one consistent state, so it holds the lock to the end"
+)]
 fn serve(state: &Arc<Mutex<State>>, mut stream: TcpStream) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut line = String::new();
@@ -177,8 +182,10 @@ fn start() -> (String, Arc<Mutex<State>>) {
 fn sha(bytes: &[u8]) -> String {
     quench_crypto::hash::sha256(bytes)
         .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+        .fold(String::new(), |mut hex, b| {
+            let _ = write!(hex, "{b:02x}");
+            hex
+        })
 }
 
 #[quench_test::test]
@@ -209,7 +216,7 @@ fn signing_in_gives_a_session_and_bad_logins_say_why() {
         NetError::Status(500),
         NetError::Network("x".into()),
     ] {
-        assert!(!e.to_string().is_empty());
+        assert_ne!(e.to_string(), "");
     }
 }
 
@@ -243,8 +250,8 @@ fn the_catalog_is_read_and_an_expired_token_is_refreshed_once() {
     assert_eq!(resumed.catalog("linux").unwrap().len(), 1);
     assert_eq!(resumed.refresh_token(), "refresh-3");
     // A refresh token that was already used is no good.
-    let mut stale = Session::resume(&base, "refresh-2");
-    assert_eq!(stale.catalog("linux").unwrap_err(), NetError::Unauthorized);
+    let mut spent = Session::resume(&base, "refresh-2");
+    assert_eq!(spent.catalog("linux").unwrap_err(), NetError::Unauthorized);
     // A server with no registry.
     state.lock().unwrap().catalog_status = 404;
     assert_eq!(
@@ -476,6 +483,10 @@ fn a_server_that_never_answers_is_given_up_on_so_the_worker_is_not_held_for_ever
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     std::thread::spawn(move || {
+        #[allow(
+            clippy::collection_is_never_read,
+            reason = "the connections are kept open, never answered, so the client times out"
+        )]
         let mut held = Vec::new();
         for stream in listener.incoming().flatten() {
             held.push(stream);

@@ -12,7 +12,7 @@ use super::{
 use crate::live::{Request, State};
 
 #[must_use]
-pub(crate) fn docker(env: &Env, state: &State) -> View {
+pub fn docker(env: &Env, state: &State) -> View {
     env.ask(Request::DockerRepos);
     // The tags of whichever repository the address names.
     {
@@ -120,12 +120,14 @@ fn node_view(
     };
 
     if node.children.is_empty() && !is_selected {
-        return li().child(match &node.repo {
-            Some(repo) => div().class("wh-folder").child(repo_link(repo, false)),
-            None => div()
-                .class("wh-folder")
-                .child(span().text(name.to_string())),
-        });
+        return li().child(node.repo.as_ref().map_or_else(
+            || {
+                div()
+                    .class("wh-folder")
+                    .child(span().text(name.to_string()))
+            },
+            |repo| div().class("wh-folder").child(repo_link(repo, false)),
+        ));
     }
 
     let mut details = element("details").attr("data-path", full.clone());
@@ -134,10 +136,10 @@ fn node_view(
     }
     let summary = element("summary")
         .class("wh-folder")
-        .child(match &node.repo {
-            Some(repo) => repo_link(repo, is_selected).into_view(),
-            None => span().text(name.to_string()).into_view(),
-        });
+        .child(node.repo.as_ref().map_or_else(
+            || span().text(name.to_string()).into_view(),
+            |repo| repo_link(repo, is_selected).into_view(),
+        ));
     details = details.child(summary);
 
     if !node.children.is_empty() {

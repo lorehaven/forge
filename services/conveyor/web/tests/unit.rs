@@ -332,7 +332,10 @@ fn the_browsers_own_requests_are_not_the_clients() {
         Request::OpenLog("j".into()),
         Request::CloseLog("j".into()),
     ] {
-        assert!(block_on(client.execute(request)).is_empty());
+        assert_eq!(
+            block_on(client.execute(request)),
+            [] as [conveyor_app::Msg; 0]
+        );
     }
     assert!(seen.borrow().is_empty());
 }

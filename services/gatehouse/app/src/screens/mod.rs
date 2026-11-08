@@ -30,6 +30,14 @@ pub struct Env {
     pub ask: Rc<dyn Fn(Request)>,
 }
 
+impl std::fmt::Debug for Env {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Env")
+            .field("base", &self.base)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Env {
     /// A page of the service: `{base}/ui{rest}`.
     pub(crate) fn path(&self, rest: &str) -> String {
@@ -74,23 +82,21 @@ pub fn not_found(env: &Env) -> View {
 }
 
 /// A message from a redirect's query: good news or bad.
-pub(crate) fn notice(env: &Env, notice: Option<Notice>) -> Option<Element> {
-    notice.map(|n| {
-        p().attr("id", "notice")
-            .class(match n.tone {
-                Tone::Ok => "fui-notice fui-notice-ok gh-notice",
-                Tone::Error => "fui-notice fui-notice-error gh-notice",
-            })
-            .attr(
-                "role",
-                if n.tone == Tone::Error {
-                    "alert"
-                } else {
-                    "status"
-                },
-            )
-            .text(env.t.t(n.key))
-    })
+pub(crate) fn notice(env: &Env, n: &Notice) -> Element {
+    p().attr("id", "notice")
+        .class(match n.tone {
+            Tone::Ok => "fui-notice fui-notice-ok gh-notice",
+            Tone::Error => "fui-notice fui-notice-error gh-notice",
+        })
+        .attr(
+            "role",
+            if n.tone == Tone::Error {
+                "alert"
+            } else {
+                "status"
+            },
+        )
+        .text(env.t.t(n.key))
 }
 
 /// What went wrong with the service, above the screen: it could not be reached, or the session ended.

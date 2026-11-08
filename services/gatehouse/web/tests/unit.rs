@@ -210,7 +210,10 @@ fn unsubscribing_posts_the_token_as_a_form_the_way_the_button_always_did() {
 #[quench_test::test]
 fn the_language_is_the_browsers_own_business() {
     let (c, seen) = client(answer(200, "{}"));
-    assert!(block_on(c.execute(Request::Language("de-DE".into()))).is_empty());
+    assert_eq!(
+        block_on(c.execute(Request::Language("de-DE".into()))),
+        [] as [gatehouse_app::Msg; 0]
+    );
     assert!(seen.borrow().is_empty());
 }
 

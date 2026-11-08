@@ -252,7 +252,10 @@ fn the_failures_become_messages() {
 #[quench_test::test]
 fn the_language_is_the_browsers_business() {
     let (client, seen, _) = stand_in(|_| (200, String::new()));
-    assert!(block_on(client.execute(Request::Language("de-DE".into()))).is_empty());
+    assert_eq!(
+        block_on(client.execute(Request::Language("de-DE".into()))),
+        [] as [switchboard_app::Msg; 0]
+    );
     assert!(seen.borrow().is_empty());
 }
 

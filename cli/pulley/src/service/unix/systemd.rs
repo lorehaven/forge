@@ -6,6 +6,7 @@ use std::process::Command;
 const UNIT_NAME: &str = "pulley.service";
 const SYSTEMCTL_HINT: &str = "pulley service management needs a systemd user session";
 
+#[derive(Debug)]
 pub struct Systemd;
 
 impl Backend for Systemd {
@@ -75,6 +76,7 @@ impl Backend for Systemd {
 /// The systemd unit file's contents - pulled out of `install` so it can be
 /// checked without actually writing a file or touching a real systemd
 /// session.
+#[must_use]
 pub fn unit_file_contents(exe: &std::path::Path) -> String {
     format!(
         "[Unit]\n\
@@ -117,6 +119,7 @@ pub fn linger_enabled() -> Result<bool, Box<dyn std::error::Error>> {
     Ok(String::from_utf8_lossy(&output.stdout).trim() == "Linger=yes")
 }
 
+#[must_use]
 pub fn whoami() -> String {
     std::env::var("USER").unwrap_or_else(|_| "$USER".to_string())
 }

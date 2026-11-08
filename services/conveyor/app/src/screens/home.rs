@@ -9,7 +9,7 @@ use quench_ui::router::link;
 use super::{Env, breadcrumb, enabled_badge, is_missing, nothing, panel, runs_table, waiting};
 use crate::live::{Request, State};
 
-pub(crate) fn home(env: &Env, state: &State, scope: Option<String>) -> View {
+pub fn home(env: &Env, state: &State, scope: Option<String>) -> View {
     // The whole page is replaced when the project is not there.
     let missing = {
         let (projects, problem, scope) =

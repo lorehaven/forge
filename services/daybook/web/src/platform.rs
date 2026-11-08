@@ -1,6 +1,8 @@
-//! The device's side of the controller in a page: the calls go to the services one after another (a refresh token is
-//! spent when it is used, so two calls must not renew it at once), there are no scheduled reminders (a page cannot wake
-//! when it is closed), and the clock and the zone are the browser's.
+//! The device's side of the controller in a page.
+//!
+//! The calls go to the services one after another (a refresh token is spent when it is used, so two calls must not
+//! renew it at once), there are no scheduled reminders (a page cannot wake when it is closed), and the clock and the
+//! zone are the browser's.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -35,6 +37,14 @@ pub struct Web<T: Transport + 'static, K: Keep + 'static> {
     now: Rc<dyn Fn() -> Time>,
     zone: Zone,
     later: Later,
+}
+
+impl<T: Transport + 'static, K: Keep + 'static> std::fmt::Debug for Web<T, K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Web")
+            .field("zone", &self.zone)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<T: Transport + 'static, K: Keep + 'static> Web<T, K> {

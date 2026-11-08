@@ -3,21 +3,20 @@ use quench_core::uuid::Uuid;
 use quench_serde::json;
 
 #[quench_test_bdd::when("I create a new conversation")]
-async fn create_conversation(world: &mut ForgeWorld) -> Result<(), String> {
+fn create_conversation(world: &mut ForgeWorld) {
     // Generate a conversation ID (sage doesn't have explicit conversation creation)
     let conv_id = Uuid::new_v4().to_string();
     world.current_conversation_id = Some(conv_id);
-    Ok(())
 }
 
 #[quench_test_bdd::given("I have a conversation")]
-async fn have_conversation(world: &mut ForgeWorld) -> Result<(), String> {
-    create_conversation(world).await
+fn have_conversation(world: &mut ForgeWorld) {
+    create_conversation(world);
 }
 
 #[quench_test_bdd::given("I have a conversation with messages")]
 async fn have_conversation_with_messages(world: &mut ForgeWorld) -> Result<(), String> {
-    create_conversation(world).await?;
+    create_conversation(world);
 
     // Send a few test messages
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
@@ -74,12 +73,16 @@ async fn send_to_conversation(world: &mut ForgeWorld, message: String) -> Result
             world.last_body = Some(body);
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
 #[quench_test_bdd::then("the response should contain a conversation_id")]
-async fn response_contains_conversation_id(world: &mut ForgeWorld) -> Result<(), String> {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn response_contains_conversation_id(world: &mut ForgeWorld) -> Result<(), String> {
     if let Some(conv_id) = &world.current_conversation_id
         && !conv_id.is_empty()
     {
@@ -89,9 +92,8 @@ async fn response_contains_conversation_id(world: &mut ForgeWorld) -> Result<(),
 }
 
 #[quench_test_bdd::then("the response should contain assistant message")]
-async fn response_contains_message(_world: &mut ForgeWorld) -> Result<(), String> {
+const fn response_contains_message(_world: &mut ForgeWorld) {
     // Placeholder - in real scenario would parse response
-    Ok(())
 }
 
 #[quench_test_bdd::when("I retrieve the conversation")]
@@ -118,22 +120,20 @@ async fn retrieve_conversation(world: &mut ForgeWorld) -> Result<(), String> {
             world.last_body = resp.text().await.ok();
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
 #[quench_test_bdd::then("the response should contain all messages")]
-async fn response_contains_all_messages(_world: &mut ForgeWorld) -> Result<(), String> {
+const fn response_contains_all_messages(_world: &mut ForgeWorld) {
     // Placeholder - in real scenario would validate messages in response
-    Ok(())
 }
 
 #[quench_test_bdd::given("I have multiple conversations")]
-async fn have_multiple_conversations(world: &mut ForgeWorld) -> Result<(), String> {
+fn have_multiple_conversations(world: &mut ForgeWorld) {
     for _ in 0..3 {
-        create_conversation(world).await?;
+        create_conversation(world);
     }
-    Ok(())
 }
 
 #[quench_test_bdd::when("I list all conversations")]
@@ -152,14 +152,13 @@ async fn list_conversations(world: &mut ForgeWorld) -> Result<(), String> {
             world.last_body = resp.text().await.ok();
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
 #[quench_test_bdd::then("the response should contain all conversation ids")]
-async fn response_contains_conversations(_world: &mut ForgeWorld) -> Result<(), String> {
+const fn response_contains_conversations(_world: &mut ForgeWorld) {
     // Placeholder - in real scenario would validate conversation list
-    Ok(())
 }
 
 #[quench_test_bdd::when(expr = "I send a chat message {string} without conversation_id")]
@@ -187,7 +186,7 @@ async fn send_without_conversation_id(
             world.last_status = Some(resp.status().as_u16());
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
@@ -218,11 +217,9 @@ async fn send_to_specific_conversation(
             world.last_status = Some(resp.status().as_u16());
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
 #[quench_test_bdd::then("each message should have a response")]
-async fn each_message_has_response(_world: &mut ForgeWorld) -> Result<(), String> {
-    Ok(())
-}
+const fn each_message_has_response(_world: &mut ForgeWorld) {}

@@ -27,3 +27,6 @@ quench-serde = { workspace = true }
 [dev-dependencies]
 quench-crypto = { workspace = true }
 quench-test = { workspace = true }
+
+[lints]
+workspace = true

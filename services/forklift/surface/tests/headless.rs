@@ -255,7 +255,7 @@ fn the_host_can_stop_a_run_and_what_was_sending_waits_again() {
         }
         answers(call)
     });
-    *tell.lock().unwrap() = Some(host.stop.clone());
+    *tell.lock().unwrap() = Some(host.stop);
     let ended = run(input, output, &store).unwrap();
     assert_eq!(ended, Ended::Stopped);
     let manifest = store.manifest();

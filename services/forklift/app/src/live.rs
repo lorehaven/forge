@@ -1,6 +1,7 @@
-//! The app against a host: sign in, watch the backup, change the settings. The app does no I/O itself: it asks for
-//! things through a `requests` function and is told what happened through `deliver` (both carry plain data), so the
-//! host decides how to do the work and where the answers come in.
+//! The app against a host: sign in, watch the backup, change the settings.
+//!
+//! The app does no I/O itself: it asks for things through a `requests` function and is told what happened through
+//! `deliver` (both carry plain data), so the host decides how to do the work and where the answers come in.
 
 use std::rc::Rc;
 
@@ -15,7 +16,7 @@ use crate::screens::{
 };
 
 /// What the app asks its host to do.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     Login {
         server: String,
@@ -42,7 +43,7 @@ pub enum Request {
 }
 
 /// What the host tells the app.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
     LoggedIn,
     LoginFailed(String),
@@ -96,6 +97,10 @@ type Inbox = Rc<std::cell::RefCell<Option<Rc<dyn Fn(Msg)>>>>;
 
 /// Builds the app. The views are built when they are mounted.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function wires the whole app: its signals, the inbox and every screen's callbacks share them"
+)]
 pub fn forklift(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Forklift {
     let inbox: Inbox = Rc::default();
     let forward = Rc::clone(&inbox);
@@ -239,8 +244,8 @@ pub fn forklift(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Forklift {
             let (signed, screen, shot, controls, requests, confirm, kept, chooser) = (
                 signed_in.clone(),
                 screen.clone(),
-                shot.clone(),
-                controls.clone(),
+                shot,
+                controls,
                 Rc::clone(&requests),
                 confirm_out.clone(),
                 Rc::clone(&kept),
@@ -341,7 +346,7 @@ pub fn forklift(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Forklift {
         if setup.toast_ms > 0 {
             crate::toast::dismiss_after(&message, setup.toast_ms);
         }
-        let shown = message.clone();
+        let shown = message;
         let working = crate::toast::lingering(&busy, setup.loader_min_ms);
         div()
             .attr("id", "forklift")
@@ -399,7 +404,7 @@ pub fn forklift(requests: Rc<dyn Fn(Request)>, setup: Setup) -> Forklift {
             })
             .child(View::show(
                 {
-                    let (signed, chooser) = (signed_in.clone(), chooser.clone());
+                    let (signed, chooser) = (signed_in, chooser);
                     // No tabs while the storage is being chosen: there is nowhere else to go yet.
                     move || signed.get() && chooser.get() == Chooser::Hidden
                 },
@@ -459,7 +464,7 @@ fn login_form(server: &str, requests: Rc<dyn Fn(Request)>, busy: Signal<bool>) -
         .field(&server_field)
         .field(&user)
         .field(&password);
-    let (srv, usr, pwd) = (server_field.clone(), user.clone(), password.clone());
+    let (server_in, user_in, password_in) = (server_field.clone(), user.clone(), password.clone());
     div()
         .attr("id", "login")
         .class("forklift-screen forklift-scrolls")
@@ -468,10 +473,10 @@ fn login_form(server: &str, requests: Rc<dyn Fn(Request)>, busy: Signal<bool>) -
             form.element(move |_| {
                 busy.set(true);
                 requests(Request::Login {
-                    server: clean_server(&srv.value()),
+                    server: clean_server(&server_in.value()),
                     // A stray space (a keyboard adds one after a suggestion) is not part of a user name.
-                    username: usr.value().trim().to_string(),
-                    password: pwd.value(),
+                    username: user_in.value().trim().to_string(),
+                    password: password_in.value(),
                 });
             })
             .attr("id", "login-form")

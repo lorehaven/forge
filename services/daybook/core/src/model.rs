@@ -88,17 +88,16 @@ impl Label {
 #[must_use]
 pub fn parse_hex(hex: &str) -> (u8, u8, u8) {
     let digits = hex.strip_prefix('#').unwrap_or(hex);
-    match (digits.len() == 6)
+    (digits.len() == 6)
         .then(|| u32::from_str_radix(digits, 16).ok())
         .flatten()
-    {
-        Some(v) => (
-            ((v >> 16) & 255) as u8,
-            ((v >> 8) & 255) as u8,
-            (v & 255) as u8,
-        ),
-        None => (0x88, 0x88, 0x88),
-    }
+        .map_or((0x88, 0x88, 0x88), |v| {
+            (
+                ((v >> 16) & 255) as u8,
+                ((v >> 8) & 255) as u8,
+                (v & 255) as u8,
+            )
+        })
 }
 
 /// What a repeat counts in.
@@ -362,6 +361,7 @@ impl Task {
 }
 
 /// The fields of a task as they are sent.
+#[derive(Debug)]
 pub struct Fields<'a> {
     pub content: &'a str,
     pub description: Option<&'a str>,

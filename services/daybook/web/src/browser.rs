@@ -16,6 +16,7 @@ use crate::client::{Boxed, Client, HttpRequest, HttpResponse, Keep, Transport};
 use crate::platform::{Later, Spawn, Web};
 
 /// Sends a request with `fetch`, to the server the page came from.
+#[derive(Debug)]
 pub struct Fetch;
 
 impl Transport for Fetch {
@@ -42,6 +43,7 @@ impl Transport for Fetch {
 }
 
 /// The refresh token, in the page's storage.
+#[derive(Debug)]
 pub struct Stored;
 
 impl Keep for Stored {

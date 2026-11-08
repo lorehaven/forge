@@ -3,6 +3,7 @@
 
 pub mod check;
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::sync::mpsc;
 
@@ -158,17 +159,16 @@ impl Store {
     pub fn record(&self, installed: &Installed) {
         let mut all = self.installed();
         all.insert(installed.program.clone(), installed.clone());
-        let text: String = all
-            .values()
-            .map(|i| {
-                format!(
-                    "{}\t{}\t{}\n",
-                    i.program,
-                    i.version_code,
-                    i.version_name.replace(['\t', '\n'], " ")
-                )
-            })
-            .collect();
+        let text = all.values().fold(String::new(), |mut text, i| {
+            let _ = writeln!(
+                text,
+                "{}\t{}\t{}",
+                i.program,
+                i.version_code,
+                i.version_name.replace(['\t', '\n'], " ")
+            );
+            text
+        });
         let _ = std::fs::create_dir_all(&self.dir);
         let _ = std::fs::write(self.ledger(), text);
     }
@@ -246,9 +246,10 @@ pub fn notify_desktop(title: &str, body: &str) {
         .status();
 }
 
-/// The package formats this Linux installs, best first, from the text of `/etc/os-release`: the registry holds a
-/// build of each (`deb`, `rpm`, `pkg.tar.zst`), and the app offers the one the system's package manager takes. A
-/// distribution it does not know gets the source tarball.
+/// The package formats this Linux installs, best first, from the text of `/etc/os-release`.
+///
+/// The registry holds a build of each (`deb`, `rpm`, `pkg.tar.zst`), and the app offers the one the system's package
+/// manager takes. A distribution it does not know gets the source tarball.
 #[must_use]
 pub fn package_formats(os_release: &str) -> Vec<&'static str> {
     let field = |name: &str| {
@@ -364,6 +365,10 @@ pub fn work(requests: &mpsc::Receiver<Request>, answers: &mpsc::Sender<Msg>, sto
 }
 
 /// [`work`], with the way a downloaded file is handed to the system chosen by the caller.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one loop answers every request the app can make, each arm a few lines"
+)]
 pub fn work_with(
     requests: &mpsc::Receiver<Request>,
     answers: &mpsc::Sender<Msg>,

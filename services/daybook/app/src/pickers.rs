@@ -1,5 +1,7 @@
-//! A calendar and a time picker of the app's own: the native renderer draws `<input type="date">` but cannot edit it by
-//! touch, and a phone's pickers differ from a desktop's. Both are plain views, shown by the task form in place of itself.
+//! A calendar and a time picker of the app's own.
+//!
+//! The native renderer draws `<input type="date">` but cannot edit it by touch, and a phone's pickers differ from a
+//! desktop's. Both are plain views, shown by the task form in place of itself.
 
 use std::rc::Rc;
 
@@ -22,7 +24,7 @@ pub fn date_picker(
     let shown = create_signal((year, month));
     let chosen = create_signal(initial);
     let (title, back, forward, grid) = (shown.clone(), shown.clone(), shown.clone(), shown);
-    let (picked, ok) = (chosen.clone(), chosen.clone());
+    let (picked, ok) = (chosen.clone(), chosen);
     let header = div()
         .class("dbk-month")
         .child(nav_button("Previous month", "dbk-prev", -1, &back))
@@ -38,8 +40,7 @@ pub fn date_picker(
         .child(nav_button("Next month", "dbk-next", 1, &forward));
     let week = div().class("dbk-week").children(
         WEEK.iter()
-            .map(|d| span().class("dbk-weekday").text(*d).into_view())
-            .collect::<Vec<_>>(),
+            .map(|d| span().class("dbk-weekday").text(*d).into_view()),
     );
     let days = View::dynamic(move || {
         let (y, m) = grid.get();
@@ -48,9 +49,11 @@ pub fn date_picker(
             .map(|week| {
                 let cells: Vec<View> = week
                     .into_iter()
-                    .map(|cell| match cell {
-                        None => span().class("dbk-day dbk-day-empty").into_view(),
-                        Some(date) => day_button(date, today, &picked),
+                    .map(|cell| {
+                        cell.map_or_else(
+                            || span().class("dbk-day dbk-day-empty").into_view(),
+                            |date| day_button(date, today, &picked),
+                        )
                     })
                     .collect();
                 div().class("dbk-days").children(cells).into_view()
@@ -122,6 +125,10 @@ fn day_button(date: Date, today: Date, chosen: &Signal<Date>) -> View {
 
 /// Hours and minutes with a button to move each, and a few usual times.
 #[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "a step's hour is `rem_euclid(24)` and its minute `rem_euclid(60)`, both of which fit a `u32`"
+)]
 pub fn time_picker(
     initial: (u32, u32),
     on_pick: Rc<dyn Fn((u32, u32))>,

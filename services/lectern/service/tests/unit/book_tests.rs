@@ -153,3 +153,29 @@ fn a_damaged_or_empty_release_is_refused() {
     let latest: quench_serde::Value = quench_serde::json::from_str(&manifest).unwrap();
     assert!(Book::from_release("forge", &latest, &empty, "/forge").is_err());
 }
+
+#[quench_test::test]
+fn the_markdown_sources_of_a_release_are_left_out() {
+    let (_, archive, manifest) = pack(
+        "forge",
+        "1",
+        &[
+            ("index.html", "home"),
+            ("_source/index.md", "---\ntitle: Home\n---\nhome"),
+            ("_source/_config.yml", "title: Forge"),
+            ("_source/assets/logo.png", "png"),
+        ],
+        None,
+    );
+    let latest: quench_serde::Value = quench_serde::json::from_str(&manifest).unwrap();
+    let book = Book::from_release("forge", &latest, &archive, "/forge").unwrap();
+    assert_eq!(book.file_count(), 1);
+    assert!(matches!(book.find("_source/index.md"), Found::Missing));
+    assert!(matches!(book.find("_source/"), Found::Missing));
+    assert!(matches!(book.find("_source"), Found::Missing));
+    assert!(matches!(book.find(""), Found::File(_)));
+    // An archive with nothing but sources has no site to serve.
+    let (_, only, manifest) = pack("forge", "1", &[("_source/index.md", "x")], None);
+    let latest: quench_serde::Value = quench_serde::json::from_str(&manifest).unwrap();
+    assert!(Book::from_release("forge", &latest, &only, "/forge").is_err());
+}

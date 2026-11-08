@@ -1,7 +1,7 @@
 use pulley::service::unix::{detect, hide_console_window, is_pid1, status};
 
 #[quench_test::test]
-fn hide_console_window_does_nothing_and_does_not_panic() {
+const fn hide_console_window_does_nothing_and_does_not_panic() {
     hide_console_window();
 }
 

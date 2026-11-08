@@ -34,7 +34,7 @@ fn columns_follow_the_workflow_and_sort_by_number() {
     let todo: Vec<_> = cols[1].1.iter().map(|i| i.seq).collect();
     assert_eq!(todo, [2, 3]);
     assert_eq!(cols[3].1.len(), 1);
-    assert!(cols[0].1.is_empty());
+    assert_eq!(cols[0].1, [] as [&workbench_core::Issue; 0]);
 }
 
 #[quench_test::test]

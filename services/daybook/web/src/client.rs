@@ -56,6 +56,16 @@ pub struct Client<T: Transport, K: Keep> {
     refresh: RefCell<String>,
 }
 
+impl<T: Transport, K: Keep> std::fmt::Debug for Client<T, K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client").finish_non_exhaustive()
+    }
+}
+
+#[allow(
+    clippy::future_not_send,
+    reason = "a page runs on the browser's one thread: `Transport::send` answers a `Boxed` future, which is not `Send`"
+)]
 impl<T: Transport, K: Keep> Client<T, K> {
     /// With the refresh token the last visit kept, if there is one.
     pub fn new(transport: T, keep: K) -> Self {
@@ -187,6 +197,10 @@ impl<T: Transport, K: Keep> Client<T, K> {
     ///
     /// # Errors
     /// [`NetError`].
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one match turns every operation into its call and its answer into a reply"
+    )]
     pub async fn execute(&self, op: Op) -> Result<Reply, NetError> {
         let missing = |what: &str| NetError::Network(format!("unreadable {what}"));
         Ok(match op {

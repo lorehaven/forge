@@ -1,5 +1,6 @@
-//! How a model sits on the GPU: the registry cards' fit line, the estimates table and the launch form's note. The
-//! arithmetic is the old server pages' own, moved here so the browser can redo it as the person edits the form.
+//! How a model sits on the GPU: the registry cards' fit line, the estimates table and the launch form's note.
+//!
+//! The arithmetic is the old server pages' own, moved here so the browser can redo it as the person edits the form.
 
 use crate::model::{Estimate, Gpu, Model};
 
@@ -217,8 +218,10 @@ pub fn round_gpu_util_up(value: f64) -> f64 {
     (value * 20.0).ceil() / 20.0
 }
 
-/// The least share of the GPU's memory that holds the estimate (weights and a safety margin over what is left after the
-/// cache), in steps of 0.05; `None` when the card is unknown or the cache alone is bigger than it.
+/// The least share of the GPU's memory that holds the estimate, in steps of 0.05.
+///
+/// The estimate is the weights and a safety margin over what is left after the cache; `None` when the card is unknown or
+/// the cache alone is bigger than it.
 #[must_use]
 pub fn minimum_gpu_util(estimate: &Estimate, total_gpu_gb: f64) -> Option<f32> {
     let safety_margin_gb = 1.5;
@@ -236,8 +239,10 @@ pub fn minimum_gpu_util(estimate: &Estimate, total_gpu_gb: f64) -> Option<f32> {
     Some(f64_to_f32(round_gpu_util_up(raw).clamp(0.20, 1.0)))
 }
 
-/// The GPU memory share the form should show: what was typed unless the choice of model, quantisation, length or device
-/// changed (`recalculate`), then the least that holds the model (0.90 when that is unknown).
+/// The GPU memory share the form should show.
+///
+/// What was typed unless the choice of model, quantisation, length or device changed (`recalculate`), then the least that
+/// holds the model (0.90 when that is unknown).
 #[must_use]
 pub fn launch_gpu_util(
     model: Option<&Model>,
@@ -262,7 +267,7 @@ pub fn launch_gpu_util(
 }
 
 /// The launch form's note under the fields: whether the chosen model fits and whether Launch can be pressed.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchFit {
     pub tone: FitTone,
     /// The translation key; `args` fill its placeholders.
@@ -272,7 +277,7 @@ pub struct LaunchFit {
 }
 
 impl LaunchFit {
-    fn plain(tone: FitTone, key: &'static str, launch_enabled: bool) -> Self {
+    const fn plain(tone: FitTone, key: &'static str, launch_enabled: bool) -> Self {
         Self {
             tone,
             key,
@@ -283,7 +288,7 @@ impl LaunchFit {
 
     /// Running on the CPU: the card does not come into it.
     #[must_use]
-    pub fn cpu() -> Self {
+    pub const fn cpu() -> Self {
         Self::plain(FitTone::Ok, "ui_vllm_fit_note_cpu", true)
     }
 }

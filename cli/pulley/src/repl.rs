@@ -9,12 +9,14 @@ fn prompt() -> String {
     repl_prompt("pulley", "repl")
 }
 
+#[derive(Debug)]
 pub struct Repl {
     config: Config,
 }
 
 impl Repl {
-    pub fn new(config: Config) -> Self {
+    #[must_use]
+    pub const fn new(config: Config) -> Self {
         Self { config }
     }
 
@@ -37,7 +39,7 @@ impl Repl {
 
         let result = match *command {
             "help" => {
-                self.show_help();
+                Self::show_help();
                 Ok(())
             }
             "list" => {
@@ -67,7 +69,7 @@ impl Repl {
         ReplControl::Continue(prompt())
     }
 
-    fn show_help(&self) {
+    fn show_help() {
         print_status(Tone::Info, "help", "available commands");
         println!("  list                    - List all configured jobs");
         println!("  run <job_id> [...]      - Run specific job(s) by ID");
@@ -164,6 +166,7 @@ impl Repl {
 /// Which jobs `run <args>` targets: every job for `run all`, or exactly the
 /// ones named, in whatever order they appear in `jobs` (not `args`) - so a
 /// `run c a` still runs them in the estate's configured order.
+#[must_use]
 pub fn select_jobs(jobs: &[Job], args: &[&str]) -> Vec<Job> {
     if args.first() == Some(&"all") {
         return jobs.to_vec();

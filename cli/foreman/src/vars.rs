@@ -12,13 +12,15 @@ use crate::config::Var;
 
 /// The names in scope for one expansion: the config's `[vars]`, plus whatever
 /// the caller adds for this particular service, task or warning.
+#[derive(Debug)]
 pub struct Scope<'a> {
     globals: &'a BTreeMap<String, String>,
     locals: Vec<(String, String)>,
 }
 
 impl<'a> Scope<'a> {
-    pub fn new(globals: &'a BTreeMap<String, String>) -> Self {
+    #[must_use]
+    pub const fn new(globals: &'a BTreeMap<String, String>) -> Self {
         Self {
             globals,
             locals: Vec::new(),

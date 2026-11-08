@@ -41,6 +41,7 @@ pub struct DockerGcReport {
 /// the service (a registry may carry the base path there rather than in
 /// `base_path`), so it is what admin calls resolve against; a docker-only
 /// registry falls back to the docker host.
+#[must_use]
 pub fn admin_base_url(registry: &RegistryConfig) -> &str {
     if registry.crates.url.trim().is_empty() {
         &registry.docker.url
@@ -49,6 +50,7 @@ pub fn admin_base_url(registry: &RegistryConfig) -> &str {
     }
 }
 
+#[derive(Debug)]
 pub struct AdminApi {
     client: quench_client::transport::Client,
 }
@@ -84,7 +86,7 @@ impl AdminApi {
             .headers(headers)
             .send()
             .await
-            .with_context(|| format!("failed to send request to {}", url))?;
+            .with_context(|| format!("failed to send request to {url}"))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -115,9 +117,9 @@ impl AdminApi {
                 .password
                 .as_deref()
                 .ok_or_else(|| err!("missing password for docker auth"))?;
-            let auth = format!("{}:{}", token, password);
+            let auth = format!("{token}:{password}");
             let encoded = STANDARD.encode(auth);
-            let value = HeaderValue::from_str(&format!("Basic {}", encoded))
+            let value = HeaderValue::from_str(&format!("Basic {encoded}"))
                 .context("invalid auth header")?;
             headers.insert(AUTHORIZATION, value);
         }
@@ -128,7 +130,7 @@ impl AdminApi {
             .headers(headers)
             .send()
             .await
-            .with_context(|| format!("failed to send request to {}", url))?;
+            .with_context(|| format!("failed to send request to {url}"))?;
 
         if !response.status().is_success() {
             let status = response.status();

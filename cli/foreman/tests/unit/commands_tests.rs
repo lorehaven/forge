@@ -76,7 +76,11 @@ fn status_reports_a_service_with_a_live_pid() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), CATALOG);
     estate.ensure_dirs().unwrap();
-    foreman::process::write_pid(&estate.pid_file("web"), std::process::id() as i32).unwrap();
+    foreman::process::write_pid(
+        &estate.pid_file("web"),
+        i32::try_from(std::process::id()).unwrap(),
+    )
+    .unwrap();
     status(&estate).unwrap();
 }
 
@@ -168,10 +172,10 @@ fn test_errors_on_an_empty_command() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
         dir.path(),
-        r#"
+        r"
                 [test]
                 command = []
-            "#,
+            ",
     );
     assert!(test(&estate, &[]).is_err());
 }
@@ -214,7 +218,9 @@ fn cwd_lock() -> &'static Mutex<()> {
 
 #[quench_test::test]
 fn init_writes_the_starter_config_when_none_exists() {
-    let _guard = cwd_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let original = std::env::current_dir().unwrap();
     std::env::set_current_dir(dir.path()).unwrap();
@@ -228,7 +234,9 @@ fn init_writes_the_starter_config_when_none_exists() {
 
 #[quench_test::test]
 fn init_refuses_to_overwrite_without_force() {
-    let _guard = cwd_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let dir = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(dir.path().join("foreman.toml"), "existing").unwrap();
     let original = std::env::current_dir().unwrap();
@@ -246,7 +254,9 @@ fn init_refuses_to_overwrite_without_force() {
 
 #[quench_test::test]
 fn init_overwrites_with_force() {
-    let _guard = cwd_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let dir = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(dir.path().join("foreman.toml"), "existing").unwrap();
     let original = std::env::current_dir().unwrap();

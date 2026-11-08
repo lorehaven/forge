@@ -68,6 +68,11 @@ pub fn sanitize(segment: &str) -> String {
 
 /// The calendar year and month (UTC) of a time in epoch milliseconds, for the path of a file.
 #[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "month is 1..=12; an i64 of milliseconds spans under 300 million years, well inside i32"
+)]
 pub const fn year_month(epoch_ms: i64) -> (i32, u32) {
     // Civil-from-days (Howard Hinnant), valid for the whole range a file can have.
     let days = epoch_ms.div_euclid(86_400_000) + 719_468;

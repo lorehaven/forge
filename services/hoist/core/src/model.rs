@@ -55,9 +55,10 @@ pub const SELF_PROGRAM: &str = "dev.lorehaven.hoist";
 /// What this app is called, for a registry row that carries no label.
 pub const SELF_NAME: &str = "Hoist";
 
-/// `0.1.3` as `1003`, `1.2.3` as `1002003`: the number the registry's builds of one version carry (the same
-/// arithmetic `quench` and `anvil` use). A part over 999 counts as 999; anything that is not `major.minor.patch`
-/// counts as `0.0.0`.
+/// `0.1.3` as `1003`, `1.2.3` as `1002003`: the number the registry's builds of one version carry.
+///
+/// The same arithmetic `quench` and `anvil` use. A part over 999 counts as 999; anything that is not
+/// `major.minor.patch` counts as `0.0.0`.
 #[must_use]
 pub fn version_code(version: &str) -> i64 {
     let mut parts = version
@@ -87,6 +88,10 @@ pub fn format_bytes(bytes: i64) -> String {
     if bytes < 1024 {
         return format!("{} B", bytes.max(0));
     }
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "shown rounded to one decimal: a size past 2^52 bytes (4 PiB) loses nothing that is shown"
+    )]
     let mut value = bytes as f64;
     let mut unit = 0;
     while value >= 1024.0 && unit < UNITS.len() - 1 {

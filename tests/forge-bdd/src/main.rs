@@ -151,17 +151,14 @@ async fn main() {
         service.stop().await;
     }
 
-    match outcome {
-        Ok(results) => {
-            let failed = print_summary(&results);
-            if failed {
-                std::process::exit(1);
-            }
-        }
-        Err(_) => {
-            eprintln!("\nRun aborted: a step panicked outside of a scenario.");
+    if let Ok(results) = outcome {
+        let failed = print_summary(&results);
+        if failed {
             std::process::exit(1);
         }
+    } else {
+        eprintln!("\nRun aborted: a step panicked outside of a scenario.");
+        std::process::exit(1);
     }
 }
 
@@ -176,7 +173,7 @@ struct SuiteResult {
 }
 
 impl SuiteResult {
-    fn collect(target: Target, pass: &'static str, summary: &Summary) -> Self {
+    const fn collect(target: Target, pass: &'static str, summary: &Summary) -> Self {
         Self {
             target,
             pass,
@@ -185,7 +182,7 @@ impl SuiteResult {
         }
     }
 
-    fn failed(&self) -> bool {
+    const fn failed(&self) -> bool {
         self.scenarios.failed > 0 || self.steps.failed > 0
     }
 }

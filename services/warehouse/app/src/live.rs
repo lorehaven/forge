@@ -1,6 +1,9 @@
-//! The app against a host: it asks for the data and for every change (`Request`) and is told what came (`Msg`). The host
-//! does the talking to the service; the app owns the routes (`{base}/ui/home`, `/ui/docker/catalog`, `/ui/crates/catalog`,
-//! `/ui/files/storages`, `/ui/files/browse`, `/ui/artifacts/catalog`, `/ui/rivets/catalog`), the sidebar and the language.
+//! The app against a host.
+//!
+//! It asks for the data and for every change (`Request`) and is told what came (`Msg`). The host does the talking to
+//! the service; the app owns the routes (`{base}/ui/home`, `/ui/docker/catalog`, `/ui/crates/catalog`,
+//! `/ui/files/storages`, `/ui/files/browse`, `/ui/artifacts/catalog`, `/ui/rivets/catalog`), the sidebar and the
+//! language.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -16,7 +19,7 @@ use warehouse_core::{
 use crate::screens::{self, Env};
 
 /// What the app asks its host for.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     /// Who the person is and which registries exist: once, when the app starts.
     Startup,
@@ -64,7 +67,7 @@ pub enum Request {
 }
 
 /// What the host tells the app.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
     Overview(Overview),
     DockerRepos(Vec<String>),
@@ -111,6 +114,16 @@ pub struct Setup {
     /// Where signing in starts (a full page load, not a route of the app).
     pub login_url: String,
     pub history: Rc<dyn History>,
+}
+
+impl std::fmt::Debug for Setup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Setup")
+            .field("base", &self.base)
+            .field("language", &self.language)
+            .field("login_url", &self.login_url)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The app and the function that feeds it.
@@ -372,7 +385,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
 
     // Everything under the bar is drawn again when the language changes; the router (and so the address) stays.
     let content = {
-        let (env, state, router, base) = (env.clone(), state.clone(), router.clone(), base.clone());
+        let (env, state, router, base) = (env.clone(), state.clone(), router, base);
         move || -> View {
             let _ = env.t.language();
             untrack(|| {

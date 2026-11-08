@@ -12,13 +12,15 @@ use crate::estate::Estate;
 use crate::services;
 use crate::ui;
 
+#[derive(Debug)]
 pub struct Picker<'a> {
     estate: &'a Estate,
     picked: Vec<String>,
 }
 
 impl<'a> Picker<'a> {
-    pub fn new(estate: &'a Estate) -> Self {
+    #[must_use]
+    pub const fn new(estate: &'a Estate) -> Self {
         Self {
             estate,
             picked: Vec::new(),
@@ -51,6 +53,7 @@ impl<'a> Picker<'a> {
         Ok(())
     }
 
+    #[must_use]
     pub fn prompt(&self) -> String {
         if self.picked.is_empty() {
             "foreman> ".to_string()
@@ -180,12 +183,11 @@ impl<'a> Picker<'a> {
             } else {
                 "[ ]".to_string()
             };
-            let state = match services::is_running(self.estate, name) {
-                true => {
-                    let service = self.estate.resolve(name)?;
-                    format!("{GREEN}running on {}{RESET}", service.port)
-                }
-                false => format!("{DIM}stopped{RESET}"),
+            let state = if services::is_running(self.estate, name) {
+                let service = self.estate.resolve(name)?;
+                format!("{GREEN}running on {}{RESET}", service.port)
+            } else {
+                format!("{DIM}stopped{RESET}")
             };
             println!("  {mark} {}) {name:<12} {state}", index + 1);
         }

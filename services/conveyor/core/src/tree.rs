@@ -53,7 +53,7 @@ pub enum Node {
     Container {
         project: Project,
         repos: Vec<Repo>,
-        children: Vec<Node>,
+        children: Vec<Self>,
     },
 }
 

@@ -170,7 +170,7 @@ fn the_updates_page_lists_what_is_due_and_updates_it_all() {
     r.fire(find(&r, "button", ("id", "update-all")), &Event::Click);
     assert_eq!(*seen.borrow(), [Action::UpdateAll]);
     // Once nothing is due the button and the rows go.
-    let mut done = installed.clone();
+    let mut done = installed;
     done.get_mut("mathom").unwrap().version_code = 12;
     entries.set(build_entries(&data, &done, "hoist"));
     assert!(
@@ -585,7 +585,7 @@ fn the_catalog_is_looked_at_now_and_then_and_a_new_update_is_announced() {
     clock.advance(1000.0);
     assert_eq!(asked_catalogs(), 2);
     // Something new came out in the meantime: Daybook has an update too.
-    let mut newer = rows.clone();
+    let mut newer = rows;
     newer
         .iter_mut()
         .find(|a| a.program == "daybook")
@@ -614,9 +614,9 @@ fn the_catalog_is_looked_at_now_and_then_and_a_new_update_is_announced() {
 fn the_switch_is_kept_as_it_changes_without_a_save_button() {
     let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
     quench_ui::platform::install(clock.clone());
-    let (r, asked, _deliver, _m) = live(true);
+    let (r, asked, deliver, _m) = live(true);
     let (rows, _) = sample_catalog();
-    _deliver(Msg::Catalog(rows));
+    deliver(Msg::Catalog(rows));
     let kept = || {
         asked
             .borrow()
@@ -720,7 +720,7 @@ fn pages(asked: &Asked) -> Vec<PublicQuery> {
         .collect()
 }
 
-fn page(items: Vec<PublicApp>, total: i64, offset: i64) -> PublicPage {
+const fn page(items: Vec<PublicApp>, total: i64, offset: i64) -> PublicPage {
     PublicPage {
         total,
         offset,
@@ -827,7 +827,7 @@ fn the_public_tab_suggests_by_category_opens_a_category_and_searches_everything(
     assert!(r.text().contains("Games"), "the bar names the category");
     // Nobody rated anything in it: the category is asked for again, A to Z, and the page says so.
     deliver(Msg::PublicPage {
-        asked: first.clone(),
+        asked: first,
         page: page(Vec::new(), 0, 0),
     });
     let first = pages(&asked).pop().unwrap();
@@ -837,7 +837,7 @@ fn the_public_tab_suggests_by_category_opens_a_category_and_searches_everything(
         "the fallback is the list by downloads"
     );
     deliver(Msg::PublicPage {
-        asked: first.clone(),
+        asked: first,
         page: page(
             vec![
                 public_app("org.x.chess", "Chess"),

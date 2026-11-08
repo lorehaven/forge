@@ -67,7 +67,7 @@ fn routes(request: &HttpRequest) -> (u16, String) {
             format!("[{},{}]", group_json("ml", "out_of_sync"), group_json("media", "synced"))
         }
         ("GET", "/api/v1/operations?limit=10") => {
-            format!(r#"[{OPERATION},{}]"#, OPERATION.replace("o1", "o0").replace("running", "succeeded"))
+            format!(r"[{OPERATION},{}]", OPERATION.replace("o1", "o0").replace("running", "succeeded"))
         }
         ("GET", "/api/v1/operations?limit=100") => format!("[{OPERATION}]"),
         ("GET", "/api/v1/operations/o1") => OPERATION.to_string(),
@@ -93,9 +93,10 @@ fn routes(request: &HttpRequest) -> (u16, String) {
         ("POST", "/api/v1/deployments/training/plan" | "/api/v1/targets/ml/plan") => {
             r#"{"id":"p9","target":"ml","action":"swap"}"#.into()
         }
-        ("POST", "/api/v1/plans/p9/confirm" | "/api/v1/plans/p1/confirm")
-        | ("POST", "/api/v1/resources/apply" | "/api/v1/resources/delete"
-            | "/api/v1/resources/edit" | "/api/v1/resources/refresh") => {
+        ("POST",
+"/api/v1/plans/p9/confirm" | "/api/v1/plans/p1/confirm" |
+"/api/v1/resources/apply" | "/api/v1/resources/delete" |
+"/api/v1/resources/edit" | "/api/v1/resources/refresh") => {
             return (201, r#"{"id":"o5","title":"x","state":"queued"}"#.into());
         }
         _ => return (404, r#"{"error":"nothing here"}"#.to_string()),
@@ -127,7 +128,10 @@ fn startup_asks_who_is_there() {
     assert_eq!(paths(&seen), ["GET /api/v1/info"]);
     // Not knowing is not an error; being signed out is.
     let (c, _, _) = client(|_| (500, String::new()));
-    assert!(block_on(c.execute(Request::Startup)).is_empty());
+    assert_eq!(
+        block_on(c.execute(Request::Startup)),
+        [] as [gantry_app::Msg; 0]
+    );
     let (c, _, _) = client(|_| (401, String::new()));
     assert_eq!(block_on(c.execute(Request::Startup)), [Msg::SignedOut]);
 }
@@ -452,7 +456,10 @@ fn cancelling_posts_then_reads_the_operation_again() {
 #[quench_test::test]
 fn language_is_the_browsers_own_business() {
     let (c, seen, _) = client(routes);
-    assert!(block_on(c.execute(Request::Language("pl-PL".into()))).is_empty());
+    assert_eq!(
+        block_on(c.execute(Request::Language("pl-PL".into()))),
+        [] as [gantry_app::Msg; 0]
+    );
     assert!(seen.borrow().is_empty());
 }
 

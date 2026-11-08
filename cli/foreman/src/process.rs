@@ -11,21 +11,41 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// Sends `signal` (a name `kill -s` takes, or `0`) to `pid`, and says whether it was delivered.
+///
+/// Through the shell's `kill` builtin, which is `kill(2)` itself: the crate forbids `unsafe_code`, so
+/// it cannot call libc directly, and `sh` is already what hooks run in.
+fn signal(pid: i32, signal: &str) -> bool {
+    Command::new("sh")
+        .arg("-c")
+        .arg(r#"kill -s "$1" -- "$2" 2>/dev/null"#)
+        .arg("sh")
+        .arg(signal)
+        .arg(pid.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
 /// Is there a process with this pid, and may we signal it?
+#[must_use]
 pub fn alive(pid: i32) -> bool {
     // Signal 0 performs the permission and existence checks without delivering
     // anything, which is exactly the question being asked.
-    unsafe { libc::kill(pid, 0) == 0 }
+    signal(pid, "0")
 }
 
 pub fn terminate(pid: i32) {
-    unsafe { libc::kill(pid, libc::SIGTERM) };
+    signal(pid, "TERM");
 }
 
 pub fn kill(pid: i32) {
-    unsafe { libc::kill(pid, libc::SIGKILL) };
+    signal(pid, "KILL");
 }
 
+#[must_use]
 pub fn read_pid(path: &Path) -> Option<i32> {
     std::fs::read_to_string(path)
         .ok()?
@@ -74,7 +94,7 @@ pub fn spawn_detached(
         .spawn()
         .with_context(|| format!("starting {}", program.display()))?;
 
-    Ok(child.id() as i32)
+    i32::try_from(child.id()).context("the started process has a pid out of range")
 }
 
 /// Runs a command to completion with its output on the terminal.
@@ -154,6 +174,7 @@ pub fn pgrep(pattern: &str) -> Vec<String> {
 }
 
 /// Polls `check` until it answers true, the process dies, or time runs out.
+#[derive(Debug)]
 pub enum Wait {
     Ready,
     Timeout,
@@ -180,6 +201,7 @@ pub fn wait_for(pid: Option<i32>, timeout: Duration, mut check: impl FnMut() -> 
 
 /// The last few lines of a file, for reporting a service that died on the way
 /// up without printing its whole log.
+#[must_use]
 pub fn tail(path: &Path, lines: usize) -> String {
     let Ok(text) = std::fs::read_to_string(path) else {
         return String::new();

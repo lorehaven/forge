@@ -97,6 +97,7 @@ impl Client {
     /// directly, since they aren't in this module. Not `#[cfg(test)]`:
     /// the `tests/` integration binary links this crate as an ordinary
     /// dependency, where that flag is never set.
+    #[must_use]
     pub fn for_tests(base_url: String) -> Self {
         Self::for_tests_with_token(base_url, None)
     }
@@ -104,6 +105,7 @@ impl Client {
     /// Like [`Client::for_tests`], but with an optional bearer token - for
     /// tests exercising `authenticated`'s branch that adds the
     /// `Authorization` header.
+    #[must_use]
     pub fn for_tests_with_token(base_url: String, token: Option<String>) -> Self {
         Self {
             base_url,
@@ -114,15 +116,18 @@ impl Client {
 
     /// Test-only accessor for `base_url` (private otherwise - callers go
     /// through [`Client::url`]).
+    #[must_use]
     pub fn base_url_for_tests(&self) -> &str {
         &self.base_url
     }
 
     /// Test-only accessor for `token` (private otherwise).
+    #[must_use]
     pub fn token_for_tests(&self) -> Option<&str> {
         self.token.as_deref()
     }
 
+    #[must_use]
     pub fn url(&self, path: &str) -> String {
         format!("{}/api/v1{path}", self.base_url)
     }
@@ -260,6 +265,7 @@ async fn decode<T: DeserializeOwned>(
 ///
 /// Conveyor answers errors as `{"error": "..."}`, so the message it went to the
 /// trouble of writing is what gets shown rather than the status code alone.
+#[must_use]
 pub fn explain(status: quench_client::transport::StatusCode, body: &str) -> String {
     let detail = quench_serde::json::from_str::<Value>(body)
         .ok()
@@ -276,6 +282,7 @@ pub fn explain(status: quench_client::transport::StatusCode, body: &str) -> Stri
     }
 }
 
+#[must_use]
 pub fn non_empty(key: &str) -> Option<String> {
     let value = quench_core::env::get_or(key, "");
     (!value.trim().is_empty()).then(|| value.trim().to_string())

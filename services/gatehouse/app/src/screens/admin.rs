@@ -12,7 +12,7 @@ use crate::live::{Problem, Request, State};
 const ROLES: [&str; 3] = ["user", "admin", "service"];
 
 /// What a refused read shows in place of the page.
-fn refused(env: &Env, problem: &Option<Problem>) -> Option<View> {
+fn refused(env: &Env, problem: Option<&Problem>) -> Option<View> {
     match problem {
         Some(Problem::Forbidden) => Some(
             div()
@@ -31,7 +31,7 @@ fn refused(env: &Env, problem: &Option<Problem>) -> Option<View> {
     }
 }
 
-pub(crate) fn admin_users(env: &Env, state: &State, ctx: &RouteContext) -> View {
+pub fn admin_users(env: &Env, state: &State, ctx: &RouteContext) -> View {
     let flash = notice::admin(&query(ctx));
     state.admin_users.set(None);
     (env.ask)(Request::AdminUsers);
@@ -41,7 +41,7 @@ pub(crate) fn admin_users(env: &Env, state: &State, ctx: &RouteContext) -> View 
         state.problem.clone(),
     );
     View::dynamic(move || {
-        if let Some(view) = refused(&env, &problem.get()) {
+        if let Some(view) = refused(&env, problem.get().as_ref()) {
             return view;
         }
         users.get().map_or_else(
@@ -65,7 +65,7 @@ fn list(env: &Env, users: &AdminUsers, flash: Option<gatehouse_core::Notice>) ->
     }
     div()
         .class("admin-container")
-        .child(super::notice(env, flash))
+        .child(flash.map(|n| super::notice(env, &n)))
         .child(panel(env, "ui_admin_users_title", rows))
         // Omitted, not disabled, when the action is out of reach entirely.
         .child(users.can_create.then(|| create_panel(env, users.admin)))
@@ -185,14 +185,14 @@ fn create_panel(env: &Env, show_role_select: bool) -> Element {
     panel(env, "ui_admin_create_title", form)
 }
 
-pub(crate) fn admin_user(env: &Env, state: &State, ctx: &RouteContext) -> View {
+pub fn admin_user(env: &Env, state: &State, ctx: &RouteContext) -> View {
     let flash = notice::admin(&query(ctx));
     let username = ctx.param("username").unwrap_or_default();
     state.admin_user.set(None);
     (env.ask)(Request::AdminUser(username));
     let (env, user, problem) = (env.clone(), state.admin_user.clone(), state.problem.clone());
     View::dynamic(move || {
-        if let Some(view) = refused(&env, &problem.get()) {
+        if let Some(view) = refused(&env, problem.get().as_ref()) {
             return view;
         }
         user.get().map_or_else(
@@ -206,7 +206,7 @@ fn editor(env: &Env, user: &AdminUser, flash: Option<gatehouse_core::Notice>) ->
     let danger = (user.can_delete && !user.is_self).then(|| delete_panel(env, user));
     div()
         .class("admin-container")
-        .child(super::notice(env, flash))
+        .child(flash.map(|n| super::notice(env, &n)))
         .child(
             link(&env.path("/admin/users"))
                 .attr("id", "back")

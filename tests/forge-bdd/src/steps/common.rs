@@ -143,7 +143,7 @@ async fn send_unauth_delete(world: &mut ForgeWorld, path: String) {
 }
 
 #[given("I am authenticated")]
-async fn authenticated(world: &mut ForgeWorld) {
+fn authenticated(world: &mut ForgeWorld) {
     world.credentials = Some((world.username.clone(), world.password.clone()));
 }
 
@@ -152,7 +152,11 @@ async fn authenticated(world: &mut ForgeWorld) {
 // ---------------------------------------------------------------------------
 
 #[then(expr = "response status should be {int}")]
-async fn check_status(world: &mut ForgeWorld, status: u16) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn check_status(world: &mut ForgeWorld, status: u16) {
     assert_eq!(
         world.last_status.expect("No response available"),
         status,
@@ -164,7 +168,11 @@ async fn check_status(world: &mut ForgeWorld, status: u16) {
 /// answer did *not* come back - a route that must not be behind the realm's
 /// middleware, or a token that must have got past it.
 #[then(expr = "the response status should not be {int}")]
-async fn check_status_is_not(world: &mut ForgeWorld, unwanted: u16) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn check_status_is_not(world: &mut ForgeWorld, unwanted: u16) {
     assert_ne!(
         world.last_status,
         Some(unwanted),
@@ -174,7 +182,11 @@ async fn check_status_is_not(world: &mut ForgeWorld, unwanted: u16) {
 }
 
 #[then("response should be a redirect")]
-async fn check_is_redirect(world: &mut ForgeWorld) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn check_is_redirect(world: &mut ForgeWorld) {
     let status = world.last_status.expect("No response available");
     assert!(
         matches!(status, 301 | 302 | 303 | 307),
@@ -183,7 +195,11 @@ async fn check_is_redirect(world: &mut ForgeWorld) {
 }
 
 #[then("response should be a JSON object")]
-async fn check_json_object(world: &mut ForgeWorld) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn check_json_object(world: &mut ForgeWorld) {
     let json = world
         .last_json
         .as_ref()
@@ -192,7 +208,12 @@ async fn check_json_object(world: &mut ForgeWorld) {
 }
 
 #[then(expr = "response content type should be {string}")]
-async fn check_content_type(world: &mut ForgeWorld, expected: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn check_content_type(world: &mut ForgeWorld, expected: String) {
     let actual = world
         .last_response_headers
         .get(&quench_client::transport::header::CONTENT_TYPE)
@@ -205,7 +226,12 @@ async fn check_content_type(world: &mut ForgeWorld, expected: String) {
 }
 
 #[then(expr = "response should contain {string}")]
-async fn check_response_contains(world: &mut ForgeWorld, expected: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn check_response_contains(world: &mut ForgeWorld, expected: String) {
     let expected = world.resolve_placeholders(&expected);
     let body = world
         .last_body
@@ -218,7 +244,12 @@ async fn check_response_contains(world: &mut ForgeWorld, expected: String) {
 }
 
 #[then(expr = "response should not contain {string}")]
-async fn check_response_not_contains(world: &mut ForgeWorld, expected: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn check_response_not_contains(world: &mut ForgeWorld, expected: String) {
     let body = world
         .last_body
         .as_ref()
@@ -230,7 +261,11 @@ async fn check_response_not_contains(world: &mut ForgeWorld, expected: String) {
 }
 
 #[then(expr = "the response status should be {int}")]
-async fn response_status_should_be(world: &mut ForgeWorld, expected: u16) -> Result<(), String> {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn response_status_should_be(world: &mut ForgeWorld, expected: u16) -> Result<(), String> {
     match world.last_status {
         Some(status) if status == expected => Ok(()),
         Some(status) => Err(format!("Expected status {expected}, got {status}")),
@@ -239,12 +274,15 @@ async fn response_status_should_be(world: &mut ForgeWorld, expected: u16) -> Res
 }
 
 #[then("the response should contain error message")]
-async fn response_contains_error(_world: &mut ForgeWorld) -> Result<(), String> {
-    Ok(())
-}
+const fn response_contains_error(_world: &mut ForgeWorld) {}
 
 #[then(expr = "response header {string} should contain {string}")]
-async fn check_response_header(world: &mut ForgeWorld, name: String, expected: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn check_response_header(world: &mut ForgeWorld, name: String, expected: String) {
     let actual = world
         .last_response_headers
         .get(&name)
@@ -258,7 +296,12 @@ async fn check_response_header(world: &mut ForgeWorld, name: String, expected: S
 
 /// Used by every suite now that login is a redirect to gatehouse.
 #[then(expr = "the redirect location should contain {string}")]
-async fn redirect_location(world: &mut ForgeWorld, expected: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn redirect_location(world: &mut ForgeWorld, expected: String) {
     let location = world
         .last_response_headers
         .get(&quench_client::transport::header::LOCATION)

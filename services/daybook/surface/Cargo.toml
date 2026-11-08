@@ -40,3 +40,6 @@ quench-ui-native = { workspace = true }
 
 [dev-dependencies]
 quench-test = { workspace = true }
+
+[lints]
+workspace = true

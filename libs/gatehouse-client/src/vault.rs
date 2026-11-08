@@ -44,13 +44,15 @@ pub fn open(stored: &str) -> Option<String> {
 /// [`seal`] with the key (64 hex digits) given instead of read from the environment.
 #[must_use]
 pub fn seal_with(key_hex: Option<&str>, text: &str) -> String {
-    match cipher(key_hex) {
-        Some(c) => format!(
-            "{PREFIX}{}",
-            quench_core::hex::encode(c.seal(AAD, text.as_bytes()))
-        ),
-        None => text.to_string(),
-    }
+    cipher(key_hex).map_or_else(
+        || text.to_string(),
+        |c| {
+            format!(
+                "{PREFIX}{}",
+                quench_core::hex::encode(c.seal(AAD, text.as_bytes()))
+            )
+        },
+    )
 }
 
 /// [`open`] with the key (64 hex digits) given instead of read from the environment.

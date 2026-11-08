@@ -55,10 +55,14 @@ fn background() -> ExitCode {
 /// Where the app's `deliver` goes once the app exists.
 type Inbox = Rc<RefCell<Option<Rc<dyn Fn(Msg)>>>>;
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function wires the whole program: the window, the app, the controller and the event loop share them"
+)]
 fn main() -> std::io::Result<()> {
     if std::env::args().any(|a| a == "--backup") {
         let code = background();
-        std::process::exit(if code == ExitCode::SUCCESS { 0 } else { 1 });
+        std::process::exit(i32::from(code != ExitCode::SUCCESS));
     }
     let renderer = Rc::new(NativeRenderer::new());
     for (scheme, theme) in [("dark", Theme::DefaultDark), ("light", Theme::DefaultLight)] {
@@ -161,7 +165,7 @@ fn main() -> std::io::Result<()> {
             }
         })
     };
-    let (worker_tx, post_tx) = (Mutex::new(events.clone()), Mutex::new(events.clone()));
+    let (worker_tx, post_tx) = (Mutex::new(events.clone()), Mutex::new(events));
     let worker = Worker::new(Arc::clone(&session), move |id, answer| {
         let _ = worker_tx.lock().unwrap().send(Event::Worker(id, answer));
     });
@@ -271,7 +275,7 @@ fn main() -> std::io::Result<()> {
                 } else {
                     settings.server.clone()
                 },
-                ..settings.clone()
+                ..settings
             },
             has_session,
             initial: if has_session {

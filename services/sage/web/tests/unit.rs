@@ -399,8 +399,11 @@ fn a_project_is_created_and_a_bad_name_is_refused() {
 #[quench_test::test]
 fn the_language_and_stopping_a_stream_are_the_browsers_business() {
     let (c, seen, _) = client(|_| panic!("nothing is sent"));
-    assert!(run(&c, Request::Language("pl-PL".into())).is_empty());
-    assert!(run(&c, Request::StopStream).is_empty());
+    assert_eq!(
+        run(&c, Request::Language("pl-PL".into())),
+        [] as [sage_app::Msg; 0]
+    );
+    assert_eq!(run(&c, Request::StopStream), [] as [sage_app::Msg; 0]);
     assert!(seen.borrow().is_empty());
 }
 

@@ -5,7 +5,7 @@ use crate::world::ForgeWorld;
 use quench_test_bdd::{given, when};
 
 #[given("daybook API is available")]
-async fn available(world: &mut ForgeWorld) {
+const fn available(world: &mut ForgeWorld) {
     world.target = crate::world::Target::Daybook;
 }
 
@@ -45,7 +45,7 @@ async fn authenticated_post(world: &mut ForgeWorld, path: String, step: &quench_
         .client
         .post(&url)
         .header("Content-Type", "application/json")
-        .body(body.to_string());
+        .body(body.clone());
     if let Some(token) = &world.access_token {
         request = request.bearer_auth(token);
     }

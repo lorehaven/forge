@@ -82,7 +82,8 @@ fn scan_dir_returns_one_of_the_documented_candidates_or_none() {
             SCAN_DIRS
                 .iter()
                 .any(|candidate| Path::new(candidate) == dir),
-            "{dir:?} was not one of {SCAN_DIRS:?}"
+            "{} was not one of {SCAN_DIRS:?}",
+            dir.display()
         ),
     }
 }

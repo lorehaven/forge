@@ -1,5 +1,6 @@
-//! The screens that look across hosts: storage, fleet, GPUs, network, alerts, power. Each is a function from the list
-//! of hosts to a view; the numbers are the ones the hosts screen already has, so they need no request of their own.
+//! The screens that look across hosts: storage, fleet, GPUs, network, alerts, power.
+//!
+//! Each is a function from the list of hosts to a view; the numbers are the ones the hosts screen already has, so they need no request of their own.
 
 use gauge_core::format::{self, Level};
 use gauge_core::model::View as Metrics;
@@ -107,15 +108,19 @@ fn bar(pct: f64) -> Element {
 
 /// A table cell with a small bar and its number; a dash when the host does not report it.
 fn bar_cell(pct: Option<f64>) -> Element {
-    element("td").child(match pct {
-        Some(p) => div()
-            .class("gg-cell")
-            .child(bar(p))
-            .child(span().text(format::pct(p))),
-        None => div()
-            .class("gg-cell")
-            .child(span().class("gg-muted").text(DASH)),
-    })
+    element("td").child(pct.map_or_else(
+        || {
+            div()
+                .class("gg-cell")
+                .child(span().class("gg-muted").text(DASH))
+        },
+        |p| {
+            div()
+                .class("gg-cell")
+                .child(bar(p))
+                .child(span().text(format::pct(p)))
+        },
+    ))
 }
 
 fn table(t: &I18n, headers: &[&str], body: Element) -> Element {
@@ -129,15 +134,15 @@ fn table(t: &I18n, headers: &[&str], body: Element) -> Element {
 
 /// How long until a filesystem fills, as the table says it.
 fn full_in(t: &I18n, f: Option<&DiskForecast>) -> String {
-    match f {
-        None => DASH.to_string(),
-        Some(f) => match (f.per_day, f.days_left) {
+    f.map_or_else(
+        || DASH.to_string(),
+        |f| match (f.per_day, f.days_left) {
             (None, _) => DASH.to_string(),
-            (Some(_), None) => t.t("ui_not_growing").to_string(),
-            (Some(_), Some(d)) if d < 1.0 => t.t("ui_day_less").to_string(),
+            (Some(_), None) => t.t("ui_not_growing"),
+            (Some(_), Some(d)) if d < 1.0 => t.t("ui_day_less"),
             (Some(_), Some(d)) => format!("{d:.0} {}", t.t("ui_days")),
         },
-    }
+    )
 }
 
 fn growth(f: Option<&DiskForecast>) -> String {
@@ -161,6 +166,7 @@ fn forecast_of<'a>(
 
 /// Every filesystem of every host, the host with the fullest one first. `forecast` is what the stored history says
 /// about how they fill; `None` while it has not come, or when the service has no history.
+#[must_use]
 pub fn storage(
     t: &I18n,
     hosts: Option<&[HostCard]>,
@@ -302,6 +308,7 @@ fn hottest(view: &Metrics) -> Option<f64> {
 }
 
 /// One row per host, one bar per signal.
+#[must_use]
 pub fn fleet(t: &I18n, hosts: Option<&[HostCard]>, base: &str, _now: &Now) -> View {
     page(t, "fleet", "ui_nav_fleet", hosts, |hosts| {
         let mut body = element("tbody");
@@ -340,7 +347,7 @@ pub fn fleet(t: &I18n, hosts: Option<&[HostCard]>, base: &str, _now: &Now) -> Vi
                     })),
             );
         }
-        section(t, "ui_nav_fleet", Some(t.t("ui_fleet_hint").to_string())).child(table(
+        section(t, "ui_nav_fleet", Some(t.t("ui_fleet_hint"))).child(table(
             t,
             &[
                 "ui_col_host",
@@ -360,6 +367,7 @@ pub fn fleet(t: &I18n, hosts: Option<&[HostCard]>, base: &str, _now: &Now) -> Vi
 // ── GPUs ────────────────────────────────────────────────────────────────────────────────────────
 
 /// Every GPU of every host.
+#[must_use]
 pub fn gpus(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: &Now) -> View {
     page(t, "gpus", "ui_nav_gpus", hosts, |hosts| {
         let mut out = div().class("gg-page");
@@ -421,6 +429,7 @@ pub fn gpus(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: &Now) -> View
 // ── Network ─────────────────────────────────────────────────────────────────────────────────────
 
 /// Every interface of every host.
+#[must_use]
 pub fn network(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: &Now) -> View {
     page(t, "network", "ui_nav_network", hosts, |hosts| {
         let known = known(hosts);
@@ -441,9 +450,9 @@ pub fn network(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: &Now) -> V
                     link.map_or_else(
                         || DASH.to_string(),
                         |l| match (l.up, l.speed) {
-                            (false, _) => t.t("ui_link_down").to_string(),
+                            (false, _) => t.t("ui_link_down"),
                             (true, Some(s)) => format!("{:.0} Mb/s", s * 8.0 / 1e6),
-                            (true, None) => t.t("ui_state_up").to_string(),
+                            (true, None) => t.t("ui_state_up"),
                         },
                     ),
                     format::rate(r.a_per_sec),
@@ -480,6 +489,7 @@ pub fn network(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: &Now) -> V
 // ── Power and thermals ──────────────────────────────────────────────────────────────────────────
 
 /// Temperatures, fans and the watts the hosts report.
+#[must_use]
 pub fn power(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: &Now) -> View {
     page(t, "power", "ui_nav_power", hosts, |hosts| {
         let known = known(hosts);
@@ -540,6 +550,7 @@ pub fn power(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: &Now) -> Vie
 
 /// Everything that needs a look, across hosts: unreachable hosts and alerts, severe first. With the alert `log`, each
 /// says how long it has been going, and the ones that ended are listed below.
+#[must_use]
 pub fn alerts(
     t: &I18n,
     hosts: Option<&[HostCard]>,

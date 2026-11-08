@@ -11,7 +11,11 @@ use super::{
 use crate::live::{Request, State};
 
 #[must_use]
-pub(crate) fn crates(env: &Env, state: &State) -> View {
+#[allow(
+    clippy::too_many_lines,
+    reason = "builds the whole crates screen (catalog, versions and details) as one view tree"
+)]
+pub fn crates(env: &Env, state: &State) -> View {
     env.ask(Request::Crates);
     {
         let env = env.clone();

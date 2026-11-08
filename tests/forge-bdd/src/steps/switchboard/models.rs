@@ -13,7 +13,7 @@ async fn send_post_request_with_body(
     rb = world.apply_auth(rb);
     let res = rb
         .header("Content-Type", "application/json")
-        .body(body.to_string())
+        .body(body.clone())
         .send()
         .await
         .expect("Failed to send POST request");
@@ -21,16 +21,25 @@ async fn send_post_request_with_body(
 }
 
 #[then("response should be a JSON array")]
-async fn check_json_array(world: &mut ForgeWorld) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn check_json_array(world: &mut ForgeWorld) {
     let json = world
         .last_json
         .as_ref()
         .expect("No JSON response available");
-    assert!(json.is_array(), "Response is not a JSON array: {:?}", json);
+    assert!(json.is_array(), "Response is not a JSON array: {json:?}");
 }
 
 #[then(expr = "all models in the response should contain {string} in their name")]
-async fn check_models_name(world: &mut ForgeWorld, search: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn check_models_name(world: &mut ForgeWorld, search: String) {
     let json = world
         .last_json
         .as_ref()
@@ -41,9 +50,7 @@ async fn check_models_name(world: &mut ForgeWorld, search: String) {
         let name = model["name"].as_str().expect("Model has no name");
         assert!(
             name.to_lowercase().contains(&search_lower),
-            "Model name '{}' does not contain '{}'",
-            name,
-            search
+            "Model name '{name}' does not contain '{search}'"
         );
     }
 }

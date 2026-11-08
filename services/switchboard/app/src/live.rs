@@ -1,6 +1,8 @@
-//! The app against a host: it asks for the data and for every change (`Request`) and is told what came (`Msg`). The host
-//! does the talking to the service; the app owns the routes (`{base}/ui/home`, `{base}/ui/models/dashboard`,
-//! `{base}/ui/vllm/manage`), the polling, the sidebar and the language.
+//! The app against a host.
+//!
+//! It asks for the data and for every change (`Request`) and is told what came (`Msg`). The host does the talking to
+//! the service; the app owns the routes (`{base}/ui/home`, `{base}/ui/models/dashboard`, `{base}/ui/vllm/manage`), the
+//! polling, the sidebar and the language.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -72,6 +74,16 @@ pub struct Setup {
     /// Where signing in starts (a full page load, not a route of the app).
     pub login_url: String,
     pub history: Rc<dyn History>,
+}
+
+impl std::fmt::Debug for Setup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Setup")
+            .field("base", &self.base)
+            .field("language", &self.language)
+            .field("login_url", &self.login_url)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The app and the function that feeds it.
@@ -317,7 +329,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             screens::vllm(&env, &state)
         }
     };
-    let routes = Routes::new()
+    let pages = Routes::new()
         .route(&format!("{base}/ui/home"), home.clone())
         .route(&format!("{base}/ui/home/"), home.clone())
         .route(&format!("{base}/ui"), home.clone())
@@ -402,7 +414,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     main()
                         .class("sb-main")
                         .child(banner)
-                        .child(routes.view(&router)),
+                        .child(pages.view(&router)),
                 ),
         )
         .into_view()

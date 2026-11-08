@@ -12,7 +12,7 @@ use crate::live::{JobLog, Request, State};
 
 // ── The history ──────────────────────────────────────────────────────────────
 
-pub(crate) fn history(env: &Env, state: &State, router: &Router) -> View {
+pub fn history(env: &Env, state: &State, router: &Router) -> View {
     let (env, state, router) = (env.clone(), state.clone(), router.clone());
     // The project and the page are in the address; the page is rebuilt when they change.
     let scope = router.location().query_get("project");
@@ -69,15 +69,21 @@ fn page_href(env: &Env, scope: Option<&String>, page: u32) -> String {
 }
 
 fn pager(env: &Env, scope: Option<&String>, page: u32, pages: u32) -> Element {
-    let end = |target: Option<u32>, key: &str, id: &str| match target {
-        Some(page) => link(&page_href(env, scope, page))
-            .attr("id", id.to_string())
-            .class("cv-pager-link")
-            .text(env.t.t(key)),
-        None => span()
-            .attr("id", id.to_string())
-            .class("cv-pager-link cv-pager-disabled")
-            .text(env.t.t(key)),
+    let end = |target: Option<u32>, key: &str, id: &str| {
+        target.map_or_else(
+            || {
+                span()
+                    .attr("id", id.to_string())
+                    .class("cv-pager-link cv-pager-disabled")
+                    .text(env.t.t(key))
+            },
+            |page| {
+                link(&page_href(env, scope, page))
+                    .attr("id", id.to_string())
+                    .class("cv-pager-link")
+                    .text(env.t.t(key))
+            },
+        )
     };
     div()
         .class("cv-pager")
@@ -120,14 +126,14 @@ fn history_panel(env: &Env, state: &State, scope: Option<String>) -> View {
 
 // ── One run ──────────────────────────────────────────────────────────────────
 
-pub(crate) fn run(env: &Env, state: &State, id: String) -> View {
+pub fn run(env: &Env, state: &State, id: String) -> View {
     let missing = {
         let problem = state.problem.clone();
         create_memo(move || is_missing(&problem))
     };
     let loaded = {
         let run = state.run.clone();
-        create_memo(move || run.with(|r| r.is_some()))
+        create_memo(move || run.with(Option::is_some))
     };
     let (env, state) = (env.clone(), state.clone());
     View::dynamic(move || {
@@ -392,7 +398,7 @@ fn log_view(env: &Env, state: &State, id: &str) -> View {
         move || logs.with(|m| m.get(&id).map_or(0, |l| l.lines.len()))
     };
     let lines = {
-        let (logs, id, count) = (state.logs.clone(), id.to_string(), count.clone());
+        let (logs, id, count) = (state.logs.clone(), id.to_string(), count);
         View::keyed(
             move || (0..count()).collect::<Vec<usize>>(),
             |index| *index,

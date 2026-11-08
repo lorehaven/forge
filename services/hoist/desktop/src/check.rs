@@ -1,7 +1,9 @@
-//! The look for updates that runs without a window: on a phone a scheduled job starts the program in a mode that only
-//! does this, on a desktop `hoist --check` does (and a timer can run that). It signs in with the session the app
-//! keeps, reads the registry, works out what is older than it, and says so - once for each set of updates, so a
-//! notification is a piece of news, not a reminder every few hours.
+//! The look for updates that runs without a window.
+//!
+//! On a phone a scheduled job starts the program in a mode that only does this, on a desktop `hoist --check` does (and
+//! a timer can run that). It signs in with the session the app keeps, reads the registry, works out what is older than
+//! it, and says so - once for each set of updates, so a notification is a piece of news, not a reminder every few
+//! hours.
 
 use hoist_core::{Artifact, Installed, Update, announcement_key, build_entries, pending_updates};
 use hoist_net::{NetError, Session};

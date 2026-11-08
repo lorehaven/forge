@@ -6,7 +6,7 @@ pub struct Settings {
     pub fdroid_repo_url: String,
     pub izzyondroid_repo_url: String,
     pub aptoide_base_url: String,
-    /// IzzyOnDroid's download counts (see `connectors::izzy_stats`).
+    /// `IzzyOnDroid`'s download counts (see `connectors::izzy_stats`).
     pub izzy_stats_url: String,
     pub refresh_interval_minutes: u64,
     /// Pages of Aptoide's most downloaded apps pulled per run (30 apps a page).

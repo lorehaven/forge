@@ -1,7 +1,8 @@
-//! The app against a host: it asks for the data and for every change (`Request`) and is told what came (`Msg`). The host does
-//! the talking to the service; the app owns the routes (`{base}/ui/home`, `/ui/projects/{id}`, `/ui/runs`, `/ui/runs/{id}`,
-//! `/ui/repos`, `/ui/repos/{owner}/{name}/{edit,run,scan,scan/{check}}`, `/ui/credentials`), the sidebar, the polling and the
-//! language.
+//! The app against a host: it asks for the data and for every change (`Request`) and is told what came (`Msg`).
+//!
+//! The host does the talking to the service; the app owns the routes (`{base}/ui/home`, `/ui/projects/{id}`,
+//! `/ui/runs`, `/ui/runs/{id}`, `/ui/repos`, `/ui/repos/{owner}/{name}/{edit,run,scan,scan/{check}}`,
+//! `/ui/credentials`), the sidebar, the polling and the language.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -26,7 +27,7 @@ pub enum Follow {
 }
 
 /// What the app asks its host for.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     /// The front page (or a project's branch of it): projects, repositories, the runs, the checks.
     Home {
@@ -90,7 +91,7 @@ pub enum Request {
 }
 
 /// What the host tells the app.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
     Access(Access),
     Projects(Vec<Project>),
@@ -169,6 +170,18 @@ pub struct Setup {
     pub home_refresh_ms: u32,
     /// How often a run that has not finished is asked for again.
     pub run_refresh_ms: u32,
+}
+
+impl std::fmt::Debug for Setup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Setup")
+            .field("base", &self.base)
+            .field("language", &self.language)
+            .field("login_url", &self.login_url)
+            .field("home_refresh_ms", &self.home_refresh_ms)
+            .field("run_refresh_ms", &self.run_refresh_ms)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The app and the function that feeds it.
@@ -640,7 +653,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         }
     };
 
-    let routes = Routes::new()
+    let pages = Routes::new()
         .route(&format!("{base}/ui/home"), home.clone())
         .route(&format!("{base}/ui/home/"), home.clone())
         .route(&format!("{base}/ui"), home.clone())
@@ -686,7 +699,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         move || -> View { forge_shell::topbar(&bar, &i18n).into_view() }
     };
     let nav = {
-        let (env, router) = (env.clone(), router.clone());
+        let (env, router) = (env, router.clone());
         View::dynamic(move || {
             let here = router.location().path;
             let item = |path: &str, key: &str, id: &str| {
@@ -718,7 +731,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     let banner = {
         let (problem, notice, login, t) = (
             state.problem.clone(),
-            state.notice.clone(),
+            state.notice,
             setup.login_url.clone(),
             Rc::clone(&i18n),
         );
@@ -769,7 +782,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     main()
                         .class("cv-main")
                         .child(banner)
-                        .child(routes.view(&router)),
+                        .child(pages.view(&router)),
                 ),
         )
         .into_view()

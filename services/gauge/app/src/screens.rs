@@ -47,6 +47,14 @@ pub struct Now {
     pub stamp: Rc<dyn Fn(f64) -> String>,
 }
 
+impl std::fmt::Debug for Now {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Now")
+            .field("at", &self.at)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Why a host shows no live numbers; `None` while it is up. When its page still shows numbers (the last ones it
 /// had, or ones kept from before Gauge restarted), says from when they are, so they are not taken for now.
 pub(crate) fn outage(t: &I18n, host: &HostSummary, now: &Now) -> Option<String> {
@@ -81,11 +89,15 @@ fn chart_image(series: &[Series<'_>], max: f64, slots: usize, label: &str) -> El
 
 /// The labels under a chart: how long ago each quarter of it is. The newest point is at the right edge.
 fn axis(t: &I18n, range: Range) -> Element {
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "a window is at most 30 days of seconds (2_592_000), exact in an `f64`"
+    )]
     let window = range.window_secs() as f64;
     let mut row = div().class("gg-axis");
     for f in [1.0, 0.75, 0.5, 0.25, 0.0] {
         row = row.child(span().text(if f == 0.0 {
-            t.t("ui_now").to_string()
+            t.t("ui_now").clone()
         } else {
             format!("−{}", format::span(window * f))
         }));
@@ -204,6 +216,7 @@ fn card(t: &I18n, card: &HostCard, base: &str, now: &Now) -> Element {
 }
 
 /// The hosts screen: one card per host, by name.
+#[must_use]
 pub fn hosts(t: &I18n, hosts: Option<&[HostCard]>, base: &str, now: &Now) -> View {
     let Some(hosts) = hosts else {
         return p()
@@ -355,7 +368,7 @@ fn pressure_section(t: &I18n, range: Range, history: &[Point], view: &Metrics) -
         .fold(0.0, f64::max)
         .max(5.0);
     Some(
-        section(t, "ui_pressure", Some(t.t("ui_pressure_hint").to_string()))
+        section(t, "ui_pressure", Some(t.t("ui_pressure_hint")))
             .child(legend(t, &["ui_cpu", "ui_memory", "ui_io"]))
             .child(chart_with_axis(
                 t,
@@ -740,9 +753,9 @@ fn network_section(t: &I18n, range: Range, history: &[Point], view: &Metrics) ->
             link.map_or_else(
                 || DASH.to_string(),
                 |l| match (l.up, l.speed) {
-                    (false, _) => t.t("ui_link_down").to_string(),
+                    (false, _) => t.t("ui_link_down"),
                     (true, Some(s)) => format!("{:.0} Mb/s", s * 8.0 / 1e6),
-                    (true, None) => t.t("ui_state_up").to_string(),
+                    (true, None) => t.t("ui_state_up"),
                 },
             ),
             link.map_or_else(
@@ -807,7 +820,7 @@ fn temps_section(t: &I18n, view: &Metrics) -> Element {
 }
 
 /// SMART per drive. Sector counters show as `reallocated / pending / uncorrectable`, wear as the share of the rated
-/// endurance used (NVMe adds the spare left); a drive that reports none (NVMe has no sectors, a spinning disk no
+/// endurance used (`NVMe` adds the spare left); a drive that reports none (`NVMe` has no sectors, a spinning disk no
 /// wear) shows a dash.
 fn disk_health_section(t: &I18n, view: &Metrics) -> Element {
     let or_dash = |v: Option<String>| v.unwrap_or_else(|| DASH.to_string());
@@ -821,9 +834,11 @@ fn disk_health_section(t: &I18n, view: &Metrics) -> Element {
                 c.unwrap_or(0.0)
             )),
         };
-        let wear = d.wear_pct.map(|w| match d.spare_pct {
-            Some(spare) => format!("{w:.0}% · {} {spare:.0}%", t.t("ui_spare")),
-            None => format!("{w:.0}%"),
+        let wear = d.wear_pct.map(|w| {
+            d.spare_pct.map_or_else(
+                || format!("{w:.0}%"),
+                |spare| format!("{w:.0}% · {} {spare:.0}%", t.t("ui_spare")),
+            )
         });
         vec![
             d.device.clone(),
@@ -832,8 +847,7 @@ fn disk_health_section(t: &I18n, view: &Metrics) -> Element {
                 "ui_smart_ok"
             } else {
                 "ui_smart_failing"
-            })
-            .to_string(),
+            }),
             or_dash(d.temp_c.map(|c| format!("{c:.0} °C"))),
             or_dash(d.power_on_hours.map(|h| format::duration(h * 3600.0))),
             or_dash(sectors),
@@ -884,6 +898,16 @@ pub struct Looking<'a> {
     pub pick: Rc<dyn Fn(Range)>,
 }
 
+impl std::fmt::Debug for Looking<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Looking")
+            .field("range", &self.range)
+            .field("stored", &self.stored)
+            .field("unavailable", &self.unavailable)
+            .finish_non_exhaustive()
+    }
+}
+
 /// The buttons that choose the range, and a line about what the charts show.
 fn ranges(t: &I18n, looking: &Looking<'_>, waiting: bool) -> Element {
     let mut row = div().class("gg-ranges").attr("role", "group");
@@ -906,17 +930,22 @@ fn ranges(t: &I18n, looking: &Looking<'_>, waiting: bool) -> Element {
         row = row.child(b);
     }
     let note = if looking.unavailable && looking.range != Range::Live {
-        Some(t.t("ui_range_unavailable").to_string())
+        Some(t.t("ui_range_unavailable"))
     } else if waiting {
-        Some(t.t("ui_waiting").to_string())
+        Some(t.t("ui_waiting"))
     } else if looking.range == Range::Live {
         None
     } else {
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "a step is at most 7200 seconds, exact in an `f64`"
+        )]
+        let step = looking.range.step_secs() as f64;
         Some(format!(
             "{} {} · {}",
             t.t("ui_range_last"),
             looking.range.as_str(),
-            format::duration(looking.range.step_secs() as f64) + " " + &t.t("ui_range_per_point")
+            format::duration(step) + " " + &t.t("ui_range_per_point")
         ))
     };
     div()
@@ -927,6 +956,7 @@ fn ranges(t: &I18n, looking: &Looking<'_>, waiting: bool) -> Element {
 }
 
 /// The host screen: every number Gauge has for it, and charts of the last hour, or of the stored history.
+#[must_use]
 pub fn host(t: &I18n, detail: &HostDetail, base: &str, now: &Now, looking: &Looking<'_>) -> View {
     let summary = &detail.host;
     let stored = looking
@@ -1026,6 +1056,7 @@ pub(crate) fn sidebar(t: &Rc<I18n>, router: &Router, base: &str) -> View {
 }
 
 /// The screen of a host that does not exist.
+#[must_use]
 pub fn not_found(t: &I18n, base: &str) -> View {
     div()
         .class("gg-page")

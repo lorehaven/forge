@@ -13,6 +13,10 @@ const WEEKDAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /// 1 = Monday to 7 = Sunday.
 #[must_use]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "`rem_euclid(7)` is 0 to 6, which fits a `u8`"
+)]
 pub const fn iso_weekday(date: Date) -> u8 {
     // 1970-01-01 was a Thursday.
     (date.days_since_epoch() + 3).rem_euclid(7) as u8 + 1

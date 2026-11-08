@@ -230,7 +230,7 @@ fn file(id: &str, name: &str, status: &str) -> FileInfo {
     FileInfo {
         id: id.into(),
         file_name: name.into(),
-        mime_type: if name.ends_with(".png") {
+        mime_type: if name.rsplit_once('.').is_some_and(|(_, ext)| ext == "png") {
             "image/png".into()
         } else {
             "text/plain".into()
@@ -612,7 +612,7 @@ fn enter_sends_and_shift_enter_does_not() {
             ..KeyEvent::default()
         }),
     );
-    assert!(l.asked().is_empty());
+    assert_eq!(l.asked(), [] as [sage_app::Request; 0]);
     l.r.fire(area, &Event::KeyDown(KeyEvent::new("Enter")));
     assert!(
         matches!(l.asked().first(), Some(Request::Send(_))),
@@ -627,7 +627,7 @@ fn an_empty_message_is_not_sent_and_neither_is_a_second_while_one_is_answered() 
     l.forget();
     l.type_into("textarea", "chat-input", "   ");
     l.submit("chat-form");
-    assert!(l.asked().is_empty());
+    assert_eq!(l.asked(), [] as [sage_app::Request; 0]);
     l.type_into("textarea", "chat-input", "one");
     l.submit("chat-form");
     l.type_into("textarea", "chat-input", "two");
@@ -889,7 +889,7 @@ fn a_conversation_is_deleted_after_a_confirmation() {
     l.forget();
     l.click("button", "dialog-cancel");
     assert!(!present(&l.r, "dialog"));
-    assert!(l.asked().is_empty());
+    assert_eq!(l.asked(), [] as [sage_app::Request; 0]);
     // the confirmation asks
     l.r.fire(delete_button(&l, "history-item-c1"), &Event::Click);
     l.click("button", "dialog-confirm");
@@ -929,7 +929,7 @@ fn a_project_is_created_from_a_dialog() {
     // a name is needed
     l.forget();
     l.submit("new-project-form");
-    assert!(l.asked().is_empty());
+    assert_eq!(l.asked(), [] as [sage_app::Request; 0]);
     assert!(present(&l.r, "project-error"));
     assert!(l.text().contains("A project needs a name"), "{}", l.text());
     l.type_into("input", "project-name", "  Notes ");
@@ -1089,7 +1089,10 @@ fn a_staged_chip_can_be_retried_and_removed_and_a_refused_upload_says_why() {
     l.r.fire(with_class(&l.r, "sg-remove")[0], &Event::Click);
     assert_eq!(l.asked(), vec![Request::DeleteFile("f1".into())]);
     l.send(Msg::FileGone("f1".into()));
-    assert!(with_class(&l.r, "sg-chip").is_empty());
+    assert_eq!(
+        with_class(&l.r, "sg-chip"),
+        [] as [quench_ui::test_renderer::NodeId; 0]
+    );
 
     l.type_into(
         "input",

@@ -1,5 +1,7 @@
-//! A backup with no screen: the program the Android host's job service runs (`libquench_surface.so --backup`, the `forklift_surface` program). It scans,
-//! sends what is waiting, and ends when there is nothing left to do (or the host says stop).
+//! A backup with no screen: the program the Android host's job service runs.
+//!
+//! That is `libquench_surface.so --backup`, the `forklift_surface` program. It scans, sends what is waiting, and ends
+//! when there is nothing left to do (or the host says stop).
 //!
 //! The host does the device's side and speaks JSON lines. To the program's standard output the program writes
 //! requests and reports; on its standard input it reads the answers and the events of uploads.
@@ -81,10 +83,10 @@ impl Stdio {
         };
         let then = self.pending.borrow_mut().remove(&id);
         if let Some(then) = then {
-            then(match line.get("err") {
-                Some(e) => Err(e.as_str().unwrap_or("failed").to_string()),
-                None => Ok(line.get("ok").cloned().unwrap_or_default()),
-            });
+            then(line.get("err").map_or_else(
+                || Ok(line.get("ok").cloned().unwrap_or_default()),
+                |e| Err(e.as_str().unwrap_or("failed").to_string()),
+            ));
         }
     }
 }
@@ -256,6 +258,10 @@ pub enum Ended {
 ///
 /// # Errors
 /// The streams'.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function runs the whole backup: the controller, the host's answers and the loop share its state"
+)]
 pub fn run(
     input: impl Read + Send + 'static,
     output: impl Write + 'static,
@@ -331,7 +337,7 @@ pub fn run(
             ),
             Msg::Notice(t) => write_line(&emit_out, &object(vec![("notice", Value::String(t))])),
             Msg::SignedOut => {
-                write_line(&emit_out, &object(vec![("signed_out", Value::Bool(true))]))
+                write_line(&emit_out, &object(vec![("signed_out", Value::Bool(true))]));
             }
             _ => {}
         }),

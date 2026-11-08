@@ -63,7 +63,7 @@ fn missing_optional_fields_are_none_not_errors() {
         (a.label.clone(), a.arch.clone(), a.min_sdk_version, a.yanked),
         (None, None, None, false)
     );
-    assert!(a.permissions.is_empty());
+    assert_eq!(a.permissions, [] as [String; 0]);
     assert_eq!(a.title(), "app", "no label: the program names it");
     let mut blank = a;
     blank.label = Some(String::new());
@@ -140,7 +140,7 @@ fn the_running_app_is_marked_and_an_installed_program_outside_the_catalog_is_not
         (me.latest.program.as_str(), me.state()),
         ("dev.lorehaven.hoist", InstallState::UpdateAvailable)
     );
-    assert!(entries.iter().filter(|e| e.is_self).count() == 1);
+    assert_eq!(entries.iter().filter(|e| e.is_self).count(), 1);
 }
 
 #[quench_test::test]
@@ -159,7 +159,10 @@ fn one_row_per_program_the_highest_that_is_not_yanked() {
         entries[0].latest.version_code, 6,
         "9 is yanked, so 6 is the latest"
     );
-    assert!(build_entries(&[], &BTreeMap::new(), "x").is_empty());
+    assert_eq!(
+        build_entries(&[], &BTreeMap::new(), "x"),
+        [] as [hoist_core::Entry; 0]
+    );
     let all_yanked = {
         let mut a = artifact("gone", None, 1);
         a.yanked = true;

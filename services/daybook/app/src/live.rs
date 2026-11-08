@@ -1,6 +1,7 @@
-//! The app against a host: sign in, see the lists, change tasks. The app does no I/O itself: it asks for things through
-//! a `requests` function and is told what happened through `deliver` (both carry plain data), so the host decides how
-//! to do the work and where the answers come in.
+//! The app against a host: sign in, see the lists, change tasks.
+//!
+//! The app does no I/O itself: it asks for things through a `requests` function and is told what happened through
+//! `deliver` (both carry plain data), so the host decides how to do the work and where the answers come in.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -32,6 +33,19 @@ pub struct Setup {
     pub clock: Rc<dyn Fn() -> Time>,
     /// How long a message stays, in milliseconds.
     pub toast_ms: u32,
+}
+
+impl std::fmt::Debug for Setup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Setup")
+            .field("server", &self.server)
+            .field("ask_server", &self.ask_server)
+            .field("list", &self.list)
+            .field("has_session", &self.has_session)
+            .field("zone", &self.zone)
+            .field("toast_ms", &self.toast_ms)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The app and the function that feeds it.
@@ -224,7 +238,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         saving,
         error: save_error,
         made_label,
-        confirm_delete: confirm_delete.clone(),
+        confirm_delete,
     };
 
     let open_form: Rc<dyn Fn(Target)> = {
@@ -237,7 +251,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
 
     {
         let (request, list, data, open_form, signed) = (
-            show_request.clone(),
+            show_request,
             list.clone(),
             data.clone(),
             Rc::clone(&open_form),
@@ -309,22 +323,22 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             confirm,
         ) = (
             signed_in.clone(),
-            data.clone(),
+            data,
             list.clone(),
-            loading.clone(),
+            loading,
             Rc::clone(requests),
             setup.zone.clone(),
             Rc::clone(&setup.clock),
             Rc::clone(&open_form),
-            drawer.clone(),
+            drawer,
             naming.clone(),
             confirm.clone(),
         );
         let (server, ask_server, busy, error) = (
             setup.server.clone(),
             setup.ask_server,
-            login_busy.clone(),
-            login_error.clone(),
+            login_busy,
+            login_error,
         );
         View::dynamic(move || {
             if !signed.get() {
@@ -365,9 +379,8 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             class
         }
     };
-    let side_when = signed_in.clone();
+    let side_when = signed_in;
     let blocked_note = {
-        let blocked = blocked.clone();
         View::show(
             move || blocked.get(),
             || {
@@ -386,7 +399,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             &confirm,
             &confirm_open,
             Rc::clone(requests),
-            list.clone(),
+            list,
         ))
         .child(naming_dialog(&naming, &naming_open, Rc::clone(requests)))
         .child(crate::toast::toast(&message))
@@ -545,6 +558,10 @@ fn title_of(data: &Data, list: &ListRef) -> String {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function builds the task list screen: header, rows, paging and the swipe actions"
+)]
 fn tasks_screen(s: &Screen) -> View {
     let (title_data, title_list) = (s.data.clone(), s.list.clone());
     let bar = {
@@ -718,7 +735,7 @@ fn tasks_screen(s: &Screen) -> View {
                 limit.set(PAGE);
             });
         }
-        let (more_count, more_limit, items_limit) = (shown.clone(), limit.clone(), limit.clone());
+        let (more_count, more_limit, items_limit) = (shown, limit.clone(), limit);
         let items = create_memo(move || {
             let n = items_limit.get();
             items.with(|rows| rows.iter().take(n).cloned().collect::<Vec<Row>>())
@@ -746,16 +763,13 @@ fn tasks_screen(s: &Screen) -> View {
                         &requests,
                         &open_form,
                     );
-                    let (confirm, id, title) = (
-                        confirm.clone(),
-                        row.task.id.clone(),
-                        row.task.content.clone(),
-                    );
+                    let (confirm, id, title) =
+                        (confirm.clone(), row.task.id.clone(), row.task.content);
                     li().child(swipe_action(row_view, "Delete", move || {
                         confirm.set(Some(Confirm::DeleteTask {
                             id: id.clone(),
                             title: title.clone(),
-                        }))
+                        }));
                     }))
                     .into_view()
                 },
@@ -770,7 +784,7 @@ fn tasks_screen(s: &Screen) -> View {
                     move || {
                         let (shown, limit) = (shown.clone(), limit.clone());
                         let label = {
-                            let (shown, limit) = (shown.clone(), limit.clone());
+                            let (shown, limit) = (shown, limit.clone());
                             move || {
                                 format!(
                                     "Show more ({} left)",
@@ -796,7 +810,7 @@ fn tasks_screen(s: &Screen) -> View {
     let add = {
         let (open_form, list) = (Rc::clone(&s.open_form), s.list.clone());
         quench_ui::kit::fab("Add task", "+", move || {
-            open_form(Target::New(list.get_untracked()))
+            open_form(Target::New(list.get_untracked()));
         })
         .attr("id", "add-task")
     };
@@ -849,7 +863,7 @@ fn task_row(
                 requests(Request::SetCompleted {
                     id: id.clone(),
                     done: !done,
-                })
+                });
             })
     };
     let mut meta: Vec<View> = Vec::new();
@@ -925,7 +939,7 @@ fn login_form(
         .field(&server_field)
         .field(&user)
         .field(&password);
-    let (srv, usr, pwd, working, shown_busy) = (
+    let (server_in, user_in, password_in, working, shown_busy) = (
         server_field.clone(),
         user.clone(),
         password.clone(),
@@ -941,12 +955,12 @@ fn login_form(
                 working.set(true);
                 requests(Request::Login {
                     server: if ask_server {
-                        srv.value().trim().trim_end_matches('/').to_string()
+                        server_in.value().trim().trim_end_matches('/').to_string()
                     } else {
                         String::new()
                     },
-                    username: usr.value().trim().to_string(),
-                    password: pwd.value(),
+                    username: user_in.value().trim().to_string(),
+                    password: password_in.value(),
                 });
             })
             .attr("id", "login-form")
@@ -1023,7 +1037,7 @@ fn confirm_dialog(
                     .on_click(move || {
                         match confirm.get_untracked() {
                             Some(Confirm::DeleteTask { id, .. }) => {
-                                requests(Request::Delete { id })
+                                requests(Request::Delete { id });
                             }
                             Some(Confirm::DeleteProject { id, .. }) => {
                                 if list.get_untracked() == ListRef::Project(id.clone()) {
@@ -1126,10 +1140,10 @@ fn naming_dialog(
                                     }
                                     match state.get_untracked() {
                                         Some(Naming::NewProject) => {
-                                            requests(Request::CreateProject { name: text })
+                                            requests(Request::CreateProject { name: text });
                                         }
                                         Some(Naming::Project { id, .. }) => {
-                                            requests(Request::RenameProject { id, name: text })
+                                            requests(Request::RenameProject { id, name: text });
                                         }
                                         Some(Naming::Label(l)) => requests(Request::UpdateLabel {
                                             id: l.id,

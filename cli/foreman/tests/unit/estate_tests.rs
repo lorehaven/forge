@@ -250,11 +250,11 @@ fn env_when_lock() -> &'static std::sync::Mutex<()> {
 #[quench_test::test]
 fn resolve_skips_env_when_blocks_whose_condition_variable_is_not_set() {
     // A variable name specific enough that nothing else could plausibly set it.
-    // SAFETY: this test owns the lifetime of this specific, uniquely-named variable.
-    let _guard = env_when_lock().lock().unwrap_or_else(|p| p.into_inner());
-    unsafe {
-        std::env::remove_var("FOREMAN_ESTATE_TEST_UNSET_MARKER_1a2b3c");
-    }
+    // This test owns the lifetime of this specific, uniquely-named variable.
+    let _guard = env_when_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    quench_core::env::remove("FOREMAN_ESTATE_TEST_UNSET_MARKER_1a2b3c");
     let estate = estate(WITH_ENV_WHEN);
     let resolved = estate.resolve("auth").unwrap();
     assert!(!resolved.env.iter().any(|(k, _)| k == "EXTRA"));
@@ -263,17 +263,15 @@ fn resolve_skips_env_when_blocks_whose_condition_variable_is_not_set() {
 
 #[quench_test::test]
 fn resolve_applies_env_when_blocks_whose_condition_variable_is_set() {
-    // SAFETY: this test owns the lifetime of this specific, uniquely-named
+    // This test owns the lifetime of this specific, uniquely-named
     // variable and clears it again before returning.
-    let _guard = env_when_lock().lock().unwrap_or_else(|p| p.into_inner());
-    unsafe {
-        std::env::set_var("FOREMAN_ESTATE_TEST_UNSET_MARKER_1a2b3c", "1");
-    }
+    let _guard = env_when_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    quench_core::env::set("FOREMAN_ESTATE_TEST_UNSET_MARKER_1a2b3c", "1");
     let estate = estate(WITH_ENV_WHEN);
     let resolved = estate.resolve("auth").unwrap();
-    unsafe {
-        std::env::remove_var("FOREMAN_ESTATE_TEST_UNSET_MARKER_1a2b3c");
-    }
+    quench_core::env::remove("FOREMAN_ESTATE_TEST_UNSET_MARKER_1a2b3c");
 
     let extra = resolved
         .env

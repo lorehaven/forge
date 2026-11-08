@@ -8,7 +8,7 @@ use quench_ui::router::{RouteContext, link};
 use super::{Env, waiting};
 use crate::live::{Request, State};
 
-pub(crate) fn home(env: &Env, state: &State, _ctx: &RouteContext) -> View {
+pub fn home(env: &Env, state: &State, _ctx: &RouteContext) -> View {
     state.dashboard.set(None);
     (env.ask)(Request::Dashboard);
     let (env, dashboard) = (env.clone(), state.dashboard.clone());

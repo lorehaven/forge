@@ -1,5 +1,7 @@
-//! Due dates written in the title ("Pay rent nov 6 5pm", "call mum tomorrow at 9", "review in 2 weeks"), as Todoist reads
-//! them: the words that name a day or a time are found, turned into a [`Due`] and taken out of the title.
+//! Due dates written in the title, as Todoist reads them.
+//!
+//! In "Pay rent nov 6 5pm", "call mum tomorrow at 9" or "review in 2 weeks" the words that name a day or a time are
+//! found, turned into a [`Due`] and taken out of the title.
 //!
 //! English only. What is understood, in any order and with an optional "on", "at", "by" or "@" in front:
 //! - days: `today`, `tomorrow`/`tmr`, `tonight`, `monday`..`sunday` (and `mon`, `tue`, ...), `next <weekday>`,
@@ -180,9 +182,8 @@ fn clock_at(ws: &[Word], i: usize, after_at: bool) -> Option<((u32, u32), usize)
         Some((h, m)) if h.len() <= 2 && m.len() == 2 => {
             (h.parse::<u32>().ok()?, m.parse::<u32>().ok()?, true)
         }
-        Some(_) => return None,
         None if digits.len() <= 2 => (digits.parse::<u32>().ok()?, 0, false),
-        None => return None,
+        Some(_) | None => return None,
     };
     let meridiem = match suffix {
         "am" | "a.m." | "a.m" => Some(false),
@@ -334,16 +335,17 @@ pub fn parse_due(title: &str, now: Time, zone: &Zone) -> Option<Parsed> {
     let mut i = 0;
     while i < ws.len() {
         let after_at = i > 0 && matches!(ws[i - 1].lower.as_str(), "at" | "@");
-        let mut taken = None;
-        if day.is_none()
+        let mut taken = if day.is_none()
             && clock.is_none()
             && let Some((at, used)) = short_offset(&ws, i, now)
         {
             let civil = zone.civil_at(at);
             day = Some((civil.date(), false));
             clock = Some((civil.hour, civil.minute));
-            taken = Some(used);
-        }
+            Some(used)
+        } else {
+            None
+        };
         if taken.is_none()
             && day.is_none()
             && let Some((date, used, tonight)) = day_at(&ws, i, now_date)
@@ -363,36 +365,35 @@ pub fn parse_due(title: &str, now: Time, zone: &Zone) -> Option<Parsed> {
             continue;
         };
         // A joining word right before it goes too: "on nov 6", "at 5pm", "by friday", "@5pm".
-        let mut first = i;
-        if i > 0
+        let first = if i > 0
             && matches!(
                 ws[i - 1].lower.as_str(),
                 "on" | "at" | "by" | "@" | "due" | "before"
-            )
-        {
-            first = i - 1;
-        }
+            ) {
+            i - 1
+        } else {
+            i
+        };
         cuts.push((ws[first].start, ws[i + used - 1].end));
         i += used;
     }
-    let (date, tonight) = match day {
-        Some(day) => day,
-        None => {
-            // Only a time: today, or tomorrow when it has gone.
-            let (h, m) = clock?;
-            let c = zone.civil_at(now);
-            let later = (h, m) > (c.hour, c.minute);
-            (
-                if later {
-                    now_date
-                } else {
-                    now_date.add_days(1)?
-                },
-                false,
-            )
-        }
+    let (date, tonight) = if let Some(day) = day {
+        day
+    } else {
+        // Only a time: today, or tomorrow when it has gone.
+        let (h, m) = clock?;
+        let c = zone.civil_at(now);
+        let later = (h, m) > (c.hour, c.minute);
+        (
+            if later {
+                now_date
+            } else {
+                now_date.add_days(1)?
+            },
+            false,
+        )
     };
-    let clock = clock.or(tonight.then_some((20, 0)));
+    let clock = clock.or_else(|| tonight.then_some((20, 0)));
     // The title without the cut words, the spaces closed up.
     let mut content = String::new();
     let mut at = 0;

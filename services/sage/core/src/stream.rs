@@ -1,5 +1,7 @@
 //! The events of a streamed answer: what the service sends on `GET /api/v1/turns/{id}/stream` and the browser's `EventSource`
-//! receives. Each is a named event whose data is JSON, so the page never has to trust markup from the stream.
+//! receives.
+//!
+//! Each is a named event whose data is JSON, so the page never has to trust markup from the stream.
 //!
 //! `status` and `delta` come first and keep coming while the answer is written; `replace` swaps the text for a checked one;
 //! the stream ends with `done` or `failure` (`error` is the browser's own name for a lost connection, so it is not used).

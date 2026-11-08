@@ -106,6 +106,16 @@ pub struct Client<T: Transport> {
     transport: T,
 }
 
+impl<T: Transport> std::fmt::Debug for Client<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client").finish_non_exhaustive()
+    }
+}
+
+#[allow(
+    clippy::future_not_send,
+    reason = "a page runs on the browser's one thread: `Transport::send` answers a `Boxed` future, which is not `Send`"
+)]
 impl<T: Transport> Client<T> {
     pub const fn new(transport: T) -> Self {
         Self { transport }

@@ -61,7 +61,7 @@ fn routes(request: &HttpRequest) -> (u16, String) {
         ("GET", "/api/v1/me") => r#"{"username":"ola"}"#.to_string(),
         ("GET", "/api/v1/users") => r#"[{"username":"ola","display_name":null}]"#.to_string(),
         ("GET", "/api/v1/projects") => format!("[{PROJECT}]"),
-        ("GET", "/api/v1/projects/p1") => PROJECT.to_string(),
+        ("GET", "/api/v1/projects/p1") | ("POST", "/api/v1/projects") => PROJECT.to_string(),
         ("GET", "/api/v1/projects/p1/issues") => {
             format!(
                 "[{},{}]",
@@ -85,7 +85,6 @@ fn routes(request: &HttpRequest) -> (u16, String) {
             r#"{"id":"c1","issue_id":"i1","author":"ola","body":"hi","created_at":"x"}"#.to_string()
         }
         ("DELETE", "/api/v1/issue-links/l1") => String::new(),
-        ("POST", "/api/v1/projects") => PROJECT.to_string(),
         ("POST", "/api/v1/projects/p1/issues") => issue_json("i3", 3, "todo"),
         _ => return (404, r#"{"error":"nothing here"}"#.to_string()),
     };
@@ -256,7 +255,7 @@ fn a_move_says_nothing_when_it_worked_and_why_when_it_did_not() {
         issue: "i1".into(),
         status: "done".into(),
     }));
-    assert!(ok.is_empty());
+    assert_eq!(ok, [] as [workbench_app::Msg; 0]);
 
     let (c, _, _) = client(|_| (403, r#"{"error":"no write access to this issue"}"#.into()));
     let msgs = block_on(c.execute(Request::Move {

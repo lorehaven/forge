@@ -1,13 +1,13 @@
 use quench_args::{Args, Parser, Subcommand};
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[command(name = "warehouse", version, about = "Warehouse CLI")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Manage and query a Docker container registry
     Docker {
@@ -35,7 +35,7 @@ pub enum Commands {
 // Docker
 // ---------------------------------------------------------------------------
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum DockerCommands {
     /// Manage configured registries
     Registry {
@@ -54,7 +54,7 @@ pub enum DockerCommands {
 // Crates
 // ---------------------------------------------------------------------------
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum CratesCommands {
     /// Manage configured crates registries
     Registry {
@@ -77,7 +77,7 @@ pub enum CratesCommands {
 // Files
 // ---------------------------------------------------------------------------
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum FilesCommands {
     /// File registry management
     Registry {
@@ -111,7 +111,7 @@ pub enum FilesCommands {
 // via their respective RegistryCommands / CratesRegistryCommands)
 // ---------------------------------------------------------------------------
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum RegistryCommands {
     /// Add or update a registry config
     Add(RegistryAddArgs),
@@ -123,7 +123,7 @@ pub enum RegistryCommands {
     Remove(RegistryRemoveArgs),
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum CratesRegistryCommands {
     /// Add or update a crates registry config
     Add(CratesRegistryAddArgs),
@@ -135,7 +135,7 @@ pub enum CratesRegistryCommands {
     Remove(CratesRegistryRemoveArgs),
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum FilesRegistryCommands {
     /// Add or update a files registry config
     Add(FilesRegistryAddArgs),
@@ -151,10 +151,14 @@ pub enum FilesRegistryCommands {
 // Docker args
 // ---------------------------------------------------------------------------
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct RegistryAddArgs {
     /// Registry name used in local configuration
     pub name: String,
+    #[allow(
+        clippy::doc_markdown,
+        reason = "the doc comment is the --help text, where <> would show"
+    )]
     /// Registry base URL, e.g. http://registry.local:8698
     #[arg(long)]
     pub url: String,
@@ -178,7 +182,7 @@ pub struct RegistryAddArgs {
     pub global: bool,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct RegistryUseArgs {
     /// Registry name
     pub name: String,
@@ -187,7 +191,7 @@ pub struct RegistryUseArgs {
     pub global: bool,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct RegistryRemoveArgs {
     /// Registry name
     pub name: String,
@@ -196,7 +200,7 @@ pub struct RegistryRemoveArgs {
     pub global: bool,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct LoginArgs {
     /// Registry name; defaults to active registry from config
     #[arg(long)]
@@ -212,7 +216,7 @@ pub struct LoginArgs {
     pub global: bool,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct CatalogArgs {
     /// Registry name; defaults to active registry from config
     #[arg(long)]
@@ -222,7 +226,7 @@ pub struct CatalogArgs {
     pub n: usize,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct TagsArgs {
     /// Repository name
     pub repository: String,
@@ -238,10 +242,14 @@ pub struct TagsArgs {
 // Crates args
 // ---------------------------------------------------------------------------
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct CratesRegistryAddArgs {
     /// Registry name used in local configuration
     pub name: String,
+    #[allow(
+        clippy::doc_markdown,
+        reason = "the doc comment is the --help text, where <> would show"
+    )]
     /// Registry base URL, e.g. https://registry.example.com
     #[arg(long)]
     pub url: String,
@@ -259,7 +267,7 @@ pub struct CratesRegistryAddArgs {
     pub global: bool,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct CratesRegistryUseArgs {
     /// Registry name
     pub name: String,
@@ -268,7 +276,7 @@ pub struct CratesRegistryUseArgs {
     pub global: bool,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct CratesRegistryRemoveArgs {
     /// Registry name
     pub name: String,
@@ -277,7 +285,7 @@ pub struct CratesRegistryRemoveArgs {
     pub global: bool,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct CratesLoginArgs {
     /// Registry name; defaults to active crates registry from config
     #[arg(long)]
@@ -290,7 +298,7 @@ pub struct CratesLoginArgs {
     pub global: bool,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct CratesSearchArgs {
     /// Search query string
     pub query: String,
@@ -302,7 +310,7 @@ pub struct CratesSearchArgs {
     pub limit: usize,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct CratesVersionsArgs {
     /// Crate name
     pub crate_name: String,
@@ -314,7 +322,7 @@ pub struct CratesVersionsArgs {
     pub all: bool,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct CratesYankArgs {
     /// Crate name
     pub crate_name: String,
@@ -325,7 +333,7 @@ pub struct CratesYankArgs {
     pub registry: Option<String>,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct CratesUnyankArgs {
     /// Crate name
     pub crate_name: String,
@@ -340,10 +348,14 @@ pub struct CratesUnyankArgs {
 // Files args
 // ---------------------------------------------------------------------------
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesRegistryAddArgs {
     /// Registry name used in local configuration
     pub name: String,
+    #[allow(
+        clippy::doc_markdown,
+        reason = "the doc comment is the --help text, where <> would show"
+    )]
     /// Registry base URL, e.g. http://registry.local:8698
     #[arg(long)]
     pub url: String,
@@ -361,7 +373,7 @@ pub struct FilesRegistryAddArgs {
     pub global: bool,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesRegistryUseArgs {
     /// Registry name
     pub name: String,
@@ -370,7 +382,7 @@ pub struct FilesRegistryUseArgs {
     pub global: bool,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesRegistryRemoveArgs {
     /// Registry name
     pub name: String,
@@ -379,14 +391,14 @@ pub struct FilesRegistryRemoveArgs {
     pub global: bool,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesStoragesArgs {
     /// Registry name; defaults to active docker registry from config
     #[arg(long)]
     pub registry: Option<String>,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesLsArgs {
     /// Storage name
     pub storage: String,
@@ -398,7 +410,7 @@ pub struct FilesLsArgs {
     pub registry: Option<String>,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesUploadArgs {
     /// Storage name
     pub storage: String,
@@ -412,7 +424,7 @@ pub struct FilesUploadArgs {
     pub registry: Option<String>,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesPreviewArgs {
     /// Storage name
     pub storage: String,
@@ -423,7 +435,7 @@ pub struct FilesPreviewArgs {
     pub registry: Option<String>,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesDownloadArgs {
     /// Storage name
     pub storage: String,
@@ -437,7 +449,7 @@ pub struct FilesDownloadArgs {
     pub registry: Option<String>,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesMkdirArgs {
     /// Storage name
     pub storage: String,
@@ -448,7 +460,7 @@ pub struct FilesMkdirArgs {
     pub registry: Option<String>,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesRmdirArgs {
     /// Storage name
     pub storage: String,
@@ -459,7 +471,7 @@ pub struct FilesRmdirArgs {
     pub registry: Option<String>,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesDeleteArgs {
     /// Storage name
     pub storage: String,
@@ -470,7 +482,7 @@ pub struct FilesDeleteArgs {
     pub registry: Option<String>,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesBulkDeleteArgs {
     /// Storage name
     pub storage: String,
@@ -481,7 +493,7 @@ pub struct FilesBulkDeleteArgs {
     pub registry: Option<String>,
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct FilesBulkDownloadArgs {
     /// Storage name
     pub storage: String,
@@ -499,13 +511,13 @@ pub struct FilesBulkDownloadArgs {
 // Admin commands
 // ---------------------------------------------------------------------------
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum AdminCommands {
     /// Run garbage collection for both Docker and crates
     Gc(AdminGcArgs),
 }
 
-#[derive(Args)]
+#[derive(Debug, Args)]
 pub struct AdminGcArgs {
     /// Registry name; defaults to active registry from config
     #[arg(long)]

@@ -37,7 +37,7 @@ fn redirect_field(form: Element, target: Option<&str>) -> Element {
     }
 }
 
-pub(crate) fn login(env: &Env, _state: &State, ctx: &RouteContext) -> View {
+pub fn login(env: &Env, _state: &State, ctx: &RouteContext) -> View {
     let q = query(ctx);
     let mut form = post_form(env.path("/login"))
         .attr("id", "login-form")
@@ -57,7 +57,7 @@ pub(crate) fn login(env: &Env, _state: &State, ctx: &RouteContext) -> View {
         ))
         .child(submit(env, "ui_login_submit"));
     form = redirect_field(form, q.get("redirect"));
-    form = form.child(super::notice(env, notice::login(&q)));
+    form = form.child(notice::login(&q).map(|n| super::notice(env, &n)));
     if notice::login_offers_resend(&q) {
         form = form.child(plain_link(
             env,
@@ -82,7 +82,7 @@ pub(crate) fn login(env: &Env, _state: &State, ctx: &RouteContext) -> View {
     card(env, "ui_login_sign_in", form)
 }
 
-pub(crate) fn login_mfa(env: &Env, _state: &State, ctx: &RouteContext) -> View {
+pub fn login_mfa(env: &Env, _state: &State, ctx: &RouteContext) -> View {
     let q = query(ctx);
     let form = post_form(env.path("/login/mfa"))
         .attr("id", "mfa-form")
@@ -94,11 +94,11 @@ pub(crate) fn login_mfa(env: &Env, _state: &State, ctx: &RouteContext) -> View {
         .child(hint(env, "ui_login_mfa_hint"))
         .child(submit(env, "ui_login_mfa_submit"));
     let form = redirect_field(form, q.get("redirect"));
-    let form = form.child(super::notice(env, notice::login_mfa(&q)));
+    let form = form.child(notice::login_mfa(&q).map(|n| super::notice(env, &n)));
     card(env, "ui_login_mfa_title", form)
 }
 
-pub(crate) fn register(env: &Env, _state: &State, ctx: &RouteContext) -> View {
+pub fn register(env: &Env, _state: &State, ctx: &RouteContext) -> View {
     let q = query(ctx);
     let form = post_form(env.path("/register"))
         .attr("id", "register-form")
@@ -124,7 +124,7 @@ pub(crate) fn register(env: &Env, _state: &State, ctx: &RouteContext) -> View {
             "new-password",
         ))
         .child(submit(env, "ui_register_submit"))
-        .child(super::notice(env, notice::register(&q)));
+        .child(notice::register(&q).map(|n| super::notice(env, &n)));
     div()
         .child(card(env, "ui_register_title", form))
         .child(div().class("gh-below").child(plain_link(
@@ -136,7 +136,7 @@ pub(crate) fn register(env: &Env, _state: &State, ctx: &RouteContext) -> View {
         .into_view()
 }
 
-pub(crate) fn forgot_password(env: &Env, _state: &State, _ctx: &RouteContext) -> View {
+pub fn forgot_password(env: &Env, _state: &State, _ctx: &RouteContext) -> View {
     let form = post_form(env.path("/forgot-password"))
         .attr("id", "forgot-form")
         .child(input_row(
@@ -151,7 +151,7 @@ pub(crate) fn forgot_password(env: &Env, _state: &State, _ctx: &RouteContext) ->
     card(env, "ui_forgot_password_title", form)
 }
 
-pub(crate) fn reset_password(env: &Env, _state: &State, ctx: &RouteContext) -> View {
+pub fn reset_password(env: &Env, _state: &State, ctx: &RouteContext) -> View {
     let q = query(ctx);
     let form = post_form(env.path("/reset-password"))
         .attr("id", "reset-form")
@@ -164,11 +164,11 @@ pub(crate) fn reset_password(env: &Env, _state: &State, ctx: &RouteContext) -> V
             "new-password",
         ))
         .child(submit(env, "ui_reset_submit"))
-        .child(super::notice(env, notice::password_page(&q)));
+        .child(notice::password_page(&q).map(|n| super::notice(env, &n)));
     card(env, "ui_reset_title", form)
 }
 
-pub(crate) fn resend(env: &Env, _state: &State, _ctx: &RouteContext) -> View {
+pub fn resend(env: &Env, _state: &State, _ctx: &RouteContext) -> View {
     let form = post_form(env.path("/resend-verification"))
         .attr("id", "resend-form")
         .child(input_row(
@@ -183,7 +183,7 @@ pub(crate) fn resend(env: &Env, _state: &State, _ctx: &RouteContext) -> View {
     card(env, "ui_resend_title", form)
 }
 
-pub(crate) fn accept_invite(env: &Env, _state: &State, ctx: &RouteContext) -> View {
+pub fn accept_invite(env: &Env, _state: &State, ctx: &RouteContext) -> View {
     let q = query(ctx);
     let form = post_form(env.path("/accept-invite"))
         .attr("id", "invite-form")
@@ -197,12 +197,12 @@ pub(crate) fn accept_invite(env: &Env, _state: &State, ctx: &RouteContext) -> Vi
         ))
         .child(hint(env, "ui_invite_hint"))
         .child(submit(env, "ui_invite_submit"))
-        .child(super::notice(env, notice::password_page(&q)));
+        .child(notice::password_page(&q).map(|n| super::notice(env, &n)));
     card(env, "ui_invite_title", form)
 }
 
 /// The page the link for a new address opens: it shows the address, a button changes it.
-pub(crate) fn confirm_email(env: &Env, state: &State, ctx: &RouteContext) -> View {
+pub fn confirm_email(env: &Env, state: &State, ctx: &RouteContext) -> View {
     let token = query(ctx).get("token").unwrap_or_default().to_string();
     state.confirm.set(None);
     state.invalid_link.set(false);
@@ -244,7 +244,7 @@ pub(crate) fn confirm_email(env: &Env, state: &State, ctx: &RouteContext) -> Vie
 }
 
 /// The link in a notification: opening it only asks; the button ends that kind of notification.
-pub(crate) fn unsubscribe(env: &Env, state: &State, ctx: &RouteContext) -> View {
+pub fn unsubscribe(env: &Env, state: &State, ctx: &RouteContext) -> View {
     let token = query(ctx).get("token").unwrap_or_default().to_string();
     state.unsubscribe.set(None);
     state.unsubscribed.set(false);

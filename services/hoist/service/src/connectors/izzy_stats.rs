@@ -1,6 +1,7 @@
-//! IzzyOnDroid's download counts: one JSON object, package name to the downloads of the last year. They are the only
-//! popularity figures the FOSS apps have (F-Droid publishes none, and nobody rates them), so they fill in what
-//! Aptoide cannot: the apps it does not list.
+//! `IzzyOnDroid`'s download counts: one JSON object, package name to the downloads of the last year.
+//!
+//! They are the only popularity figures the FOSS apps have (F-Droid publishes none, and nobody rates them), so they
+//! fill in what Aptoide cannot: the apps it does not list.
 
 use std::collections::HashMap;
 

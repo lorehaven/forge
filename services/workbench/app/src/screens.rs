@@ -21,6 +21,14 @@ pub struct Env {
     pub ask: Rc<dyn Fn(Request)>,
 }
 
+impl std::fmt::Debug for Env {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Env")
+            .field("base", &self.base)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Env {
     fn path(&self, rest: &str) -> String {
         format!("{}/ui{rest}", self.base)
@@ -157,6 +165,10 @@ fn status_tone(status: &str) -> &'static str {
 // ── Home ─────────────────────────────────────────────────────────────────────
 
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "builds the whole home screen (project list and new-project form) as one view tree"
+)]
 pub(crate) fn home(env: &Env, state: &State) -> View {
     let (env, projects) = (env.clone(), state.projects.clone());
     let open = create_signal(false);
@@ -168,7 +180,7 @@ pub(crate) fn home(env: &Env, state: &State) -> View {
 
     let creating = {
         let (env, open, error) = (env.clone(), open.clone(), error.clone());
-        let (key, name, description) = (key.clone(), name.clone(), description.clone());
+        let (key, name, description) = (key, name, description);
         move || -> View {
             if !open.get() {
                 return View::Empty;
@@ -356,6 +368,10 @@ fn card(env: &Env, state: &State, issue: &Issue) -> Element {
 }
 
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "builds the whole board screen (columns and new-issue form) as one view tree"
+)]
 pub(crate) fn board(env: &Env, state: &State, id: String) -> View {
     let (env, state) = (env.clone(), state.clone());
     let open = create_signal(false);
@@ -368,12 +384,7 @@ pub(crate) fn board(env: &Env, state: &State, id: String) -> View {
 
     let creating = {
         let (env, state, open, error) = (env.clone(), state.clone(), open.clone(), error.clone());
-        let (title, kind, priority, assignee) = (
-            title.clone(),
-            kind.clone(),
-            priority.clone(),
-            assignee.clone(),
-        );
+        let (title, kind, priority, assignee) = (title, kind, priority, assignee);
         let project = id.clone();
         move || -> View {
             if !open.get() {
@@ -468,7 +479,6 @@ pub(crate) fn board(env: &Env, state: &State, id: String) -> View {
     };
 
     let columns_view = {
-        let (env, state) = (env.clone(), state.clone());
         move || -> View {
             if state.problem.get() == Some(Problem::NotFound) {
                 return not_found(&env);
@@ -867,7 +877,7 @@ fn issue_page(env: &Env, state: &State, view: &workbench_core::IssueView) -> Vie
                 .child(span().text(" / "))
                 .child(span().text(issue.key(&view.project.key))),
         )
-        .child(h1().attr("id", "issue-title").text(issue.title.clone()))
+        .child(h1().attr("id", "issue-title").text(issue.title))
         .child(details)
         .child(dependencies)
         .child(comments)

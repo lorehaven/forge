@@ -45,14 +45,16 @@ impl Config {
             return Err(ConfigError::NotFound(path.display().to_string()));
         }
         let contents = fs::read_to_string(path)?;
-        let config: Config = quench_serde::toml::from_str(&contents)?;
+        let config: Self = quench_serde::toml::from_str(&contents)?;
         Ok(config)
     }
 
+    #[must_use]
     pub fn global_config_dir() -> Option<PathBuf> {
         home_dir().map(|home| home.join(".config/pulley"))
     }
 
+    #[must_use]
     pub fn find_global_configs() -> Vec<PathBuf> {
         let Some(config_dir) = Self::global_config_dir() else {
             return Vec::new();
@@ -67,7 +69,7 @@ impl Config {
         };
 
         let mut configs: Vec<PathBuf> = entries
-            .filter_map(|entry| entry.ok())
+            .filter_map(std::result::Result::ok)
             .map(|entry| entry.path())
             .filter(|path| {
                 path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("toml")
@@ -78,21 +80,21 @@ impl Config {
         configs
     }
 
+    #[must_use]
     pub fn find_local_configs() -> Vec<PathBuf> {
         let Ok(entries) = fs::read_dir(".") else {
             return Vec::new();
         };
 
         let mut configs: Vec<PathBuf> = entries
-            .filter_map(|entry| entry.ok())
+            .filter_map(std::result::Result::ok)
             .map(|entry| entry.path())
             .filter(|path| {
                 path.is_file()
                     && path
                         .file_name()
                         .and_then(|s| s.to_str())
-                        .map(|name| name.ends_with(".pulley.toml"))
-                        .unwrap_or(false)
+                        .is_some_and(|name| name.ends_with(".pulley.toml"))
             })
             .collect();
 
@@ -157,9 +159,10 @@ impl Config {
         if merged_jobs.is_empty() {
             let search_info = format!(
                 "Global: {}/*.toml, Local: *.pulley.toml",
-                Self::global_config_dir()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| "~/.config/pulley".to_string())
+                Self::global_config_dir().map_or_else(
+                    || "~/.config/pulley".to_string(),
+                    |p| p.display().to_string()
+                )
             );
             return Err(ConfigError::NotFound(search_info));
         }
@@ -167,11 +170,11 @@ impl Config {
         if !loaded_files.is_empty() {
             print_status(Tone::Info, "pulley", "loaded configuration from:");
             for file in &loaded_files {
-                println!("  - {}", file);
+                println!("  - {file}");
             }
         }
 
-        Ok(Config { jobs: merged_jobs })
+        Ok(Self { jobs: merged_jobs })
     }
 }
 

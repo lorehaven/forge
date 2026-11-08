@@ -145,7 +145,7 @@ fn run_selected_action_refuses_when_not_installable() {
         installed: false,
         updatable: false,
     };
-    let message = run_selected_action(req).unwrap();
+    let message = run_selected_action(&req).unwrap();
     assert!(message.contains("mystery"));
     assert!(message.contains("not installable"));
 }
@@ -158,7 +158,7 @@ fn run_selected_action_short_circuits_when_already_up_to_date() {
         installed: true,
         updatable: false,
     };
-    let message = run_selected_action(req).unwrap();
+    let message = run_selected_action(&req).unwrap();
     assert_eq!(message, "anvil is already up to date");
 }
 

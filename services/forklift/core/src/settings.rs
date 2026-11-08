@@ -1,6 +1,9 @@
-//! What the person chose: which server, which storage, what to back up and under which conditions. Kept as plain
-//! `key=value` lines (a folder is one line of its own); unknown lines are ignored, so a newer file is readable by an
-//! older app.
+//! What the person chose: which server, which storage, what to back up and under which conditions.
+//!
+//! Kept as plain `key=value` lines (a folder is one line of its own); unknown lines are ignored, so a newer file is
+//! readable by an older app.
+
+use std::fmt::Write as _;
 
 use crate::manifest::{escape, unescape};
 
@@ -28,6 +31,10 @@ impl Folder {
 
 /// The person's choices.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "one switch per choice on the settings screen, kept as one line each in the file"
+)]
 pub struct Settings {
     /// `https://host`; gatehouse is at `/gatehouse`, warehouse at `/warehouse`.
     pub server: String,
@@ -130,14 +137,15 @@ impl Settings {
             self.concurrency,
         );
         for f in &self.folders {
-            out.push_str(&format!(
-                "folder={}\t{}\t{}\t{}\t{}\n",
+            let _ = writeln!(
+                out,
+                "folder={}\t{}\t{}\t{}\t{}",
                 escape(&f.slug),
                 escape(&f.name),
                 escape(&f.uri),
                 flag(f.enabled),
                 flag(f.wifi_only)
-            ));
+            );
         }
         out
     }

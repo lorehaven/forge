@@ -84,7 +84,7 @@ fn wait_for_reports_died_when_the_pid_is_no_longer_alive() {
 
 #[quench_test::test]
 fn alive_is_true_for_our_own_process_and_false_for_an_impossible_pid() {
-    assert!(alive(std::process::id() as i32));
+    assert!(alive(i32::try_from(std::process::id()).unwrap()));
     assert!(!alive(i32::MAX));
 }
 
@@ -94,7 +94,7 @@ fn terminate_and_kill_stop_a_real_child_we_own() {
         .arg("30")
         .spawn()
         .expect("spawn sleep");
-    let pid = child.id() as i32;
+    let pid = i32::try_from(child.id()).unwrap();
     assert!(alive(pid));
 
     terminate(pid);

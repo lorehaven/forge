@@ -197,11 +197,13 @@ pub enum Decision {
 
 impl Decision {
     /// Whether this stage or job will actually execute.
+    #[must_use]
     pub const fn will_run(&self) -> bool {
         matches!(self, Self::Run)
     }
 
     /// How this reads in a run report.
+    #[must_use]
     pub fn reason(&self) -> Option<String> {
         match self {
             Self::Run => None,
@@ -236,6 +238,7 @@ pub struct StagePlan {
 /// Every stage and job appears, running or not: a report that silently omits
 /// the skipped ones cannot answer "why did this not deploy", which is the
 /// question conditions generate.
+#[must_use]
 pub fn plan(spec: &PipelineSpec, context: &EvalContext) -> Vec<StagePlan> {
     let mut decisions: HashMap<&str, Decision> = HashMap::new();
     let mut plans = Vec::with_capacity(spec.stages.len());
@@ -251,13 +254,13 @@ pub fn plan(spec: &PipelineSpec, context: &EvalContext) -> Vec<StagePlan> {
                 .is_some_and(|decision| !decision.will_run())
         });
 
-        let decision = match blocked {
-            Some(by) => Decision::Blocked { by: by.clone() },
-            None => match &stage.when {
+        let decision = blocked.map_or_else(
+            || match &stage.when {
                 Some(condition) if !condition.evaluate(context) => Decision::Excluded,
                 _ => Decision::Run,
             },
-        };
+            |by| Decision::Blocked { by: by.clone() },
+        );
 
         let jobs = stage
             .jobs

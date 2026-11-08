@@ -27,12 +27,11 @@ async fn send_chat_message(world: &mut ForgeWorld, message: String) -> Result<()
             world.last_body = resp.text().await.ok();
             Ok(())
         }
-        Err(e) => Err(format!("Chat request error: {}", e)),
+        Err(e) => Err(format!("Chat request error: {e}")),
     }
 }
 
 #[quench_test_bdd::then(expr = "I should receive a response")]
-async fn should_receive_response(_world: &mut ForgeWorld) -> Result<(), String> {
+const fn should_receive_response(_world: &mut ForgeWorld) {
     // This is a placeholder - in real tests you'd verify the response
-    Ok(())
 }

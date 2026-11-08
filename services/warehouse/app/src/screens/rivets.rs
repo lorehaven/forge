@@ -11,7 +11,7 @@ use super::{
 use crate::live::{Request, State};
 
 #[must_use]
-pub(crate) fn rivets(env: &Env, state: &State) -> View {
+pub fn rivets(env: &Env, state: &State) -> View {
     env.ask(Request::Rivets);
 
     let tree = {

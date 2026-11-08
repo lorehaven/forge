@@ -100,7 +100,7 @@ pub fn app() -> View {
         };
         let prefs = Settings::new("https://warehouse.example.org", true);
         let search = create_signal(String::new());
-        let saved = message.clone();
+        let saved = message;
         let panels = {
             let (entries, act, screen) = (entries, act, screen.clone());
             View::dynamic(move || {

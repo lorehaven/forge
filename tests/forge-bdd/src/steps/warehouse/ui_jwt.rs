@@ -30,8 +30,9 @@ fn create_token(
     duration_secs: i64,
 ) -> String {
     let now = Time::now();
-    let iat = now.timestamp() as usize;
-    let exp = (now + Duration::seconds(duration_secs)).timestamp() as usize;
+    let iat = usize::try_from(now.timestamp()).expect("current time is after the epoch");
+    let exp = usize::try_from((now + Duration::seconds(duration_secs)).timestamp())
+        .expect("expiry is after the epoch");
 
     let claims = Claims {
         sub: sub.to_string(),
@@ -99,7 +100,7 @@ async fn get_with_wrong_secret(world: &mut ForgeWorld, page: String) {
         .unwrap();
     let res = client
         .get(&url)
-        .header(COOKIE, format!("forge_session={}", token))
+        .header(COOKIE, format!("forge_session={token}"))
         .send()
         .await
         .expect("Failed to send GET request");
@@ -129,7 +130,7 @@ async fn get_with_expired_token(world: &mut ForgeWorld, page: String) {
         .unwrap();
     let res = client
         .get(&url)
-        .header(COOKIE, format!("forge_session={}", token))
+        .header(COOKIE, format!("forge_session={token}"))
         .send()
         .await
         .expect("Failed to send GET request");
@@ -156,7 +157,7 @@ async fn get_with_wrong_service(world: &mut ForgeWorld, page: String, service: S
         .unwrap();
     let res = client
         .get(&url)
-        .header(COOKIE, format!("forge_session={}", token))
+        .header(COOKIE, format!("forge_session={token}"))
         .send()
         .await
         .expect("Failed to send GET request");
@@ -187,7 +188,7 @@ async fn get_with_future_iat(world: &mut ForgeWorld, page: String) {
         .unwrap();
     let res = client
         .get(&url)
-        .header(COOKIE, format!("forge_session={}", token))
+        .header(COOKIE, format!("forge_session={token}"))
         .send()
         .await
         .expect("Failed to send GET request");

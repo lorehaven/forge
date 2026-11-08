@@ -40,7 +40,7 @@ pub enum Op {
 }
 
 /// What a call answers.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reply {
     Done,
     Loaded(Box<Data>),

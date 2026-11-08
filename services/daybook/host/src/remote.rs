@@ -36,6 +36,14 @@ pub struct Remote {
     store: Store,
 }
 
+impl std::fmt::Debug for Remote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Remote")
+            .field("store", &self.store)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Remote {
     /// With the session an earlier run left, if there is one.
     #[must_use]

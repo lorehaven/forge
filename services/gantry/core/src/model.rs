@@ -304,7 +304,7 @@ impl StoredPlan {
 
     /// A start, stop or swap belongs under the packages; everything else is a change to one package.
     #[must_use]
-    pub fn about_deployments(&self) -> bool {
+    pub const fn about_deployments(&self) -> bool {
         !self.plan.deployments.is_empty()
     }
 }

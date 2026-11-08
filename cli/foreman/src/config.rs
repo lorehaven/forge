@@ -127,6 +127,7 @@ pub struct Container {
 }
 
 impl Container {
+    #[must_use]
     pub fn container_name(&self) -> &str {
         self.container_name.as_deref().unwrap_or(&self.name)
     }
@@ -365,7 +366,7 @@ impl Config {
     pub fn parse(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let config: Config = quench_serde::toml::from_str(&text)
+        let config: Self = quench_serde::toml::from_str(&text)
             .with_context(|| format!("parsing {}", path.display()))?;
         config.validate()?;
         Ok(config)
@@ -415,15 +416,18 @@ impl Config {
         Ok(())
     }
 
+    #[must_use]
     pub fn service(&self, name: &str) -> Option<&Service> {
         self.services.iter().find(|s| s.name == name)
     }
 
+    #[must_use]
     pub fn container(&self, name: &str) -> Option<&Container> {
         self.containers.iter().find(|c| c.name == name)
     }
 
     /// Tasks in this role, in the order the file lists them.
+    #[must_use]
     pub fn tasks_with_role(&self, role: Role) -> Vec<(&str, &Task)> {
         self.tasks
             .iter()
@@ -433,33 +437,40 @@ impl Config {
     }
 }
 
+#[must_use]
 pub fn default_project_name() -> String {
     "project".to_string()
 }
 
+#[must_use]
 pub fn default_run_dir() -> String {
     ".run".to_string()
 }
 
+#[must_use]
 pub fn default_build_command() -> Vec<String> {
     ["cargo", "build", "-q", "--package", "${package}"]
         .iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
 }
 
+#[must_use]
 pub fn default_binary() -> String {
     "target/debug/${package}".to_string()
 }
 
-pub fn default_container_timeout() -> u64 {
+#[must_use]
+pub const fn default_container_timeout() -> u64 {
     30
 }
 
-pub fn default_hook_timeout() -> u64 {
+#[must_use]
+pub const fn default_hook_timeout() -> u64 {
     30
 }
 
-pub fn default_true() -> bool {
+#[must_use]
+pub const fn default_true() -> bool {
     true
 }

@@ -119,7 +119,7 @@ fn run_repl() -> Result<()> {
             KeyOutcome::Busy | KeyOutcome::Ignore => {}
             KeyOutcome::RunAction(req) => {
                 let selected = app.selected;
-                match dispatch_action(req.clone()) {
+                match dispatch_action(&req) {
                     ActionDispatch::Done(message) => {
                         app = refresh_app_state(selected, &message)?;
                         dirty = true;
@@ -127,7 +127,7 @@ fn run_repl() -> Result<()> {
                     ActionDispatch::Spawn { label } => {
                         let (tx, rx) = mpsc::channel::<Result<String, String>>();
                         thread::spawn(move || {
-                            let result = run_selected_action(req).map_err(|err| err.to_string());
+                            let result = run_selected_action(&req).map_err(|err| err.to_string());
                             let _ = tx.send(result);
                         });
                         in_flight = Some(forge_toolbox::InFlightAction {

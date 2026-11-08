@@ -41,7 +41,7 @@ fn the_filter_narrows_by_state_and_by_name() {
     let all = [group("media", "synced"), group("forge", "not_installed")];
     assert_eq!(names(&matching(&all, "not_installed", "")), ["forge"]);
     assert_eq!(names(&matching(&all, "", "MED")), ["media"]);
-    assert!(matching(&all, "", "nothing").is_empty());
+    assert_eq!(matching(&all, "", "nothing"), [] as [gantry_core::Group; 0]);
 }
 
 #[quench_test::test]

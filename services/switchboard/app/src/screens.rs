@@ -24,6 +24,14 @@ pub struct Env {
     pub ask: Rc<dyn Fn(Request)>,
 }
 
+impl std::fmt::Debug for Env {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Env")
+            .field("base", &self.base)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Env {
     fn path(&self, rest: &str) -> String {
         format!("{}/ui{rest}", self.base)
@@ -245,7 +253,7 @@ fn modal(id: &str, title: Element, close: Rc<dyn Fn()>, body: Element, env: &Env
         )
 }
 
-fn tone_class(tone: FitTone) -> &'static str {
+const fn tone_class(tone: FitTone) -> &'static str {
     match tone {
         FitTone::Ok => "fit-ok",
         FitTone::Warn => "fit-warn",
@@ -254,7 +262,7 @@ fn tone_class(tone: FitTone) -> &'static str {
 }
 
 /// `label: value`, the label bold.
-fn labelled(label: String, value: String) -> Element {
+fn labelled(label: String, value: &str) -> Element {
     span()
         .child(element("strong").text(label))
         .child(span().text(format!(": {value}")))
@@ -330,6 +338,10 @@ fn quant_options(env: &Env, filter: &FilterDraft) -> Vec<(String, String)> {
     rows
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "builds the whole filter bar (tabs, search, sort, context and vLLM toggles) as one view tree"
+)]
 fn filters(env: &Env, state: &State) -> Element {
     let (e1, e2, e3, e4, e5, e6) = (
         env.clone(),
@@ -452,17 +464,17 @@ fn fit_line(env: &Env, fit: &CardFit) -> (String, Element) {
                 .child(sep())
                 .child(labelled(
                     env.t.t("ui_models_card_best"),
-                    format!("{context} / {quant}"),
+                    &format!("{context} / {quant}"),
                 ))
                 .child(sep())
                 .child(labelled(
                     env.t.t("ui_models_card_vram"),
-                    format!("{total_gb:.1} GB"),
+                    &format!("{total_gb:.1} GB"),
                 ))
                 .child(sep())
                 .child(labelled(
                     env.t.t("ui_models_card_margin"),
-                    format!("{margin_gb:.2} GB"),
+                    &format!("{margin_gb:.2} GB"),
                 )),
         ),
         CardFit::TooBig { min_gb } => (
@@ -472,7 +484,7 @@ fn fit_line(env: &Env, fit: &CardFit) -> (String, Element) {
                 .child(sep())
                 .child(labelled(
                     env.t.t("ui_models_card_minimum"),
-                    format!("{min_gb:.1} GB"),
+                    &format!("{min_gb:.1} GB"),
                 )),
         ),
         CardFit::NoEstimates => (
@@ -482,7 +494,7 @@ fn fit_line(env: &Env, fit: &CardFit) -> (String, Element) {
     }
 }
 
-fn meta_item(class: &str, label: String, value: String) -> Element {
+fn meta_item(class: &str, label: String, value: &str) -> Element {
     div()
         .class(class.to_string())
         .child(span().text(label))
@@ -517,17 +529,17 @@ fn model_card(env: &Env, state: &State, model: Model, can_delete: bool) -> View 
                 .child(meta_item(
                     "card-meta-params",
                     env.t.t("ui_models_card_params"),
-                    format!("{:.1}B", model.params_billion),
+                    &format!("{:.1}B", model.params_billion),
                 ))
                 .child(meta_item(
                     "card-meta-quant",
                     env.t.t("ui_models_card_quant"),
-                    model.quant.clone(),
+                    &model.quant,
                 ))
                 .child(meta_item(
                     "card-meta-context",
                     env.t.t("ui_models_card_context"),
-                    model.context.to_string(),
+                    &model.context.to_string(),
                 )),
         )
         .child(
@@ -535,12 +547,12 @@ fn model_card(env: &Env, state: &State, model: Model, can_delete: bool) -> View 
                 .child(meta_item(
                     "card-meta-layers",
                     env.t.t("ui_models_card_layers"),
-                    model.layers.to_string(),
+                    &model.layers.to_string(),
                 ))
                 .child(meta_item(
                     "card-meta-hidden",
                     env.t.t("ui_models_card_hidden"),
-                    model.hidden_size.to_string(),
+                    &model.hidden_size.to_string(),
                 )),
         );
     let fit = {
@@ -584,11 +596,15 @@ fn model_card(env: &Env, state: &State, model: Model, can_delete: bool) -> View 
             div()
                 .class("card-path")
                 .attr("title", model.path.clone())
-                .text(model.path.clone()),
+                .text(model.path),
         )
         .into_view()
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "builds the whole estimates dialog (its filters and the grid of fits) as one view tree"
+)]
 fn estimates_modal(env: &Env, state: &State) -> View {
     let (env, state) = (env.clone(), state.clone());
     let path = {
@@ -682,19 +698,19 @@ fn estimates_modal(env: &Env, state: &State) -> View {
                             .child(
                                 div().child(labelled(
                                     env.t.t("ui_models_card_context"),
-                                    row.context,
+                                    &row.context,
                                 )),
                             )
                             .child(
-                                div().child(labelled(env.t.t("ui_models_card_quant"), row.quant)),
+                                div().child(labelled(env.t.t("ui_models_card_quant"), &row.quant)),
                             )
                             .child(div().child(labelled(
                                 env.t.t("ui_models_card_vram"),
-                                format!("{:.1} GB", row.total_gb),
+                                &format!("{:.1} GB", row.total_gb),
                             )))
                             .child(div().child(labelled(
                                 env.t.t("ui_models_card_margin"),
-                                format!("{:.2} GB", row.margin_gb),
+                                &format!("{:.2} GB", row.margin_gb),
                             ))),
                     );
                 }
@@ -780,7 +796,7 @@ pub(crate) fn models(env: &Env, state: &State) -> View {
             move || caps.with(|c| c.as_ref().is_some_and(|c| c.can_delete_model))
         };
         let grid = {
-            let (env, state, can_delete) = (env.clone(), state.clone(), can_delete.clone());
+            let (env, state, can_delete) = (env.clone(), state.clone(), can_delete);
             View::dynamic(move || {
                 let Some(count) = state.models.with(|m| m.as_ref().map(Vec::len)) else {
                     return waiting(&env);
@@ -846,6 +862,10 @@ fn status_text(env: &Env, status: &str) -> String {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "builds one instance card (status, metadata, diagnostics and stop action) as one view tree"
+)]
 fn instance_card(env: &Env, state: &State, i: &Instance, can_stop: bool) -> View {
     let cpu = i.is_cpu();
     let (device_text, device_key, device_class) = if cpu {
@@ -1186,7 +1206,7 @@ fn launch_modal(env: &Env, state: &State) -> View {
                 state.catalog.clone(),
                 env.clone(),
             );
-            let current = read.clone();
+            let current = read;
             select()
                 .class("sb-input")
                 .attr("id", "launch-model")
@@ -1223,7 +1243,7 @@ fn launch_modal(env: &Env, state: &State) -> View {
                 }))
         };
         let quant_options: Vec<(String, String)> =
-            std::iter::once(("".to_string(), "auto".to_string()))
+            std::iter::once((String::new(), "auto".to_string()))
                 .chain(
                     LAUNCH_QUANTS
                         .iter()
@@ -1231,7 +1251,7 @@ fn launch_modal(env: &Env, state: &State) -> View {
                 )
                 .collect();
         let dtype_options: Vec<(String, String)> =
-            std::iter::once(("".to_string(), "auto".to_string()))
+            std::iter::once((String::new(), "auto".to_string()))
                 .chain(DTYPES.iter().map(|q| ((*q).to_string(), (*q).to_string())))
                 .collect();
         let device_options: Vec<(String, String)> = DEVICES

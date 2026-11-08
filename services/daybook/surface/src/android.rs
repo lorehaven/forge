@@ -62,6 +62,14 @@ pub struct Android {
     store: Store,
 }
 
+impl std::fmt::Debug for Android {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Android")
+            .field("armed", &self.armed)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Android {
     #[must_use]
     pub const fn new(

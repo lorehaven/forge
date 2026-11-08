@@ -13,7 +13,7 @@ pub const RED: &str = "\x1b[31m";
 /// actually types.
 const LABEL_WIDTH: usize = 12;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Tone {
     Info,
     Ok,
@@ -24,21 +24,22 @@ pub enum Tone {
 impl From<ToneName> for Tone {
     fn from(tone: ToneName) -> Self {
         match tone {
-            ToneName::Info => Tone::Info,
-            ToneName::Ok => Tone::Ok,
-            ToneName::Warn => Tone::Warn,
-            ToneName::Error => Tone::Error,
+            ToneName::Info => Self::Info,
+            ToneName::Ok => Self::Ok,
+            ToneName::Warn => Self::Warn,
+            ToneName::Error => Self::Error,
         }
     }
 }
 
 impl Tone {
-    pub fn colour(self) -> &'static str {
+    #[must_use]
+    pub const fn colour(self) -> &'static str {
         match self {
-            Tone::Info => CYAN,
-            Tone::Ok => GREEN,
-            Tone::Warn => YELLOW,
-            Tone::Error => RED,
+            Self::Info => CYAN,
+            Self::Ok => GREEN,
+            Self::Warn => YELLOW,
+            Self::Error => RED,
         }
     }
 }

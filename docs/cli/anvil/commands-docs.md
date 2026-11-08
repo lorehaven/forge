@@ -28,7 +28,7 @@ quench  ../quench/docs  Quench
 
 ## anvil docs check
 
-Checks the Markdown and the OpenAPI documents without running Jekyll, so it needs no Ruby. Every problem of every book is printed; the exit code is `1` if there is any.
+Checks the Markdown and the OpenAPI documents without running Jekyll, so it needs no Ruby. The page, navigation and link checks are those of the [docs-book](../../libs/docs-book/index.md) library, which loupe uses to browse a book; the OpenAPI checks are anvil's own. Every problem of every book is printed; the exit code is `1` if there is any.
 
 ```text
 $ anvil docs check
@@ -42,7 +42,7 @@ What is checked:
 |---|---|
 | Front matter | A `.md` file without front matter (Jekyll would copy it as it is, not render it); front matter that is not valid YAML; a page without `title`. |
 | Navigation | A `parent` that is no page's `title`; a `parent` whose page lacks `has_children: true`; a `parent` title shared by several pages with children and no `grand_parent` to tell them apart; two pages under one parent with the same `nav_order`. |
-| Links | A relative `[text](target)` that names no file (a directory counts when it has an `index.md`). Fenced code blocks and code spans are skipped, and so are `http(s):`, `mailto:`, `#anchor` and any other scheme. A link starting with `/` is read from the book's directory. |
+| Links | A relative `[text](target)` that names no file (a directory counts when it has an `index.md`). Fenced code blocks and code spans are skipped, and so are `http(s):`, `mailto:`, `#anchor` and any other scheme. A link starting with `/` is read from the book's directory. A link to a file under a `_` or `.` path (e.g. `_reports/`) is reported too: the file exists in the repository, but Jekyll leaves it out of the site, so the link is dead there. |
 | OpenAPI | Only for a book with `[docs.books.<name>.openapi]`: for every `<dir>/<specs>/<service>/openapi.yaml`, the YAML must parse and declare `openapi: 3.1.x` with `info` and `paths`; every route in the service's source must be a documented path and method, and every documented path and method must have a route; every `$ref` must resolve inside the document. |
 
 Files and directories whose names start with `_` or `.`, and what `exclude:` lists in the book's `_config.yml`, are not pages and are skipped (`_reports/`, `_style.md`, ...).
@@ -67,8 +67,10 @@ What a build leaves under `<out>/<book>/`:
 | File | Content |
 |---|---|
 | `site/` | The Jekyll output; cleared at the start of every build. |
-| `<book>-<version>.tar.gz` | Every file of `site/` (paths relative to it), as a gzip-compressed tar. The archive is **reproducible**: entries are sorted, owner is root, modification time is 0, so the same site gives the same bytes. |
-| `manifest.json` | `book`, `title`, `version`, `built` (UTC, RFC 3339), `archive` (file name), `archive_bytes`, `archive_sha256`, `files`, `site_bytes`, and `baseurl` when there is one. |
+| `<book>-<version>.tar.gz` | Every file of `site/` (paths relative to it), then the book's Markdown sources under `_source/` (see below), as a gzip-compressed tar. The archive is **reproducible**: entries are sorted, owner is root, modification time is 0, so the same book gives the same bytes. |
+| `manifest.json` | `book`, `title`, `version`, `built` (UTC, RFC 3339), `archive` (file name), `archive_bytes`, `archive_sha256`, `files` (the site's files), `site_bytes`, `sources` (`"_source/"`), `source_files`, and `baseurl` when there is one. |
+
+The `_source/` part of the archive is the book as written, for readers that want the pages rather than the site ([loupe](../loupe/index.md)'s `--book`): every page docs-book reads (with its front matter, from the book's own directory, not the staged copy whose links were rewritten to `.html`), `_config.yml`, and every local image a page links to (`png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `avif`; relative to the page, or from the site root with the `baseurl` taken off), with their paths in the book. Files no page references, drafts and other `_` directories are left out. Lectern serves the site from the same archive and leaves `_source/` out: it is neither served nor counted.
 | `src/` | The staged copy of the book that Jekyll reads: relative links to `.md` pages are rewritten to `.html` (what the `jekyll-relative-links` plugin does, so that plugin is not needed), and the files of the `forge` theme are added (below). The book itself is not changed. |
 | `jekyll-override.yml` | The theme and plugin override passed to Jekyll. |
 

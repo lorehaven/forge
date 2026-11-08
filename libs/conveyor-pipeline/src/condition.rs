@@ -41,6 +41,7 @@ impl Variable {
     pub const ALL: [Self; 4] = [Self::Branch, Self::Tag, Self::Event, Self::Sha];
 
     /// The identifier a condition source uses for this variable.
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Branch => "branch",
@@ -51,6 +52,7 @@ impl Variable {
     }
 
     /// Looks up a variable by the identifier a condition source used, if any variable is named that.
+    #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|v| v.as_str() == raw)
     }
@@ -107,17 +109,20 @@ impl EvalContext {
     ///
     /// `git_ref` is accepted in full (`refs/heads/master`) or bare (`master`);
     /// a bare ref is read as a branch, which is what a manual trigger sends.
+    #[must_use]
     pub fn new(event: &str, git_ref: &str, sha: &str) -> Self {
-        let (branch, tag) = match git_ref.strip_prefix("refs/tags/") {
-            Some(tag) => (String::new(), tag.to_string()),
-            None => (
-                git_ref
-                    .strip_prefix("refs/heads/")
-                    .unwrap_or(git_ref)
-                    .to_string(),
-                String::new(),
-            ),
-        };
+        let (branch, tag) = git_ref.strip_prefix("refs/tags/").map_or_else(
+            || {
+                (
+                    git_ref
+                        .strip_prefix("refs/heads/")
+                        .unwrap_or(git_ref)
+                        .to_string(),
+                    String::new(),
+                )
+            },
+            |tag| (String::new(), tag.to_string()),
+        );
 
         Self {
             branch,
@@ -150,9 +155,9 @@ pub enum Condition {
         value: String,
     },
     /// Both sides must hold.
-    And(Box<Condition>, Box<Condition>),
+    And(Box<Self>, Box<Self>),
     /// Either side may hold.
-    Or(Box<Condition>, Box<Condition>),
+    Or(Box<Self>, Box<Self>),
 }
 
 impl Condition {
@@ -165,15 +170,15 @@ impl Condition {
 
         let mut parser = Parser { tokens, at: 0 };
         let condition = parser.expression()?;
-        match parser.peek() {
-            Some(token) => Err(ConditionError::Trailing {
+        parser.peek().map_or(Ok(condition), |token| {
+            Err(ConditionError::Trailing {
                 token: token.describe(),
-            }),
-            None => Ok(condition),
-        }
+            })
+        })
     }
 
     /// Whether this condition holds against a specific run.
+    #[must_use]
     pub fn evaluate(&self, context: &EvalContext) -> bool {
         match self {
             Self::Compare {
@@ -276,7 +281,7 @@ pub enum ConditionError {
 
 /// Nudges the two mistakes people actually make: writing `=` for `==`, and
 /// bringing `and`/`or` in from another CI tool's syntax.
-fn hint(found: char) -> &'static str {
+const fn hint(found: char) -> &'static str {
     match found {
         '=' => " (comparison is '==', not '=')",
         '&' => " (conjunction is '&&')",

@@ -158,10 +158,13 @@ pub async fn get_app(
     Inject(db): Inject<Db>,
     Path(package_name): Path<String>,
 ) -> Result<Response, ApiError> {
-    match store::get(&db, &package_name).await.map_err(failed)? {
-        Some(app) => Ok(json(StatusCode::OK, &AppOut::from(app))),
-        None => Err(ApiError::new(StatusCode::NOT_FOUND, "not found")),
-    }
+    store::get(&db, &package_name)
+        .await
+        .map_err(failed)?
+        .map_or_else(
+            || Err(ApiError::new(StatusCode::NOT_FOUND, "not found")),
+            |app| Ok(json(StatusCode::OK, &AppOut::from(app))),
+        )
 }
 
 pub fn register_routes() {

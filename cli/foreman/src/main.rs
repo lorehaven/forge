@@ -50,7 +50,7 @@ fn run() -> Result<u8> {
         }
         Some(Command::Db) => commands::db(&estate)?,
         Some(Command::Reset) => commands::reset(&estate)?,
-        Some(Command::Test { args }) => return Ok(commands::test(&estate, &args)? as u8),
+        Some(Command::Test { args }) => return commands::test(&estate, &args),
         Some(Command::Run { task, services }) => commands::run_task(&estate, &task, &services)?,
         Some(Command::List) => commands::list(&estate)?,
         Some(Command::Env { service }) => commands::env(&estate, &service)?,

@@ -91,7 +91,7 @@ fn shot(files: usize, done: usize) -> Snapshot {
             name: format!("{i}.jpg"),
             uri: String::new(),
             size: 1_000_000,
-            modified_ms: i as i64,
+            modified_ms: i64::try_from(i).unwrap(),
         })
         .collect();
     m.scan("photos", &found, false);
@@ -351,7 +351,7 @@ fn a_folder_the_host_adds_is_listed_and_can_be_removed() {
     let Some(Request::Settings(s)) = asked.last() else {
         panic!("{asked:?}")
     };
-    assert!(s.folders.is_empty());
+    assert_eq!(s.folders, [] as [forklift_core::Folder; 0]);
 }
 
 #[quench_test::test]
@@ -512,7 +512,7 @@ fn sending(names: &[&str]) -> Snapshot {
             name: (*n).to_string(),
             uri: String::new(),
             size: 1_000,
-            modified_ms: i as i64,
+            modified_ms: i64::try_from(i).unwrap(),
         })
         .collect();
     m.scan("photos", &found, false);
@@ -567,7 +567,7 @@ fn the_card_keeps_its_lines_whatever_the_file_names_are() {
 #[quench_test::test]
 fn a_computer_has_no_media_library_or_battery_to_set() {
     let asked: Asked = Rc::default();
-    let log = asked.clone();
+    let log = asked;
     let mut setup = setup(true, true);
     setup.phone = false;
     let Forklift { view, deliver: _ } = forklift(Rc::new(move |q| log.borrow_mut().push(q)), setup);

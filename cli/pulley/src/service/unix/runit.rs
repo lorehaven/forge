@@ -11,6 +11,7 @@ const SV_HINT: &str = "pulley service management needs `sv` and `chpst`, which s
 // Devuan (`/etc/service`), and Artix (`/run/runit/service`).
 const SCAN_DIRS: &[&str] = &["/var/service", "/etc/service", "/run/runit/service"];
 
+#[derive(Debug)]
 pub struct Runit;
 
 impl Backend for Runit {
@@ -47,8 +48,7 @@ impl Backend for Runit {
         let started = Command::new("sv")
             .args(["up", &link_path.to_string_lossy()])
             .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+            .is_ok_and(|s| s.success());
         if started {
             print_status(Tone::Success, "service", "started via `sv up`");
         } else {
@@ -121,6 +121,7 @@ const NO_SCAN_DIR: &str =
 /// The runit `run` script's contents - pulled out of `install` so it can be
 /// checked without actually writing a file or touching a real runit scan
 /// directory.
+#[must_use]
 pub fn run_script_contents(exe: &Path, user: &str) -> String {
     format!("#!/bin/sh\nexec chpst -u {user} {} daemon\n", exe.display())
 }
@@ -145,8 +146,7 @@ pub fn require_root(action: &str) -> Result<(), Box<dyn std::error::Error>> {
         // fails with "command not found" for a user-locally-installed
         // binary; hand back the resolved path so the retry just works.
         let exe = std::env::current_exe()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| "pulley".to_string());
+            .map_or_else(|_| "pulley".to_string(), |p| p.display().to_string());
         return Err(format!(
             "pulley service management on runit writes system-wide service files under \
              /etc/sv and needs root; re-run as: sudo {exe} service {action}"
@@ -158,6 +158,7 @@ pub fn require_root(action: &str) -> Result<(), Box<dyn std::error::Error>> {
 
 /// The user the daemon should actually run as (root only owns the service
 /// definition; `chpst -u` drops to this user so it reads their own config).
+#[must_use]
 pub fn target_user() -> String {
     std::env::var("SUDO_USER")
         .unwrap_or_else(|_| std::env::var("USER").unwrap_or_else(|_| "root".to_string()))

@@ -7,7 +7,7 @@ use quench_cli::keys::KeyCode;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-fn status(package: &'static str) -> CrateStatus {
+const fn status(package: &'static str) -> CrateStatus {
     CrateStatus {
         package,
         binary: package,
@@ -161,7 +161,9 @@ fn poll_reports_pending_before_the_tick_interval_elapses() {
 fn poll_advances_the_spinner_once_the_tick_interval_elapses() {
     let (_tx, rx) = mpsc::channel();
     let mut job = job(rx);
-    job.last_tick = Instant::now() - Duration::from_millis(200);
+    job.last_tick = Instant::now()
+        .checked_sub(Duration::from_millis(200))
+        .unwrap();
 
     assert_eq!(
         poll_in_flight(&mut job, Duration::from_millis(120)),
@@ -192,9 +194,9 @@ fn dispatch_action_resolves_not_installable_synchronously() {
         installed: false,
         updatable: false,
     };
-    match dispatch_action(req) {
+    match dispatch_action(&req) {
         ActionDispatch::Done(message) => assert!(message.contains("not installable")),
-        other => panic!("expected Done, got {other:?}"),
+        other @ ActionDispatch::Spawn { .. } => panic!("expected Done, got {other:?}"),
     }
 }
 
@@ -206,9 +208,9 @@ fn dispatch_action_resolves_already_up_to_date_synchronously() {
         installed: true,
         updatable: false,
     };
-    match dispatch_action(req) {
+    match dispatch_action(&req) {
         ActionDispatch::Done(message) => assert_eq!(message, "anvil is already up to date"),
-        other => panic!("expected Done, got {other:?}"),
+        other @ ActionDispatch::Spawn { .. } => panic!("expected Done, got {other:?}"),
     }
 }
 
@@ -220,9 +222,9 @@ fn dispatch_action_spawns_for_a_fresh_install() {
         installed: false,
         updatable: false,
     };
-    match dispatch_action(req) {
+    match dispatch_action(&req) {
         ActionDispatch::Spawn { label } => assert_eq!(label, "running anvil (installing)"),
-        other => panic!("expected Spawn, got {other:?}"),
+        other @ ActionDispatch::Done(_) => panic!("expected Spawn, got {other:?}"),
     }
 }
 
@@ -234,9 +236,9 @@ fn dispatch_action_spawns_for_an_update() {
         installed: true,
         updatable: true,
     };
-    match dispatch_action(req) {
+    match dispatch_action(&req) {
         ActionDispatch::Spawn { label } => assert_eq!(label, "running anvil (updating)"),
-        other => panic!("expected Spawn, got {other:?}"),
+        other @ ActionDispatch::Done(_) => panic!("expected Spawn, got {other:?}"),
     }
 }
 
@@ -288,7 +290,9 @@ fn on_tick_is_none_when_nothing_is_running() {
 fn on_tick_redraws_when_the_spinner_advances() {
     let (_tx, rx) = mpsc::channel();
     let mut running_job = job(rx);
-    running_job.last_tick = Instant::now() - Duration::from_millis(200);
+    running_job.last_tick = Instant::now()
+        .checked_sub(Duration::from_millis(200))
+        .unwrap();
     let mut in_flight = Some(running_job);
 
     assert_eq!(

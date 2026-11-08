@@ -1,4 +1,4 @@
-//! The public catalogue (served by hoist-service: F-Droid, IzzyOnDroid and Aptoide merged): what it lists, how the home page picks
+//! The public catalogue (served by hoist-service: F-Droid, `IzzyOnDroid` and Aptoide merged): what it lists, how the home page picks
 //! from it, and how its categories are shown.
 
 use quench_serde::Deserialize;
@@ -21,7 +21,7 @@ pub struct PublicApp {
     #[serde(default)]
     pub size_bytes: i64,
     pub download_url: String,
-    /// Present for F-Droid and IzzyOnDroid builds; Aptoide's may have none.
+    /// Present for F-Droid and `IzzyOnDroid` builds; Aptoide's may have none.
     #[serde(default)]
     pub sha256: Option<String>,
     /// `fdroid`, `izzyondroid` or `aptoide`.
@@ -76,7 +76,11 @@ pub struct PublicPage {
 impl PublicPage {
     /// Whether there is more after this page.
     #[must_use]
-    pub fn has_more(&self) -> bool {
+    #[allow(
+        clippy::cast_possible_wrap,
+        reason = "a page holds the items of one answer, far below `i64::MAX`; `try_from` is not usable in a `const fn`"
+    )]
+    pub const fn has_more(&self) -> bool {
         self.offset + (self.items.len() as i64) < self.total
     }
 }

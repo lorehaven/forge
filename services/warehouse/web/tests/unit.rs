@@ -58,14 +58,20 @@ fn routes(request: &HttpRequest) -> (u16, String) {
         ("GET", "/ui/api/docker/tags?repo=app") => {
             r#"[{"tag":"1","digest":"sha256:aa","media_type":null,"size_bytes":12}]"#.to_string()
         }
-        ("POST", "/ui/api/docker/delete-image") => String::new(),
+        (
+            "POST",
+            "/ui/api/docker/delete-image"
+            | "/ui/api/crates/yank"
+            | "/ui/api/crates/unyank"
+            | "/ui/api/artifacts/yank"
+            | "/ui/api/artifacts/unyank"
+            | "/ui/api/rivets/yank"
+            | "/ui/api/rivets/unyank",
+        ) => String::new(),
         ("GET", "/ui/api/crates") => r#"["alpha"]"#.to_string(),
         ("GET", "/ui/api/crates/alpha/versions") => r#"[{"vers":"1.0.0","yanked":false,"cksum":"c"}]"#.to_string(),
-        ("POST", "/ui/api/crates/yank" | "/ui/api/crates/unyank") => String::new(),
         ("GET", "/ui/api/artifacts") => r#"[{"program":"a","platform":"linux","format":"tar.gz","version_code":1,"version_name":"1.0","filename":"f","size_bytes":3,"sha256":"s","uploaded_by":"dev","yanked":false}]"#.to_string(),
-        ("POST", "/ui/api/artifacts/yank" | "/ui/api/artifacts/unyank") => String::new(),
         ("GET", "/ui/api/rivets") => "[]".to_string(),
-        ("POST", "/ui/api/rivets/yank" | "/ui/api/rivets/unyank") => String::new(),
         ("GET", "/ui/api/files/storages") => STORAGES.to_string(),
         ("POST", "/ui/api/files/storages" | "/ui/api/files/storages/photos/edit") => {
             STORAGE.to_string()
@@ -323,7 +329,10 @@ fn files_are_browsed_and_deleting_one_reads_the_directory_again() {
 #[quench_test::test]
 fn the_language_is_the_browsers_own_business() {
     let (client, seen, _) = client(routes);
-    assert!(block_on(client.execute(Request::Language("pl-PL".into()))).is_empty());
+    assert_eq!(
+        block_on(client.execute(Request::Language("pl-PL".into()))),
+        [] as [warehouse_app::Msg; 0]
+    );
     assert!(seen.borrow().is_empty());
 }
 

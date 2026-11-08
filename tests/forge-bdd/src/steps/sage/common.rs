@@ -10,7 +10,7 @@ async fn send_generic_message(world: &mut ForgeWorld) -> Result<(), String> {
     let conv_id = world
         .current_conversation_id
         .clone()
-        .unwrap_or("test-conversation".to_string());
+        .unwrap_or_else(|| "test-conversation".to_string());
 
     let body = json!({
         "conversation_id": conv_id,
@@ -32,36 +32,24 @@ async fn send_generic_message(world: &mut ForgeWorld) -> Result<(), String> {
             world.last_body = resp.text().await.ok();
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
 #[quench_test_bdd::then("both messages should be in conversation history")]
-async fn both_messages_in_history(_world: &mut ForgeWorld) -> Result<(), String> {
-    Ok(())
-}
+const fn both_messages_in_history(_world: &mut ForgeWorld) {}
 
 #[quench_test_bdd::then("all requests should complete successfully")]
-async fn all_requests_successful(_world: &mut ForgeWorld) -> Result<(), String> {
-    Ok(())
-}
+const fn all_requests_successful(_world: &mut ForgeWorld) {}
 
 #[quench_test_bdd::then("all three messages should be in conversation history")]
-async fn all_three_messages_in_history(_world: &mut ForgeWorld) -> Result<(), String> {
-    Ok(())
-}
+const fn all_three_messages_in_history(_world: &mut ForgeWorld) {}
 
 #[quench_test_bdd::then("the response should contain:")]
-async fn response_should_contain_table(_world: &mut ForgeWorld) -> Result<(), String> {
-    Ok(())
-}
+const fn response_should_contain_table(_world: &mut ForgeWorld) {}
 
 #[quench_test_bdd::then("the conversation should have:")]
-async fn conversation_should_have_table(_world: &mut ForgeWorld) -> Result<(), String> {
-    Ok(())
-}
+const fn conversation_should_have_table(_world: &mut ForgeWorld) {}
 
 #[quench_test_bdd::then("the response should include token usage:")]
-async fn response_should_have_token_usage_table(_world: &mut ForgeWorld) -> Result<(), String> {
-    Ok(())
-}
+const fn response_should_have_token_usage_table(_world: &mut ForgeWorld) {}

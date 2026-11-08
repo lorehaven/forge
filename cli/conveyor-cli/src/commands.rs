@@ -1,11 +1,15 @@
 //! What each command does.
 
-use crate::cli::*;
+use crate::cli::{
+    CancelArgs, CredentialCommands, LogsArgs, ProjectCommands, RepoCommands, RunArgs, RunsArgs,
+    SecretCommands, ShowArgs, ValidateArgs,
+};
 use crate::client::Client;
 use quench_cli::prelude::{Tone, print_status};
 use quench_core::stream::StreamExt;
 use quench_core::{Context, Result, bail};
 use quench_serde::{Value, json};
+use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::time::Duration;
 
@@ -141,13 +145,12 @@ pub async fn project(client: &Client, command: &ProjectCommands) -> Result<()> {
                 "created",
                 &format!("{} ({})", args.name, string(&created, "id")),
             );
-            Ok(())
         }
 
         ProjectCommands::List(args) => {
             let mut path = "/projects".to_string();
             if let Some(parent) = &args.parent {
-                path.push_str(&format!("?parent_id={parent}"));
+                let _ = write!(path, "?parent_id={parent}");
             }
             let projects: Vec<Value> = client.get(&path).await?;
             if projects.is_empty() {
@@ -157,7 +160,6 @@ pub async fn project(client: &Client, command: &ProjectCommands) -> Result<()> {
             for project in &projects {
                 println!("{:<30}  {}", string(project, "name"), string(project, "id"));
             }
-            Ok(())
         }
 
         ProjectCommands::Show(args) => {
@@ -168,7 +170,6 @@ pub async fn project(client: &Client, command: &ProjectCommands) -> Result<()> {
                 Some(parent_id) => println!("parent:  {parent_id}"),
                 None => println!("parent:  (root)"),
             }
-            Ok(())
         }
 
         ProjectCommands::Rename(args) => {
@@ -179,7 +180,6 @@ pub async fn project(client: &Client, command: &ProjectCommands) -> Result<()> {
                 )
                 .await?;
             print_status(Tone::Success, "renamed", &args.name);
-            Ok(())
         }
 
         ProjectCommands::Move(args) => {
@@ -195,7 +195,6 @@ pub async fn project(client: &Client, command: &ProjectCommands) -> Result<()> {
                 .patch(&format!("/projects/{}", args.project), &body)
                 .await?;
             print_status(Tone::Success, "moved", &args.project);
-            Ok(())
         }
 
         ProjectCommands::Remove(args) => {
@@ -206,9 +205,9 @@ pub async fn project(client: &Client, command: &ProjectCommands) -> Result<()> {
                 )
                 .await?;
             print_status(Tone::Success, "removed", &args.project);
-            Ok(())
         }
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -286,7 +285,8 @@ pub async fn wait_for(client: &Client, run_id: &str) -> Result<()> {
 pub async fn runs(client: &Client, args: &RunsArgs) -> Result<()> {
     let mut path = format!("/runs?limit={}", args.limit);
     if let Some(repo) = &args.repo {
-        path.push_str(&format!("&repo_id={}", resolve_repo(client, repo).await?));
+        let repo_id = resolve_repo(client, repo).await?;
+        let _ = write!(path, "&repo_id={repo_id}");
     }
 
     let runs: Vec<Value> = client.get(&path).await?;
@@ -364,21 +364,26 @@ pub async fn cancel(client: &Client, args: &CancelArgs) -> Result<()> {
 pub async fn logs(client: &Client, args: &LogsArgs) -> Result<()> {
     // A run id is the useful thing to have to hand, so accept either and work
     // out which this is.
-    let jobs = match client.get::<Value>(&format!("/runs/{}", args.id)).await {
-        Ok(run) => run["jobs"]
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .map(|job| {
-                (
-                    string(job, "id"),
-                    format!("{}/{}", string(job, "stage"), string(job, "name")),
-                )
-            })
-            .collect(),
-        // Not a run; treat it as a job id.
-        Err(_) => vec![(args.id.clone(), String::new())],
-    };
+    let jobs = client
+        .get::<Value>(&format!("/runs/{}", args.id))
+        .await
+        .map_or_else(
+            // Not a run; treat it as a job id.
+            |_| vec![(args.id.clone(), String::new())],
+            |run| {
+                run["jobs"]
+                    .as_array()
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .map(|job| {
+                        (
+                            string(job, "id"),
+                            format!("{}/{}", string(job, "stage"), string(job, "name")),
+                        )
+                    })
+                    .collect()
+            },
+        );
 
     for (job_id, name) in jobs {
         if !name.is_empty() {
@@ -457,24 +462,22 @@ pub fn write_line(stream: &str, line: &str) {
 pub async fn secret(client: &Client, command: &SecretCommands) -> Result<()> {
     match command {
         SecretCommands::Set(args) => {
-            let value = match &args.value {
-                Some(value) => value.clone(),
+            let value = if let Some(value) = &args.value {
+                value.clone()
+            } else {
                 // Reading from stdin keeps the value out of shell history and
                 // out of the process list, where anyone on the machine can see
                 // it with `ps`.
-                None => {
-                    let mut input = String::new();
-                    std::io::stdin()
-                        .read_to_string(&mut input)
-                        .context("reading the value from stdin")?;
-                    input.trim_end_matches('\n').to_string()
-                }
+                let mut input = String::new();
+                std::io::stdin()
+                    .read_to_string(&mut input)
+                    .context("reading the value from stdin")?;
+                input.trim_end_matches('\n').to_string()
             };
 
             let path = secret_path(client, args.repo.as_deref(), Some(&args.name)).await?;
             let _: Value = client.put(&path, &json!({ "value": value })).await?;
             print_status(Tone::Success, "set", &args.name);
-            Ok(())
         }
 
         SecretCommands::List(args) => {
@@ -491,7 +494,6 @@ pub async fn secret(client: &Client, command: &SecretCommands) -> Result<()> {
                     string(secret, "created_by")
                 );
             }
-            Ok(())
         }
 
         SecretCommands::Remove(args) => {
@@ -500,9 +502,9 @@ pub async fn secret(client: &Client, command: &SecretCommands) -> Result<()> {
                 .send_empty(quench_client::transport::Method::DELETE, &path)
                 .await?;
             print_status(Tone::Success, "removed", &args.name);
-            Ok(())
         }
     }
+    Ok(())
 }
 
 pub async fn secret_path(
@@ -527,17 +529,16 @@ pub async fn secret_path(
 pub async fn credential(client: &Client, command: &CredentialCommands) -> Result<()> {
     match command {
         CredentialCommands::Set(args) => {
-            let token = match &args.token {
-                Some(token) => token.clone(),
+            let token = if let Some(token) = &args.token {
+                token.clone()
+            } else {
                 // Same reasoning as `secret set`: keeps it out of shell
                 // history and out of the process list.
-                None => {
-                    let mut input = String::new();
-                    std::io::stdin()
-                        .read_to_string(&mut input)
-                        .context("reading the token from stdin")?;
-                    input.trim_end_matches('\n').to_string()
-                }
+                let mut input = String::new();
+                std::io::stdin()
+                    .read_to_string(&mut input)
+                    .context("reading the token from stdin")?;
+                input.trim_end_matches('\n').to_string()
             };
 
             let path =
@@ -553,7 +554,6 @@ pub async fn credential(client: &Client, command: &CredentialCommands) -> Result
                 "set",
                 &format!("{} ({})", args.name, string(&credential, "preview")),
             );
-            Ok(())
         }
 
         CredentialCommands::Show(args) => {
@@ -571,7 +571,6 @@ pub async fn credential(client: &Client, command: &CredentialCommands) -> Result
                 string(&credential, "username"),
                 string(&credential, "created_by"),
             );
-            Ok(())
         }
 
         CredentialCommands::Remove(args) => {
@@ -581,9 +580,9 @@ pub async fn credential(client: &Client, command: &CredentialCommands) -> Result
                 .send_empty(quench_client::transport::Method::DELETE, &path)
                 .await?;
             print_status(Tone::Success, "removed", "the credential");
-            Ok(())
         }
     }
+    Ok(())
 }
 
 pub async fn credential_path(
@@ -605,11 +604,14 @@ pub async fn credential_path(
     }
 }
 
+/// A project reference as the API takes it: its id, as given.
+///
 /// Unlike `resolve_repo`, no name-style lookup: a project's name is only
 /// unique among its own siblings (`conveyor project list` is how you find an
 /// id from a name), not across the whole tree the way a repository's
 /// `owner/name` is, so there is no single unambiguous string to resolve
 /// against here. A project reference is its id, taken as given.
+#[must_use]
 pub fn resolve_project(reference: &str) -> String {
     reference.to_string()
 }
@@ -684,15 +686,18 @@ pub fn split_slug(slug: &str) -> Result<(String, String)> {
         .with_context(|| format!("expected owner/name, got `{slug}`"))
 }
 
+#[must_use]
 pub fn string(value: &Value, key: &str) -> String {
     value[key].as_str().unwrap_or_default().to_string()
 }
 
+#[must_use]
 pub fn short(run: &Value) -> String {
     let sha = string(run, "sha");
     sha.chars().take(7).collect()
 }
 
+#[must_use]
 pub const fn tone_for(status: &str) -> Tone {
     match status.as_bytes() {
         b"success" => Tone::Success,

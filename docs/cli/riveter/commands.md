@@ -202,4 +202,4 @@ Starts the [REPL](repl.md); also the behaviour with no arguments.
 riveter help [COMMAND]        alias: h
 ```
 
-Without an argument prints the same output as `--help`. With a command name (aliases accepted) prints that command's clap help; `riveter help targets` (or `target`) prints the targets reference. An unknown name fails with the unknown-topic message. The overview printed by `--help` (and by the REPL's `help`) is generated from `src/help.rs`; where it differs from the real flags the flags in this book are right (see the [report](../../_reports/cli.md)).
+Without an argument prints the same output as `--help`. With a command name (aliases accepted) prints that command's clap help; `riveter help targets` (or `target`) prints the targets reference. An unknown name fails with the unknown-topic message. The overview printed by `--help` (and by the REPL's `help`) is generated from `src/help.rs`; where it differs from the real flags the flags in this book are right (see `docs/_reports/cli.md` in the repository).

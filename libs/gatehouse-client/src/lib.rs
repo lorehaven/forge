@@ -85,7 +85,7 @@ pub fn set_timeouts(call: Duration, transfer: Duration) {
 }
 
 fn timeouts() -> (Duration, Duration) {
-    *TIMEOUTS.get_or_init(|| (Duration::from_secs(20), Duration::from_secs(15 * 60)))
+    *TIMEOUTS.get_or_init(|| (Duration::from_secs(20), Duration::from_mins(15)))
 }
 
 /// The client for calls: made once, because a client owns the threads its requests run on.
@@ -149,7 +149,9 @@ fn base_of(url: &str) -> String {
 static TRACE_VAR: OnceLock<&'static str> = OnceLock::new();
 
 /// Names the environment variable that, when set, makes every request say what was asked and what came back on
-/// standard error (the method, the path without its query, the status; never a token, a password or a body). Call it
+/// standard error.
+///
+/// The trace has the method, the path without its query, the status; never a token, a password or a body. Call it
 /// once, before the first request; the first call wins.
 pub fn trace_var(name: &'static str) {
     let _ = TRACE_VAR.set(name);
@@ -189,7 +191,6 @@ fn tokens(base: &str, status: u16, text: &str) -> Result<Session, Error> {
                 latest: None,
             })
         }
-        401 | 403 if text.contains("mfa_required") => Err(Error::MfaRequired),
         400..=403 if text.contains("mfa_required") => Err(Error::MfaRequired),
         // Gatehouse says why in the body (`{"error": "account_locked"}`): a locked account is not a wrong password.
         400 | 401 | 403 if text.contains("account_locked") => Err(Error::AccountLocked),
@@ -208,9 +209,10 @@ pub fn login(base: &str, username: &str, password: &str) -> Result<Session, Erro
     sign_in(base, username, password, None)
 }
 
-/// Signs in as an installed app (`client`, e.g. `daybook-android`): gatehouse keeps one long-lived session per user
-/// and app, replaces the app's earlier one, and renews the refresh token only about once a month, so a lost answer
-/// never costs the session.
+/// Signs in as an installed app (`client`, e.g. `daybook-android`).
+///
+/// Gatehouse keeps one long-lived session per user and app, replaces the app's earlier one, and renews the refresh
+/// token only about once a month, so a lost answer never costs the session.
 ///
 /// # Errors
 /// [`Error`].
@@ -230,10 +232,10 @@ fn sign_in(
     app: Option<&str>,
 ) -> Result<Session, Error> {
     let base = base_of(base);
-    let body = match app {
-        Some(app) => json!({ "username": username, "password": password, "client": app }),
-        None => json!({ "username": username, "password": password }),
-    };
+    let body = app.map_or_else(
+        || json!({ "username": username, "password": password }),
+        |app| json!({ "username": username, "password": password, "client": app }),
+    );
     let (status, text) = post_json(
         client(),
         &format!("{base}/gatehouse/api/v1/auth/login"),

@@ -1,5 +1,7 @@
-//! What a tap outside the app asks it to show. The Kotlin host writes a small file (`launch`) and the program reads it:
-//! `add` and a list (the widget's **+**), `open`, a list and a task (a task of the widget or a reminder).
+//! What a tap outside the app asks it to show.
+//!
+//! The Kotlin host writes a small file (`launch`) and the program reads it: `add` and a list (the widget's **+**),
+//! `open`, a list and a task (a task of the widget or a reminder).
 
 use daybook_core::widget::parse_list_id;
 use daybook_core::{ListRef, Msg};

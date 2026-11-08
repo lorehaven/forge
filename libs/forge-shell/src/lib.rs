@@ -134,8 +134,14 @@ fn user_menu(t: &I18n, bar: &Bar) -> Element {
                         .child(icon("user"))
                         .child(span().text(t.t("ui_profile_edit"))),
                 )
-                .child(match &bar.on_logout {
-                    Some(out) => {
+                .child(bar.on_logout.as_ref().map_or_else(
+                    || {
+                        a().attr("href", logout.to_string())
+                            .class("fui-dropdown-item")
+                            .child(icon("logout"))
+                            .child(span().text(t.t("ui_logout")))
+                    },
+                    |out| {
                         let out = Rc::clone(out);
                         button()
                             .attr("type", "button")
@@ -144,18 +150,17 @@ fn user_menu(t: &I18n, bar: &Bar) -> Element {
                             .on_click(move || out())
                             .child(icon("logout"))
                             .child(span().text(t.t("ui_logout")))
-                    }
-                    None => a()
-                        .attr("href", logout.to_string())
-                        .class("fui-dropdown-item")
-                        .child(icon("logout"))
-                        .child(span().text(t.t("ui_logout"))),
-                }),
+                    },
+                )),
         )
 }
 
 /// Where the bar's links go and what it offers.
 #[derive(Clone)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "public API used by services: each flag is an independent switch callers set by field"
+)]
 pub struct Bar {
     pub brand: Brand,
     /// The service's icon as the page serves it (`{base}/ui/assets/favicon.png`); the brand's glyph stands in without.
@@ -178,6 +183,24 @@ pub struct Bar {
     pub languages: &'static [&'static str],
     /// Called with the locale the person picked.
     pub on_language: Rc<dyn Fn(&str)>,
+}
+
+impl std::fmt::Debug for Bar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Bar")
+            .field("brand", &self.brand)
+            .field("image", &self.image)
+            .field("home", &self.home)
+            .field("spa", &self.spa)
+            .field("account", &self.account)
+            .field("brand_in_bar", &self.brand_in_bar)
+            .field("logout", &self.logout)
+            .field("on_logout", &self.on_logout.as_ref().map(|_| "Fn()"))
+            .field("dashboard", &self.dashboard)
+            .field("languages", &self.languages)
+            .field("on_language", &"Fn(&str)")
+            .finish()
+    }
 }
 
 fn mark(bar: &Bar) -> Element {

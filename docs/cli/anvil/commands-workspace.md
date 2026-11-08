@@ -107,7 +107,7 @@ anvil lint [--all-targets] [--all-features] [--deny-warnings] [--json]
 | `--deny-warnings` | `true` | `-- -D warnings`. |
 | `--json` | off | Emit clippy's `--message-format=json` on stdout and nothing else. |
 
-The three boolean flags are declared `#[arg(long, default_value = "true")]`, and the parser treats them as plain flags: they are always on, and `--all-targets=false` is a parse error (exit 2). There is no way to switch them off from the command line (see the [report](../../_reports/cli.md)). The `--help` text shows no default.
+The three boolean flags are declared `#[arg(long, default_value = "true")]`, and the parser treats them as plain flags: they are always on, and `--all-targets=false` is a parse error (exit 2). There is no way to switch them off from the command line (see `docs/_reports/cli.md` in the repository). The `--help` text shows no default.
 
 Without `--json` anvil runs `cargo clippy --message-format=json-diagnostic-rendered-ansi --all-targets --all-features -- -D warnings`, replays each rendered diagnostic on stderr (unless `--silent` or `--tail`), counts diagnostics per package (a diagnostic repeated for the lib and its tests counts once) and prints, after the run:
 

@@ -40,3 +40,6 @@ quench-test = { workspace = true }
 name = "unit"
 path = "tests/unit.rs"
 harness = false
+
+[lints]
+workspace = true

@@ -21,7 +21,7 @@ async fn hold_token(world: &mut ForgeWorld, scope: String) {
 }
 
 #[given("I hold no token")]
-async fn hold_no_token(world: &mut ForgeWorld) {
+fn hold_no_token(world: &mut ForgeWorld) {
     world.token = None;
 }
 

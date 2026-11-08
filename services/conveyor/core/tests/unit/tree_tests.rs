@@ -23,7 +23,10 @@ fn the_ancestors_are_root_first_and_a_loop_ends() {
     let chain = ancestor_chain("d", &all);
     let ids: Vec<&str> = chain.iter().map(|p| p.id.as_str()).collect();
     assert_eq!(ids, ["root", "a", "d"]);
-    assert!(ancestor_chain("nope", &sample()).is_empty());
+    assert_eq!(
+        ancestor_chain("nope", &sample()),
+        [] as [&conveyor_core::Project; 0]
+    );
     let looped = vec![project("x", "x", Some("y")), project("y", "y", Some("x"))];
     assert_eq!(ancestor_chain("x", &looped).len(), 2);
 }
@@ -62,5 +65,8 @@ fn a_scoped_tree_starts_with_the_nodes_own_repositories() {
     assert!(matches!(&tree[0], Node::Repos(r) if r[0].id == "own"));
     assert!(matches!(&tree[1], Node::Repos(r) if r[0].id == "r-d"));
     assert_eq!(tree.len(), 2);
-    assert!(build(&sample(), &[], Some("c")).is_empty());
+    assert_eq!(
+        build(&sample(), &[], Some("c")),
+        [] as [conveyor_core::tree::Node; 0]
+    );
 }

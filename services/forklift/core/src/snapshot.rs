@@ -1,6 +1,8 @@
 //! What the screens show of a backup: a plain copy of the numbers, made by the host from the engine and handed to the
 //! app, so the views hold no engine and the words are decided (and tested) here.
 
+use std::fmt::Write as _;
+
 use crate::{Engine, Pause, Settings, Status, Totals};
 
 /// One category's line.
@@ -99,20 +101,21 @@ impl Snapshot {
                 t.waiting_bytes
             )
         };
-        out.push_str(&format!("total {}\n", totals(&self.totals)));
+        let _ = writeln!(out, "total {}", totals(&self.totals));
         for r in &self.rows {
-            out.push_str(&format!(
-                "row {}\t{}\t{}\n",
+            let _ = writeln!(
+                out,
+                "row {}\t{}\t{}",
                 crate::manifest::escape(&r.key),
                 crate::manifest::escape(&r.label),
                 totals(&r.totals)
-            ));
+            );
         }
         if let Some(at) = self.checked_ms {
-            out.push_str(&format!("checked {at}\n"));
+            let _ = writeln!(out, "checked {at}");
         }
         if let Some((used, quota)) = self.quota {
-            out.push_str(&format!("quota {used} {quota}\n"));
+            let _ = writeln!(out, "quota {used} {quota}");
         }
         out
     }
@@ -175,6 +178,10 @@ impl Snapshot {
 
     /// How far along, from 0 to 1 (1 when there is nothing to do).
     #[must_use]
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "a share for a progress bar: counts past 2^52 files would only lose digits it never shows"
+    )]
     pub fn fraction(&self) -> f64 {
         let all = self.files();
         if all == 0 {
@@ -223,6 +230,10 @@ pub fn clock(epoch_ms: i64, offset_minutes: i32) -> String {
 
 /// Bytes as a person reads them: `950 B`, `12.5 KB`, `3.4 GB`.
 #[must_use]
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "shown with at most one decimal of KB..TB: the digits past 2^52 bytes are never printed"
+)]
 pub fn bytes(n: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
     let mut value = n as f64;

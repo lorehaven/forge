@@ -9,7 +9,7 @@ use crate::model::{ArtifactEntry, BrowseFile, CrateVersion, RivetEntry};
 /// A repository path (`team/app`) split at its slashes. A node is a repository when `repo` is set; it may also be a folder.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RepoNode {
-    pub children: BTreeMap<String, RepoNode>,
+    pub children: BTreeMap<String, Self>,
     pub repo: Option<String>,
 }
 
@@ -39,7 +39,7 @@ impl RepoNode {
 /// A directory or a file of a storage.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FileNode {
-    pub children: BTreeMap<String, FileNode>,
+    pub children: BTreeMap<String, Self>,
     pub is_file: bool,
     pub size: Option<i64>,
 }
@@ -111,7 +111,7 @@ pub fn last_segment(path: &str) -> &str {
 
 impl FileNode {
     #[must_use]
-    pub fn node_at(&self, path: &str) -> Option<&FileNode> {
+    pub fn node_at(&self, path: &str) -> Option<&Self> {
         let mut node = self;
         for segment in path.split('/').filter(|s| !s.is_empty()) {
             node = node.children.get(segment)?;
@@ -142,7 +142,7 @@ impl FileNode {
 
     /// Directories first, then files, each group by name.
     #[must_use]
-    pub fn sorted_children(&self) -> Vec<(&String, &FileNode)> {
+    pub fn sorted_children(&self) -> Vec<(&String, &Self)> {
         let mut children: Vec<_> = self.children.iter().collect();
         children.sort_by(|(a_name, a), (b_name, b)| {
             a.is_file.cmp(&b.is_file).then_with(|| a_name.cmp(b_name))

@@ -16,8 +16,10 @@ use forklift_host::worker::{Answer, Shared, Worker, stored_session};
 use forklift_host::{Controller, Device, Node, Platform, Target, UploadEvent};
 use forklift_net::{Change, NetError, Storage, Store, get_with_token, put_with_token};
 
-/// The largest file this host sends or fetches: it reads a file whole (the HTTP client has no streaming body), so a
-/// bigger one would need that much memory, twice. A larger file is left out with the server's own answer for "too
+/// The largest file this host sends or fetches.
+///
+/// It reads a file whole (the HTTP client has no streaming body), so a bigger one would need that much memory, twice.
+/// A larger file is left out with the server's own answer for "too
 /// large", which the backup does not try again.
 pub const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
 
@@ -39,6 +41,22 @@ pub enum Event {
     Notice(String),
 }
 
+impl std::fmt::Debug for Event {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Worker(id, _) => f.debug_tuple("Worker").field(id).finish_non_exhaustive(),
+            Self::Upload(event) => f.debug_tuple("Upload").field(event).finish(),
+            Self::Download { id, ok } => f
+                .debug_struct("Download")
+                .field("id", id)
+                .field("ok", ok)
+                .finish(),
+            Self::Login(result) => f.debug_tuple("Login").field(result).finish(),
+            Self::Notice(text) => f.debug_tuple("Notice").field(text).finish(),
+        }
+    }
+}
+
 /// How a thread tells the program's thread.
 pub type Post = Arc<dyn Fn(Event) + Send + Sync>;
 
@@ -55,6 +73,14 @@ pub struct Linux {
     store: Store,
     restore_dir: PathBuf,
     later: Later,
+}
+
+impl std::fmt::Debug for Linux {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Linux")
+            .field("restore_dir", &self.restore_dir)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Linux {
@@ -121,10 +147,12 @@ pub fn list_dir(dir: &Path) -> Result<Vec<Node>, String> {
             continue;
         };
         let name = entry.file_name().to_string_lossy().to_string();
-        if kind.is_symlink()
-            || IGNORED.contains(&name.to_lowercase().as_str())
-            || name.ends_with(".part")
-        {
+        #[allow(
+            clippy::case_sensitive_file_extension_comparisons,
+            reason = "only this program's own unfinished downloads are meant, and it names them `.part` in lower case"
+        )]
+        let unfinished = name.ends_with(".part");
+        if kind.is_symlink() || IGNORED.contains(&name.to_lowercase().as_str()) || unfinished {
             continue;
         }
         let path = entry.path().to_string_lossy().to_string();
@@ -213,6 +241,10 @@ pub fn restore_path(
 
 /// `path`, or the first of `name (2).ext`, `name (3).ext`... that does not exist (nothing is overwritten).
 #[must_use]
+#[allow(
+    clippy::maybe_infinite_iter,
+    reason = "a directory holds finitely many names, so counting up finds a free one"
+)]
 pub fn unique(path: &Path) -> PathBuf {
     if !path.exists() {
         return path.to_path_buf();
@@ -474,7 +506,7 @@ pub fn run_background(store: &Store) -> io::Result<Ran> {
     let later: Later = Box::new(move |ms, f| {
         queue
             .borrow_mut()
-            .push((Instant::now() + Duration::from_millis(ms), f))
+            .push((Instant::now() + Duration::from_millis(ms), f));
     });
     let platform = Rc::new(Linux::new(Rc::clone(&worker), post, store.clone(), later));
     let controller = Controller::new(platform, store.clone(), Rc::new(|_| {}));
@@ -513,8 +545,8 @@ pub fn run_background(store: &Store) -> io::Result<Ran> {
                 }
                 controller.upload_event(&event);
             }
-            Ok(Event::Download { .. } | Event::Login(_) | Event::Notice(_)) => {}
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Ok(Event::Download { .. } | Event::Login(_) | Event::Notice(_))
+            | Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }

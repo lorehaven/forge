@@ -4,6 +4,7 @@ packages = [
     "conveyor-cli",
     "foreman",
     "forge-toolbox",
+    "loupe",
     "pulley",
     "riveter",
     "switchboard-cli",

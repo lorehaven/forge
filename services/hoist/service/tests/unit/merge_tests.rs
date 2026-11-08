@@ -174,7 +174,7 @@ mod merge_all_tests {
                     vec![RawListing {
                         rating_avg: Some(4.2),
                         rating_count: Some(900),
-                        downloads: Some(123456),
+                        downloads: Some(123_456),
                         ..listing("com.example.app", "aptoide")
                     }],
                 ),
@@ -185,7 +185,7 @@ mod merge_all_tests {
         assert_eq!(row.install_source, "fdroid");
         assert_eq!(row.rating_avg, Some(4.2));
         assert_eq!(row.rating_count, Some(900));
-        assert_eq!(row.downloads, Some(123456));
+        assert_eq!(row.downloads, Some(123_456));
     }
 
     #[quench_test::test]
@@ -244,7 +244,7 @@ mod merge_all_tests {
             )]),
             DEFAULT_SOURCE_PRIORITY,
         );
-        assert!(merged.is_empty());
+        assert_eq!(merged, [] as [hoist_service::models::MergedPackage; 0]);
     }
 
     #[quench_test::test]

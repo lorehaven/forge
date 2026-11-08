@@ -61,7 +61,7 @@ fn ticked_boxes_and_typed_extras_are_combined_without_repeats() {
         extra: " , ".into(),
         ..LaunchDraft::default()
     };
-    assert!(none.stages().is_empty());
+    assert_eq!(none.stages(), [] as [String; 0]);
     assert_eq!(none.to_trigger(), Err(DraftError::NoStage));
 }
 

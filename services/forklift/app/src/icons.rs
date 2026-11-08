@@ -1,5 +1,7 @@
 //! The icons, drawn as strokes so they are as heavy as the text next to them (the symbol fonts' glyphs are thin).
 
+use std::fmt::Write as _;
+
 use quench_ui::prelude::*;
 
 const COLOUR: &str = "#d4d4d4";
@@ -15,7 +17,7 @@ fn icon(paths: &str, class: &str) -> Element {
         if b.is_ascii_alphanumeric() || b"-_.~/:".contains(&b) {
             url.push(char::from(b));
         } else {
-            url.push_str(&format!("%{b:02X}"));
+            let _ = write!(url, "%{b:02X}");
         }
     }
     img()

@@ -89,7 +89,10 @@ fn failures_back_off_and_end_in_failed() {
         (i.status, i.attempts, i.retry_at_ms),
         (Status::Pending, 1, 1_000 + 30_000)
     );
-    assert!(m.next_batch(1_000, 10, true).is_empty());
+    assert_eq!(
+        m.next_batch(1_000, 10, true),
+        [] as [&forklift_core::Item; 0]
+    );
     assert_eq!(m.next_due_ms(1_000), Some(31_000));
     assert_eq!(m.next_batch(31_000, 10, true).len(), 1);
     for _ in 1..MAX_ATTEMPTS {
@@ -208,7 +211,7 @@ fn forgetting_a_category_keeps_the_others() {
 fn engine(n: usize) -> Engine {
     let mut m = Manifest::new();
     let files: Vec<Found> = (1..=n)
-        .map(|i| found(&i.to_string(), 10, i as i64 * 1000))
+        .map(|i| found(&i.to_string(), 10, i64::try_from(i).unwrap() * 1000))
         .collect();
     m.scan("photos", &files, false);
     Engine::new(m, 2)
@@ -221,7 +224,7 @@ fn the_engine_runs_as_many_as_it_may_and_the_newest_first() {
     assert_eq!(starts.len(), 2);
     assert_eq!(starts[0].uri, "content://media/5");
     assert_eq!(starts[0].remote, "photos/1970/01/5-5.jpg");
-    assert!(e.pump(0, false).is_empty());
+    assert_eq!(e.pump(0, false), [] as [forklift_core::Start; 0]);
     assert_eq!(e.running(), 2);
     assert_eq!(
         e.finish(&starts[0].upload_id, &Outcome::Http(200), 0),
@@ -258,7 +261,7 @@ fn a_server_error_counts_as_a_failure_and_a_broken_transfer_too() {
         (i.status, i.attempts, i.error.as_str()),
         (Status::Pending, 1, "the server answered 500")
     );
-    assert!(e.pump(10, false).is_empty());
+    assert_eq!(e.pump(10, false), [] as [forklift_core::Start; 0]);
 }
 
 #[quench_test::test]
@@ -269,7 +272,7 @@ fn a_full_storage_pauses_without_counting_a_failure() {
         e.finish(&starts[0].upload_id, &Outcome::Http(507), 0),
         Verdict::Paused(Pause::Quota)
     );
-    assert!(e.pump(0, false).is_empty());
+    assert_eq!(e.pump(0, false), [] as [forklift_core::Start; 0]);
     assert_eq!(e.manifest.get("photos", "2").unwrap().attempts, 0);
     e.stop();
     assert_eq!(
@@ -289,7 +292,7 @@ fn too_large_is_final_for_that_file() {
         e.manifest.get("photos", "1").unwrap().status,
         Status::TooLarge
     );
-    assert!(e.pump(0, false).is_empty());
+    assert_eq!(e.pump(0, false), [] as [forklift_core::Start; 0]);
 }
 
 #[quench_test::test]
@@ -626,10 +629,9 @@ fn a_file_restored_under_a_new_id_is_not_taken_for_missing_nor_sent_again() {
         false,
     );
     let stored = [remote("photos/1969/01/5-trip.jpg", 12)];
-    assert!(
-        forklift_core::plan(&stored, &m.present(), &[])
-            .files
-            .is_empty()
+    assert_eq!(
+        forklift_core::plan(&stored, &m.present(), &[]).files,
+        [] as [forklift_core::Remote; 0]
     );
     assert_eq!(m.reconcile(&stored), 1);
 }
@@ -683,7 +685,7 @@ fn stopping_a_restore_gives_up_what_runs_and_starts_nothing() {
     let started = r.start();
     let cancelled = r.stop();
     assert_eq!(cancelled.len(), started.len());
-    assert!(r.start().is_empty());
+    assert_eq!(r.start(), [] as [forklift_core::Fetch; 0]);
     assert!(r.finished());
 }
 
@@ -724,10 +726,9 @@ fn what_a_scan_no_longer_finds_is_gone_from_the_device_and_a_restore_brings_it_b
         false,
     );
     assert!(!m.get("photos", "2").unwrap().gone);
-    assert!(
-        forklift_core::plan(&stored, &m.present(), &[])
-            .files
-            .is_empty()
+    assert_eq!(
+        forklift_core::plan(&stored, &m.present(), &[]).files,
+        [] as [forklift_core::Remote; 0]
     );
 }
 
@@ -759,7 +760,7 @@ fn a_refusal_of_the_account_is_not_taken_for_an_expired_token() {
         0,
         "not counted against the file"
     );
-    assert!(e.pump(0, false).is_empty());
+    assert_eq!(e.pump(0, false), [] as [forklift_core::Start; 0]);
 }
 
 quench_test::main!();
@@ -769,7 +770,7 @@ fn the_counts_of_every_category_come_from_one_walk_and_agree_with_the_one_by_one
     let mut m = Manifest::new();
     for category in ["photos", "videos", "custom:docs"] {
         let files: Vec<Found> = (1..=7)
-            .map(|i| found(&format!("{category}{i}"), i * 10, i as i64))
+            .map(|i| found(&format!("{category}{i}"), i * 10, i64::try_from(i).unwrap()))
             .collect();
         m.scan(category, &files, false);
     }

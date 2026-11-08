@@ -7,11 +7,13 @@
 //!   `nav_order` values of siblings differ, every relative link resolves, and every `openapi.yaml` describes exactly
 //!   the routes in the source it documents;
 //! * **builds** it: the checks, then `jekyll build`, then a reproducible `.tar.gz` of the site and a `manifest.json`;
+//!   the archive also holds the book's Markdown sources under `_source/` (pages, `_config.yml`, the local images
+//!   they show), for readers such as loupe;
 //! * **releases** it: the archive and the manifest go to a warehouse files storage under
 //!   `<book>/<version>/`, and `<book>/latest.json` is rewritten to point at them, which is what a preview service
 //!   reads.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -52,302 +54,12 @@ pub struct Built {
     pub manifest_text: String,
 }
 
-// ---------------------------------------------------------------- pages
+// ---------------------------------------------------------------- pages, links, navigation
 
-/// A Markdown page of a book, as far as the navigation is concerned.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Page {
-    /// From the book's directory, with `/`.
-    pub path: String,
-    pub title: Option<String>,
-    pub parent: Option<String>,
-    pub grand_parent: Option<String>,
-    pub nav_order: Option<i64>,
-    pub has_children: bool,
-    pub body: String,
-}
-
-/// The front matter and the rest of a Markdown file, if it starts with `---`.
-#[must_use]
-pub fn split_front_matter(text: &str) -> Option<(&str, &str)> {
-    let rest = text.strip_prefix("---\n")?;
-    let end = if rest.starts_with("---\n") {
-        0
-    } else {
-        rest.find("\n---\n")? + 1
-    };
-    let head = &rest[..end];
-    let body = rest[end..].strip_prefix("---\n").unwrap_or("");
-    Some((head, body))
-}
-
-fn exclusions(dir: &Path) -> Result<BTreeSet<String>> {
-    let mut out = BTreeSet::new();
-    let file = dir.join("_config.yml");
-    if !file.is_file() {
-        return Ok(out);
-    }
-    let text =
-        std::fs::read_to_string(&file).with_context(|| format!("reading {}", file.display()))?;
-    let value: Value = quench_serde::yaml::from_str(&text)
-        .with_context(|| format!("{} is not valid YAML", file.display()))?;
-    if let Some(Value::Array(list)) = value.get("exclude") {
-        for item in list {
-            if let Some(s) = item.as_str() {
-                out.insert(s.trim_end_matches('/').to_string());
-            }
-        }
-    }
-    Ok(out)
-}
-
-fn walk(
-    dir: &Path,
-    base: &Path,
-    excluded: &BTreeSet<String>,
-    out: &mut Vec<PathBuf>,
-) -> Result<()> {
-    let mut entries: Vec<_> = std::fs::read_dir(dir)
-        .with_context(|| format!("reading {}", dir.display()))?
-        .flatten()
-        .map(|e| e.path())
-        .collect();
-    entries.sort();
-    for path in entries {
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        let rel = path
-            .strip_prefix(base)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .replace('\\', "/");
-        if name.starts_with('_') || name.starts_with('.') || excluded.contains(&rel) {
-            continue;
-        }
-        if path.is_dir() {
-            walk(&path, base, excluded, out)?;
-        } else {
-            out.push(path);
-        }
-    }
-    Ok(())
-}
-
-/// Every Markdown page of the book, and the problems found while reading them (front matter that is not YAML).
-///
-/// # Errors
-/// The directory cannot be read.
-pub fn read_pages(dir: &Path) -> Result<(Vec<Page>, Vec<String>)> {
-    let excluded = exclusions(dir)?;
-    let mut files = Vec::new();
-    walk(dir, dir, &excluded, &mut files)?;
-    let mut pages = Vec::new();
-    let mut problems = Vec::new();
-    for file in files {
-        if file.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-        let rel = file
-            .strip_prefix(dir)
-            .unwrap_or(&file)
-            .to_string_lossy()
-            .replace('\\', "/");
-        let text = std::fs::read_to_string(&file)
-            .with_context(|| format!("reading {}", file.display()))?;
-        let Some((head, body)) = split_front_matter(&text) else {
-            // Jekyll copies a Markdown file without front matter as it is: it is not a page.
-            problems.push(format!(
-                "{rel}: no front matter (Jekyll would not render it as a page)"
-            ));
-            continue;
-        };
-        let value: Value = match quench_serde::yaml::from_str(head) {
-            Ok(v) => v,
-            Err(e) => {
-                problems.push(format!("{rel}: the front matter is not valid YAML: {e}"));
-                continue;
-            }
-        };
-        let text_of = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_string);
-        pages.push(Page {
-            path: rel,
-            title: text_of("title"),
-            parent: text_of("parent"),
-            grand_parent: text_of("grand_parent"),
-            nav_order: value.get("nav_order").and_then(Value::as_i64),
-            has_children: matches!(value.get("has_children"), Some(Value::Bool(true))),
-            body: body.to_string(),
-        });
-    }
-    Ok((pages, problems))
-}
-
-// ---------------------------------------------------------------- links
-
-/// The link targets of a Markdown body: `[text](target)` outside fenced blocks and code spans.
-#[must_use]
-pub fn links(body: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut fenced = false;
-    for line in body.lines() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            fenced = !fenced;
-            continue;
-        }
-        if fenced {
-            continue;
-        }
-        // Code spans hold examples, not links.
-        let mut plain = String::new();
-        let mut in_code = false;
-        for c in line.chars() {
-            if c == '`' {
-                in_code = !in_code;
-            } else if !in_code {
-                plain.push(c);
-            }
-        }
-        let mut rest = plain.as_str();
-        while let Some(at) = rest.find("](") {
-            rest = &rest[at + 2..];
-            let end = rest
-                .find(|c: char| c == ')' || c.is_whitespace())
-                .unwrap_or(rest.len());
-            out.push(rest[..end].to_string());
-            rest = &rest[end..];
-        }
-    }
-    out
-}
-
-/// Whether a link leaves the book (or is not a path at all).
-fn outside(target: &str) -> bool {
-    target.is_empty()
-        || target.starts_with('#')
-        || target.contains('\\')
-        || target.contains('|')
-        || target
-            .split('/')
-            .next()
-            .is_some_and(|first| first.contains(':'))
-}
-
-fn normalise(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for part in path.components() {
-        match part {
-            std::path::Component::ParentDir => {
-                out.pop();
-            }
-            std::path::Component::CurDir => {}
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
-}
-
-fn link_problems(dir: &Path, page: &Page) -> Vec<String> {
-    let mut out = Vec::new();
-    let from = Path::new(&page.path)
-        .parent()
-        .unwrap_or_else(|| Path::new(""));
-    for target in links(&page.body) {
-        if outside(&target) {
-            continue;
-        }
-        let path = target.split(['#', '?']).next().unwrap_or_default();
-        if path.is_empty() {
-            continue;
-        }
-        let joined = path
-            .strip_prefix('/')
-            .map_or_else(|| from.join(path), PathBuf::from);
-        let full = dir.join(normalise(&joined));
-        let found = full.is_file() || (full.is_dir() && full.join("index.md").is_file());
-        if !found {
-            out.push(format!("{}: broken link `{target}`", page.path));
-        }
-    }
-    out
-}
-
-// ---------------------------------------------------------------- navigation
-
-/// A parent, its parent, and a `nav_order`: the pages that share all three are in no defined order.
-type Siblings<'a> = (Option<&'a str>, Option<&'a str>, i64);
-
-fn nav_problems(pages: &[Page]) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut by_title: BTreeMap<&str, Vec<&Page>> = BTreeMap::new();
-    for page in pages {
-        match &page.title {
-            Some(title) => by_title.entry(title.as_str()).or_default().push(page),
-            None => out.push(format!("{}: no `title` in the front matter", page.path)),
-        }
-    }
-    for page in pages {
-        let Some(parent) = page.parent.as_deref() else {
-            continue;
-        };
-        let candidates: Vec<&&Page> = by_title
-            .get(parent)
-            .map(|c| c.iter().filter(|p| p.has_children).collect())
-            .unwrap_or_default();
-        match candidates.len() {
-            0 => {
-                let any = by_title.contains_key(parent);
-                out.push(if any {
-                    format!(
-                        "{}: parent `{parent}` exists but has no `has_children: true`",
-                        page.path
-                    )
-                } else {
-                    format!(
-                        "{}: parent `{parent}` is not the title of any page",
-                        page.path
-                    )
-                });
-            }
-            1 => {}
-            _ => {
-                let narrowed = candidates
-                    .iter()
-                    .filter(|p| p.parent == page.grand_parent)
-                    .count();
-                if page.grand_parent.is_none() || narrowed != 1 {
-                    out.push(format!(
-                        "{}: parent `{parent}` is ambiguous ({} pages with that title have children): add `grand_parent`",
-                        page.path,
-                        candidates.len()
-                    ));
-                }
-            }
-        }
-    }
-    // Siblings with the same `nav_order` are shown in no defined order.
-    let mut groups: BTreeMap<Siblings<'_>, Vec<&str>> = BTreeMap::new();
-    for page in pages {
-        if let Some(order) = page.nav_order {
-            groups
-                .entry((page.parent.as_deref(), page.grand_parent.as_deref(), order))
-                .or_default()
-                .push(&page.path);
-        }
-    }
-    for ((parent, _, order), paths) in groups {
-        if paths.len() > 1 {
-            out.push(format!(
-                "nav_order {order} is used by {} pages under {}: {}",
-                paths.len(),
-                parent.unwrap_or("the top level"),
-                paths.join(", ")
-            ));
-        }
-    }
-    out
-}
+// The book model (pages and front matter, links, the navigation and their checks) is `docs-book`'s, shared
+// with loupe; anvil keeps what only building and releasing need.
+pub use docs_book::{Page, links, read_pages, split_front_matter};
+use docs_book::{is_outside as outside, link_problems, nav_problems};
 
 // ---------------------------------------------------------------- OpenAPI
 
@@ -728,6 +440,90 @@ fn site_files(site: &Path) -> Result<Vec<(String, Vec<u8>)>> {
     Ok(out)
 }
 
+/// Where the book's Markdown sources go in the release archive, for readers that want the pages rather than the
+/// site (loupe). Lectern, which serves the site from the same archive, leaves this prefix out.
+pub const SOURCES: &str = "_source/";
+
+/// The extensions of the files a page may show as an image.
+const IMAGE_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"];
+
+/// The book's sources, as `(path in the book, bytes)` sorted by path: every page (with its front matter),
+/// `_config.yml`, and the local images the pages reference.
+///
+/// # Errors
+/// The book or one of its files cannot be read.
+pub fn source_files(dir: &Path) -> Result<Vec<(String, Vec<u8>)>> {
+    let book = docs_book::Book::open(dir)?;
+    let base = book.baseurl().trim_matches('/').to_string();
+    let mut wanted = BTreeSet::new();
+    if dir.join("_config.yml").is_file() {
+        wanted.insert("_config.yml".to_string());
+    }
+    for page in book.pages() {
+        wanted.insert(page.path.clone());
+        let page_dir = Path::new(&page.path)
+            .parent()
+            .unwrap_or_else(|| Path::new(""));
+        // `{{ site.baseurl }}` has spaces, which end a link target: take it out first.
+        let body = page
+            .body
+            .replace("{{ site.baseurl }}", "")
+            .replace("{{site.baseurl}}", "");
+        for target in links(&body) {
+            if let Some(image) = local_image(&target, page_dir, &base)
+                && dir.join(&image).is_file()
+            {
+                wanted.insert(image);
+            }
+        }
+    }
+    wanted
+        .into_iter()
+        .map(|path| {
+            let file = dir.join(&path);
+            std::fs::read(&file)
+                .with_context(|| format!("reading {}", file.display()))
+                .map(|data| (path, data))
+        })
+        .collect()
+}
+
+/// The book path of an image that `target`, a link on a page in `page_dir`, points at; `None` for anything else
+/// (a URL, a page, a path that climbs out of the book).
+fn local_image(target: &str, page_dir: &Path, base: &str) -> Option<String> {
+    let target = target.trim();
+    if outside(target) {
+        return None;
+    }
+    let path = target.split(['#', '?']).next()?.replace("%20", " ");
+    let extension = Path::new(&path).extension()?.to_str()?.to_ascii_lowercase();
+    if !IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+        return None;
+    }
+    // A `/` path is from the site's root, which may start with the book's `baseurl`.
+    let joined = path.strip_prefix('/').map_or_else(
+        || page_dir.join(&path),
+        |rooted| {
+            let rooted = rooted
+                .strip_prefix(base)
+                .filter(|_| !base.is_empty())
+                .map_or(rooted, |r| r.trim_start_matches('/'));
+            PathBuf::from(rooted)
+        },
+    );
+    let mut parts: Vec<String> = Vec::new();
+    for part in joined.components() {
+        match part {
+            std::path::Component::Normal(name) => parts.push(name.to_string_lossy().into_owned()),
+            std::path::Component::ParentDir => {
+                parts.pop()?;
+            }
+            _ => {}
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join("/"))
+}
+
 fn jekyll_command(config: &Config) -> Vec<String> {
     config
         .docs
@@ -1025,9 +821,16 @@ pub fn build_book(
         bail!("jekyll built nothing into {}", site.display());
     }
     let bytes: usize = files.iter().map(|(_, d)| d.len()).sum();
+    // The Markdown sources come from the book itself, not the staged copy (whose links point at `.html`).
+    let sources = source_files(&dir)?;
     let mut tar = quench_archive::tar::Builder::new();
     for (path, data) in &files {
         tar.append_file(path, data)
+            .with_context(|| format!("adding {path} to the archive"))?;
+    }
+    for (path, data) in &sources {
+        let path = format!("{SOURCES}{path}");
+        tar.append_file(&path, data)
             .with_context(|| format!("adding {path} to the archive"))?;
     }
     let archive_bytes = quench_archive::gzip::compress(&tar.finish());
@@ -1052,6 +855,8 @@ pub fn build_book(
     );
     manifest.insert("files", Value::from(files.len() as u64));
     manifest.insert("site_bytes", Value::from(bytes as u64));
+    manifest.insert("sources", Value::from(SOURCES));
+    manifest.insert("source_files", Value::from(sources.len() as u64));
     if let Some(baseurl) = baseurl.filter(|b| !b.is_empty()) {
         manifest.insert("baseurl", Value::from(baseurl));
     }

@@ -30,3 +30,6 @@ harness = false
 [dev-dependencies]
 quench-serde = { workspace = true }
 quench-test = { workspace = true }
+
+[lints]
+workspace = true

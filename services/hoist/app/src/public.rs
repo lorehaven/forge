@@ -1,4 +1,4 @@
-//! The public catalogue (served by hoist-service: F-Droid, IzzyOnDroid and Aptoide merged), as a tab of its own.
+//! The public catalogue (served by hoist-service: F-Droid, `IzzyOnDroid` and Aptoide merged), as a tab of its own.
 //!
 //! The home page suggests the best rated apps that are not installed, a few for each of the biggest categories;
 //! a category's name opens the whole category; the search field above looks through everything. An app has a page
@@ -60,6 +60,12 @@ pub struct PublicState {
     open: Rc<dyn Fn(String)>,
     /// Whether a package is on the device (read when the page is made, so it follows the device's list).
     installed: Rc<dyn Fn(&str) -> bool>,
+}
+
+impl std::fmt::Debug for PublicState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PublicState").finish_non_exhaustive()
+    }
 }
 
 impl PublicState {
@@ -134,10 +140,10 @@ impl PublicState {
             return;
         }
         // A search from the results of another replaces them; it does not pile up pages to go back through.
-        if !matches!(self.view.get_untracked(), PublicView::Search(_)) {
-            self.go(PublicView::Search(text.clone()));
-        } else {
+        if matches!(self.view.get_untracked(), PublicView::Search(_)) {
             self.view.set(PublicView::Search(text.clone()));
+        } else {
+            self.go(PublicView::Search(text.clone()));
         }
         self.fetch(PublicQuery {
             query: Some(text),
@@ -281,7 +287,7 @@ fn meta(app: &PublicApp) -> String {
     parts.join(" \u{b7} ")
 }
 
-fn row(app: PublicApp, state: &PublicState) -> View {
+fn row(app: &PublicApp, state: &PublicState) -> View {
     let (open_state, app_for_open, install, open) = (
         state.clone(),
         app.clone(),
@@ -313,7 +319,7 @@ fn row(app: PublicApp, state: &PublicState) -> View {
                                     .unwrap_or_else(|| app.package_name.clone()),
                             ),
                         )
-                        .child(span().class("hoist-row-meta").text(meta(&app))),
+                        .child(span().class("hoist-row-meta").text(meta(app))),
                 )
                 .on_click(move || open_state.open_app(app_for_open.clone())),
         )
@@ -334,14 +340,14 @@ fn row(app: PublicApp, state: &PublicState) -> View {
         .into_view()
 }
 
-fn rows(apps: Vec<PublicApp>, state: &PublicState) -> View {
+fn rows(apps: &[PublicApp], state: &PublicState) -> View {
     let state = state.clone();
     ul().class("hoist-list")
-        .children(apps.into_iter().map(|a| row(a, &state)))
+        .children(apps.iter().map(|a| row(a, &state)))
         .into_view()
 }
 
-fn section(name: &str, apps: Vec<PublicApp>, state: &PublicState) -> View {
+fn section(name: &str, apps: &[PublicApp], state: &PublicState) -> View {
     let (go, label) = (state.clone(), name.to_string());
     let id = format!("see-all-{}", name.to_lowercase().replace(' ', "-"));
     div()
@@ -526,7 +532,7 @@ fn page(state: &PublicState) -> View {
                 .into_iter()
                 .filter_map(|(name, apps)| {
                     let left = suggestions(&apps, &|p| (state.installed)(p), HOME_APPS);
-                    (!left.is_empty()).then(|| section(&name, left, state))
+                    (!left.is_empty()).then(|| section(&name, &left, state))
                 })
                 .collect();
             if shown.is_empty() {
@@ -553,7 +559,7 @@ fn page(state: &PublicState) -> View {
                         .class("hoist-note")
                         .text(unrated_note(&apps))
                 }))
-                .child(rows(apps, state))
+                .child(rows(&apps, state))
                 .child(more.then(|| {
                     button()
                         .attr("type", "button")

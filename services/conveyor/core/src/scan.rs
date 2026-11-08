@@ -42,14 +42,14 @@ pub fn chip(kind: &str, check: Option<&CheckChip>) -> Chip {
         .iter()
         .find(|c| c.0 == kind)
         .map_or(("?", "ui_chip_not_run"), |c| (c.2, c.1));
-    match check {
-        None => Chip {
+    check.map_or_else(
+        || Chip {
             letter,
             class: "chip-none",
             label: "-".to_string(),
             title_key: "ui_chip_not_run",
         },
-        Some(check) => {
+        |check| {
             let count = check
                 .metric
                 .clone()
@@ -67,8 +67,8 @@ pub fn chip(kind: &str, check: Option<&CheckChip>) -> Chip {
                 label: count,
                 title_key: title,
             }
-        }
-    }
+        },
+    )
 }
 
 /// Most severe first.

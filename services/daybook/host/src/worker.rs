@@ -1,6 +1,7 @@
-//! One thread does the talking to the services, one call after another (so two quick changes reach the service in the
-//! order they were made), and the answer comes back as a message for the program's own thread to give to the waiting
-//! callback.
+//! One thread does the talking to the services, one call after another.
+//!
+//! So two quick changes reach the service in the order they were made. The answer comes back as a message for the
+//! program's own thread to give to the waiting callback.
 
 use std::any::Any;
 use std::cell::{Cell, RefCell};
@@ -23,6 +24,14 @@ pub struct Worker {
     jobs: Sender<Job>,
     waiting: RefCell<HashMap<u64, Callback>>,
     next: Cell<u64>,
+}
+
+impl std::fmt::Debug for Worker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Worker")
+            .field("next", &self.next)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Worker {

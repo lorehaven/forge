@@ -23,3 +23,6 @@ quench-http = { workspace = true }
 quench-crypto = { workspace = true }
 quench-serde = { workspace = true }
 quench-test-bdd = { workspace = true }
+
+[lints]
+workspace = true

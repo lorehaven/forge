@@ -7,7 +7,7 @@ nav_order: 3
 
 `warehouse files ...`: plain file storage on the Warehouse. Unverified (not run: they talk to a Warehouse); documented from `application.rs` and `api/files_api.rs`.
 
-Registry selection: `--registry <NAME>`, else the active **files** registry (`resolve_files_registry_name`). The `--help` texts of these options say "defaults to active docker registry"; the code uses the files one (see the [report](../../_reports/cli.md)). The service URL is `[files] url`, else `[docker] url`, else `[crates] url`, followed by the registry's `base_path`. **No Authorization header is sent** by any `files` command.
+Registry selection: `--registry <NAME>`, else the active **files** registry (`resolve_files_registry_name`). The `--help` texts of these options say "defaults to active docker registry"; the code uses the files one (see `docs/_reports/cli.md` in the repository). The service URL is `[files] url`, else `[docker] url`, else `[crates] url`, followed by the registry's `base_path`. **No Authorization header is sent** by any `files` command.
 
 Endpoints are under `/api/v1/files/<storage>/...`; paths are percent-encoded.
 

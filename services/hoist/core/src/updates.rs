@@ -119,9 +119,11 @@ pub fn pending_updates(entries: &[Entry]) -> Vec<Update> {
     updates
 }
 
-/// Which updates there are, as one line: the same set gives the same line, a new version of any of them a different
-/// one. What was announced is remembered by it, so a notification is sent when something new is there and not again
-/// for what the user has already been told. Empty when there is nothing to update.
+/// Which updates there are, as one line.
+///
+/// The same set gives the same line, a new version of any of them a different one. What was announced is remembered by
+/// it, so a notification is sent when something new is there and not again for what the user has already been told.
+/// Empty when there is nothing to update.
 #[must_use]
 pub fn announcement_key(updates: &[Update]) -> String {
     let mut parts: Vec<String> = updates

@@ -31,6 +31,10 @@ fn task(id: &str, content: &str) -> Task {
     }
 }
 
+#[allow(
+    clippy::many_single_char_names,
+    reason = "the sample tasks are named `a`, `b`, `c`... like their ids"
+)]
 fn sample(zone: &Zone, now: Time) -> Data {
     let today = zone.civil_at(now).date();
     let day = |n: i64| today.add_days(n).unwrap();
@@ -138,6 +142,10 @@ fn descendants(
 }
 
 /// Where on the screen the element is, found by asking what is at each point.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "screen coordinates are below 2400, which an `f32` holds exactly"
+)]
 fn locate(
     r: &NativeRenderer,
     node: quench_ui_native::NodeId,
@@ -162,6 +170,13 @@ fn ms(d: std::time::Duration) -> f64 {
     d.as_secs_f64() * 1000.0
 }
 
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::cast_precision_loss,
+    reason = "one benchmark run, step after step; its timings are short names; screen sizes and counts are far below \
+              what an `f32`/`f64` holds exactly"
+)]
 fn run(label: &str, css: &str, tasks: usize) {
     let (width, height) = (1080, 2400);
     let r = renderer(css);
@@ -348,7 +363,7 @@ fn run(label: &str, css: &str, tasks: usize) {
     let typing_avg = typing.iter().sum::<f64>() / typing.len() as f64;
     println!(
         "   (typing: {typing_avg:.1} ms per letter, worst {:.1})",
-        typing.iter().cloned().fold(0.0, f64::max)
+        typing.iter().copied().fold(0.0, f64::max)
     );
     println!(
         "{label:>14} {tasks:>4} tasks: first data {:6.1} ms | frame {frame:6.1} ms | change: update {:6.1} ms + frame {:6.1} ms | dialog frame {dialog:6.1} ms",
@@ -365,7 +380,7 @@ fn main() {
     for tasks in std::env::var("BENCH_TASKS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .map_or(vec![7, 30, 60], |n| vec![n])
+        .map_or_else(|| vec![7, 30, 60], |n| vec![n])
     {
         run("style.css", daybook_app::STYLE, tasks);
         if let Some(css) = &custom {

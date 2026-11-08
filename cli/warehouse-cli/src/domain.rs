@@ -30,6 +30,7 @@ pub struct RootFilesConfig {
     pub current_registry: Option<String>,
 }
 
+#[must_use]
 pub fn merge_root_config(global: RootConfig, local: RootConfig) -> RootConfig {
     RootConfig {
         docker: RootDockerConfig {
@@ -112,10 +113,12 @@ pub struct RegistryFilesConfig {
 // Docker helpers
 // ---------------------------------------------------------------------------
 
+#[must_use]
 pub fn default_docker_path() -> String {
     "/v2".to_string()
 }
 
+#[must_use]
 pub fn normalize_base_path(path: &str) -> String {
     let trimmed = path.trim();
     if trimmed.is_empty() || trimmed == "/" {
@@ -132,6 +135,7 @@ pub fn normalize_base_path(path: &str) -> String {
     }
 }
 
+#[must_use]
 pub fn normalize_path(path: &str) -> String {
     let trimmed = path.trim();
     if trimmed.is_empty() {
@@ -146,6 +150,7 @@ pub fn normalize_path(path: &str) -> String {
     }
 }
 
+#[must_use]
 pub fn derive_service_from_url(url: &str) -> Option<String> {
     let trimmed = url.trim();
     if trimmed.is_empty() {
@@ -222,6 +227,7 @@ pub fn crates_index_url(
 
 /// Computes the sparse index directory prefix for a crate name,
 /// matching the crates.io convention used by the server.
+#[must_use]
 pub fn index_prefix(name: &str) -> String {
     let lower = name.to_ascii_lowercase();
     match lower.len() {

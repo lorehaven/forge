@@ -40,7 +40,7 @@ fn the_armed_reminders_are_read_from_the_plugins_list() {
     )
     .unwrap();
     assert_eq!(pending_ids(&list), [1, -7]);
-    assert!(pending_ids(&Value::Null).is_empty());
+    assert_eq!(pending_ids(&Value::Null), [] as [i32; 0]);
 }
 
 #[quench_test::test]

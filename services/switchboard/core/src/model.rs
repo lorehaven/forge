@@ -15,12 +15,16 @@ pub struct Gpu {
 impl Gpu {
     /// There is a card to talk about.
     #[must_use]
-    pub fn present(&self) -> bool {
+    pub const fn present(&self) -> bool {
         !self.name.is_empty()
     }
 }
 
 /// What the person may do and what is switched on, from `GET /api/v1/vllm/capabilities`.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "the JSON of `GET /api/v1/vllm/capabilities`: one flag per permission or feature, as the API sends them"
+)]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Capabilities {
     pub models_dashboard: bool,

@@ -1,5 +1,6 @@
-//! The app against a host: it asks for the numbers (`Request`) and is told what came (`Msg`). The host does the talking to
-//! the service; the app owns the routes (`{base}/ui/home`, `{base}/ui/hosts/{name}`), the polling and the language.
+//! The app against a host: it asks for the numbers (`Request`) and is told what came (`Msg`).
+//!
+//! The host does the talking to the service; the app owns the routes (`{base}/ui/home`, `{base}/ui/hosts/{name}`), the polling and the language.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -63,6 +64,17 @@ pub struct Setup {
     pub stamp: Rc<dyn Fn(f64) -> String>,
     /// How often the open screen asks again.
     pub refresh_ms: u32,
+}
+
+impl std::fmt::Debug for Setup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Setup")
+            .field("base", &self.base)
+            .field("language", &self.language)
+            .field("login_url", &self.login_url)
+            .field("refresh_ms", &self.refresh_ms)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The app and the function that feeds it.
@@ -218,13 +230,13 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     let host = {
         let (i18n, detail, problem, requests, base, now) = (
             Rc::clone(&i18n),
-            detail.clone(),
+            detail,
             problem.clone(),
             Rc::clone(requests),
             base.clone(),
             Rc::clone(&clock),
         );
-        let (range, stored, no_history) = (range.clone(), stored.clone(), no_history.clone());
+        let (range, stored, no_history) = (range, stored, no_history);
         move |ctx: &RouteContext| -> View {
             let name = ctx.param("name").unwrap_or_default();
             range.set(Range::Live);
@@ -315,7 +327,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         let (i18n, hosts, forecast, requests, base, now) = (
             Rc::clone(&i18n),
             hosts.clone(),
-            forecast.clone(),
+            forecast,
             Rc::clone(requests),
             base.clone(),
             Rc::clone(&clock),
@@ -350,7 +362,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         let (i18n, hosts, alert_log, requests, base, now) = (
             Rc::clone(&i18n),
             hosts.clone(),
-            alert_log.clone(),
+            alert_log,
             Rc::clone(requests),
             base.clone(),
             Rc::clone(&clock),
@@ -380,7 +392,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             })
         }
     };
-    let routes = Routes::new()
+    let pages = Routes::new()
         .route(&format!("{base}/ui/fleet"), across(fleet::fleet))
         .route(&format!("{base}/ui/storage"), storage)
         .route(&format!("{base}/ui/gpus"), across(fleet::gpus))
@@ -422,7 +434,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     };
 
     let banner = {
-        let (problem, login) = (problem.clone(), setup.login_url.clone());
+        let (problem, login) = (problem, setup.login_url.clone());
         View::dynamic(move || match problem.get() {
             Some(Problem::Failed(why)) => p()
                 .attr("id", "problem")
@@ -458,7 +470,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     main()
                         .class("gg-main")
                         .child(banner)
-                        .child(routes.view(&router)),
+                        .child(pages.view(&router)),
                 ),
         )
         .into_view()

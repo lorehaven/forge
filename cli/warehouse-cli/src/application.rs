@@ -46,8 +46,8 @@ async fn run_docker(store: &ConfigStore, command: DockerCommands) -> Result<()> 
         DockerCommands::Registry { command } => match command {
             RegistryCommands::Add(args) => cmd_registry_add(store, args)?,
             RegistryCommands::List => cmd_registry_list(store)?,
-            RegistryCommands::Use(args) => cmd_registry_use(store, args)?,
-            RegistryCommands::Remove(args) => cmd_registry_remove(store, args)?,
+            RegistryCommands::Use(args) => cmd_registry_use(store, &args)?,
+            RegistryCommands::Remove(args) => cmd_registry_remove(store, &args)?,
         },
         DockerCommands::Login(args) => cmd_docker_login(store, args)?,
         DockerCommands::Catalog(args) => cmd_docker_catalog(store, args).await?,
@@ -63,10 +63,10 @@ async fn run_docker(store: &ConfigStore, command: DockerCommands) -> Result<()> 
 async fn run_crates(store: &ConfigStore, command: CratesCommands) -> Result<()> {
     match command {
         CratesCommands::Registry { command } => match command {
-            CratesRegistryCommands::Add(args) => cmd_crates_registry_add(store, args)?,
+            CratesRegistryCommands::Add(args) => cmd_crates_registry_add(store, &args)?,
             CratesRegistryCommands::List => cmd_crates_registry_list(store)?,
-            CratesRegistryCommands::Use(args) => cmd_crates_registry_use(store, args)?,
-            CratesRegistryCommands::Remove(args) => cmd_crates_registry_remove(store, args)?,
+            CratesRegistryCommands::Use(args) => cmd_crates_registry_use(store, &args)?,
+            CratesRegistryCommands::Remove(args) => cmd_crates_registry_remove(store, &args)?,
         },
         CratesCommands::Login(args) => cmd_crates_login(store, args)?,
         CratesCommands::Search(args) => cmd_crates_search(store, args).await?,
@@ -80,10 +80,10 @@ async fn run_crates(store: &ConfigStore, command: CratesCommands) -> Result<()> 
 async fn run_files(store: &ConfigStore, command: FilesCommands) -> Result<()> {
     match command {
         FilesCommands::Registry { command } => match command {
-            FilesRegistryCommands::Add(args) => cmd_files_registry_add(store, args)?,
+            FilesRegistryCommands::Add(args) => cmd_files_registry_add(store, &args)?,
             FilesRegistryCommands::List => cmd_files_registry_list(store)?,
-            FilesRegistryCommands::Use(args) => cmd_files_registry_use(store, args)?,
-            FilesRegistryCommands::Remove(args) => cmd_files_registry_remove(store, args)?,
+            FilesRegistryCommands::Use(args) => cmd_files_registry_use(store, &args)?,
+            FilesRegistryCommands::Remove(args) => cmd_files_registry_remove(store, &args)?,
         },
         FilesCommands::Storages(args) => cmd_files_storages(store, args).await?,
         FilesCommands::Ls(args) => cmd_files_ls(store, args).await?,
@@ -176,7 +176,7 @@ fn cmd_registry_list(store: &ConfigStore) -> Result<()> {
     Ok(())
 }
 
-fn cmd_registry_use(store: &ConfigStore, args: RegistryUseArgs) -> Result<()> {
+fn cmd_registry_use(store: &ConfigStore, args: &RegistryUseArgs) -> Result<()> {
     validate_registry_name(&args.name)?;
     let scope = if args.global {
         ConfigScope::Global
@@ -195,7 +195,7 @@ fn cmd_registry_use(store: &ConfigStore, args: RegistryUseArgs) -> Result<()> {
     Ok(())
 }
 
-fn cmd_registry_remove(store: &ConfigStore, args: RegistryRemoveArgs) -> Result<()> {
+fn cmd_registry_remove(store: &ConfigStore, args: &RegistryRemoveArgs) -> Result<()> {
     validate_registry_name(&args.name)?;
     let scope = if args.global {
         ConfigScope::Global
@@ -227,7 +227,7 @@ fn cmd_docker_login(store: &ConfigStore, args: LoginArgs) -> Result<()> {
         ConfigScope::Local
     };
     store.save_registry(scope, &registry_name, &reg)?;
-    ui::ok(format!("credentials saved for '{}'", registry_name));
+    ui::ok(format!("credentials saved for '{registry_name}'"));
     Ok(())
 }
 
@@ -266,7 +266,7 @@ async fn cmd_docker_tags(store: &ConfigStore, args: TagsArgs) -> Result<()> {
 // Crates commands
 // ---------------------------------------------------------------------------
 
-fn cmd_crates_registry_add(store: &ConfigStore, args: CratesRegistryAddArgs) -> Result<()> {
+fn cmd_crates_registry_add(store: &ConfigStore, args: &CratesRegistryAddArgs) -> Result<()> {
     validate_registry_name(&args.name)?;
     let scope = if args.global {
         ConfigScope::Global
@@ -348,7 +348,7 @@ fn cmd_crates_registry_list(store: &ConfigStore) -> Result<()> {
     Ok(())
 }
 
-fn cmd_crates_registry_use(store: &ConfigStore, args: CratesRegistryUseArgs) -> Result<()> {
+fn cmd_crates_registry_use(store: &ConfigStore, args: &CratesRegistryUseArgs) -> Result<()> {
     validate_registry_name(&args.name)?;
     let scope = if args.global {
         ConfigScope::Global
@@ -367,7 +367,7 @@ fn cmd_crates_registry_use(store: &ConfigStore, args: CratesRegistryUseArgs) -> 
     Ok(())
 }
 
-fn cmd_crates_registry_remove(store: &ConfigStore, args: CratesRegistryRemoveArgs) -> Result<()> {
+fn cmd_crates_registry_remove(store: &ConfigStore, args: &CratesRegistryRemoveArgs) -> Result<()> {
     validate_registry_name(&args.name)?;
     let scope = if args.global {
         ConfigScope::Global
@@ -390,7 +390,7 @@ fn cmd_crates_registry_remove(store: &ConfigStore, args: CratesRegistryRemoveArg
 // Files registry commands
 // ---------------------------------------------------------------------------
 
-fn cmd_files_registry_add(store: &ConfigStore, args: FilesRegistryAddArgs) -> Result<()> {
+fn cmd_files_registry_add(store: &ConfigStore, args: &FilesRegistryAddArgs) -> Result<()> {
     validate_registry_name(&args.name)?;
     let scope = if args.global {
         ConfigScope::Global
@@ -460,7 +460,7 @@ fn cmd_files_registry_list(store: &ConfigStore) -> Result<()> {
     Ok(())
 }
 
-fn cmd_files_registry_use(store: &ConfigStore, args: FilesRegistryUseArgs) -> Result<()> {
+fn cmd_files_registry_use(store: &ConfigStore, args: &FilesRegistryUseArgs) -> Result<()> {
     validate_registry_name(&args.name)?;
     let scope = if args.global {
         ConfigScope::Global
@@ -479,7 +479,7 @@ fn cmd_files_registry_use(store: &ConfigStore, args: FilesRegistryUseArgs) -> Re
     Ok(())
 }
 
-fn cmd_files_registry_remove(store: &ConfigStore, args: FilesRegistryRemoveArgs) -> Result<()> {
+fn cmd_files_registry_remove(store: &ConfigStore, args: &FilesRegistryRemoveArgs) -> Result<()> {
     validate_registry_name(&args.name)?;
     let scope = if args.global {
         ConfigScope::Global
@@ -510,10 +510,7 @@ fn cmd_crates_login(store: &ConfigStore, args: CratesLoginArgs) -> Result<()> {
         ConfigScope::Local
     };
     store.save_registry(scope, &registry_name, &reg)?;
-    ui::ok(format!(
-        "token saved for crates registry '{}'",
-        registry_name
-    ));
+    ui::ok(format!("token saved for crates registry '{registry_name}'"));
     Ok(())
 }
 
@@ -706,7 +703,7 @@ async fn cmd_files_upload(store: &ConfigStore, args: FilesUploadArgs) -> Result<
         let remote_path = remote_path_for_upload(local_file, args.remote_dir.as_deref())?;
         api.upload(&registry, &args.storage, &remote_path, bytes)
             .await?;
-        ui::ok(format!("uploaded {} -> {}", local_file, remote_path));
+        ui::ok(format!("uploaded {local_file} -> {remote_path}"));
     }
 
     Ok(())
@@ -738,7 +735,7 @@ async fn cmd_files_download(store: &ConfigStore, args: FilesDownloadArgs) -> Res
         .or(server_name)
         .unwrap_or_else(|| "download.bin".to_string());
     std::fs::write(&output, bytes)?;
-    ui::ok(format!("saved {}", output));
+    ui::ok(format!("saved {output}"));
     Ok(())
 }
 
@@ -816,8 +813,7 @@ async fn cmd_admin_gc(store: &ConfigStore, args: AdminGcArgs) -> Result<()> {
     let admin_api = AdminApi::new(&registry)?;
 
     ui::info(format!(
-        "running garbage collection for registry '{}'",
-        registry_name
+        "running garbage collection for registry '{registry_name}'"
     ));
 
     // Run Docker GC if requested or if no specific type was specified
@@ -830,7 +826,7 @@ async fn cmd_admin_gc(store: &ConfigStore, args: AdminGcArgs) -> Result<()> {
                 qprintln!("  Kept: {}", report.kept);
             }
             Err(e) => {
-                ui::error(format!("Docker GC failed: {}", e));
+                ui::error(format!("Docker GC failed: {e}"));
                 return Err(e);
             }
         }
@@ -849,7 +845,7 @@ async fn cmd_admin_gc(store: &ConfigStore, args: AdminGcArgs) -> Result<()> {
                 qprintln!("  Removed empty dirs: {}", report.removed_empty_dirs);
             }
             Err(e) => {
-                ui::error(format!("Crates GC failed: {}", e));
+                ui::error(format!("Crates GC failed: {e}"));
                 return Err(e);
             }
         }

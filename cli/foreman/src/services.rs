@@ -12,10 +12,13 @@ pub fn is_running(estate: &Estate, name: &str) -> bool {
     process::read_pid(&estate.pid_file(name)).is_some_and(process::alive)
 }
 
+#[must_use]
 pub fn pid(estate: &Estate, name: &str) -> Option<i32> {
     process::read_pid(&estate.pid_file(name)).filter(|pid| process::alive(*pid))
 }
 
+/// Borrows a dev certificate for a service that ships none of its own.
+///
 /// Some services ship no dev certificate of their own. Borrowing one keeps the
 /// whole estate on the same scheme, which matters more than it sounds: a Secure
 /// cookie set by one service has to be readable by the next.
@@ -58,6 +61,7 @@ pub fn ensure_cert(estate: &Estate, name: &str) -> Result<()> {
 
 /// `target` as a path from the directory `from`, both absolute: `../../warehouse/service/cert.pem`.
 /// Falls back to `target` itself when they share no root.
+#[must_use]
 pub fn relative_to(from: &Path, target: &Path) -> PathBuf {
     let from: Vec<_> = from.components().collect();
     let to: Vec<_> = target.components().collect();
@@ -160,6 +164,7 @@ pub fn start(estate: &Estate, name: &str) -> Result<bool> {
 /// curl rather than a built-in HTTP client, because a development estate serves
 /// self-signed certificates and `-k` is one flag against a pile of TLS
 /// configuration that would only ever be used to ignore it.
+#[must_use]
 pub fn healthy(url: &str) -> bool {
     matches!(
         process::capture("curl", &["-sk", "-o", "/dev/null", "--max-time", "2", url],),
@@ -245,6 +250,7 @@ pub fn report_strays(estate: &Estate) -> Result<()> {
     Ok(())
 }
 
+#[must_use]
 pub fn running_services(estate: &Estate) -> Vec<String> {
     estate
         .service_names()

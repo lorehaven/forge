@@ -18,7 +18,7 @@ fn a_gap_breaks_the_line() {
 
 #[quench_test::test]
 fn a_lone_sample_draws_nothing_and_the_newest_is_at_the_right_edge() {
-    assert!(points(&[Some(1.0)], 1.0, 10).is_empty());
+    assert_eq!(points(&[Some(1.0)], 1.0, 10), [] as [String; 0]);
     let runs = points(&[Some(0.0), Some(100.0)], 100.0, 10);
     assert!(runs[0].ends_with(",1.0"), "100 % is at the top: {runs:?}");
     assert!(

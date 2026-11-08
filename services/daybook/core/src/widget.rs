@@ -1,6 +1,8 @@
-//! What the home-screen widget draws, as one JSON text the widget only filters: the lists it can show and every open
-//! task once, in display order. A due time travels as milliseconds plus the all-day flag, and the widget works out "Today
-//! 14:30" and its colour when it draws, so a snapshot that is hours old still says "Tomorrow" correctly after midnight.
+//! What the home-screen widget draws, as one JSON text the widget only filters.
+//!
+//! It holds the lists it can show and every open task once, in display order. A due time travels as milliseconds plus
+//! the all-day flag, and the widget works out "Today 14:30" and its colour when it draws, so a snapshot that is hours
+//! old still says "Tomorrow" correctly after midnight.
 
 use quench_core::time::Time;
 use quench_serde::{Map, Value, json};

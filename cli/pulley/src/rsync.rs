@@ -19,7 +19,7 @@ pub fn dry_run(job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
         .arg("--delete");
 
     for skip in &job.skip {
-        cmd.arg(format!("--exclude={}", skip));
+        cmd.arg(format!("--exclude={skip}"));
     }
 
     cmd.arg(format!("{}/", job.src));
@@ -68,6 +68,7 @@ pub enum Change {
     Modify(Option<String>),
 }
 
+#[must_use]
 pub fn classify_line(line: &str) -> Option<Change> {
     if line.starts_with("*deleting") {
         return Some(Change::Delete(line.replace("*deleting ", "")));
@@ -99,7 +100,7 @@ pub fn update(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     for skip in &job.skip {
-        cmd.arg(format!("--exclude={}", skip));
+        cmd.arg(format!("--exclude={skip}"));
     }
 
     cmd.arg(format!("{}/", job.src));

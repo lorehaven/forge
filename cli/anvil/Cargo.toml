@@ -24,6 +24,7 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
+docs-book = { workspace = true }
 quench-serde = { workspace = true, features = ["yaml"] }
 quench-core = { workspace = true }
 quench-args = { workspace = true }

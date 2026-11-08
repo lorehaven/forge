@@ -1,5 +1,6 @@
 //! The dashboard and the settings, as views over plain data.
 
+use std::fmt::Write as _;
 use std::rc::Rc;
 
 use forklift_core::{Folder, RestoreView, Snapshot, bytes, clock};
@@ -9,6 +10,10 @@ use quench_ui::prelude::*;
 /// Where a backup is, in words and a bar: the headline, how far along, what is being sent, per-category counts and
 /// the button.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one view tree: the headline, the bar, the counts and the button, each following the same snapshot"
+)]
 pub fn dashboard(shot: &Signal<Snapshot>, offset_minutes: i32, back_up: Rc<dyn Fn()>) -> View {
     let (head, bar, sub, rows, button_state) = (
         shot.clone(),
@@ -168,6 +173,12 @@ pub struct Controls {
     pub folders: Signal<Vec<Folder>>,
 }
 
+impl std::fmt::Debug for Controls {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Controls").finish_non_exhaustive()
+    }
+}
+
 fn setting(id: &str, title: &str, note: &str, control: Option<Element>) -> Element {
     div()
         .attr("id", id)
@@ -189,6 +200,7 @@ fn setting(id: &str, title: &str, note: &str, control: Option<Element>) -> Eleme
 }
 
 /// What the settings screen shows besides the switches.
+#[derive(Debug)]
 pub struct About<'a> {
     /// Whether this device has a media library and a battery to wait for (a phone does, a computer does not).
     pub phone: bool,
@@ -206,8 +218,18 @@ pub struct Actions {
     pub sign_out: Rc<dyn Fn()>,
 }
 
+impl std::fmt::Debug for Actions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Actions").finish_non_exhaustive()
+    }
+}
+
 /// The settings: what to back up, the conditions, the folders, the storage, signing out.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one view tree: every switch, the folders, the storage and signing out, in the order the screen shows them"
+)]
 pub fn settings(about: &About, c: &Controls, actions: Actions) -> View {
     let (phone, server, storage, version) =
         (about.phone, about.server, about.storage, about.version);
@@ -452,17 +474,18 @@ pub fn restore_words(view: &RestoreView) -> String {
                 s.present
             );
             if s.no_target > 0 {
-                text.push_str(&format!(
+                let _ = write!(
+                    text,
                     " {} are left out: their folder is not part of the backup any more.",
                     s.no_target
-                ));
+                );
             }
             text
         }
         RestoreView::Running(p) => {
             let mut text = format!("Restoring: {} of {} files", p.done + p.failed, p.total);
             if p.failed > 0 {
-                text.push_str(&format!(", {} could not be restored", p.failed));
+                let _ = write!(text, ", {} could not be restored", p.failed);
             }
             text
         }
@@ -470,7 +493,7 @@ pub fn restore_words(view: &RestoreView) -> String {
         RestoreView::Done(p) => {
             let mut text = format!("Restored {} of {} files.", p.done, p.total);
             if p.failed > 0 {
-                text.push_str(&format!(" {} could not be restored.", p.failed));
+                let _ = write!(text, " {} could not be restored.", p.failed);
             }
             if p.done + p.failed < p.total {
                 text.push_str(" The rest was left.");
@@ -496,6 +519,10 @@ pub enum Chooser {
 /// The chooser of the storage the backup goes to: the ones this account may use, as rows to press. Shown before
 /// anything is sent, and again when the person wants to change it.
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one view tree: the chooser's loading, failed, empty and listed states over the same signal"
+)]
 pub fn storage_screen(
     state: &Signal<Chooser>,
     current: &str,

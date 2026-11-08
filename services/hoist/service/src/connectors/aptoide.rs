@@ -24,10 +24,12 @@ use crate::models::RawListing;
 const PAGE_SIZE: i64 = 30;
 const RESOLVE_CONCURRENCY: usize = 20;
 
-/// The category an app's keywords name. Aptoide has no category field, but among an app's keywords (brand and
-/// package words, mostly) there is often a Google Play style one: `communication`, `tools`, `productivity`... Mapped
-/// onto the names F-Droid's categories use, so both stores' apps sit in the same ones. The first keyword that is
-/// one of these wins; an app with none stays uncategorised.
+/// The category an app's keywords name.
+///
+/// Aptoide has no category field, but among an app's keywords (brand and package words, mostly) there is often a
+/// Google Play style one: `communication`, `tools`, `productivity`... Mapped onto the names F-Droid's categories use,
+/// so both stores' apps sit in the same ones. The first keyword that is one of these wins; an app with none stays
+/// uncategorised.
 #[must_use]
 pub fn category_of(keywords: &Value) -> Option<String> {
     keywords

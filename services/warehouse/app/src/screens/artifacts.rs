@@ -13,7 +13,7 @@ use super::{
 use crate::live::{Request, State};
 
 #[must_use]
-pub(crate) fn artifacts(env: &Env, state: &State) -> View {
+pub fn artifacts(env: &Env, state: &State) -> View {
     env.ask(Request::Artifacts);
 
     // The tree of the builds, drawn again when they change; what is open follows the address.

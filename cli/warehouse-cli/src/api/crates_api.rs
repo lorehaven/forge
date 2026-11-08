@@ -3,6 +3,7 @@ use quench_client::transport::header::AUTHORIZATION;
 use quench_client::transport::{HeaderMap, HeaderValue};
 use quench_core::{Context, Result, bail};
 use quench_serde::Deserialize;
+use std::fmt::Write as _;
 
 // ---------------------------------------------------------------------------
 // Wire types
@@ -60,6 +61,7 @@ struct OkResponse {
 // Client
 // ---------------------------------------------------------------------------
 
+#[derive(Debug)]
 pub struct CratesApi {
     client: quench_client::transport::Client,
 }
@@ -230,6 +232,7 @@ fn ensure_success(resp: &quench_client::transport::Response, url: &str) -> Resul
 
 /// Minimal percent-encoding for query string values (encodes everything except
 /// unreserved characters). We avoid pulling in an extra dependency for this.
+#[must_use]
 pub fn urlencoding_simple(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
@@ -239,8 +242,7 @@ pub fn urlencoding_simple(s: &str) -> String {
             }
             b' ' => out.push('+'),
             _ => {
-                out.push('%');
-                out.push_str(&format!("{b:02X}"));
+                let _ = write!(out, "%{b:02X}");
             }
         }
     }

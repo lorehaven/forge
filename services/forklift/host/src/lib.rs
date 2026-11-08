@@ -86,6 +86,10 @@ pub enum UploadEvent {
     Failed { id: String, message: String },
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent phases of the controller's work (scanning, waiting, pumping, offline...), each set on its own"
+)]
 struct State {
     engine: Engine,
     settings: Settings,
@@ -128,6 +132,12 @@ pub struct Controller {
     state: RefCell<State>,
 }
 
+impl std::fmt::Debug for Controller {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Controller").finish_non_exhaustive()
+    }
+}
+
 /// How many files of the media library are asked for at a time.
 pub const MEDIA_PAGE: u32 = 2000;
 /// The most often the app is told the numbers while files come in or go out (a burst of events is one picture).
@@ -137,13 +147,13 @@ const SAVE_EVERY_MS: i64 = 3000;
 
 /// Whether this answer ends the session: the refresh was refused for good, or the account was turned off. Nothing
 /// else does (a server that is down, a refusal of one request).
-fn is_session_over(error: &NetError) -> bool {
+const fn is_session_over(error: &NetError) -> bool {
     matches!(error, NetError::Unauthorized | NetError::AccountDisabled)
 }
 
 /// Whether the server could not be reached (no connection, or a proxy answering for a service that is down or
 /// restarting: 502-504).
-fn is_unreachable(error: &NetError) -> bool {
+const fn is_unreachable(error: &NetError) -> bool {
     matches!(error, NetError::Network(_) | NetError::Status(502..=504))
 }
 /// How often a running app looks for new files by itself.
@@ -498,18 +508,18 @@ impl Controller {
         self.platform.changes(
             &storage,
             since,
-            Box::new(move |result| this.reconciled(&kept, result)),
+            Box::new(move |result| this.reconciled(&kept, &result)),
         );
     }
 
-    fn reconciled(self: &Rc<Self>, storage: &str, result: Result<Vec<Change>, NetError>) {
-        if let Err(NetError::Unauthorized) = result {
+    fn reconciled(self: &Rc<Self>, storage: &str, result: &Result<Vec<Change>, NetError>) {
+        if *result == Err(NetError::Unauthorized) {
             self.state.borrow_mut().scanning = false;
             self.token_failed(&NetError::Unauthorized);
             return;
         }
         // No feed (a storage that keeps none, or no network): nothing is recognised this time.
-        if let Ok(changes) = &result {
+        if let Ok(changes) = result {
             let mut known: std::collections::BTreeMap<String, u64> =
                 std::collections::BTreeMap::new();
             for change in changes {
@@ -530,7 +540,7 @@ impl Controller {
         }
         let mut digests: std::collections::BTreeMap<String, (u64, String)> =
             std::collections::BTreeMap::new();
-        if let Ok(changes) = &result {
+        if let Ok(changes) = result {
             for change in changes {
                 match (change.op.as_str(), &change.sha256) {
                     ("delete", _) => {

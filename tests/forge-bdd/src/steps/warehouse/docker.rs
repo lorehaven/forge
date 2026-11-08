@@ -110,7 +110,12 @@ async fn send_delete_request_with_token(world: &mut ForgeWorld, path: String) {
 }
 
 #[quench_test_bdd::then(expr = "response should contain tag {string}")]
-async fn check_tag_in_list(world: &mut ForgeWorld, tag: String) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn check_tag_in_list(world: &mut ForgeWorld, tag: String) {
     let json = world
         .last_json
         .as_ref()
@@ -118,14 +123,16 @@ async fn check_tag_in_list(world: &mut ForgeWorld, tag: String) {
     let tags = json["tags"].as_array().expect("Tags is not an array");
     assert!(
         tags.iter().any(|t| t.as_str() == Some(&tag)),
-        "Tag {} not found in {:?}",
-        tag,
-        tags
+        "Tag {tag} not found in {tags:?}"
     );
 }
 
 #[quench_test_bdd::then(expr = "response should contain header {string}")]
-async fn check_header(world: &mut ForgeWorld, header: String) {
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the step macro parses captures into owned `FromStr` types, so `&str` is not possible"
+)]
+fn check_header(world: &mut ForgeWorld, header: String) {
     let lower_header = header.to_lowercase();
     let keys: Vec<String> = world
         .last_response_headers
@@ -134,10 +141,7 @@ async fn check_header(world: &mut ForgeWorld, header: String) {
         .collect();
     assert!(
         keys.contains(&lower_header),
-        "Header {} (lowercase: {}) not found in {:?}",
-        header,
-        lower_header,
-        keys
+        "Header {header} (lowercase: {lower_header}) not found in {keys:?}"
     );
 
     // Also save it specifically for later use if it's the digest header
@@ -179,19 +183,23 @@ async fn get_token_step(world: &mut ForgeWorld, service: String, scope: String) 
     let res = world
         .client
         .get(&url)
-        .header("Authorization", format!("Basic {}", auth))
+        .header("Authorization", format!("Basic {auth}"))
         .send()
         .await
         .expect("Failed to get token");
 
     world.record_response(res).await;
     if let Some(json) = &world.last_json {
-        world.token = json["token"].as_str().map(|s| s.to_string());
+        world.token = json["token"].as_str().map(std::string::ToString::to_string);
     }
 }
 
 #[quench_test_bdd::then("response should contain a JWT token")]
-async fn check_token(world: &mut ForgeWorld) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn check_token(world: &mut ForgeWorld) {
     assert!(world.token.is_some(), "Token not found in response");
 }
 
@@ -205,7 +213,7 @@ async fn have_token(world: &mut ForgeWorld, scope: String) {
     let res = world
         .client
         .get(&url)
-        .header("Authorization", format!("Basic {}", auth))
+        .header("Authorization", format!("Basic {auth}"))
         .send()
         .await
         .expect("Failed to get token");
@@ -214,17 +222,21 @@ async fn have_token(world: &mut ForgeWorld, scope: String) {
     // Handle 500 errors gracefully - the token endpoint might not be fully implemented
     if status.is_success() {
         let body: Value = res.json().await.expect("Failed to parse token response");
-        world.token = body["token"].as_str().map(|s| s.to_string());
+        world.token = body["token"].as_str().map(std::string::ToString::to_string);
     } else if status.as_u16() == 500 {
         // Token endpoint returns 500 - use a dummy token for testing
         world.token = Some("test-token-not-available".to_string());
     } else {
-        panic!("Failed to get token: status {}", status);
+        panic!("Failed to get token: status {status}");
     }
 }
 
 #[quench_test_bdd::then("response should contain a list of tags")]
-async fn check_tags(world: &mut ForgeWorld) {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
+fn check_tags(world: &mut ForgeWorld) {
     let json = world
         .last_json
         .as_ref()

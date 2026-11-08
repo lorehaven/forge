@@ -52,7 +52,7 @@ fn push_body(slug: &str, git_ref: &str) -> String {
 // ---------------------------------------------------------------------------
 
 #[given("conveyor API is available")]
-async fn available(world: &mut ForgeWorld) {
+const fn available(world: &mut ForgeWorld) {
     world.target = crate::world::Target::Conveyor;
 }
 

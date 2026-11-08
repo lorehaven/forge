@@ -155,8 +155,14 @@ fn home_has_a_card_per_registry_that_is_on() {
         ..Features::default()
     };
     l.send(Msg::Overview(off));
-    assert!(l.r.find_by_attr("data-service", "docker").is_empty());
-    assert!(!l.r.find_by_attr("data-service", "rivets").is_empty());
+    assert_eq!(
+        l.r.find_by_attr("data-service", "docker"),
+        [] as [quench_ui::test_renderer::NodeId; 0]
+    );
+    assert_ne!(
+        l.r.find_by_attr("data-service", "rivets"),
+        [] as [quench_ui::test_renderer::NodeId; 0]
+    );
 
     l.send(Msg::Overview(Overview::default()));
     assert!(present(&l.r, "no-services"));
@@ -279,7 +285,7 @@ fn choosing_a_repository_asks_for_its_tags_and_a_tag_shows_its_metadata() {
         repo: "team/api".into(),
         tags: vec![tag("2.0.0", "sha256:bb"), tag("1.0.0", "sha256:aa")],
     });
-    assert!(l.r.find_by_attr("data-tag", "2.0.0").len() == 1);
+    assert_eq!(l.r.find_by_attr("data-tag", "2.0.0").len(), 1);
     l.follow(("data-tag", "1.0.0"));
     assert_eq!(
         l.url(),
@@ -318,7 +324,10 @@ fn the_tags_of_another_repository_are_not_shown() {
         repo: "team/api".into(),
         tags: vec![tag("1", "sha256:aa")],
     });
-    assert!(l.r.find_by_attr("data-tag", "1").is_empty());
+    assert_eq!(
+        l.r.find_by_attr("data-tag", "1"),
+        [] as [quench_ui::test_renderer::NodeId; 0]
+    );
 }
 
 #[quench_test::test]
@@ -518,8 +527,11 @@ fn artifacts_open_a_program_on_its_first_platform_and_newest_build() {
     let l = started("/warehouse/ui/artifacts/catalog", true);
     assert!(l.asked().contains(&Request::Artifacts));
     l.send(Msg::Artifacts(artifacts()));
-    assert!(l.r.find_by_attr("data-program", "tool").len() == 1);
-    assert!(l.r.find_by_attr("data-platform", "android").is_empty());
+    assert_eq!(l.r.find_by_attr("data-program", "tool").len(), 1);
+    assert_eq!(
+        l.r.find_by_attr("data-platform", "android"),
+        [] as [quench_ui::test_renderer::NodeId; 0]
+    );
     l.follow(("data-program", "app"));
     assert_eq!(l.url(), "/warehouse/ui/artifacts/catalog?repo=app");
     let text = l.text();

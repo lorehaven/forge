@@ -4,6 +4,10 @@ use quench_core::bytes::Bytes;
 use quench_serde::Value;
 use std::collections::HashMap;
 
+/// Where a release keeps the book's Markdown sources (pages, `_config.yml`, images) for loupe. Lectern serves
+/// the built site only, so it leaves these out: they are neither served nor counted.
+pub const SOURCES: &str = "_source/";
+
 /// Most a release may unpack to.
 const MAX_UNPACKED_BYTES: usize = 512 * 1024 * 1024;
 
@@ -72,6 +76,10 @@ impl Book {
             let Some(path) = clean(&entry.path) else {
                 continue;
             };
+            // The book's Markdown sources, which `anvil docs release` adds for loupe: not part of the site.
+            if path.starts_with(SOURCES) {
+                continue;
+            }
             let content_type = content_type(&path);
             let body = if rewrite {
                 rewrite_root_urls(entry.data, &path, prefix)

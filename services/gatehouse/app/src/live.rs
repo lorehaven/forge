@@ -15,7 +15,7 @@ use quench_ui::router::{History, RouteContext, Router, Routes};
 use crate::screens::{self, Env};
 
 /// What the app asks its host for.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     /// The cards of the services dashboard.
     Dashboard,
@@ -40,7 +40,7 @@ pub enum Request {
 }
 
 /// What the host tells the app.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
     Dashboard(Box<Dashboard>),
     Account(Box<Account>),
@@ -75,6 +75,15 @@ pub struct Setup {
     /// The language to start in (`en-US`, `de-DE`...).
     pub language: String,
     pub history: Rc<dyn History>,
+}
+
+impl std::fmt::Debug for Setup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Setup")
+            .field("base", &self.base)
+            .field("language", &self.language)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The app and the function that feeds it.
@@ -243,7 +252,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     };
 
     // The screens are drawn in the language of the moment: a change of language draws the open one again.
-    let routes = {
+    let screen = {
         let (env, state, router, i18n, base) = (
             env.clone(),
             state.clone(),
@@ -315,17 +324,22 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         },
     };
     // Before a session there is no account menu to open.
-    let bare = forge_shell::Bar {
+    let signed_out_bar = forge_shell::Bar {
         account: false,
         ..bar.clone()
     };
     let public = {
-        let (router, base) = (router.clone(), base.clone());
+        let (router, base) = (router.clone(), base);
         move || is_public(&base, &router.location().path)
     };
 
     let top = {
-        let (bar, bare, i18n, public) = (bar.clone(), bare, Rc::clone(&i18n), public.clone());
+        let (bar, signed_out_bar, i18n, public) = (
+            bar.clone(),
+            signed_out_bar,
+            Rc::clone(&i18n),
+            public.clone(),
+        );
         move || -> View {
             let is_public = public();
             div()
@@ -335,14 +349,14 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     "gh-top"
                 })
                 .child(forge_shell::topbar(
-                    if is_public { &bare } else { &bar },
+                    if is_public { &signed_out_bar } else { &bar },
                     &i18n,
                 ))
                 .into_view()
         }
     };
     let side = {
-        let (bar, env, router, public) = (bar.clone(), env.clone(), router.clone(), public);
+        let (bar, env, router, public) = (bar, env.clone(), router, public);
         move || -> View {
             if public() {
                 return View::Empty;
@@ -352,7 +366,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     };
 
     let banner = {
-        let (problem, env) = (state.problem.clone(), env.clone());
+        let (problem, env) = (state.problem, env);
         View::dynamic(move || screens::banner(&env, problem.get()))
     };
 
@@ -368,7 +382,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     main()
                         .class("gh-main")
                         .child(banner)
-                        .child(View::dynamic(routes)),
+                        .child(View::dynamic(screen)),
                 ),
         )
         .into_view()

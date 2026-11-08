@@ -1,4 +1,4 @@
-//! F-Droid's index-v2 format, shared by F-Droid itself and IzzyOnDroid (same repo software, different catalogue).
+//! F-Droid's index-v2 format, shared by F-Droid itself and `IzzyOnDroid` (same repo software, different catalogue).
 //! Checked against a live fetch of <https://f-droid.org/repo/index-v2.json>:
 //!
 //! ```text

@@ -84,7 +84,7 @@ fn read_queue(text: &str) -> Vec<Queued> {
 /// Whether the services could not be reached (no connection, or a proxy answering for a service that is down or restarting: 502-504), as opposed to
 /// answering with a refusal.
 #[must_use]
-pub fn is_unreachable(error: &NetError) -> bool {
+pub const fn is_unreachable(error: &NetError) -> bool {
     matches!(error, NetError::Network(_) | NetError::Status(502..=504))
 }
 
@@ -99,6 +99,18 @@ pub struct Controller {
     offline: Cell<bool>,
     retrying: Cell<bool>,
     attempts: Cell<u32>,
+}
+
+impl std::fmt::Debug for Controller {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Controller")
+            .field("store", &self.store)
+            .field("loading", &self.loading)
+            .field("offline", &self.offline)
+            .field("retrying", &self.retrying)
+            .field("attempts", &self.attempts)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Controller {
@@ -261,10 +273,10 @@ impl Controller {
                 server,
                 username,
                 password,
-            } => self.login(server, username, password),
+            } => self.login(&server, username, password),
             Request::Reload => self.sync(),
             Request::Open(list) => self.remember(|s| s.list = list),
-            Request::Save { id, draft } => self.save(id, &draft),
+            Request::Save { id, draft } => self.save(id.as_deref(), &draft),
             Request::SetCompleted { id, done } => self.set_completed(&id, done),
             Request::Delete { id } => self.delete(&id),
             Request::CreateProject { name } => {
@@ -295,7 +307,7 @@ impl Controller {
             }
             Request::DeleteProject { id } => self.delete_project(id),
             Request::CreateLabel { name, color } => {
-                self.simple(Op::CreateLabel { name, color }, "Could not add the label")
+                self.simple(Op::CreateLabel { name, color }, "Could not add the label");
             }
             Request::UpdateLabel { id, name, color } => self.simple(
                 Op::UpdateLabel { id, name, color },
@@ -313,7 +325,7 @@ impl Controller {
         self.store.set_settings(&s.settings);
     }
 
-    fn login(self: &Rc<Self>, server: String, username: String, password: String) {
+    fn login(self: &Rc<Self>, server: &str, username: String, password: String) {
         let server = server.trim().trim_end_matches('/').to_string();
         let me = Rc::clone(self);
         let (kept_server, kept_user) = (server.clone(), username.clone());
@@ -337,18 +349,16 @@ impl Controller {
         );
     }
 
-    fn save(self: &Rc<Self>, id: Option<String>, draft: &daybook_core::Draft) {
+    fn save(self: &Rc<Self>, id: Option<&str>, draft: &daybook_core::Draft) {
         let zone = self.platform.zone();
-        let existing = id
-            .as_deref()
-            .and_then(|i| self.state.borrow().data.task(i).cloned());
+        let existing = id.and_then(|i| self.state.borrow().data.task(i).cloned());
         let body = draft.body(
             &zone,
             existing.as_ref().map(|t| t.is_completed),
             existing.as_ref().map_or(0, |t| t.sort_order),
         );
-        let op = match &id {
-            Some(id) => Op::UpdateTask(id.clone(), body),
+        let op = match id {
+            Some(id) => Op::UpdateTask(id.to_string(), body),
             None => Op::CreateTask(body),
         };
         if self.must_queue() {
@@ -597,15 +607,12 @@ impl Controller {
         let mut st = self.state.borrow_mut();
         match op {
             Op::CreateTask(body) | Op::UpdateTask(_, body) => {
-                let (id, created) = match op {
-                    Op::UpdateTask(id, _) => {
-                        (id.clone(), st.data.task(id).map_or(now, |t| t.created_at))
-                    }
-                    _ => {
-                        let id = local();
-                        made = Some(id.clone());
-                        (id, now)
-                    }
+                let (id, created) = if let Op::UpdateTask(id, _) = op {
+                    (id.clone(), st.data.task(id).map_or(now, |t| t.created_at))
+                } else {
+                    let id = local();
+                    made = Some(id.clone());
+                    (id, now)
                 };
                 if let Value::Object(mut m) = body.clone() {
                     m.insert("id", Value::String(id));
@@ -696,7 +703,7 @@ impl Controller {
                     Err(NetError::Unauthorized) => me.sign_out(),
                     Err(e) if is_unreachable(&e) => me.unreachable(),
                     other => {
-                        me.sent(local, other);
+                        me.sent(local.as_deref(), other);
                         me.reachable();
                         me.state.borrow_mut().queue.remove(0);
                         me.save_queue();
@@ -712,7 +719,7 @@ impl Controller {
     }
 
     /// The service answered the oldest waiting change: what it made gets its real id, and a refusal is told.
-    fn sent(&self, local: Option<String>, result: Result<Reply, NetError>) {
+    fn sent(&self, local: Option<&str>, result: Result<Reply, NetError>) {
         let reply = match result {
             Ok(reply) => reply,
             // Gone on the service already: nothing to apply.
@@ -728,7 +735,7 @@ impl Controller {
             Reply::Label(l) => Some(l.id.clone()),
             _ => None,
         };
-        if let (Some(local), Some(real)) = (&local, &real) {
+        if let (Some(local), Some(real)) = (local, &real) {
             let mut st = self.state.borrow_mut();
             st.data.rename_id(local, real);
             for q in st.queue.iter_mut().skip(1) {
@@ -759,7 +766,7 @@ impl Controller {
     fn ask_notifications(self: &Rc<Self>) {
         let me = Rc::clone(self);
         self.platform.ask_notifications(Box::new(move |allowed| {
-            (me.emit)(Msg::NotificationsBlocked(!allowed))
+            (me.emit)(Msg::NotificationsBlocked(!allowed));
         }));
     }
 

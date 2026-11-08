@@ -1,6 +1,7 @@
 //! The chat: the conversation, its navigator, the composer and the answer being written.
 
 use std::cell::Cell;
+use std::fmt::Write as _;
 use std::rc::Rc;
 
 use quench_ui::event::prevent_default;
@@ -170,9 +171,14 @@ fn controls(
     last_user: bool,
     busy: bool,
 ) -> Option<Element> {
+    let branch = node.neighbours();
+    let regenerate = node.role == "assistant" && last && !busy;
+    let edit = node.is_user() && last_user && !busy;
+    if branch.is_none() && !regenerate && !edit {
+        return None;
+    }
     let mut row = div().class("sg-controls");
-    let mut any = false;
-    if let Some((prev, next)) = node.neighbours() {
+    if let Some((prev, next)) = branch {
         let (current, total) = node.position();
         let switch =
             |label: &'static str, id: &'static str, target: String, shown: &'static str| {
@@ -203,9 +209,8 @@ fn controls(
                 )
                 .child(switch("›", "next", next.to_string(), "›")),
         );
-        any = true;
     }
-    if node.role == "assistant" && last && !busy {
+    if regenerate {
         let (ask, state, id) = (Rc::clone(&env.ask), state.clone(), node.id.clone());
         row = row.child(
             button()
@@ -223,9 +228,8 @@ fn controls(
                 .child(glyph("↻"))
                 .child(span().text(env.t.t("ui_chat_regenerate"))),
         );
-        any = true;
     }
-    if node.is_user() && last_user && !busy {
+    if edit {
         let (state, id, text) = (state.clone(), node.id.clone(), node.content.clone());
         row = row.child(
             button()
@@ -239,9 +243,8 @@ fn controls(
                 .child(glyph("✎"))
                 .child(span().text(env.t.t("ui_chat_edit"))),
         );
-        any = true;
     }
-    any.then_some(row)
+    Some(row)
 }
 
 /// The edit form that replaces a message's text.
@@ -375,21 +378,20 @@ fn turn_messages(env: &Env, turn: &Turn) -> Vec<View> {
                 .child(span().text(env.words(why))),
         );
     } else if turn.answer.is_empty() {
-        match &turn.status {
-            Some(status) => inner = inner.child(status_line(env, status)),
-            None => {
-                let key = if turn.replaces.is_some() {
-                    "ui_chat_regenerating"
-                } else {
-                    "ui_chat_thinking"
-                };
-                inner = inner.child(
-                    div()
-                        .class("sg-content sg-thinking")
-                        .attr("id", "thinking")
-                        .text(env.t.t(key)),
-                );
-            }
+        if let Some(status) = &turn.status {
+            inner = inner.child(status_line(env, status));
+        } else {
+            let key = if turn.replaces.is_some() {
+                "ui_chat_regenerating"
+            } else {
+                "ui_chat_thinking"
+            };
+            inner = inner.child(
+                div()
+                    .class("sg-content sg-thinking")
+                    .attr("id", "thinking")
+                    .text(env.t.t(key)),
+            );
         }
     } else {
         inner = inner.child(
@@ -467,9 +469,9 @@ fn thread(env: &Env, state: &State) -> View {
     };
     let live = {
         let (env, turn) = (env.clone(), state.turn.clone());
-        View::dynamic(move || match turn.get() {
-            Some(turn) => fragment(turn_messages(&env, &turn)),
-            None => View::Empty,
+        View::dynamic(move || {
+            turn.get()
+                .map_or_else(|| View::Empty, |turn| fragment(turn_messages(&env, &turn)))
         })
     };
     div()
@@ -544,6 +546,10 @@ fn select_field(field: &Field, options: Vec<(String, String)>) -> Element {
     control.on_input(move |v| field.set(v))
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "builds the whole composer (text, attachments, model and send controls) as one view tree"
+)]
 fn composer(env: &Env, state: &State) -> View {
     let send = {
         let (env, state) = (env.clone(), state.clone());
@@ -621,12 +627,7 @@ fn composer(env: &Env, state: &State) -> View {
             div()
                 .attr("id", "pending-attachments")
                 .class("sg-pending")
-                .children(
-                    files
-                        .iter()
-                        .map(|f| chip(&env, f, true).into_view())
-                        .collect::<Vec<_>>(),
-                )
+                .children(files.iter().map(|f| chip(&env, f, true).into_view()))
                 .into_view()
         })
     };
@@ -664,10 +665,7 @@ fn composer(env: &Env, state: &State) -> View {
         .attr("id", "send")
         .class("sg-send")
         .attr("title", env.t.t("ui_chat_send_button"))
-        .attr_bool("disabled", {
-            let no_model = no_model.clone();
-            move || no_model()
-        })
+        .attr_bool("disabled", no_model)
         .child(glyph("↑"));
 
     // The shell's script posts the chosen file and reports back through this input.
@@ -681,23 +679,22 @@ fn composer(env: &Env, state: &State) -> View {
                     return;
                 };
                 let file = (status == 201).then(|| parse_file(&body)).flatten();
-                match file {
-                    Some(file) => state.staged.update(|l| l.push(file)),
-                    None => {
-                        let why = if body.trim().is_empty() {
-                            format!("{name}: {status}")
-                        } else {
-                            body
-                        };
-                        state.notice.set(Some(Notice::Err(why)));
-                    }
+                if let Some(file) = file {
+                    state.staged.update(|l| l.push(file));
+                } else {
+                    let why = if body.trim().is_empty() {
+                        format!("{name}: {status}")
+                    } else {
+                        body
+                    };
+                    state.notice.set(Some(Notice::Err(why)));
                 }
                 let _ = &env;
             })
     };
     let picker = {
         let (state, env) = (state.clone(), env.clone());
-        let (fields_state, accept_state) = (state.clone(), state.clone());
+        let (fields_state, accept_state) = (state.clone(), state);
         input()
             .attr("type", "file")
             .attr("id", "composer-file-input")
@@ -710,7 +707,7 @@ fn composer(env: &Env, state: &State) -> View {
                 fields_state.active.with(|a| {
                     let mut fields = format!(r#"{{"conversation_id":"{}""#, a.id);
                     if let Some(p) = &a.project_id {
-                        fields.push_str(&format!(r#","project_id":"{p}""#));
+                        let _ = write!(fields, r#","project_id":"{p}""#);
                     }
                     fields.push('}');
                     fields
@@ -789,7 +786,7 @@ fn composer(env: &Env, state: &State) -> View {
 }
 
 /// The chat screen.
-pub(crate) fn chat(env: &Env, state: &State) -> View {
+pub fn chat(env: &Env, state: &State) -> View {
     div()
         .class("sg-chat")
         .child(

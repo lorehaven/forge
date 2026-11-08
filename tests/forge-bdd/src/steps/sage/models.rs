@@ -17,22 +17,16 @@ async fn request_available_models(world: &mut ForgeWorld) -> Result<(), String> 
             world.last_body = resp.text().await.ok();
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
 #[quench_test_bdd::then("the response should contain model list")]
-async fn response_contains_models(_world: &mut ForgeWorld) -> Result<(), String> {
-    Ok(())
-}
+const fn response_contains_models(_world: &mut ForgeWorld) {}
 
 #[quench_test_bdd::given(expr = "I have a conversation with model {string}")]
-async fn have_conversation_with_model(
-    _world: &mut ForgeWorld,
-    _model: String,
-) -> Result<(), String> {
+fn have_conversation_with_model(_world: &mut ForgeWorld, _model: String) {
     // Placeholder
-    Ok(())
 }
 
 #[quench_test_bdd::when(expr = "I send a message {string} with model {string}")]
@@ -45,7 +39,7 @@ async fn send_with_model(
     let conv_id = world
         .current_conversation_id
         .clone()
-        .unwrap_or("test-conv".to_string());
+        .unwrap_or_else(|| "test-conv".to_string());
 
     let body = json!({
         "conversation_id": conv_id,
@@ -67,17 +61,14 @@ async fn send_with_model(
             world.last_body = resp.text().await.ok();
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
 #[quench_test_bdd::given("default model is not running")]
-async fn default_model_not_running(_world: &mut ForgeWorld) -> Result<(), String> {
+const fn default_model_not_running(_world: &mut ForgeWorld) {
     // In mock setup, models start not running
-    Ok(())
 }
 
 #[quench_test_bdd::then("sage should request switchboard to launch the model")]
-async fn sage_should_launch_model(_world: &mut ForgeWorld) -> Result<(), String> {
-    Ok(())
-}
+const fn sage_should_launch_model(_world: &mut ForgeWorld) {}

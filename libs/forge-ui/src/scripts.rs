@@ -7,7 +7,7 @@
 pub const LOCALE_CHOSEN_COOKIE: &str = "qlocale_chosen";
 
 // quench dispatches `localeChanged` only from the switch's `updateLocale`.
-pub(crate) const MARK_LOCALE_CHOSEN: &str = "window.addEventListener('localeChanged',function(){document.cookie='qlocale_chosen=1; max-age=31536000; path=/; SameSite=Lax';});";
+pub const MARK_LOCALE_CHOSEN: &str = "window.addEventListener('localeChanged',function(){document.cookie='qlocale_chosen=1; max-age=31536000; path=/; SameSite=Lax';});";
 
 // quench's session watcher renews an expired session with a POST to /refresh. With
 // several tabs open they all notice at about the same time, and a refresh token
@@ -16,12 +16,12 @@ pub(crate) const MARK_LOCALE_CHOSEN: &str = "window.addEventListener('localeChan
 // because the tab ahead of it has usually renewed the shared cookies already.
 // Wraps quench's global `tryRefresh` (and reads its global `SESSION_STATUS_URL`);
 // does nothing where either is missing.
-pub(crate) const SERIALIZE_REFRESH: &str = "(function(){if(!navigator.locks||typeof tryRefresh!=='function'||typeof SESSION_STATUS_URL==='undefined')return;const original=tryRefresh;tryRefresh=function(){return navigator.locks.request('forge-session-refresh',async function(){try{const r=await fetch(SESSION_STATUS_URL,{credentials:'same-origin',headers:{'Accept':'application/json'},cache:'no-store'});if(r.ok){const s=await r.json();if(s&&s.authenticated===true)return true;}}catch(e){}return original();});};})();";
+pub const SERIALIZE_REFRESH: &str = "(function(){if(!navigator.locks||typeof tryRefresh!=='function'||typeof SESSION_STATUS_URL==='undefined')return;const original=tryRefresh;tryRefresh=function(){return navigator.locks.request('forge-session-refresh',async function(){try{const r=await fetch(SESSION_STATUS_URL,{credentials:'same-origin',headers:{'Accept':'application/json'},cache:'no-store'});if(r.ok){const s=await r.json();if(s&&s.authenticated===true)return true;}}catch(e){}return original();});};})();";
 
 /// Runs in `<head>`, before first paint: mirrors quench's `qtheme` cookie onto
 /// `html[data-fui-theme]` and the `fui_palette` cookie onto `html[data-fui-palette]` (which the tokens
 /// key off), and follows later changes. `fuiSetTheme` / `fuiSetPalette` are the writers the theme menu uses.
-pub(crate) const THEME_SYNC: &str = r#"(function(){
+pub const THEME_SYNC: &str = r"(function(){
 var root=document.documentElement;
 function cookie(n){var m=document.cookie.match(new RegExp('(?:^|; )'+n+'=([^;]*)'));return m?decodeURIComponent(m[1]):null;}
 function mode(){var t=cookie('qtheme');return t&&t.indexOf('light')!==-1?'light':'dark';}
@@ -33,10 +33,10 @@ function applyPalette(){var p=palette();if(root.getAttribute('data-fui-palette')
 window.fuiSetPalette=function(p){if(PALETTES.indexOf(p)===-1)return;document.cookie='fui_palette='+p+'; max-age=31536000; path=/; SameSite=Lax';applyPalette();};
 window.fuiToggleTheme=function(){window.fuiSetTheme(mode()==='light'?'dark':'light');};
 applyPalette();apply();window.addEventListener('themeChanged',apply);setInterval(apply,1000);
-})();"#;
+})();";
 
 /// Drawer, active nav item, stacked-table labels and dropdown dismissal.
-pub(crate) const SHELL_JS: &str = r#"(function(){
+pub const SHELL_JS: &str = r"(function(){
 var root=document.documentElement;
 window.fuiOpenDrawer=function(){root.classList.add('fui-drawer-open');};
 window.fuiCloseDrawer=function(){root.classList.remove('fui-drawer-open');};
@@ -76,4 +76,4 @@ function init(){markActive();labelTables();setTimeout(labelTables,700);}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 window.addEventListener('localeChanged',function(){setTimeout(labelTables,100);});
 document.addEventListener('htmx:afterSwap',function(){labelTables();});
-})();"#;
+})();";

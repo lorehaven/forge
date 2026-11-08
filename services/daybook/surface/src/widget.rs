@@ -1,5 +1,7 @@
-//! `--widget`: the background refresh of the home-screen widget. No window: it reads the tasks with the saved login,
-//! writes the snapshot the widget draws, and ends. The Kotlin job that starts it redraws the widget afterwards.
+//! `--widget`: the background refresh of the home-screen widget.
+//!
+//! No window: it reads the tasks with the saved login, writes the snapshot the widget draws, and ends. The Kotlin job
+//! that starts it redraws the widget afterwards.
 
 use daybook_core::widget::snapshot;
 use daybook_host::remote::{Op, Remote, Reply};
@@ -21,6 +23,7 @@ pub enum Outcome {
 }
 
 /// One refresh.
+#[must_use]
 pub fn refresh(store: &Store) -> Outcome {
     let remote = Remote::new(store.clone());
     if !remote.signed_in() {

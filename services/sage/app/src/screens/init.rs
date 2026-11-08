@@ -15,7 +15,7 @@ fn presentation(state: &str) -> (&'static str, &'static str) {
     }
 }
 
-pub(crate) fn initializing(env: &Env, state: &State) -> View {
+pub fn initializing(env: &Env, state: &State) -> View {
     let (env, models) = (env.clone(), state.models.clone());
     let rows = {
         let (env, models) = (env.clone(), models.clone());

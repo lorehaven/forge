@@ -8,6 +8,7 @@
 //! [`Session::keeping_tokens`] does).
 
 use std::fmt;
+use std::fmt::Write as _;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -227,10 +228,7 @@ impl Session {
         }
         let bytes = response.bytes().map_err(network)?;
         let total = bytes.len() as u64;
-        let digest: String = quench_crypto::hash::sha256(&bytes)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
+        let digest: String = hex(&quench_crypto::hash::sha256(&bytes));
         if !digest.eq_ignore_ascii_case(&artifact.sha256) {
             return Err(NetError::HashMismatch);
         }
@@ -331,10 +329,7 @@ impl Session {
         let bytes = response.bytes().map_err(network)?;
         let total = bytes.len() as u64;
         if let Some(want) = app.sha256.as_deref().filter(|h| !h.is_empty()) {
-            let digest: String = quench_crypto::hash::sha256(&bytes)
-                .iter()
-                .map(|b| format!("{b:02x}"))
-                .collect();
+            let digest: String = hex(&quench_crypto::hash::sha256(&bytes));
             if !digest.eq_ignore_ascii_case(want) {
                 return Err(NetError::HashMismatch);
             }
@@ -359,7 +354,7 @@ fn is_secure(url: &str) -> bool {
 }
 
 /// What a status from the catalogue service means.
-fn public_answer(status: u16) -> Result<(), NetError> {
+const fn public_answer(status: u16) -> Result<(), NetError> {
     match status {
         200 => Ok(()),
         404 => Err(NetError::PublicDisabled),
@@ -368,4 +363,14 @@ fn public_answer(status: u16) -> Result<(), NetError> {
         401 | 403 => Err(NetError::PublicRefused(status)),
         other => Err(NetError::Status(other)),
     }
+}
+
+/// `bytes` as lower-case hex, two digits each.
+fn hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut hex, b| {
+            let _ = write!(hex, "{b:02x}");
+            hex
+        })
 }

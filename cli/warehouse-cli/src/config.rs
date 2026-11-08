@@ -26,6 +26,7 @@ pub struct RegistryEntry {
     pub config: RegistryConfig,
 }
 
+#[derive(Debug)]
 pub struct ConfigStore {
     local_root: PathBuf,
     global_root: Option<PathBuf>,
@@ -38,6 +39,7 @@ impl Default for ConfigStore {
 }
 
 impl ConfigStore {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             local_root: PathBuf::from(".warehouse"),
@@ -152,6 +154,7 @@ impl ConfigStore {
         }
     }
 
+    #[must_use]
     pub fn registry_exists_effective(&self, name: &str) -> bool {
         self.local_registry_file_path(name).exists()
             || self
@@ -159,11 +162,10 @@ impl ConfigStore {
                 .is_some_and(|p| p.exists())
     }
 
+    #[must_use]
     pub fn registry_exists_in_scope(&self, scope: ConfigScope, name: &str) -> bool {
-        match self.registry_file_path(scope, name) {
-            Ok(path) => path.exists(),
-            Err(_) => false,
-        }
+        self.registry_file_path(scope, name)
+            .is_ok_and(|path| path.exists())
     }
 
     pub fn load_effective_registry(&self, name: &str) -> Result<RegistryEntry> {
@@ -239,10 +241,10 @@ impl ConfigStore {
     pub fn list_effective_registries(&self) -> Result<Vec<RegistryEntry>> {
         let mut source_map: BTreeMap<String, RegistrySource> = BTreeMap::new();
 
-        for name in self.list_registry_names_in_dir(self.global_registries_dir())? {
+        for name in Self::list_registry_names_in_dir(self.global_registries_dir())? {
             source_map.insert(name, RegistrySource::Global);
         }
-        for name in self.list_registry_names_in_dir(Some(self.local_registries_dir()))? {
+        for name in Self::list_registry_names_in_dir(Some(self.local_registries_dir()))? {
             source_map.insert(name, RegistrySource::Local);
         }
 
@@ -255,32 +257,32 @@ impl ConfigStore {
     }
 
     fn load_local_root_config(&self) -> Result<RootConfig> {
-        self.load_root_config_from_path(self.local_root_config_path())
+        Self::load_root_config_from_path(&self.local_root_config_path())
     }
 
     fn load_global_root_config(&self) -> Result<RootConfig> {
-        self.load_root_config_from_path_option(self.global_root_config_path())
+        Self::load_root_config_from_path_option(self.global_root_config_path())
     }
 
-    fn load_root_config_from_path(&self, path: PathBuf) -> Result<RootConfig> {
+    fn load_root_config_from_path(path: &Path) -> Result<RootConfig> {
         if !path.exists() {
             return Ok(RootConfig::default());
         }
 
-        let content = fs::read_to_string(&path)
+        let content = fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
         quench_serde::toml::from_str(&content)
             .with_context(|| format!("failed to parse {}", path.display()))
     }
 
-    fn load_root_config_from_path_option(&self, path: Option<PathBuf>) -> Result<RootConfig> {
+    fn load_root_config_from_path_option(path: Option<PathBuf>) -> Result<RootConfig> {
         let Some(path) = path else {
             return Ok(RootConfig::default());
         };
-        self.load_root_config_from_path(path)
+        Self::load_root_config_from_path(&path)
     }
 
-    fn list_registry_names_in_dir(&self, dir: Option<PathBuf>) -> Result<Vec<String>> {
+    fn list_registry_names_in_dir(dir: Option<PathBuf>) -> Result<Vec<String>> {
         let Some(dir) = dir else {
             return Ok(Vec::new());
         };

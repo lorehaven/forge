@@ -1,6 +1,7 @@
 // The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
 #![allow(clippy::unwrap_used, clippy::too_many_lines)]
 
+use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
@@ -69,7 +70,7 @@ fn answer(mut stream: TcpStream, log: &Mutex<Vec<Seen>>, handler: &Handler) {
         body.len()
     );
     for (k, v) in headers {
-        head.push_str(&format!("{k}: {v}\r\n"));
+        let _ = write!(head, "{k}: {v}\r\n");
     }
     head.push_str("\r\n");
     let _ = stream.write_all(head.as_bytes());

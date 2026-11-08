@@ -10,7 +10,7 @@ fn nonexistent(name: &str) -> Container {
         image: "ghcr.io/example/does-not-exist".to_string(),
         container_name: Some(format!("foreman-coverage-test-{name}-does-not-exist")),
         ports: Vec::new(),
-        env: Default::default(),
+        env: std::collections::BTreeMap::default(),
         args: Vec::new(),
         ready: Vec::new(),
         ready_timeout_secs: 1,

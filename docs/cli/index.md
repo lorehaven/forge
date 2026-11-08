@@ -17,5 +17,6 @@ One section per tool: commands, flags, configuration, interactive modes and reci
 | [conveyor-cli](conveyor-cli/index.md) | `conveyor` | Client of the Conveyor CI/CD service; local pipeline validation. |
 | [pulley](pulley/index.md) | `pulley` | rsync-backed sync jobs: REPL, one-shot, daemon, background service. |
 | [toolbox](toolbox/index.md) | `forge-toolbox` | Terminal table to install and update the tools above from the registry. |
+| [loupe](loupe/index.md) | `loupe` | Markdown files and documentation books in the terminal: pager, links, search, book navigation, `--check`, typeset formulas. |
 
 Shared behaviour: the interactive modes of riveter, foreman and pulley use the `quench-cli` line editor (in-memory history, no completion); status lines use `quench-cli`'s coloured `label message` format.

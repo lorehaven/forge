@@ -25,7 +25,7 @@ pub fn record_deleted_instance(id: String) {
 }
 
 #[quench_test_bdd::given("the sage service was started with model teardown enabled")]
-async fn started_with_teardown(_world: &mut ForgeWorld) -> Result<(), String> {
+fn started_with_teardown(_world: &mut ForgeWorld) -> Result<(), String> {
     // The harness launches sage with SAGE_STOP_MODELS_ON_SHUTDOWN=true and
     // records its PID; here we just assert that wiring is in place.
     if SAGE_PID.get().is_none() {

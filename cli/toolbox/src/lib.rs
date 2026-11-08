@@ -2,6 +2,7 @@ use quench_cli::keys::KeyCode;
 use quench_cli::style::Stylize;
 use quench_core::{Context, Result};
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::process::Command;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
@@ -11,7 +12,7 @@ use quench_core::version::Version;
 pub const REGISTRY_NAME: &str = "ennor";
 pub const REGISTRY_INDEX: &str = "sparse+https://ennor.ddns.net/warehouse/index/";
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct MonitoredCrate {
     pub package: &'static str,
     pub binary: &'static str,
@@ -84,6 +85,7 @@ pub enum PlannedAction {
     Update,
 }
 
+#[derive(Debug)]
 pub struct TableWidths {
     pub package: usize,
     pub binary: usize,
@@ -93,6 +95,7 @@ pub struct TableWidths {
     pub action: usize,
 }
 
+#[must_use]
 pub fn content_widths(statuses: &[CrateStatus]) -> TableWidths {
     let mut package = char_width("package");
     let mut binary = char_width("binary");
@@ -120,7 +123,7 @@ pub fn content_widths(statuses: &[CrateStatus]) -> TableWidths {
     }
 }
 
-pub fn shrink_widths_to_fit(widths: &mut TableWidths, term_width: usize) {
+pub const fn shrink_widths_to_fit(widths: &mut TableWidths, term_width: usize) {
     let min_package = 7;
     let min_binary = 7;
     let min_installed = 12;
@@ -165,6 +168,7 @@ pub fn shrink_widths_to_fit(widths: &mut TableWidths, term_width: usize) {
     }
 }
 
+#[must_use]
 pub fn make_border(
     left: char,
     mid: char,
@@ -191,6 +195,7 @@ pub fn make_border(
     out
 }
 
+#[must_use]
 pub fn display_installed(status: &CrateStatus) -> String {
     match (&status.installed_version, status.installable) {
         (Some(v), _) => v.to_string(),
@@ -199,21 +204,25 @@ pub fn display_installed(status: &CrateStatus) -> String {
     }
 }
 
+#[must_use]
 pub fn display_latest(status: &CrateStatus) -> String {
     status
         .latest_version
         .as_ref()
-        .map_or_else(|| "n/a".to_string(), |v| v.to_string())
+        .map_or_else(|| "n/a".to_string(), std::string::ToString::to_string)
 }
 
-pub fn display_updatable(status: &CrateStatus) -> &'static str {
+#[must_use]
+pub const fn display_updatable(status: &CrateStatus) -> &'static str {
     if status.updatable { "yes" } else { "no" }
 }
 
+#[must_use]
 pub fn char_width(value: &str) -> usize {
     value.chars().count()
 }
 
+#[must_use]
 pub fn fit_cell(value: &str, width: usize) -> String {
     if width == 0 {
         return String::new();
@@ -227,10 +236,11 @@ pub fn fit_cell(value: &str, width: usize) -> String {
         out.push('~');
     }
 
-    format!("{:<width$}", out, width = width)
+    format!("{out:<width$}")
 }
 
-pub fn action_label(status: &CrateStatus) -> &'static str {
+#[must_use]
+pub const fn action_label(status: &CrateStatus) -> &'static str {
     if status.installed_version.is_none() && status.installable {
         "install"
     } else if status.updatable {
@@ -240,6 +250,7 @@ pub fn action_label(status: &CrateStatus) -> &'static str {
     }
 }
 
+#[must_use]
 pub fn action_request(status: &CrateStatus) -> ActionRequest {
     ActionRequest {
         package: status.package.to_string(),
@@ -249,7 +260,8 @@ pub fn action_request(status: &CrateStatus) -> ActionRequest {
     }
 }
 
-pub fn planned_action(req: &ActionRequest) -> Option<PlannedAction> {
+#[must_use]
+pub const fn planned_action(req: &ActionRequest) -> Option<PlannedAction> {
     if !req.installable {
         return None;
     }
@@ -262,7 +274,7 @@ pub fn planned_action(req: &ActionRequest) -> Option<PlannedAction> {
     None
 }
 
-pub fn run_selected_action(req: ActionRequest) -> Result<String> {
+pub fn run_selected_action(req: &ActionRequest) -> Result<String> {
     if !req.installable {
         return Ok(format!(
             "{} is not installable from registry {}",
@@ -288,13 +300,15 @@ pub fn run_selected_action(req: ActionRequest) -> Result<String> {
         .output()
         .with_context(|| format!("failed to run cargo install for {}", req.package))?;
 
-    finish_action(&req, output)
+    finish_action(req, &output)
 }
 
 /// Turns a finished `cargo install`'s output into the same success message or
-/// error `run_selected_action` produces, split out so a fake `Output` (no
+/// error `run_selected_action` produces.
+///
+/// Split out so a fake `Output` (no
 /// real process, no mutated cargo state) can exercise both branches in tests.
-pub fn finish_action(req: &ActionRequest, output: std::process::Output) -> Result<String> {
+pub fn finish_action(req: &ActionRequest, output: &std::process::Output) -> Result<String> {
     if output.status.success() {
         let msg = if req.installed {
             format!("{} updated", req.package)
@@ -313,14 +327,18 @@ pub fn finish_action(req: &ActionRequest, output: std::process::Output) -> Resul
     quench_core::bail!("{}: {}", req.package, detail)
 }
 
-pub fn spinner_frames() -> &'static [&'static str] {
+#[must_use]
+pub const fn spinner_frames() -> &'static [&'static str] {
     &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 }
 
 /// Pure decision logic for a single crate's status, given its installed
-/// version and the result of a (possibly failed) registry lookup. Split out
+/// version and the result of a (possibly failed) registry lookup.
+///
+/// Split out
 /// from the network-calling wrapper so the installable/updatable/error matrix
 /// can be tested without shelling out to `cargo`.
+#[must_use]
 pub fn build_status(
     package: &'static str,
     binary: &'static str,
@@ -356,7 +374,10 @@ pub fn build_status(
     }
 }
 
-pub fn collect_statuses(installed: &HashMap<String, Version>) -> Vec<CrateStatus> {
+#[must_use]
+pub fn collect_statuses<S: BuildHasher>(
+    installed: &HashMap<String, Version, S>,
+) -> Vec<CrateStatus> {
     MONITORED_CRATES
         .iter()
         .map(|item| {
@@ -371,6 +392,7 @@ pub fn collect_statuses(installed: &HashMap<String, Version>) -> Vec<CrateStatus
 /// Pure formatting for the toolbox self-update banner, given the installed
 /// and latest `forge-toolbox` versions (each independently optional, since
 /// either lookup can fail or come up empty).
+#[must_use]
 pub fn format_toolbox_note(installed: Option<Version>, latest: Option<Version>) -> String {
     match (installed, latest) {
         (Some(current), Some(latest)) if latest > current => format!(
@@ -384,7 +406,8 @@ pub fn format_toolbox_note(installed: Option<Version>, latest: Option<Version>) 
     }
 }
 
-pub fn toolbox_note(installed: &HashMap<String, Version>) -> String {
+#[must_use]
+pub fn toolbox_note<S: BuildHasher>(installed: &HashMap<String, Version, S>) -> String {
     let installed_toolbox = installed.get("forge-toolbox").cloned();
     let latest_toolbox = fetch_latest_registry_version("forge-toolbox")
         .ok()
@@ -482,6 +505,7 @@ pub fn parse_installed_output(output: std::process::Output) -> Result<HashMap<St
 ///
 /// Split out from [`installed_versions`] so the line-parsing logic can be
 /// tested against fixture output without a real cargo install directory.
+#[must_use]
 pub fn parse_installed_list(stdout: &str) -> HashMap<String, Version> {
     let mut versions = HashMap::new();
 
@@ -511,6 +535,7 @@ pub fn parse_installed_list(stdout: &str) -> HashMap<String, Version> {
 /// The interactive monitor's state: the currently selected row, the last
 /// status snapshot, the toolbox's own update banner, and the latest status
 /// line message.
+#[derive(Debug)]
 pub struct App {
     pub selected: usize,
     pub statuses: Vec<CrateStatus>,
@@ -554,6 +579,7 @@ pub enum KeyOutcome {
     Ignore,
 }
 
+#[must_use]
 pub fn handle_key(
     code: KeyCode,
     selected: usize,
@@ -576,16 +602,16 @@ pub fn handle_key(
             if in_flight {
                 return KeyOutcome::Busy;
             }
-            match statuses.get(selected) {
-                Some(status) => KeyOutcome::RunAction(action_request(status)),
-                None => KeyOutcome::Ignore,
-            }
+            statuses.get(selected).map_or(KeyOutcome::Ignore, |status| {
+                KeyOutcome::RunAction(action_request(status))
+            })
         }
         _ => KeyOutcome::Ignore,
     }
 }
 
 /// A spawned install/update action, polled from the event loop.
+#[derive(Debug)]
 pub struct InFlightAction {
     pub rx: Receiver<Result<String, String>>,
     pub selected: usize,
@@ -637,8 +663,9 @@ pub fn poll_in_flight(job: &mut InFlightAction, tick_every: Duration) -> PollOut
     }
 }
 
-/// What to do about a [`KeyOutcome::RunAction`]: either it already resolved
-/// synchronously (not installable, or already up to date - no `cargo`
+/// What to do about a [`KeyOutcome::RunAction`].
+///
+/// Either it already resolved synchronously (not installable, or already up to date - no `cargo`
 /// invocation needed), or it needs to run in the background with the given
 /// spinner label.
 #[derive(Debug, PartialEq, Eq)]
@@ -647,12 +674,14 @@ pub enum ActionDispatch {
     Spawn { label: String },
 }
 
-/// Decides what running the given action should do, resolving the
-/// no-op cases (not installable, already up to date) immediately since they
-/// never shell out. Split out from the event loop so the label formatting
+/// Decides what running the given action should do.
+///
+/// It resolves the no-op cases (not installable, already up to date)
+/// immediately since they never shell out. Split out from the event loop so the label formatting
 /// and no-op short-circuiting can be tested without spawning a thread.
-pub fn dispatch_action(req: ActionRequest) -> ActionDispatch {
-    match planned_action(&req) {
+#[must_use]
+pub fn dispatch_action(req: &ActionRequest) -> ActionDispatch {
+    match planned_action(req) {
         None => {
             let message =
                 run_selected_action(req).unwrap_or_else(|err| format!("action failed: {err}"));
@@ -677,7 +706,9 @@ pub enum TickEffect {
 }
 
 /// Advances (or resolves) `in_flight` and reports what the caller must do
-/// about it. Split out from the event loop, alongside [`poll_in_flight`], so
+/// about it.
+///
+/// Split out from the event loop, alongside [`poll_in_flight`], so
 /// the "nothing running" / "resolved, clear it and reset it to None" wiring
 /// is tested too, not just the channel state machine itself.
 pub fn on_tick(in_flight: &mut Option<InFlightAction>, tick_every: Duration) -> TickEffect {
@@ -697,6 +728,7 @@ pub fn on_tick(in_flight: &mut Option<InFlightAction>, tick_every: Duration) -> 
 
 /// The spinner + label line to show in place of the app's last status
 /// message while an action is running, or `None` when nothing is running.
+#[must_use]
 pub fn transient_status(in_flight: &Option<InFlightAction>) -> Option<String> {
     in_flight
         .as_ref()
@@ -722,7 +754,9 @@ pub enum KeyEffect {
 }
 
 /// Applies a key press to `app` (mutating its selection in place) and
-/// reports what the caller must do about it. Combines [`handle_key`] and
+/// reports what the caller must do about it.
+///
+/// Combines [`handle_key`] and
 /// [`dispatch_action`] with their resulting state changes so the event loop
 /// itself only has to perform I/O (spawning the background thread,
 /// re-fetching status), not decide anything.
@@ -750,7 +784,7 @@ pub fn on_key(app: &mut App, in_flight: bool, code: KeyCode) -> KeyEffect {
         KeyOutcome::Busy | KeyOutcome::Ignore => KeyEffect::None,
         KeyOutcome::RunAction(req) => {
             let selected = app.selected;
-            match dispatch_action(req.clone()) {
+            match dispatch_action(&req) {
                 ActionDispatch::Done(message) => KeyEffect::Refresh { selected, message },
                 ActionDispatch::Spawn { label } => KeyEffect::Spawn {
                     selected,
@@ -763,9 +797,12 @@ pub fn on_key(app: &mut App, in_flight: bool, code: KeyCode) -> KeyEffect {
 }
 
 /// Renders the monitor screen as a list of already-styled lines, one per
-/// terminal row. Pure string building - split out from the event loop so it
+/// terminal row.
+///
+/// Pure string building - split out from the event loop so it
 /// can be tested without a real terminal (crossterm's `Stylize` just wraps
 /// ANSI codes around the text, it doesn't need a tty).
+#[must_use]
 pub fn render(app: &App, transient_status: Option<&str>, term_width: usize) -> Vec<String> {
     let usable_width = term_width.saturating_sub(1);
     let mut widths = content_widths(&app.statuses);

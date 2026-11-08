@@ -13,13 +13,18 @@
 //! F-Droid one still gets a category).
 
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 
 use crate::models::{MergedPackage, RawListing};
 
-/// Gives a package the download count `counts` has for it when it has none of its own (Aptoide's are first). The
-/// counts of the two are of different things - Aptoide's are all-time, Izzy's the last year's - but a category is
+/// Gives a package the download count `counts` has for it when it has none of its own (Aptoide's are first).
+///
+/// The counts of the two are of different things - Aptoide's are all-time, Izzy's the last year's - but a category is
 /// mostly one or the other, and a figure beats the alphabet.
-pub fn add_downloads(packages: &mut [MergedPackage], counts: &HashMap<String, i64>) {
+pub fn add_downloads<S: BuildHasher>(
+    packages: &mut [MergedPackage],
+    counts: &HashMap<String, i64, S>,
+) {
     for package in packages {
         if package.downloads.is_none() {
             package.downloads = counts.get(&package.package_name).copied();
@@ -31,19 +36,17 @@ pub const DEFAULT_SOURCE_PRIORITY: &[&str] = &["fdroid", "izzyondroid", "aptoide
 
 fn within_source_rank(listing: &RawListing) -> (i32, i64, i64) {
     (
-        if listing.malware_rank.as_deref() == Some("TRUSTED") {
-            1
-        } else {
-            0
-        },
+        i32::from(listing.malware_rank.as_deref() == Some("TRUSTED")),
         listing.downloads.unwrap_or(0),
         listing.rating_count.unwrap_or(0),
     )
 }
 
-/// One listing per (source, package_name). Only matters for a source that
-/// can list the same package more than once (Aptoide); a source with one
-/// listing per package (F-Droid, IzzyOnDroid) passes through unchanged.
+/// One listing per (source, `package_name`).
+///
+/// Only matters for a source that can list the same package more than once (Aptoide); a source with one
+/// listing per package (F-Droid, `IzzyOnDroid`) passes through unchanged.
+#[must_use]
 pub fn dedupe_within_source(listings: Vec<RawListing>) -> Vec<RawListing> {
     let mut best: HashMap<(String, String), RawListing> = HashMap::new();
     for listing in listings {
@@ -75,8 +78,9 @@ fn pick<'a>(
 
 /// `listings_by_source` need not be pre-deduped — this calls
 /// [`dedupe_within_source`] itself per source before merging across them.
-pub fn merge_all(
-    listings_by_source: HashMap<String, Vec<RawListing>>,
+#[must_use]
+pub fn merge_all<S: BuildHasher>(
+    listings_by_source: HashMap<String, Vec<RawListing>, S>,
     source_priority: &[&str],
 ) -> Vec<MergedPackage> {
     let mut by_package: HashMap<String, HashMap<String, RawListing>> = HashMap::new();

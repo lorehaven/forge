@@ -25,7 +25,7 @@ pub struct PipelineSpec {
 }
 
 impl PipelineSpec {
-    pub(super) fn new(
+    pub(super) const fn new(
         on: Triggers,
         stages: Vec<Stage>,
         order: Vec<usize>,
@@ -95,6 +95,7 @@ impl PipelineSpec {
     ///
     /// A scheduled run whose file no longer declares a schedule (it was removed after the run was
     /// queued) is therefore skipped rather than executed on a schedule nobody asked for any more.
+    #[must_use]
     pub fn allows(&self, event: &str, git_ref: &str) -> bool {
         if event == "schedule" {
             return !self.schedules.is_empty();
@@ -103,6 +104,7 @@ impl PipelineSpec {
     }
 
     /// Stage indices in an order where a stage always follows what it needs.
+    #[must_use]
     pub fn order(&self) -> &[usize] {
         &self.order
     }
@@ -113,11 +115,13 @@ impl PipelineSpec {
     }
 
     /// Looks up a stage by name.
+    #[must_use]
     pub fn stage(&self, name: &str) -> Option<&Stage> {
         self.stages.iter().find(|stage| stage.name == name)
     }
 
     /// The total number of jobs across every stage.
+    #[must_use]
     pub fn job_count(&self) -> usize {
         self.stages.iter().map(|stage| stage.jobs.len()).sum()
     }
@@ -163,6 +167,7 @@ pub struct Schedule {
 
 impl Schedule {
     /// The next instant after `after` this schedule fires, or `None` if it never does.
+    #[must_use]
     pub fn next_after(&self, after: quench_core::time::Time) -> Option<quench_core::time::Time> {
         let cron = crate::cron::Cron::parse(&self.expression).ok()?;
         let zone = quench_tz::Zone::named(&self.timezone).ok()?;
@@ -206,6 +211,7 @@ impl Triggers {
     /// `git_ref` is accepted full or bare. A manual trigger is always allowed:
     /// somebody asked for it by name, and refusing would leave them no way to
     /// run a pipeline whose patterns do not cover the branch they are on.
+    #[must_use]
     pub fn allows(&self, event: &str, git_ref: &str) -> bool {
         if event == "manual" {
             return true;
@@ -236,6 +242,7 @@ fn matches_any(patterns: &[String], value: &str) -> bool {
 ///
 /// `/` is deliberately not special. `release/*` should match `release/1.2`, and
 /// a pattern language where it does not is a pattern language people get wrong.
+#[must_use]
 pub fn glob_match(pattern: &str, value: &str) -> bool {
     let pattern: Vec<char> = pattern.chars().collect();
     let value: Vec<char> = value.chars().collect();
@@ -367,6 +374,7 @@ impl Step {
     pub const KINDS: [&'static str; 4] = ["run", "anvil", "riveter", "warehouse"];
 
     /// The tag this step was, or would be, written with in `.conveyor.toml`.
+    #[must_use]
     pub const fn kind(&self) -> &'static str {
         match self {
             Self::Run(_) => "run",
@@ -377,6 +385,7 @@ impl Step {
     }
 
     /// The command text, regardless of which kind of step this is.
+    #[must_use]
     pub fn command(&self) -> &str {
         match self {
             Self::Run(command)

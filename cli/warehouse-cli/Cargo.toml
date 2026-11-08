@@ -41,3 +41,6 @@ harness = false
 name = "unit"
 path = "tests/unit.rs"
 harness = false
+
+[lints]
+workspace = true

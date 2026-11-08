@@ -1,6 +1,7 @@
 // The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
 #![allow(clippy::unwrap_used, clippy::too_many_lines)]
 
+use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::mpsc::channel;
@@ -32,6 +33,10 @@ fn respond(stream: &mut TcpStream, status: &str, body: &[u8]) {
     let _ = stream.write_all(body);
 }
 
+#[allow(
+    clippy::significant_drop_tightening,
+    reason = "the fake server answers each request from one consistent state, so it holds the lock to the end"
+)]
 fn serve(state: &Arc<Mutex<State>>, mut stream: TcpStream) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut line = String::new();
@@ -151,8 +156,10 @@ fn start() -> (String, Arc<Mutex<State>>) {
 fn sha(bytes: &[u8]) -> String {
     quench_crypto::hash::sha256(bytes)
         .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+        .fold(String::new(), |mut hex, b| {
+            let _ = write!(hex, "{b:02x}");
+            hex
+        })
 }
 
 fn ask(
@@ -368,16 +375,13 @@ fn the_worker_reads_the_public_catalogue_and_refuses_what_it_should_not_fetch() 
     store.write(&base, "refresh-0");
     let (requests, requests_rx) = channel();
     let (answers, answers_rx) = channel();
-    let worker = {
-        let store = store.clone();
-        std::thread::spawn(move || work(&requests_rx, &answers, &store))
-    };
+    let worker = { std::thread::spawn(move || work(&requests_rx, &answers, &store)) };
     assert_eq!(
         ask(
             &requests,
             &answers_rx,
             Request::Login {
-                server: base.clone(),
+                server: base,
                 username: "ann".into(),
                 password: "hunter2".into()
             }
@@ -590,7 +594,7 @@ fn the_background_check_does_nothing_when_it_is_off_or_nobody_is_signed_in_or_th
     .unwrap() else {
         panic!("updates")
     };
-    assert!(updates.is_empty());
+    assert_eq!(updates, [] as [hoist_core::Update; 0]);
     store.clear();
     // Signed out on purpose (or never signed in): nothing to announce.
     assert_eq!(
@@ -623,7 +627,7 @@ fn what_the_host_is_told_is_a_line_of_json_and_what_it_sends_is_read_back() {
             .collect::<Vec<_>>(),
         [("a.b", 3), ("c.d", 9)]
     );
-    assert!(parse_device("not json").is_empty());
+    assert_eq!(parse_device("not json"), [] as [hoist_core::Installed; 0]);
     // Many updates are counted and a few named.
     let many: Vec<_> = (0..5)
         .map(|i| hoist_core::Update {
@@ -687,7 +691,11 @@ fn the_session_is_written_whole_and_leaves_nothing_behind() {
     let leftovers: Vec<_> = std::fs::read_dir(&dir)
         .unwrap()
         .filter_map(|e| e.ok()?.file_name().into_string().ok())
-        .filter(|n| n.ends_with(".tmp"))
+        .filter(|n| {
+            std::path::Path::new(n)
+                .extension()
+                .is_some_and(|e| e == "tmp")
+        })
         .collect();
     assert!(leftovers.is_empty(), "{leftovers:?}");
 }

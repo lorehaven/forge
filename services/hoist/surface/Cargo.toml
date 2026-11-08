@@ -23,3 +23,5 @@ quench-android-surface = { workspace = true }
 quench-style = { workspace = true }
 quench-ui = { workspace = true }
 quench-ui-native = { workspace = true }
+[lints]
+workspace = true

@@ -99,7 +99,9 @@ pub fn lingering(busy: &Signal<bool>, min_ms: u32) -> Signal<bool> {
                 out.set(false);
             } else {
                 let out = out.clone();
-                after(left as u32, move || out.set(false));
+                after(u32::try_from(left).unwrap_or(min_ms), move || {
+                    out.set(false);
+                });
             }
         }
     });

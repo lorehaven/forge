@@ -10,6 +10,7 @@
 pub const SHELL: &str = "sh";
 
 /// The argv to spawn a `run` step's command text under [`SHELL`].
+#[must_use]
 pub fn argv(command: &str) -> Vec<String> {
     vec![
         SHELL.to_string(),

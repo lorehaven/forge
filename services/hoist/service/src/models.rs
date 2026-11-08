@@ -48,7 +48,7 @@ pub struct MergedPackage {
     pub version_name: String,
     pub size_bytes: i64,
     pub download_url: String,
-    /// Which source's download_url/checksum this row uses.
+    /// Which source's `download_url/checksum` this row uses.
     pub install_source: String,
 
     pub summary: Option<String>,
@@ -63,7 +63,7 @@ pub struct MergedPackage {
 
     /// Aptoide's malware-scan verdict for whichever listing won the
     /// install slot — only ever set when `install_source == "aptoide"`
-    /// (F-Droid and IzzyOnDroid builds are source-built, this concept
+    /// (F-Droid and `IzzyOnDroid` builds are source-built, this concept
     /// doesn't apply to them).
     pub malware_rank: Option<String>,
 }

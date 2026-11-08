@@ -239,7 +239,12 @@ async fn files_panel_unauthenticated(world: &mut ForgeWorld) {
 }
 
 #[quench_test_bdd::then(expr = "the response should mention {string}")]
-async fn response_should_mention(world: &mut ForgeWorld, needle: String) -> Result<(), String> {
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    clippy::needless_pass_by_value,
+    reason = "the step macro requires `&mut World` and owned `FromStr` captures"
+)]
+fn response_should_mention(world: &mut ForgeWorld, needle: String) -> Result<(), String> {
     match &world.last_body {
         Some(body) if body.contains(&needle) => Ok(()),
         Some(body) => Err(format!(

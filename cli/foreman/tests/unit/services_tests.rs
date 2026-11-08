@@ -50,7 +50,7 @@ fn pid_is_some_for_a_pid_file_naming_a_live_process() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), ONE_SERVICE);
     estate.ensure_dirs().unwrap();
-    let ours = std::process::id() as i32;
+    let ours = i32::try_from(std::process::id()).unwrap();
     process::write_pid(&estate.pid_file("web"), ours).unwrap();
 
     assert!(is_running(&estate, "web"));
@@ -175,7 +175,7 @@ fn stop_terminates_a_service_with_a_live_pid_and_removes_the_pid_file() {
         .arg("30")
         .spawn()
         .unwrap();
-    let child_pid = child.id() as i32;
+    let child_pid = i32::try_from(child.id()).unwrap();
     process::write_pid(&estate.pid_file("web"), child_pid).unwrap();
 
     stop(&estate, &["web".to_string()]).unwrap();
@@ -222,7 +222,11 @@ fn running_services_includes_a_service_with_a_live_pid() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), ONE_SERVICE);
     estate.ensure_dirs().unwrap();
-    process::write_pid(&estate.pid_file("web"), std::process::id() as i32).unwrap();
+    process::write_pid(
+        &estate.pid_file("web"),
+        i32::try_from(std::process::id()).unwrap(),
+    )
+    .unwrap();
 
     assert_eq!(running_services(&estate), vec!["web".to_string()]);
 }
@@ -317,7 +321,11 @@ fn run_pre_stop_hooks_runs_the_configured_shell_command_for_a_running_service() 
         "#;
     let estate = estate_in(dir.path(), config_text);
     estate.ensure_dirs().unwrap();
-    process::write_pid(&estate.pid_file("web"), std::process::id() as i32).unwrap();
+    process::write_pid(
+        &estate.pid_file("web"),
+        i32::try_from(std::process::id()).unwrap(),
+    )
+    .unwrap();
 
     run_pre_stop_hooks(&estate, "web").unwrap();
 }

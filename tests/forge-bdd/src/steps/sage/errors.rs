@@ -24,7 +24,7 @@ async fn send_empty_message(world: &mut ForgeWorld) -> Result<(), String> {
             world.last_status = Some(resp.status().as_u16());
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
@@ -50,7 +50,7 @@ async fn send_without_message(world: &mut ForgeWorld) -> Result<(), String> {
             world.last_status = Some(resp.status().as_u16());
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
@@ -78,7 +78,7 @@ async fn send_long_message(world: &mut ForgeWorld) -> Result<(), String> {
             world.last_status = Some(resp.status().as_u16());
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
@@ -99,17 +99,20 @@ async fn send_malformed_json(world: &mut ForgeWorld) -> Result<(), String> {
             world.last_status = Some(resp.status().as_u16());
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
 #[quench_test_bdd::given("vLLM service is unavailable")]
-async fn vllm_unavailable(_world: &mut ForgeWorld) -> Result<(), String> {
+const fn vllm_unavailable(_world: &mut ForgeWorld) {
     // Placeholder - in real scenario would mock vLLM unavailability
-    Ok(())
 }
 
 #[quench_test_bdd::when("I send 5 concurrent chat messages")]
+#[allow(
+    clippy::needless_pass_by_ref_mut,
+    reason = "the step macro requires `&mut World` as the first parameter"
+)]
 async fn send_concurrent_messages(world: &mut ForgeWorld) -> Result<(), String> {
     let url = format!("{}/sage/api/v1/chat", world.sage_base_url);
     let token = world.jwt_token.clone();
@@ -131,7 +134,7 @@ async fn send_concurrent_messages(world: &mut ForgeWorld) -> Result<(), String> 
 
             client
                 .post(&url)
-                .header("Authorization", format!("Bearer {}", token))
+                .header("Authorization", format!("Bearer {token}"))
                 .json(&body)
                 .send()
                 .await
@@ -151,9 +154,7 @@ async fn send_concurrent_messages(world: &mut ForgeWorld) -> Result<(), String> 
 }
 
 #[quench_test_bdd::then("the response should indicate service unavailable")]
-async fn response_service_unavailable(_world: &mut ForgeWorld) -> Result<(), String> {
-    Ok(())
-}
+const fn response_service_unavailable(_world: &mut ForgeWorld) {}
 
 #[quench_test_bdd::when(expr = "I send a long chat message with {int} characters")]
 async fn send_long_message_with_count(
@@ -182,7 +183,7 @@ async fn send_long_message_with_count(
             world.last_status = Some(resp.status().as_u16());
             Ok(())
         }
-        Err(e) => Err(format!("Request error: {}", e)),
+        Err(e) => Err(format!("Request error: {e}")),
     }
 }
 
@@ -193,7 +194,7 @@ async fn send_rapid_chat_messages(world: &mut ForgeWorld) -> Result<(), String> 
     let conv_id = world
         .current_conversation_id
         .clone()
-        .unwrap_or("test-conversation".to_string());
+        .unwrap_or_else(|| "test-conversation".to_string());
 
     let mut handles = vec![];
 
@@ -213,7 +214,7 @@ async fn send_rapid_chat_messages(world: &mut ForgeWorld) -> Result<(), String> 
 
             client
                 .post(&url)
-                .header("Authorization", format!("Bearer {}", token))
+                .header("Authorization", format!("Bearer {token}"))
                 .json(&body)
                 .send()
                 .await

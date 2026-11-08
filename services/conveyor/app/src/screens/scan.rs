@@ -51,7 +51,7 @@ fn origin_text(env: &Env, run: &Run) -> String {
 
 // ── Overview ─────────────────────────────────────────────────────────────────
 
-pub(crate) fn scan(env: &Env, state: &State, owner: &str, name: &str) -> View {
+pub fn scan(env: &Env, state: &State, owner: &str, name: &str) -> View {
     let (env, state, owner, name) = (
         env.clone(),
         state.clone(),
@@ -142,7 +142,7 @@ fn card(env: &Env, repo: &Repo, check: &CheckDetail) -> Element {
 
 // ── One check ────────────────────────────────────────────────────────────────
 
-pub(crate) fn check(
+pub fn check(
     env: &Env,
     state: &State,
     _router: &Router,
@@ -324,6 +324,10 @@ fn scanner_panel(env: &Env, state: &State, repo: &Repo) -> View {
 
 /// Every finding of the latest scan at the chosen levels, with a box per level to change them. Until a filter is applied every
 /// level shows, whatever the boxes say.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function builds the findings table with its level filter"
+)]
 fn scanner_findings(env: &Env, found: &ScanFindings) -> View {
     let tally = counts(&found.findings);
     let ticks: Vec<Signal<bool>> = LEVELS.iter().map(|_| create_signal(true)).collect();
@@ -331,7 +335,7 @@ fn scanner_findings(env: &Env, found: &ScanFindings) -> View {
     let chosen: Signal<Vec<&'static str>> = create_signal(LEVELS.to_vec());
 
     let apply = {
-        let (ticks, applied, chosen) = (ticks.clone(), applied.clone(), chosen.clone());
+        let (ticks, applied, chosen) = (ticks.clone(), applied, chosen.clone());
         move || {
             let on: Vec<&str> = LEVELS
                 .iter()

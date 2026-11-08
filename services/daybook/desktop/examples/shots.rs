@@ -32,6 +32,10 @@ fn task(id: &str, content: &str) -> Task {
     }
 }
 
+#[allow(
+    clippy::many_single_char_names,
+    reason = "the sample tasks are named `a`, `b`, `c`... like their ids"
+)]
 fn sample(zone: &Zone, now: Time) -> Data {
     let today = zone.civil_at(now).date();
     let day = |n: i64| today.add_days(n).unwrap();
@@ -99,6 +103,10 @@ fn descendants(
 }
 
 /// Where on the screen the element is, found by asking what is at each point.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "screen coordinates are below 2400, which an `f32` holds exactly"
+)]
 fn locate(
     r: &NativeRenderer,
     node: quench_ui_native::NodeId,
@@ -145,7 +153,7 @@ impl Page {
         self.draw();
     }
 
-    fn save(&mut self, dir: &str, name: &str) {
+    fn save(&self, dir: &str, name: &str) {
         // The canvas is blue, green, red, alpha.
         let mut rgba = self.canvas.bytes().to_vec();
         for px in rgba.as_chunks_mut::<4>().0 {
@@ -163,6 +171,10 @@ impl Page {
 /// What a drawn page needs kept alive: the page, the app's inbox, and its mount.
 type Drawn = (Page, Rc<dyn Fn(Msg)>, quench_ui::Mount<NativeRenderer>);
 
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "screen coordinates are below 2400, which an `f32` holds exactly"
+)]
 fn page(width: usize, height: usize, has_session: bool) -> Drawn {
     let renderer = Rc::new(NativeRenderer::new());
     for (scheme, theme) in [("dark", Theme::DefaultDark), ("light", Theme::DefaultLight)] {
@@ -229,7 +241,7 @@ fn main() {
     let zone = Zone::named("Europe/Warsaw").unwrap();
     let now = Time::now() + Duration::seconds(0);
 
-    let (mut p, _d, _m) = page(420, 860, false);
+    let (p, _d, _m) = page(420, 860, false);
     p.save(&dir, "1-sign-in");
 
     let (mut p, deliver, _m) = page(420, 860, true);

@@ -31,7 +31,7 @@ pub fn month_title(year: i32, month: u32) -> String {
 /// The month before (`-1`) or after (`1`).
 #[must_use]
 pub const fn shift_month(year: i32, month: u32, by: i32) -> (i32, u32) {
-    let index = year * 12 + month as i32 - 1 + by;
+    let index = year * 12 + month.cast_signed() - 1 + by;
     (index.div_euclid(12), index.rem_euclid(12) as u32 + 1)
 }
 

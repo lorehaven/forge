@@ -3,6 +3,7 @@ use crate::job_log;
 use crate::rsync;
 use quench_cli::prelude::{Tone, print_status};
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use std::time::{Duration, Instant};
 
 const TICK: Duration = Duration::from_secs(1);
@@ -44,7 +45,11 @@ pub fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
 /// One pass over `jobs`, running whichever are due and recording when they
 /// ran - the loop body of [`run`], split out so a single pass can be tested
 /// without the surrounding infinite loop or a real `sleep`.
-pub fn poll_once(jobs: &[(&Job, Duration)], last_run: &mut HashMap<String, Instant>, now: Instant) {
+pub fn poll_once<S: BuildHasher>(
+    jobs: &[(&Job, Duration)],
+    last_run: &mut HashMap<String, Instant, S>,
+    now: Instant,
+) {
     for (job, interval) in jobs {
         if is_due(last_run.get(&job.id).copied(), now, *interval) {
             last_run.insert(job.id.clone(), now);
@@ -61,6 +66,7 @@ pub fn poll_once(jobs: &[(&Job, Duration)], last_run: &mut HashMap<String, Insta
 
 /// Whether a job with this interval, last run at `last_run` (never, if
 /// `None`), is due to run again as of `now`.
+#[must_use]
 pub fn is_due(last_run: Option<Instant>, now: Instant, interval: Duration) -> bool {
     last_run.is_none_or(|last| now.duration_since(last) >= interval)
 }

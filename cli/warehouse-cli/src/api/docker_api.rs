@@ -26,6 +26,7 @@ pub struct BearerChallenge {
     pub service: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct DockerApi {
     client: quench_client::transport::Client,
 }
@@ -234,6 +235,7 @@ impl DockerApi {
     }
 }
 
+#[must_use]
 pub fn parse_bearer_challenge(headers: &HeaderMap) -> Option<BearerChallenge> {
     let raw = headers.get(&WWW_AUTHENTICATE)?.to_str().ok()?.trim();
     let raw = if let Some(rest) = raw.strip_prefix("Bearer ") {
@@ -261,10 +263,12 @@ pub fn parse_bearer_challenge(headers: &HeaderMap) -> Option<BearerChallenge> {
     })
 }
 
+#[must_use]
 pub fn should_try_https_fallback(url: &str, err: &quench_client::transport::Error) -> bool {
     url.starts_with("http://") && err.to_string().contains("invalid HTTP version parsed")
 }
 
+#[must_use]
 pub fn to_https_url(url: &str) -> Option<String> {
     url.strip_prefix("http://")
         .map(|rest| format!("https://{rest}"))

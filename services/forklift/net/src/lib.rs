@@ -270,14 +270,14 @@ impl Session {
     ///
     /// # Errors
     /// [`NetError::TooLarge`], [`NetError::QuotaFull`], [`NetError::NoStorage`]; the rest as [`NetError`].
-    pub fn put(&mut self, storage: &str, path: &str, body: Vec<u8>) -> Result<(), NetError> {
+    pub fn put(&mut self, storage: &str, path: &str, body: &[u8]) -> Result<(), NetError> {
         let url = upload_url(self.0.base(), storage, path);
         let response = self.0.call("PUT", &url, true, |client, token| {
             client
                 .put(&url)
                 .bearer_auth(token)
                 .header("content-type", "application/octet-stream")
-                .body(body.clone())
+                .body(body.to_vec())
                 .send()
         })?;
         ok(response.status().as_u16())
@@ -299,7 +299,7 @@ impl Session {
 }
 
 /// A status as the result a caller can use.
-fn ok(status: u16) -> Result<(), NetError> {
+const fn ok(status: u16) -> Result<(), NetError> {
     match status {
         200..=299 => Ok(()),
         401 => Err(NetError::Unauthorized),
@@ -344,9 +344,10 @@ pub fn upload_url(base: &str, storage: &str, path: &str) -> String {
     )
 }
 
-/// Sends `body` to `url` with `PUT` and the bearer token, whole, and says what the server answered. For a host that
-/// reads the file itself and was handed the token ([`Session::fresh_token`]); a refusal (a status other than `2xx`) is
-/// the answer, not an error.
+/// Sends `body` to `url` with `PUT` and the bearer token, whole, and says what the server answered.
+///
+/// For a host that reads the file itself and was handed the token ([`Session::fresh_token`]); a refusal (a status
+/// other than `2xx`) is the answer, not an error.
 ///
 /// # Errors
 /// [`NetError::Network`] when the request cannot be made.

@@ -33,8 +33,10 @@ pub async fn fetch_all(sources: Vec<Source>) -> Fetched {
     out
 }
 
-/// Merges what the sources gave and stores it. When every source failed nothing is written: a stale catalogue beats
-/// an empty one after a network blip. Returns how many packages were written (0 when skipped).
+/// Merges what the sources gave and stores it.
+///
+/// When every source failed nothing is written: a stale catalogue beats an empty one after a network blip. Returns how
+/// many packages were written (0 when skipped).
 ///
 /// # Errors
 /// The store failed.
@@ -46,10 +48,10 @@ pub async fn apply(db: &Db, fetched: Fetched) -> Result<usize, String> {
 ///
 /// # Errors
 /// The store failed.
-pub async fn apply_with_downloads(
+pub async fn apply_with_downloads<S: std::hash::BuildHasher + Sync>(
     db: &Db,
     fetched: Fetched,
-    downloads: &std::collections::HashMap<String, i64>,
+    downloads: &std::collections::HashMap<String, i64, S>,
 ) -> Result<usize, String> {
     let mut by_source = std::collections::HashMap::new();
     let mut any = false;

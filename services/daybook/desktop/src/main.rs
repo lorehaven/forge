@@ -86,7 +86,7 @@ fn main() -> std::io::Result<()> {
             } else {
                 settings.server.clone()
             },
-            list: settings.list.clone(),
+            list: settings.list,
             has_session,
             zone: Zone::local(),
             clock: Rc::new(Time::now),

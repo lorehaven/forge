@@ -10,7 +10,7 @@ async fn publish_crate(world: &mut ForgeWorld, name: String, version: String) {
         || name.contains("test-index")
     {
         let suffix = Time::now().timestamp_millis();
-        let n = format!("{}-{}", name, suffix);
+        let n = format!("{name}-{suffix}");
         // crate names must be <= 64 chars
         if n.len() > 64 {
             format!("{}-{}", &name[..name.len().min(50)], suffix)
@@ -40,10 +40,10 @@ async fn publish_crate(world: &mut ForgeWorld, name: String, version: String) {
     });
 
     let metadata_str = quench_serde::json::to_string(&metadata);
-    let metadata_len = metadata_str.len() as u32;
+    let metadata_len = u32::try_from(metadata_str.len()).expect("payload length fits in u32");
 
     let crate_data = b"mock crate content";
-    let crate_len = crate_data.len() as u32;
+    let crate_len = u32::try_from(crate_data.len()).expect("payload length fits in u32");
 
     let mut body = Vec::new();
     body.extend_from_slice(&metadata_len.to_le_bytes());
@@ -117,7 +117,7 @@ async fn send_put_request_with_token_and_body(
     }
     let res = rb
         .header("Content-Type", "application/json")
-        .body(body.to_string())
+        .body(body.clone())
         .send()
         .await
         .expect("Failed to send PUT request");
@@ -140,7 +140,7 @@ async fn send_delete_request_with_token_and_body(
     }
     let res = rb
         .header("Content-Type", "application/json")
-        .body(body.to_string())
+        .body(body.clone())
         .send()
         .await
         .expect("Failed to send DELETE request");
@@ -163,10 +163,10 @@ async fn publish_crate_no_token(world: &mut ForgeWorld, name: String, version: S
     });
 
     let metadata_str = quench_serde::json::to_string(&metadata);
-    let metadata_len = metadata_str.len() as u32;
+    let metadata_len = u32::try_from(metadata_str.len()).expect("payload length fits in u32");
 
     let crate_data = b"mock crate content";
-    let crate_len = crate_data.len() as u32;
+    let crate_len = u32::try_from(crate_data.len()).expect("payload length fits in u32");
 
     let mut body = Vec::new();
     body.extend_from_slice(&metadata_len.to_le_bytes());
@@ -192,10 +192,10 @@ async fn publish_crate_invalid_metadata(world: &mut ForgeWorld, step: &quench_te
         rb = rb.bearer_auth(token);
     }
 
-    let metadata_len = metadata_str.len() as u32;
+    let metadata_len = u32::try_from(metadata_str.len()).expect("payload length fits in u32");
 
     let crate_data = b"mock crate content";
-    let crate_len = crate_data.len() as u32;
+    let crate_len = u32::try_from(crate_data.len()).expect("payload length fits in u32");
 
     let mut body = Vec::new();
     body.extend_from_slice(&metadata_len.to_le_bytes());

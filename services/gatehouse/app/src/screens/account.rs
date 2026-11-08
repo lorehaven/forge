@@ -9,7 +9,7 @@ use quench_ui::router::{RouteContext, link};
 use super::{Env, hint, panel, post_form, query, submit, waiting};
 use crate::live::{Problem, Request, State};
 
-pub(crate) fn account(env: &Env, state: &State, ctx: &RouteContext) -> View {
+pub fn account(env: &Env, state: &State, ctx: &RouteContext) -> View {
     let flash = notice::account(&query(ctx));
     state.account.set(None);
     (env.ask)(Request::Account);
@@ -20,7 +20,7 @@ pub(crate) fn account(env: &Env, state: &State, ctx: &RouteContext) -> View {
             |account| {
                 div()
                     .class("admin-container")
-                    .child(super::notice(&env, flash))
+                    .child(flash.map(|n| super::notice(&env, &n)))
                     .child(profile_panel(&env, &account))
                     .child(email_panel(&env, &account))
                     .child(notifications_panel(&env, &account))
@@ -341,7 +341,11 @@ fn mfa_panel(env: &Env, account: &Account) -> Element {
 
 /// Enrolling an authenticator: scan the code (or type the secret), then give the first code it shows. The code is checked
 /// through the API so that a wrong one leaves the same secret on the page; the secret never travels in a URL.
-pub(crate) fn mfa_enroll(env: &Env, state: &State, _ctx: &RouteContext) -> View {
+#[allow(
+    clippy::too_many_lines,
+    reason = "one view tree: the code, the secret, the form and its answer, which share the same signals"
+)]
+pub fn mfa_enroll(env: &Env, state: &State, _ctx: &RouteContext) -> View {
     state.enrollment.set(None);
     (env.ask)(Request::MfaSecret);
     let draft_error: Signal<Option<&'static str>> = create_signal(None);
@@ -409,7 +413,7 @@ pub(crate) fn mfa_enroll(env: &Env, state: &State, _ctx: &RouteContext) -> View 
                 span()
                     .attr("id", "mfa-secret")
                     .class("gh-mono")
-                    .text(enrollment.secret.clone()),
+                    .text(enrollment.secret),
             )
             .child(row(
                 &env,

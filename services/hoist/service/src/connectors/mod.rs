@@ -21,8 +21,9 @@ pub fn client() -> Client {
 }
 
 /// One source and how to reach it.
+#[derive(Debug)]
 pub enum Source {
-    /// F-Droid and IzzyOnDroid share the index format; `name` is `fdroid` or `izzyondroid`.
+    /// F-Droid and `IzzyOnDroid` share the index format; `name` is `fdroid` or `izzyondroid`.
     FDroid {
         name: &'static str,
         repo_url: String,

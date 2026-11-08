@@ -21,6 +21,14 @@ pub struct Env {
     pub ask: Rc<dyn Fn(Request)>,
 }
 
+impl std::fmt::Debug for Env {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Env")
+            .field("base", &self.base)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Env {
     fn path(&self, rest: &str) -> String {
         format!("{}/ui{rest}", self.base)
@@ -382,7 +390,7 @@ pub(crate) fn home(env: &Env, state: &State) -> View {
     };
 
     let grid = {
-        let (env, groups, sync) = (env.clone(), state.groups.clone(), sync_filter.clone());
+        let (env, groups, sync) = (env.clone(), state.groups.clone(), sync_filter);
         View::keyed(
             move || {
                 groups.with(|g| {
@@ -663,9 +671,9 @@ fn select_field(field: &Field, options: Vec<(String, String)>, disabled: &[Strin
 
 #[allow(clippy::too_many_lines)]
 #[must_use]
-pub(crate) fn package(env: &Env, state: &State, name: String) -> View {
+pub(crate) fn package(env: &Env, state: &State, name: &str) -> View {
     let find = {
-        let (groups, name) = (state.groups.clone(), name.clone());
+        let (groups, name) = (state.groups.clone(), name.to_string());
         move || {
             groups.with(|g| {
                 g.as_ref()
@@ -883,6 +891,10 @@ pub(crate) fn package(env: &Env, state: &State, name: String) -> View {
 // ── One target: what runs, what is published ─────────────────────────────────
 
 #[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one view tree: the target's versions, its sync form and its units, built from the same state"
+)]
 pub(crate) fn target(env: &Env, state: &State, name: String) -> View {
     let version = Field::new("gt-version", "");
     let (env, state) = (env.clone(), state.clone());
@@ -1093,8 +1105,7 @@ pub(crate) fn operations(env: &Env, state: &State) -> View {
         ))
         .child(element("tbody").child(list));
     let body = {
-        let (env, operations, problem) =
-            (env.clone(), state.operations.clone(), state.problem.clone());
+        let (env, operations, problem) = (env, state.operations.clone(), state.problem);
         View::dynamic(
             move || match operations.with(|o| o.as_ref().map(Vec::len)) {
                 None if problem.get().is_some() => View::Empty,

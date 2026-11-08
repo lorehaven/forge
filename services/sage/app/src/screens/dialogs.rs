@@ -142,7 +142,7 @@ fn new_project(env: &Env, state: &State) -> View {
     )
 }
 
-pub(crate) fn dialogs(env: &Env, state: &State) -> View {
+pub fn dialogs(env: &Env, state: &State) -> View {
     let (env, state) = (env.clone(), state.clone());
     View::dynamic(move || match state.dialog.get() {
         None => View::Empty,

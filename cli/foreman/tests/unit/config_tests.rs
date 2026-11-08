@@ -62,10 +62,10 @@ fn a_service_needing_an_unknown_service_is_rejected() {
 
 #[quench_test::test]
 fn a_task_with_an_empty_command_is_rejected() {
-    let text = r#"
+    let text = r"
             [tasks.migrate]
             command = []
-        "#;
+        ";
     let err = parse(text).unwrap().validate().unwrap_err().to_string();
     assert!(err.contains("migrate"));
     assert!(err.contains("empty command"));

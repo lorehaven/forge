@@ -541,3 +541,101 @@ fn a_build_stages_the_forge_theme_unless_the_book_has_its_own_or_asks_for_none()
         .unwrap();
     assert!(!root.join("target/docs/demo/src/_sass").exists());
 }
+
+/// The paths in a release archive.
+fn archive_paths(archive: &[u8]) -> Vec<String> {
+    let tar = quench_archive::gzip::decompress(archive, 1 << 26).unwrap();
+    quench_archive::tar::Reader::new(&tar)
+        .map(|entry| entry.unwrap().path)
+        .collect()
+}
+
+#[cfg(unix)]
+#[quench_test::test]
+fn the_archive_carries_the_markdown_sources_under_source() {
+    let (root, config) = demo("sources");
+    write(&root, "docs/_config.yml", "title: Demo\nbaseurl: /demo\n");
+    write(
+        &root,
+        "docs/guide/setup.md",
+        &page(
+            "Setup",
+            "nav_order: 2\n",
+            "![shot](shot.png) ![logo](/assets/logo.png) ![based]({{ site.baseurl }}/assets/based.png)\n\
+             ![far](https://example.com/x.png) ![gone](missing.png) [page](../index.md)\n\
+             `![in code](code.png)`",
+        ),
+    );
+    for image in [
+        "docs/guide/shot.png",
+        "docs/assets/logo.png",
+        "docs/assets/based.png",
+        "docs/guide/code.png",
+        "docs/unused.png",
+    ] {
+        write(&root, image, "png");
+    }
+    write(
+        &root,
+        "docs/_drafts/draft.md",
+        &page("Draft", "", "not a page"),
+    );
+    // `missing.png` is a broken link on purpose: the checks would stop the build.
+    let unchecked = Options {
+        no_check: true,
+        ..Options::default()
+    };
+    let mut log = Vec::new();
+    let built =
+        anvil::commands::docs::build_book(&config, &root, "demo", &unchecked, &mut log).unwrap();
+    let paths = archive_paths(&std::fs::read(&built.archive).unwrap());
+    let sources: Vec<&str> = paths
+        .iter()
+        .filter_map(|p| p.strip_prefix("_source/"))
+        .collect();
+    assert_eq!(
+        sources,
+        [
+            "_config.yml",
+            "assets/based.png",
+            "assets/logo.png",
+            "guide/setup.md",
+            "guide/shot.png",
+            "index.md",
+        ]
+    );
+    // The site comes first, as before; the sources keep their front matter.
+    assert_eq!(paths[0], "index.html");
+    let tar =
+        quench_archive::gzip::decompress(&std::fs::read(&built.archive).unwrap(), 1 << 26).unwrap();
+    let index = quench_archive::tar::Reader::new(&tar)
+        .map(Result::unwrap)
+        .find(|e| e.path == "_source/index.md")
+        .unwrap();
+    assert!(
+        std::str::from_utf8(index.data)
+            .unwrap()
+            .starts_with("---\ntitle: Demo")
+    );
+    assert!(
+        built.manifest_text.contains("\"sources\": \"_source/\""),
+        "{}",
+        built.manifest_text
+    );
+    assert!(
+        built.manifest_text.contains("\"source_files\": 6"),
+        "{}",
+        built.manifest_text
+    );
+    assert!(
+        built.manifest_text.contains("\"files\": 2"),
+        "the site's files only: {}",
+        built.manifest_text
+    );
+    // Built again: the same bytes.
+    let first = std::fs::read(&built.archive).unwrap();
+    let again =
+        anvil::commands::docs::build_book(&config, &root, "demo", &unchecked, &mut Vec::new())
+            .unwrap();
+    assert_eq!(first, std::fs::read(&again.archive).unwrap());
+}

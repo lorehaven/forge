@@ -55,7 +55,7 @@ impl Status {
 /// A file as a source lists it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found {
-    /// What the source calls it, stable for the life of the file (a MediaStore id).
+    /// What the source calls it, stable for the life of the file (a `MediaStore` id).
     pub local_id: String,
     pub name: String,
     /// Where to read it from (a content URI on Android).
@@ -126,7 +126,7 @@ pub struct Totals {
 }
 
 impl Totals {
-    fn merge(&mut self, o: &Self) {
+    const fn merge(&mut self, o: &Self) {
         self.pending += o.pending;
         self.uploading += o.uploading;
         self.done += o.done;
@@ -136,7 +136,7 @@ impl Totals {
         self.waiting_bytes += o.waiting_bytes;
     }
 
-    fn add(&mut self, i: &Item) {
+    const fn add(&mut self, i: &Item) {
         match i.status {
             Status::Pending => self.pending += 1,
             Status::Uploading => self.uploading += 1,

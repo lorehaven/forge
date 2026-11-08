@@ -160,7 +160,11 @@ fn header(open: &Signal<bool>, id: &str, label: String, end: Option<Element>) ->
         .child(end)
 }
 
-pub(crate) fn sidebar(env: &Env, state: &State) -> View {
+#[allow(
+    clippy::too_many_lines,
+    reason = "builds the whole sidebar (projects and conversations) as one view tree"
+)]
+pub fn sidebar(env: &Env, state: &State) -> View {
     let projects_open = create_signal(true);
     let history_open = create_signal(true);
     let files_open = create_signal(false);

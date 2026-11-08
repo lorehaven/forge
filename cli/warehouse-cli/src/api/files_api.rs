@@ -2,6 +2,7 @@ use crate::domain::{RegistryConfig, service_url};
 use quench_client::transport::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use quench_core::{Context, Result, bail};
 use quench_serde::Deserialize;
+use std::fmt::Write as _;
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -38,6 +39,7 @@ pub struct PreviewResponse {
     pub truncated: bool,
 }
 
+#[derive(Debug)]
 pub struct FilesApi {
     client: quench_client::transport::Client,
 }
@@ -220,6 +222,7 @@ impl FilesApi {
     }
 }
 
+#[must_use]
 pub fn filename_from_content_disposition(value: Option<&str>) -> Option<String> {
     let value = value?;
     for part in value.split(';') {
@@ -251,6 +254,7 @@ pub fn base_url(registry: &RegistryConfig, endpoint: &str) -> Result<String> {
     service_url(base, &registry.base_path, endpoint)
 }
 
+#[must_use]
 pub fn url_encode(value: &str, keep_slash: bool) -> String {
     let mut out = String::with_capacity(value.len());
     for b in value.bytes() {
@@ -261,8 +265,7 @@ pub fn url_encode(value: &str, keep_slash: bool) -> String {
             b'/' if keep_slash => out.push('/'),
             b' ' => out.push_str("%20"),
             _ => {
-                out.push('%');
-                out.push_str(&format!("{b:02X}"));
+                let _ = write!(out, "%{b:02X}");
             }
         }
     }
@@ -275,16 +278,17 @@ pub fn remote_path_for_upload(local_path: &str, remote_dir: Option<&str>) -> Res
         .and_then(|value| value.to_str())
         .ok_or_else(|| quench_core::err!("cannot determine filename for {}", local_path))?;
 
-    let path = if let Some(dir) = remote_dir {
-        let dir = dir.trim().trim_matches('/');
-        if dir.is_empty() {
-            filename.to_string()
-        } else {
-            format!("{dir}/{filename}")
-        }
-    } else {
-        filename.to_string()
-    };
+    let path = remote_dir.map_or_else(
+        || filename.to_string(),
+        |dir| {
+            let dir = dir.trim().trim_matches('/');
+            if dir.is_empty() {
+                filename.to_string()
+            } else {
+                format!("{dir}/{filename}")
+            }
+        },
+    );
 
     Ok(path)
 }

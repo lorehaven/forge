@@ -32,3 +32,6 @@ harness = false
 [dev-dependencies]
 quench-core = { workspace = true }
 quench-test = { workspace = true }
+
+[lints]
+workspace = true

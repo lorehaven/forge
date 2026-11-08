@@ -1,6 +1,7 @@
 // The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
 #![allow(clippy::unwrap_used, clippy::too_many_lines)]
 
+use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
@@ -70,7 +71,7 @@ fn answer(mut stream: TcpStream, log: &Mutex<Vec<Seen>>, handler: &Handler) {
         body.len()
     );
     for (k, v) in headers {
-        head.push_str(&format!("{k}: {v}\r\n"));
+        let _ = write!(head, "{k}: {v}\r\n");
     }
     head.push_str("\r\n");
     let _ = stream.write_all(head.as_bytes());
@@ -113,10 +114,12 @@ fn open_tasks_are_asked_for_across_all_lists() {
     let mut session = login(&base, "me", "secret").unwrap();
     let tasks = session.open_tasks().unwrap();
     assert_eq!(tasks.len(), 1);
-    let seen = log.lock().unwrap();
-    let get = seen
+    let get = log
+        .lock()
+        .unwrap()
         .iter()
         .find(|s| s.target.starts_with("/daybook/"))
+        .cloned()
         .unwrap();
     assert_eq!(get.target, "/daybook/api/v1/tasks?all=true&completed=false");
     assert!(get.auth.starts_with("Bearer access-"));
@@ -139,8 +142,13 @@ fn an_update_replaces_the_task_with_json() {
     body.insert("content", Value::String("Milk".into()));
     let task = session.update_task("t 1", &Value::Object(body)).unwrap();
     assert_eq!(task.id, "t1");
-    let seen = log.lock().unwrap();
-    let put = seen.iter().find(|s| s.method == "PUT").unwrap();
+    let put = log
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|s| s.method == "PUT")
+        .cloned()
+        .unwrap();
     assert_eq!(put.target, "/daybook/api/v1/tasks/t%201");
     assert!(put.content_type.contains("json"));
     assert!(String::from_utf8_lossy(&put.body).contains("\"content\""));
@@ -151,8 +159,7 @@ fn a_token_that_expired_is_renewed_once() {
     let calls = Arc::new(Mutex::new(0));
     let c = Arc::clone(&calls);
     let (base, _) = stand_in(move |seen| {
-        let mut n = c.lock().unwrap();
-        *n += 1;
+        *c.lock().unwrap() += 1;
         if seen.auth == "Bearer access-1" {
             (401, vec![], "{}".into())
         } else {
@@ -160,7 +167,10 @@ fn a_token_that_expired_is_renewed_once() {
         }
     });
     let mut session = login(&base, "me", "secret").unwrap();
-    assert!(session.projects().unwrap().is_empty());
+    assert_eq!(
+        session.projects().unwrap(),
+        [] as [daybook_core::Project; 0]
+    );
     assert_eq!(*calls.lock().unwrap(), 2);
 }
 

@@ -239,7 +239,7 @@ impl Engine {
         }
     }
 
-    fn pause(&mut self, why: Pause) -> Verdict {
+    const fn pause(&mut self, why: Pause) -> Verdict {
         self.paused = Some(why);
         Verdict::Paused(why)
     }

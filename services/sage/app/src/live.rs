@@ -1,5 +1,7 @@
-//! The app against a host: it asks for the data and for every change (`Request`) and is told what came (`Msg`). The host does the
-//! talking to the service; the app owns the routes (`{base}/ui/home?conversation_id=&project_id=`, `/ui/initializing`), the
+//! The app against a host.
+//!
+//! It asks for the data and for every change (`Request`) and is told what came (`Msg`). The host does the talking to
+//! the service; the app owns the routes (`{base}/ui/home?conversation_id=&project_id=`, `/ui/initializing`), the
 //! sidebar, the streaming turn's state and the language.
 
 use std::cell::{Cell, RefCell};
@@ -100,6 +102,16 @@ pub struct Setup {
     /// Where signing in starts (a full page load, not a route of the app).
     pub login_url: String,
     pub history: Rc<dyn History>,
+}
+
+impl std::fmt::Debug for Setup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Setup")
+            .field("base", &self.base)
+            .field("language", &self.language)
+            .field("login_url", &self.login_url)
+            .finish_non_exhaustive()
+    }
 }
 
 /// The app and the function that feeds it.
@@ -282,6 +294,10 @@ struct Ctx {
     ask: Rc<dyn Fn(Request)>,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one arm per message the host can send; each arm is short"
+)]
 fn receive(cx: &Ctx, m: Msg) {
     let state = &cx.state;
     match m {
@@ -431,10 +447,10 @@ fn conversation_read(cx: &Ctx, view: ConversationView) {
     let mut project_moved = None;
     state.active.update(|a| {
         if a.project_id != view.project_id {
-            project_moved = view.project_id.clone();
+            project_moved.clone_from(&view.project_id);
         }
-        a.project_id = view.project_id.clone();
-        a.messages = view.messages.clone();
+        a.project_id.clone_from(&view.project_id);
+        a.messages.clone_from(&view.messages);
         a.loaded = true;
         if !a.resumed {
             a.resumed = true;
@@ -461,7 +477,7 @@ fn conversation_read(cx: &Ctx, view: ConversationView) {
             ));
         }
     } else if resume && state.turn.with_untracked(Option::is_none) {
-        (cx.ask)(Request::Resume(view.id.clone()));
+        (cx.ask)(Request::Resume(view.id));
     }
 }
 
@@ -573,7 +589,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                 });
             }
             {
-                let (cx, path) = (Rc::clone(&cx), path.clone());
+                let (cx, path) = (Rc::clone(&cx), path);
                 create_effect(move || {
                     // Following the address is what opens another conversation.
                     let _ = cx.router.location();
@@ -620,7 +636,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         }
     };
 
-    let routes = Routes::new()
+    let pages = Routes::new()
         .route(&format!("{base}/ui/home"), home.clone())
         .route(&format!("{base}/ui/home/"), home.clone())
         .route(&format!("{base}/ui"), home.clone())
@@ -671,7 +687,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     main()
                         .class("sg-main")
                         .child(banner)
-                        .child(routes.view(&router)),
+                        .child(pages.view(&router)),
                 ),
         )
         .child(dialog)

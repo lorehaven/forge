@@ -33,6 +33,15 @@ pub struct Env {
     pub login: String,
 }
 
+impl std::fmt::Debug for Env {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Env")
+            .field("base", &self.base)
+            .field("login", &self.login)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Env {
     pub(crate) fn path(&self, rest: &str) -> String {
         format!("{}/ui{rest}", self.base)

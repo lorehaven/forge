@@ -69,7 +69,7 @@ impl std::error::Error for NetError {}
 ///
 /// # Errors
 /// [`NetError`] for any status that is not a success.
-pub fn check_status(status: u16) -> Result<(), NetError> {
+pub const fn check_status(status: u16) -> Result<(), NetError> {
     match status {
         200..=299 => Ok(()),
         400 => Err(NetError::Invalid),

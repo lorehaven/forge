@@ -109,10 +109,15 @@ fn scope_query(scope: Option<&str>, page: Option<u32>) -> String {
 }
 
 /// The calls of one page.
+#[derive(Debug)]
 pub struct Client<T: Transport> {
     transport: T,
 }
 
+#[allow(
+    clippy::future_not_send,
+    reason = "a page runs on the browser's one thread: `Transport::send` answers a `Boxed` future, which is not `Send`"
+)]
 impl<T: Transport> Client<T> {
     pub const fn new(transport: T) -> Self {
         Self { transport }

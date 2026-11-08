@@ -24,7 +24,6 @@ path = "src/lib.rs"
 quench-serde = { workspace = true }
 quench-core = { workspace = true }
 quench-args = { workspace = true }
-libc = { workspace = true }
 quench-cli = { workspace = true }
 
 [dev-dependencies]
@@ -34,3 +33,6 @@ quench-test = { workspace = true }
 name = "unit"
 path = "tests/unit.rs"
 harness = false
+
+[lints]
+workspace = true
