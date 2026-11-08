@@ -1,5 +1,5 @@
 // The custom harness does not set `cfg(test)`, so clippy no longer treats these files as test code.
-#![allow(clippy::wildcard_imports)]
+#![allow(clippy::wildcard_imports, clippy::assert_is_empty)]
 
 #[path = "support.rs"]
 mod support;

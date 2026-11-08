@@ -121,7 +121,9 @@ pub enum Target {
     Missing(String),
 }
 
-/// Resolves `target`, written on the page at `from` (its path in the book), among `pages`. `baseurl` is the
+/// Resolves `target`, written on the page at `from` (its path in the book), among `pages`.
+///
+/// `baseurl` is the
 /// site's base path (`/docs`), which a site-absolute link may start with; empty when the site has none.
 #[must_use]
 pub fn resolve(pages: &[Page], from: &str, target: &str, baseurl: &str) -> Target {

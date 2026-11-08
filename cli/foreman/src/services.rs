@@ -161,6 +161,8 @@ pub fn start(estate: &Estate, name: &str) -> Result<bool> {
     }
 }
 
+/// Whether `url` answers, checked with curl.
+///
 /// curl rather than a built-in HTTP client, because a development estate serves
 /// self-signed certificates and `-k` is one flag against a pile of TLS
 /// configuration that would only ever be used to ignore it.

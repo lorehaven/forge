@@ -112,7 +112,9 @@ impl AnvilSettings {
     }
 }
 
-/// Where the books are: the first Warehouse URL of `LOUPE_WAREHOUSE_URL`, loupe's config, and anvil's; the
+/// Where the books are: the first Warehouse URL of `LOUPE_WAREHOUSE_URL`, loupe's config, and anvil's.
+///
+/// The
 /// storage likewise (`LOUPE_STORAGE`, the config's `storage`, anvil's `[docs] storage`, else `docs`).
 ///
 /// # Errors

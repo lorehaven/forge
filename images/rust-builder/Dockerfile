@@ -22,7 +22,7 @@
 # cc-rs build script fails for real, needing a gnu cross-compiler this image
 # doesn't have. glibc-native has neither problem.
 
-FROM rust:1.98-bookworm
+FROM rust:1.99-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential pkg-config ca-certificates git curl libssl-dev perl rsync \

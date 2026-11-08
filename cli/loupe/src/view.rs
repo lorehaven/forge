@@ -1,4 +1,6 @@
-//! A [`Screen`] as the escape sequences that draw it: each row from the top left, styles by role through the
+//! A [`Screen`] as the escape sequences that draw it.
+//!
+//! Each row from the top left, styles by role through the
 //! default theme, marks in reverse video, OSC 8 hyperlinks for URLs, and the status line in reverse.
 
 use crate::graphics::move_to;

@@ -1,4 +1,6 @@
-//! The app against a host: it asks for the data (`Request`) and is told what came (`Msg`). The host does the talking to the
+//! The app against a host: it asks for the data (`Request`) and is told what came (`Msg`).
+//!
+//! The host does the talking to the
 //! service; the app owns the routes (`{base}/ui/...`), the sidebar and the language.
 
 use std::cell::RefCell;

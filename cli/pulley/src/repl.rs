@@ -163,7 +163,9 @@ impl Repl {
     }
 }
 
-/// Which jobs `run <args>` targets: every job for `run all`, or exactly the
+/// Which jobs `run <args>` targets.
+///
+/// Every job for `run all`, or exactly the
 /// ones named, in whatever order they appear in `jobs` (not `args`) - so a
 /// `run c a` still runs them in the estate's configured order.
 #[must_use]

@@ -579,7 +579,9 @@ fn disk_alerts(d: &DiskHealth, add: &mut impl FnMut(String, &str, String, bool))
 pub const FILLS_WARN_DAYS: f64 = 14.0;
 pub const FILLS_SEVERE_DAYS: f64 = 3.0;
 
-/// The alerts the stored history adds: a filesystem of `host` that the forecast says fills soon. The forecast comes
+/// The alerts the stored history adds: a filesystem of `host` that the forecast says fills soon.
+///
+/// The forecast comes
 /// from the database, so these are added by the service and not by [`View::from_readings`].
 #[must_use]
 pub fn fill_alerts(host: &str, forecast: &[crate::DiskForecast]) -> Vec<Alert> {

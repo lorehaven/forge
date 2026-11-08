@@ -75,7 +75,7 @@ One Dockerfile for every service.
 
 Build args: `PROJECT_NAME` and `RESOURCES_PATH` (set by Anvil per package), `RUNTIME_PACKAGES` (default empty), `RESOURCE_DIR` (default `i18n`), `RUN_AS` (default `root`), `WASM_PACKAGE` (default empty).
 
-`images/rust-builder/Dockerfile` (`rust:1.98-bookworm`, glibc, clippy, rustfmt, nightly rustfmt, and the cargo tools the pipeline calls) is the image of every `.conveyor.toml` job. `images/gantry-runner/Dockerfile` builds `riveter` and `gantry-runner` from this workspace plus `kubectl` into an alpine image for Gantry's runner Jobs. `images/Dockerfile.vllm.rocm` is the vLLM ROCm image.
+`images/rust-builder/Dockerfile` (`rust:1.99-bookworm`, glibc, clippy, rustfmt, nightly rustfmt, and the cargo tools the pipeline calls) is the image of every `.conveyor.toml` job. `images/gantry-runner/Dockerfile` builds `riveter` and `gantry-runner` from this workspace plus `kubectl` into an alpine image for Gantry's runner Jobs. `images/Dockerfile.vllm.rocm` is the vLLM ROCm image.
 
 Tool images are built with `scripts/image.sh <rust-builder|gantry-runner> <build|publish>` (also `foreman run build-...`/`publish-...`): tags `ossiriand.arda:8080/forge/ci/rust-builder:latest` and `ossiriand.arda:8080/forge/gantry/runner:<gantry-service version>`. The registry token goes in as build arg `CARGO_REGISTRIES_ENNOR_TOKEN` when `ENNOR_TOKEN` is set; pushing needs `docker login ossiriand.arda:8080`.
 

@@ -275,7 +275,9 @@ pub fn kitty_place(
     format!("\x1b_Ga=p,i={id},q=2,x={x},y={y},w={w},h={h},c={columns},r={rows},C=1\x1b\\")
 }
 
-/// `image` scaled down (never up) to fit `columns` × `rows` cells of `cell` pixels, on a transparent picture of
+/// `image` scaled down (never up) to fit `columns` × `rows` cells of `cell` pixels.
+///
+/// Drawn on a transparent picture of
 /// exactly that many cells, at its top left. Scaling averages the pixels each target pixel covers.
 #[must_use]
 pub fn fit_image(image: &Image, columns: usize, rows: usize, cell: (u32, u32)) -> Option<Picture> {

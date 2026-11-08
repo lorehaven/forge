@@ -38,7 +38,9 @@ pub fn offered(rows: Vec<Artifact>, arch: &str, formats: Option<&[&str]>) -> Vec
         .collect()
 }
 
-/// Looks for updates. `device` is what the system says is installed (a phone's package manager), over what Hoist
+/// Looks for updates.
+///
+/// `device` is what the system says is installed (a phone's package manager), over what Hoist
 /// itself installed; `os`, `arch` and `formats` say which builds apply (as the window's worker does).
 ///
 /// # Errors

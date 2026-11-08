@@ -42,8 +42,9 @@ pub fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-/// One pass over `jobs`, running whichever are due and recording when they
-/// ran - the loop body of [`run`], split out so a single pass can be tested
+/// One pass over `jobs`, running whichever are due and recording when they ran.
+///
+/// The loop body of [`run`], split out so a single pass can be tested
 /// without the surrounding infinite loop or a real `sleep`.
 pub fn poll_once<S: BuildHasher>(
     jobs: &[(&Job, Duration)],

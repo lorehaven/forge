@@ -1,4 +1,6 @@
-//! The pager as a state machine over a screen model: keys in, a [`Screen`] and [`Effect`]s out. No terminal
+//! The pager as a state machine over a screen model: keys in, a [`Screen`] and [`Effect`]s out.
+//!
+//! No terminal
 //! I/O happens here (see `terminal.rs` for that), so tests feed keys and assert on the screen's text.
 
 use crate::render::{Settings, render_page};
