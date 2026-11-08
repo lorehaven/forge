@@ -90,7 +90,10 @@ fn generate_manifests_selected_reports_a_secret_as_sensitive_and_locks_the_file_
             generate_manifests_selected("golden", ResourceScope::All, &selector).unwrap();
         assert_eq!(rendered.resource_count, 1);
         assert_eq!(rendered.path, "manifests/golden-manifests.selection.yaml");
-        assert!(!rendered.skipped_out_of_scope.is_empty());
+        assert_ne!(
+            rendered.skipped_out_of_scope,
+            [] as [riveter::render::ResourceRef; 0]
+        );
 
         #[cfg(unix)]
         {
@@ -125,6 +128,6 @@ fn list_resources_lists_every_resource_regardless_of_scope() {
 fn generate_manifests_errors_for_a_missing_overlay() {
     in_temp_cwd_with_overlay("golden", || {
         let err = generate_manifests("no-such-env").unwrap_err();
-        assert!(!err.to_string().is_empty());
+        assert_ne!(err.to_string(), "");
     });
 }

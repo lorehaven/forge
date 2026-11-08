@@ -523,7 +523,10 @@ async fn an_invitation_needs_a_valid_address() {
             "{name} was not created"
         );
     }
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -541,7 +544,10 @@ async fn an_ordinary_create_neither_invites_nor_mentions_it() {
     assert_eq!(resp.status(), StatusCode::CREATED);
     let body: quench_serde::Value = json_body(resp).await;
     assert!(body.get("invite_sent").is_none(), "{body}");
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]

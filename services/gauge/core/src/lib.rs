@@ -9,6 +9,6 @@ pub mod model;
 pub use api::{AlertEvent, DiskForecast, HostCard, HostDetail, HostHistory, HostSummary, Range};
 pub use format::Level;
 pub use model::{
-    Alert, DiskStat, Fan, Fault, Filesystem, Gpu, LinkView, MemParts, Point, PsiPct, Rate, Reading,
-    Temp, View,
+    Alert, DiskHealth, DiskStat, Fan, Fault, Filesystem, Gpu, LinkView, MemParts, Point, PsiPct,
+    Rate, Reading, Temp, View,
 };

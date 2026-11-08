@@ -278,7 +278,7 @@ fn the_estates_own_anvil_toml_has_no_issues() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let merged = anvil::config::merge(&root).expect("the estate's configuration");
-    assert!(!merged.files.is_empty());
+    assert_ne!(merged.files, [] as [std::path::PathBuf; 0]);
     assert_eq!(validate_value(&merged.value), Vec::new());
 }
 

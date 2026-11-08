@@ -6,6 +6,17 @@ nav_order: 5
 
 `foreman` reads `foreman.toml` at the workspace root, starts Postgres and Redis in containers, applies the schemas with Foundry, builds the browser clients and runs the services from `target/debug`. Everything below is copied from that file; the command reference is the [Foreman](../cli/foreman/index.md) page.
 
+## Before the first build: the `ennor` registry
+
+The `quench-*`, `conveyor-pipeline` and `gatehouse-auth` dependencies come from the private Cargo registry `ennor` (Warehouse). Without it every cargo command in the workspace stops at `registry index was not found in any configuration: ennor`. Reading needs no token; add to `~/.cargo/config.toml`:
+
+```toml
+[registries.ennor]
+index = "sparse+https://ennor.ddns.net/warehouse/index/"
+```
+
+Publishing (`anvil release`, `cargo publish`) needs a token: after `anvil login`, add `credential-provider = ["cargo:token-from-stdout", "anvil", "registry-token"]` to the same table (see [anvil credentials](../cli/anvil/commands-credentials.md)), or `cargo login --registry ennor` with `Bearer <realm access token>` ([Warehouse protocols](../services/warehouse/protocols.md)).
+
 ## Commands
 
 ```text

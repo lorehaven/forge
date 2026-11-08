@@ -70,6 +70,15 @@ ui_col_errors = Fehler
 ui_tcp_retrans = TCP-Neuübertragungen
 ui_fans = Lüfter
 ui_col_speed = Drehzahl
+ui_disk_health = Datenträgerzustand
+ui_col_model = Modell
+ui_col_health = Zustand
+ui_col_power_on = Betriebszeit
+ui_col_sectors = Sektoren (umgelagert / ausstehend / nicht korrigierbar)
+ui_smart_ok = OK
+ui_smart_failing = Fällt aus
+ui_alert_smart_failed = Laufwerk fällt aus (SMART)
+ui_alert_smart_sectors = Defekte Sektoren
 
 # ── Screens across hosts ─────────────────────────────────────────────────────
 

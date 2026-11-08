@@ -64,14 +64,14 @@ fn granted_project_ids_extracts_resource_scoped_grants_for_the_action() {
 #[quench_test::test]
 fn granted_project_ids_is_empty_without_any_matching_grant() {
     let claims = claims_with_scope("conveyor:read sage:write");
-    assert!(granted_project_ids(&claims, "write").is_empty());
+    assert_eq!(granted_project_ids(&claims, "write"), [] as [String; 0]);
 }
 
 #[quench_test::test]
 fn granted_project_ids_ignores_malformed_entries() {
     // No trailing `:action` to split on.
     let claims = claims_with_scope("conveyor:project:proj-a");
-    assert!(granted_project_ids(&claims, "write").is_empty());
+    assert_eq!(granted_project_ids(&claims, "write"), [] as [String; 0]);
 }
 
 #[quench_test::test]

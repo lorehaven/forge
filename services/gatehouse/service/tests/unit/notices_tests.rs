@@ -88,7 +88,10 @@ async fn nothing_is_sent_without_a_confirmed_address() {
     ] {
         notify(&*sender, &account, &Mail::PasswordChanged, None).await;
     }
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -119,7 +122,10 @@ async fn notify_username_looks_the_account_up_and_ignores_strangers() {
     let db = Db::connect("").await.expect("in-memory db");
     let (recorder, sender) = recorder();
     notify_username(&*sender, &db, "nobody", &Mail::MfaDisabled, None).await;
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 
     let dir = std::env::temp_dir().join(format!(
         "notices-test-{}",

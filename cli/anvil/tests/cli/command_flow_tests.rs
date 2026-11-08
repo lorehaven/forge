@@ -184,7 +184,7 @@ fn list_and_config_check_need_no_tools() {
     );
     assert!(!w.run(&["list", "--format", "bogus"], "").ok);
     assert!(w.run(&["config", "check"], "").ok);
-    assert!(w.calls().is_empty());
+    assert_eq!(w.calls(), [] as [String; 0]);
 
     // no credentials stored, so there is no registry token to print
     let token = w.run(&["registry-token"], "");

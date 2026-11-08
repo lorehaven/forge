@@ -32,7 +32,7 @@ fn sample_record(name: &str, version: &str) -> IndexRecord {
 #[quench_test::test]
 fn list_crates_is_empty_when_the_index_directory_does_not_exist() {
     let _storage = WithStorageRoot::new();
-    assert!(list_crates().is_empty());
+    assert_eq!(list_crates(), [] as [String; 0]);
 }
 
 #[quench_test::test]

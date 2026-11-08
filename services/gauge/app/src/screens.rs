@@ -785,6 +785,52 @@ fn temps_section(t: &I18n, view: &Metrics) -> Element {
     )
 }
 
+/// SMART per drive. Sector counters show as `reallocated / pending / uncorrectable`; a drive that reports none
+/// (NVMe through `smartmon`) shows a dash.
+fn disk_health_section(t: &I18n, view: &Metrics) -> Element {
+    let or_dash = |v: Option<String>| v.unwrap_or_else(|| DASH.to_string());
+    let body = rows(view.disk_health.iter().map(|d| {
+        let sectors = match (d.reallocated, d.pending, d.uncorrectable) {
+            (None, None, None) => None,
+            (a, b, c) => Some(format!(
+                "{:.0} / {:.0} / {:.0}",
+                a.unwrap_or(0.0),
+                b.unwrap_or(0.0),
+                c.unwrap_or(0.0)
+            )),
+        };
+        vec![
+            d.device.clone(),
+            or_dash(d.model.clone()),
+            t.t(if d.healthy {
+                "ui_smart_ok"
+            } else {
+                "ui_smart_failing"
+            })
+            .to_string(),
+            or_dash(d.temp_c.map(|c| format!("{c:.0} °C"))),
+            or_dash(d.power_on_hours.map(|h| format::duration(h * 3600.0))),
+            or_dash(sectors),
+        ]
+    }));
+    section(t, "ui_disk_health", None).child(
+        element("table")
+            .class("gg-table")
+            .child(head(
+                t,
+                &[
+                    "ui_col_device",
+                    "ui_col_model",
+                    "ui_col_health",
+                    "ui_col_temp",
+                    "ui_col_power_on",
+                    "ui_col_sectors",
+                ],
+            ))
+            .child(body),
+    )
+}
+
 fn fans_section(t: &I18n, view: &Metrics) -> Element {
     let body = rows(
         view.fans
@@ -911,9 +957,11 @@ pub fn host(t: &I18n, detail: &HostDetail, base: &str, now: f64, looking: &Looki
     for gpu in &view.gpus {
         page = page.child(gpu_section(t, looking.range, history, gpu));
     }
-    page = page
-        .child(disks_section(t, looking.range, history, view))
-        .child(network_section(t, looking.range, history, view));
+    page = page.child(disks_section(t, looking.range, history, view));
+    if !view.disk_health.is_empty() {
+        page = page.child(disk_health_section(t, view));
+    }
+    page = page.child(network_section(t, looking.range, history, view));
     if !view.temps.is_empty() {
         page = page.child(temps_section(t, view));
     }

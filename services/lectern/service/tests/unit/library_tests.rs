@@ -12,7 +12,10 @@ async fn a_release_in_the_storage_is_loaded_and_a_newer_one_replaces_it() {
     assert_eq!(library.get("forge").unwrap().version, "1");
 
     // nothing new, nothing done
-    assert!(library.refresh(&source).await.unwrap().loaded.is_empty());
+    assert_eq!(
+        library.refresh(&source).await.unwrap().loaded,
+        [] as [String; 0]
+    );
 
     source.release("forge", "2", &[("index.html", "two")], None);
     let report = library.refresh(&source).await.unwrap();

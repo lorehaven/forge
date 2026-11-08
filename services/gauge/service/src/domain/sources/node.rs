@@ -1,8 +1,8 @@
 //! `node_exporter`: `GET <url>/metrics`.
 
 use crate::domain::model::{
-    Cpu, DiskIo, Fan, Fault, Filesystem, Gpu, Link, MemParts, Psi, Reading, Temp, Vm, is_real_nic,
-    is_whole_disk,
+    Cpu, DiskHealth, DiskIo, Fan, Fault, Filesystem, Gpu, Link, MemParts, Psi, Reading, Temp, Vm,
+    is_real_nic, is_whole_disk,
 };
 use crate::domain::prom::{Exposition, Sample, parse};
 use quench_client::transport::Client;
@@ -202,6 +202,7 @@ pub fn reading(x: &Exposition, at: f64) -> Reading {
         procs_blocked: x.one("node_procs_blocked"),
         fans,
         faults: faults(x),
+        disk_health: disk_health(x),
     }
 }
 
@@ -308,6 +309,40 @@ fn faults(x: &Exposition) -> Vec<Fault> {
             });
         }
     }
+    out
+}
+
+/// SMART, from the `smartmon` textfile script (`node_exporter`'s `--collector.textfile.directory`). One drive per
+/// `smartmon_device_smart_healthy`; attributes are the raw values, which are counts, hours and degrees.
+fn disk_health(x: &Exposition) -> Vec<DiskHealth> {
+    let mut out: Vec<DiskHealth> = x
+        .named("smartmon_device_smart_healthy")
+        .filter_map(|s| {
+            let disk = s.label("disk")?;
+            let of_disk = |name: &str| x.named(name).find(|a| a.label("disk") == Some(disk));
+            if of_disk("smartmon_device_smart_available").is_some_and(|a| a.value <= 0.0) {
+                return None;
+            }
+            let raw = |attr: &str| of_disk(&format!("smartmon_{attr}_raw_value")).map(|a| a.value);
+            let model = of_disk("smartmon_device_info").and_then(|i| {
+                ["device_model", "product", "model_family"]
+                    .iter()
+                    .find_map(|k| i.label(k).filter(|v| !v.is_empty()))
+                    .map(str::to_string)
+            });
+            Some(DiskHealth {
+                device: disk.trim_start_matches("/dev/").to_string(),
+                model,
+                healthy: s.value > 0.0,
+                temp_c: raw("temperature_celsius").or_else(|| raw("airflow_temperature_cel")),
+                power_on_hours: raw("power_on_hours"),
+                reallocated: raw("reallocated_sector_ct"),
+                pending: raw("current_pending_sector"),
+                uncorrectable: raw("offline_uncorrectable"),
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| a.device.cmp(&b.device));
     out
 }
 

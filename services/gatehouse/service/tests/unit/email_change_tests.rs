@@ -438,5 +438,8 @@ async fn a_ticket_for_a_deleted_account_or_a_garbled_one_is_refused() {
             .await
             .contains("ui_login_confirm_email_invalid")
     );
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }

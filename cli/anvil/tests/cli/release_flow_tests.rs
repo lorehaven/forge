@@ -14,8 +14,8 @@ fn a_dry_run_shows_the_graph_and_changes_nothing() {
         "{}",
         out.text
     );
-    assert!(w.tags().is_empty());
-    assert!(w.cargo_calls().is_empty());
+    assert_eq!(w.tags(), [] as [String; 0]);
+    assert_eq!(w.cargo_calls(), [] as [String; 0]);
 }
 
 #[quench_test::test]

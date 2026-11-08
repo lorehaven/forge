@@ -75,5 +75,5 @@ fn granted_targets_lists_only_the_packages_granted_that_action() {
     targets.sort();
     assert_eq!(targets, ["forge", "media"]);
     assert_eq!(granted_targets(&claims, "scale"), ["vpn"]);
-    assert!(granted_targets(&claims, "rollback").is_empty());
+    assert_eq!(granted_targets(&claims, "rollback"), [] as [String; 0]);
 }

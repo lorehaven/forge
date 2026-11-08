@@ -566,7 +566,10 @@ async fn an_administrator_turning_off_mfa_tells_the_account_holder_only_if_it_wa
     // MFA never was on: no false alarm.
     app.call(post("/ui/admin/users/target/mfa/disable", &container))
         .await;
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 
     // Turn it on, then have the administrator turn it off.
     let (secret, _) = realm::begin_mfa_enrollment("target").expect("enrollment");
@@ -665,7 +668,10 @@ async fn creating_a_user_without_an_address_still_needs_a_password_and_sends_not
             .unwrap()
             .verify_password("given-password")
     );
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 
     let resp = app
         .call(post_form(
@@ -692,7 +698,10 @@ async fn an_unusable_address_is_refused_and_creates_nothing() {
         .await;
     assert!(location(resp).contains("err=ui_register_error_email_invalid"));
     assert!(realm::get(&db, "newbie").await.is_err());
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -766,5 +775,8 @@ async fn resending_is_refused_for_a_confirmed_address_no_address_or_no_account()
         .call(post("/ui/admin/users/ghost/invite", &container))
         .await;
     assert!(location(resp).contains("/admin/users?err="));
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }

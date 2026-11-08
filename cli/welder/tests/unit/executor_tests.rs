@@ -115,7 +115,7 @@ fn detect_tech_stack_returns_sorted_unique_matches_for_a_mixed_repo() {
 #[quench_test::test]
 fn detect_tech_stack_is_empty_for_an_unrecognized_repo() {
     let files = vec!["README.md".to_string(), "LICENSE".to_string()];
-    assert!(detect_tech_stack(&files).is_empty());
+    assert_eq!(detect_tech_stack(&files), [] as [String; 0]);
 }
 
 #[quench_test::test]

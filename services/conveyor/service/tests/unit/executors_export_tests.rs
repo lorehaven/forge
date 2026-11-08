@@ -17,7 +17,7 @@ fn chunks_are_put_back_together_and_written_under_the_root() {
         "target/debug/quench-test/summary.json\t{second}\n"
     ));
 
-    assert!(exports.write(dir.path()).is_empty());
+    assert_eq!(exports.write(dir.path()), [] as [String; 0]);
     assert_eq!(
         std::fs::read(dir.path().join("target/debug/quench-test/summary.json")).expect("file"),
         b"hello, report"
@@ -32,7 +32,7 @@ fn a_path_nobody_asked_for_is_never_written() {
     exports.accept("no tab at all");
     exports.accept(&format!("../escape.txt\t{}", encode(b"x")));
 
-    assert!(exports.write(dir.path()).is_empty());
+    assert_eq!(exports.write(dir.path()), [] as [String; 0]);
     assert!(std::fs::read_dir(dir.path()).expect("dir").next().is_none());
     assert!(Exports::new(&[]).is_empty());
 }

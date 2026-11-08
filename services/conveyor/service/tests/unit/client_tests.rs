@@ -89,7 +89,7 @@ async fn the_files_are_public_and_the_module_may_be_missing() {
     assert!(body.contains(".cv-panel"), "{body}");
     let (status, body) = get("/ui/assets/quench.js", &app).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(!body.is_empty());
+    assert_ne!(body, "");
     let (status, _) = get("/ui/assets/app.wasm", &app).await;
     assert!(
         status == StatusCode::OK || status == StatusCode::NOT_FOUND,

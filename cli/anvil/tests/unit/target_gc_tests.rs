@@ -39,7 +39,7 @@ fn parse_size_reads_units_and_a_bare_number_as_gigabytes() {
 fn under_the_limit_nothing_is_removed() {
     let dir = target();
     let report = prune(dir.path(), 10 << 20, &[], false, false).unwrap();
-    assert!(report.removed.is_empty());
+    assert_eq!(report.removed, [] as [std::path::PathBuf; 0]);
     assert!(!report.over);
     assert!(dir.path().join("debug/incremental").exists());
 }
@@ -91,7 +91,7 @@ fn without_sparing_the_kept_profile_goes_last() {
 fn a_dry_run_reports_and_removes_nothing() {
     let dir = target();
     let report = prune(dir.path(), 0, &[], false, true).unwrap();
-    assert!(!report.removed.is_empty());
+    assert_ne!(report.removed, [] as [std::path::PathBuf; 0]);
     assert!(dir.path().join("debug/incremental/b").exists());
     assert!(dir.path().join("release/deps/a").exists());
 }

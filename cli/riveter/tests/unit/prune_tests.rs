@@ -47,12 +47,15 @@ fn what_another_controller_created_is_never_an_orphan() {
     ]
     .concat();
 
-    assert!(names(&listing).is_empty());
+    assert_eq!(names(&listing), [] as [String; 0]);
 }
 
 #[quench_test::test]
 fn an_object_with_several_owners_is_still_owned() {
-    assert!(names(&row("Pod", "p", "ReplicaSet StatefulSet", "")).is_empty());
+    assert_eq!(
+        names(&row("Pod", "p", "ReplicaSet StatefulSet", "")),
+        [] as [String; 0]
+    );
 }
 
 #[quench_test::test]
@@ -154,11 +157,11 @@ fn the_forge_namespace_that_proposed_31_deletions_now_proposes_only_the_stale_jo
 
 #[quench_test::test]
 fn blank_malformed_and_empty_output_is_ignored() {
-    assert!(names("").is_empty());
-    assert!(names("\n\n").is_empty());
-    assert!(names("Deployment\n").is_empty());
-    assert!(names("\tname-without-kind\t\t\n").is_empty());
-    assert!(names("Deployment\t\t\t\n").is_empty());
+    assert_eq!(names(""), [] as [String; 0]);
+    assert_eq!(names("\n\n"), [] as [String; 0]);
+    assert_eq!(names("Deployment\n"), [] as [String; 0]);
+    assert_eq!(names("\tname-without-kind\t\t\n"), [] as [String; 0]);
+    assert_eq!(names("Deployment\t\t\t\n"), [] as [String; 0]);
     // A row short of its trailing fields is a plain object, not a crash.
     assert_eq!(names("Deployment\tapi\n"), ["deployment/api"]);
 }

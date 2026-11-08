@@ -233,7 +233,7 @@ fn the_json_form_defaults_to_a_fixed_rule_in_utc() {
     let rule: Recurrence = quench_serde::json::from_str(r#"{"unit":"week","interval":2}"#).unwrap();
     assert_eq!(rule.mode, Mode::Fixed);
     assert_eq!(rule.timezone, "UTC");
-    assert!(rule.weekdays.is_empty());
+    assert_eq!(rule.weekdays, [] as [u8; 0]);
 
     let json = quench_serde::to_value(&rule);
     assert_eq!(json["unit"], "week");

@@ -148,7 +148,10 @@ fn a_disk_the_forecast_fills_soon_raises_an_alert_on_the_next_scrape() {
         ..reading(at, at, at, 0.0)
     };
     store.record("h", Ok(with_disk(100.0)));
-    assert!(store.get("h").unwrap().view.unwrap().alerts.is_empty());
+    assert_eq!(
+        store.get("h").unwrap().view.unwrap().alerts,
+        [] as [gauge_core::Alert; 0]
+    );
     *cell.lock().unwrap() = vec![DiskForecast {
         host: "h".into(),
         mount: "/data".into(),

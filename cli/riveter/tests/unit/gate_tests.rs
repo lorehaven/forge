@@ -738,6 +738,6 @@ fn an_overlay_that_declares_no_namespace_is_left_for_the_apply_to_report_on() {
     );
     with_cluster_and_namespace("absent", "||", None, |cluster| {
         assert!(!with_workspace(ws, || create_namespace_if_missing("demo")).unwrap());
-        assert!(cluster.calls().is_empty());
+        assert_eq!(cluster.calls(), [] as [String; 0]);
     });
 }

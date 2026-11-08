@@ -651,7 +651,7 @@ async fn with_switchboard_down_the_models_are_unknown_and_not_ready() {
     let view: ModelsView = get_json(&rig, "/api/v1/models").await;
     assert!(!view.switchboard_ok);
     assert!(!view.ready);
-    assert!(view.instances.is_empty());
+    assert_eq!(view.instances, [] as [sage_core::ModelOption; 0]);
     assert_eq!(view.defaults[0].state, "unknown");
 }
 
@@ -697,5 +697,5 @@ fn the_staged_file_ids_are_split_trimmed_and_blanks_dropped() {
     };
     assert_eq!(req.file_id_list(), vec!["a", "b", "c"]);
     req.file_ids = String::new();
-    assert!(req.file_id_list().is_empty());
+    assert_eq!(req.file_id_list(), [] as [String; 0]);
 }

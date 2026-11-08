@@ -28,10 +28,15 @@ What the collector reads, how a scrape becomes a view, and when an alert exists.
 | Link state, speed, errors | not read | `node_network_up`, `node_network_speed_bytes`, `node_network_{receive,transmit}_{errs,drop}_total` |
 | CPU frequency, power | not read | `node_cpu_scaling_frequency_hertz`, `node_rapl_package_joules_total`, `node_procs_blocked` |
 | Hardware error counters | not read | `node_btrfs_device_errors_total`, `node_edac_{correctable,uncorrectable}_errors_total` |
+| Disk health (SMART) | not read | `smartmon_device_smart_{healthy,available}`, `smartmon_device_info`, and the raw values `smartmon_{temperature_celsius,airflow_temperature_cel,power_on_hours,reallocated_sector_ct,current_pending_sector,offline_uncorrectable}_raw_value`, from the textfile collector (see below) |
 
 PCP values are scaled using the units in the comment line of the exposition, not a table. Whole disks only (`is_whole_disk`: not partitions, `loop`, `ram`, `dm-`, `zram`, `sr`, `md`; `nvme0n1` and `mmcblk0` are disks, `nvme0n1p2` a partition) and physical-looking interfaces only (`is_real_nic`: not `lo`, `veth`, `docker`, `br-`, `cni`, `flannel`, `cali`, `virbr`, `tun`, `tap`). An empty node_exporter answer is an error: `no metrics in the response (is this node_exporter?)`. A non-2xx answer is `<url>: <status>`.
 
-With `also`, the second scrape's GPUs, temperatures, fans and faults are appended, and PSI, memory split, VM counters, CPU frequency, RAPL, blocked processes, disk IO and links fill what the first lacks (`Reading::merge`).
+With `also`, the second scrape's GPUs, temperatures, fans and faults are appended, and PSI, memory split, VM counters, CPU frequency, RAPL, blocked processes, disk IO, links and disk health fill what the first lacks (`Reading::merge`).
+
+### Disk health on a host
+
+node_exporter has no SMART collector. The host runs `smartmon.sh` from prometheus-community's `node-exporter-textfile-collector-scripts` as root on a systemd timer (every 5 minutes), writing `smartmon.prom` (via a temp file and `mv`) into the directory given to node_exporter as `--collector.textfile.directory=/var/lib/node_exporter/textfile`; `node_textfile_scrape_error 0` shows the directory is read. On Debian, `prometheus-node-exporter-collectors` ships the script and `prometheus-node-exporter-smartmon.timer`. One `DiskHealth` per drive with `smartmon_device_smart_healthy` (drives with `smart_available 0` are skipped), named by `disk` without `/dev/` (`sda`, `nvme0`: the NVMe controller, not the `nvme0n1` namespace of the throughput rows). The model is `device_model`, else `product`, else `model_family`. `smartmon.sh` exports only the overall verdict for NVMe drives, so their temperature, hours and sector counters are empty. A PCP host takes the data from its `also` node_exporter. Gauge does not check how old the file is: if the timer stops, the last values stay.
 
 ## Derived values
 
@@ -56,6 +61,9 @@ Evaluated on every successful scrape (`model::alerts`); thresholds are fixed in 
 | `pressure_mem` | `pressure_mem` | memory pressure (some) 10 percent or more | memory full-stall 5 percent or more |
 | `pressure_io` | `pressure_io` | IO full-stall 20 percent or more | never |
 | `swapping` | `swapping` | swap in plus out at least 1 MiB/s | never |
+| `smart_failed` | `smart_failed:<drive>` | the drive's SMART overall verdict is not passed | always |
+| `smart_sectors` | `smart_sectors:<drive>` | reallocated, pending or uncorrectable sectors are not zero; `detail` is `<drive> · <n> reallocated, <n> pending, <n> uncorrectable` (non-zero ones only) | pending or uncorrectable not zero |
+| `hot` | `hot:<drive>` | a drive's SMART temperature is 55 degrees C or more | 60 degrees C or more |
 | `fills_soon` | `fills_soon:<mount>` | the forecast says a filesystem of this host fills in under 14 days | under 3 days |
 | `down` | `down` | the scrape failed; `detail` is the error | always |
 

@@ -241,7 +241,7 @@ async fn rejects_garbage_and_a_corrupted_archive() {
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert!(support::body_text(resp).await.contains("checksum"));
 
-    assert!(walk(rivets.dir.path()).is_empty());
+    assert_eq!(walk(rivets.dir.path()), [] as [std::path::PathBuf; 0]);
     drop(rivets);
 }
 
@@ -273,7 +273,7 @@ async fn rejects_an_upload_over_the_size_limit() {
 
     let resp = publish(&app, &container, "forge", "0.4.0", &rivet("forge", "0.4.0")).await;
     assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
-    assert!(walk(rivets.dir.path()).is_empty());
+    assert_eq!(walk(rivets.dir.path()), [] as [std::path::PathBuf; 0]);
     drop(rivets);
 }
 

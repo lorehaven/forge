@@ -323,6 +323,6 @@ async fn a_plan_is_read_with_its_steps_in_words_and_whether_the_caller_may_run_i
         let plan = gantry_core::StoredPlan::deserialize(&shown).unwrap();
         assert_eq!(plan.can_confirm, may);
         assert_eq!(plan.action, "upgrade");
-        assert!(!plan.step_lines.is_empty());
+        assert_ne!(plan.step_lines, [] as [String; 0]);
     }
 }

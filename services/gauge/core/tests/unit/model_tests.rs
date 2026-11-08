@@ -1,5 +1,6 @@
 use gauge_core::model::{
-    Cpu, DiskIo, Fault, Filesystem, Psi, Reading, Temp, View, Vm, is_real_nic, is_whole_disk,
+    Cpu, DiskHealth, DiskIo, Fault, Filesystem, Psi, Reading, Temp, View, Vm, is_real_nic,
+    is_whole_disk,
 };
 
 fn reading(at: f64, busy: f64, total: f64, rx: f64) -> Reading {
@@ -206,4 +207,56 @@ fn a_disk_the_forecast_fills_soon_is_an_alert_and_the_nearer_the_worse() {
     );
     assert_eq!(alerts[0].detail, "/data · 9 d");
     assert_eq!(alerts[2].detail, "/new · <1 d");
+}
+
+#[quench_test::test]
+fn a_failing_drive_bad_sectors_and_a_hot_drive_raise_alerts() {
+    let drive = |device: &str| DiskHealth {
+        device: device.into(),
+        healthy: true,
+        temp_c: Some(35.0),
+        reallocated: Some(0.0),
+        pending: Some(0.0),
+        uncorrectable: Some(0.0),
+        ..DiskHealth::default()
+    };
+    let cur = Reading {
+        at: 2.0,
+        disk_health: vec![
+            drive("sda"),
+            DiskHealth {
+                healthy: false,
+                reallocated: None,
+                ..drive("nvme0")
+            },
+            DiskHealth {
+                reallocated: Some(163.0),
+                ..drive("sdd")
+            },
+            DiskHealth {
+                pending: Some(2.0),
+                temp_c: Some(57.0),
+                ..drive("sde")
+            },
+        ],
+        ..Reading::default()
+    };
+    let alerts: Vec<(String, String, bool)> = View::from_readings(None, &cur)
+        .alerts
+        .into_iter()
+        .map(|a| (a.key, a.detail, a.severe))
+        .collect();
+    assert_eq!(
+        alerts,
+        [
+            ("smart_failed:nvme0".into(), "nvme0".into(), true),
+            (
+                "smart_sectors:sdd".into(),
+                "sdd · 163 reallocated".into(),
+                false
+            ),
+            ("smart_sectors:sde".into(), "sde · 2 pending".into(), true),
+            ("hot:sde".into(), "sde 57 °C".into(), false),
+        ]
+    );
 }

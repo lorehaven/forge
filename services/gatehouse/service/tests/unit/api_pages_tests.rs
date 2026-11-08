@@ -334,10 +334,13 @@ async fn the_account_has_the_profile_the_choices_and_the_lists() {
         ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"]
     );
     assert!(account.timezones.iter().any(|z| z == "Europe/Warsaw"));
-    assert!(!account.subscriptions.is_empty());
+    assert_ne!(
+        account.subscriptions,
+        [] as [gatehouse_core::Subscription; 0]
+    );
     let first = &account.subscriptions[0];
     assert!(first.label_key.starts_with("ui_notification_"));
-    assert!(!first.service.is_empty());
+    assert_ne!(first.service, "");
 }
 
 #[quench_test::test]
@@ -613,7 +616,10 @@ async fn the_link_for_a_new_address_says_the_address_and_needs_no_session() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(world.mailer.sent().is_empty());
+    assert_eq!(
+        world.mailer.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]

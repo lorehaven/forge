@@ -206,7 +206,10 @@ async fn inbox_project_completion_and_crud_round_trip() {
     delete_alice(&app, &container, &format!("/api/v1/tasks/{task_id}")).await;
     delete_alice(&app, &container, &format!("/api/v1/projects/{project_id}")).await;
     let after_delete = get_alice(&app, &container, &by_project).await;
-    assert!(after_delete.as_array().unwrap().is_empty());
+    assert_eq!(
+        after_delete.as_array().unwrap().as_slice(),
+        [] as [quench_serde::Value; 0]
+    );
 
     // Inbox tasks are independent of the custom project lifecycle.
     let remaining = get_alice(&app, &container, "/api/v1/tasks").await;
@@ -418,7 +421,10 @@ async fn reminders_and_labels_round_trip_and_filter_across_lists() {
     let everything = get_alice(&app, &container, "/api/v1/tasks?all=true").await;
     assert_eq!(everything.as_array().unwrap().len(), 2);
     let open_only = get_alice(&app, &container, "/api/v1/tasks?all=true&completed=true").await;
-    assert!(open_only.as_array().unwrap().is_empty());
+    assert_eq!(
+        open_only.as_array().unwrap().as_slice(),
+        [] as [quench_serde::Value; 0]
+    );
 
     // PUT replaces: omitting the labels and reminder clears them.
     let response = send_alice(

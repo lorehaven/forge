@@ -398,7 +398,7 @@ fn the_auth_header_base64_encodes_username_and_token() {
 
 #[quench_test::test]
 fn no_header_means_no_extra_env() {
-    assert!(credential_env(None).is_empty());
+    assert_eq!(credential_env(None), [] as [(&str, &str); 0]);
 }
 
 #[quench_test::test]

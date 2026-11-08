@@ -96,8 +96,8 @@ fn every_realm_error_has_a_status_message_and_i18n_key() {
         RealmError::Internal,
     ];
     for error in errors {
-        assert!(!error.message().is_empty());
-        assert!(!error.i18n_key().is_empty());
+        assert_ne!(error.message(), "");
+        assert_ne!(error.i18n_key(), "");
         let _ = error.status();
     }
 }
@@ -451,12 +451,9 @@ async fn a_password_set_for_someone_else_ends_their_sessions() {
     .await
     .expect("update");
 
-    assert!(
-        sessions
-            .sessions_for("alice")
-            .await
-            .expect("sessions")
-            .is_empty()
+    assert_eq!(
+        sessions.sessions_for("alice").await.expect("sessions"),
+        [] as [String; 0]
     );
 }
 
@@ -609,12 +606,9 @@ async fn reset_password_changes_the_password_and_ends_every_session() {
 
     let user = get(&db, "alice").await.expect("get");
     assert!(user.verify_password("brand-new-password"));
-    assert!(
-        sessions
-            .sessions_for("alice")
-            .await
-            .expect("sessions")
-            .is_empty()
+    assert_eq!(
+        sessions.sessions_for("alice").await.expect("sessions"),
+        [] as [String; 0]
     );
 }
 
@@ -658,12 +652,9 @@ async fn delete_removes_the_user_and_ends_their_sessions() {
         get(&db, "alice").await.unwrap_err(),
         RealmError::NotFound
     ));
-    assert!(
-        sessions
-            .sessions_for("alice")
-            .await
-            .expect("sessions")
-            .is_empty()
+    assert_eq!(
+        sessions.sessions_for("alice").await.expect("sessions"),
+        [] as [String; 0]
     );
 }
 

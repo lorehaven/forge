@@ -65,7 +65,10 @@ async fn following_a_repo_then_listing_then_leaving() {
     let listed = app
         .call(req(Method::GET, "/api/v1/subscriptions", &container))
         .await;
-    assert!(json_body(listed).await.as_array().unwrap().is_empty());
+    assert_eq!(
+        json_body(listed).await.as_array().unwrap().as_slice(),
+        [] as [quench_serde::Value; 0]
+    );
 }
 
 #[quench_test::test]

@@ -84,7 +84,7 @@ async fn handle_issues_a_token_for_a_valid_basic_auth_credential() {
     let body = support::json_body(resp).await;
     let body: TokenResponseForTest = quench_serde::from_value(&body).unwrap();
     assert_eq!(body.expires_in, 600);
-    assert!(!body.token.is_empty());
+    assert_ne!(body.token, "");
 }
 
 #[quench_test::test]

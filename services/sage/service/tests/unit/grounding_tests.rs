@@ -81,7 +81,7 @@ fn parse_plan_handles_search_skip_and_garbage() {
 
     let none = parse_plan(r#"{"needs_search":false,"queries":["x"]}"#, "q", 3);
     assert!(!none.needs_search);
-    assert!(none.queries.is_empty());
+    assert_eq!(none.queries, [] as [String; 0]);
 
     let empty = parse_plan(r#"{"needs_search":true,"queries":[]}"#, "the question", 3);
     assert_eq!(empty.queries, ["the question"]);
@@ -167,7 +167,7 @@ fn parse_plan_uses_the_kind_to_decide_whether_to_search() {
             3,
         );
         assert!(!plan.needs_search, "{kind} should not search");
-        assert!(plan.queries.is_empty());
+        assert_eq!(plan.queries, [] as [String; 0]);
     }
 }
 
@@ -197,7 +197,7 @@ fn from_evidence_numbers_the_sources_and_flags_empty_input() {
 
     let none = from_evidence(&[], "2026-10-03");
     assert!(none.unavailable);
-    assert!(none.sources.is_empty());
+    assert_eq!(none.sources, [] as [sage_service::grounding::WebSource; 0]);
 }
 
 #[quench_test::test]
@@ -266,12 +266,14 @@ async fn search_with_fallback_is_empty_when_every_provider_fails_or_none_is_regi
         ("searxng", Err("down".into())),
         ("duckduckgo", Err("blocked".into())),
     ]);
-    assert!(search_with_fallback(&reg, "searxng", "q").await.is_empty());
+    assert_eq!(
+        search_with_fallback(&reg, "searxng", "q").await,
+        [] as [sage_service::grounding::Hit; 0]
+    );
     let empty = registry(vec![]);
-    assert!(
-        search_with_fallback(&empty, "searxng", "q")
-            .await
-            .is_empty()
+    assert_eq!(
+        search_with_fallback(&empty, "searxng", "q").await,
+        [] as [sage_service::grounding::Hit; 0]
     );
 }
 
@@ -310,10 +312,9 @@ async fn metered_providers_are_not_fallbacks_unless_listed() {
         ("serpapi", Ok(GOOD.into())),
     ]);
     let default = fallback_names("searxng,duckduckgo");
-    assert!(
-        search_with_fallback_in(&reg, "searxng", "q", &default)
-            .await
-            .is_empty()
+    assert_eq!(
+        search_with_fallback_in(&reg, "searxng", "q", &default).await,
+        [] as [sage_service::grounding::Hit; 0]
     );
 
     let opted_in = fallback_names(" SearXNG , serpapi ,, ");

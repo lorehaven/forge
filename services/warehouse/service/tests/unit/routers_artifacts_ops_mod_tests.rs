@@ -100,7 +100,7 @@ fn artifact_view_carries_arch_and_format_for_desktop_rows() {
     assert_eq!(view.platform, "linux");
     assert_eq!(view.arch.as_deref(), Some("x86_64"));
     assert_eq!(view.format, "tar.gz");
-    assert!(view.permissions.is_empty());
+    assert_eq!(view.permissions, [] as [String; 0]);
 }
 
 /// A Linux build of `code` in `format`.

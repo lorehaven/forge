@@ -71,16 +71,28 @@ fn test_parse_default_models_json() {
 
 #[quench_test::test]
 fn parse_list_returns_empty_for_blank_input() {
-    assert!(DefaultModel::parse_list("").is_empty());
-    assert!(DefaultModel::parse_list("   ").is_empty());
+    assert_eq!(
+        DefaultModel::parse_list(""),
+        [] as [sage_service::config::DefaultModel; 0]
+    );
+    assert_eq!(
+        DefaultModel::parse_list("   "),
+        [] as [sage_service::config::DefaultModel; 0]
+    );
 }
 
 #[quench_test::test]
 fn parse_list_returns_empty_for_malformed_json_that_looks_like_json() {
     // Starts with `{`/`[`, so the raw-string fallback doesn't apply, and
     // it isn't valid JSON either - the "give up" branch.
-    assert!(DefaultModel::parse_list("{not valid json").is_empty());
-    assert!(DefaultModel::parse_list("[{\"name\":}]").is_empty());
+    assert_eq!(
+        DefaultModel::parse_list("{not valid json"),
+        [] as [sage_service::config::DefaultModel; 0]
+    );
+    assert_eq!(
+        DefaultModel::parse_list("[{\"name\":}]"),
+        [] as [sage_service::config::DefaultModel; 0]
+    );
 }
 
 #[quench_test::test]

@@ -262,7 +262,10 @@ async fn runs_list_is_empty_with_no_runs_queued() {
     let resp = app.call(req(Method::GET, "/api/v1/runs", &container)).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
-    assert!(body.as_array().expect("array").is_empty());
+    assert_eq!(
+        body.as_array().expect("array").as_slice(),
+        [] as [quench_serde::Value; 0]
+    );
 }
 
 #[quench_test::test]

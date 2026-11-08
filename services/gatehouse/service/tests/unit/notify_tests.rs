@@ -539,7 +539,10 @@ async fn unknown_accounts_and_unconfirmed_or_missing_addresses_are_skipped() {
             .unwrap();
         assert_eq!(outcome, Outcome::Skipped(expected), "{name}");
     }
-    assert!(w.recorder.sent().is_empty());
+    assert_eq!(
+        w.recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -588,7 +591,10 @@ async fn an_explicit_opt_out_beats_a_requested_notification() {
         w.notify(&req).await.unwrap(),
         Outcome::Skipped(Skip::NotSubscribed)
     );
-    assert!(w.recorder.sent().is_empty());
+    assert_eq!(
+        w.recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -618,7 +624,10 @@ async fn unsubscribing_from_a_default_on_kind_stops_it() {
         .await
         .unwrap();
     assert_eq!(outcome, Outcome::Skipped(Skip::NotSubscribed));
-    assert!(w.recorder.sent().is_empty());
+    assert_eq!(
+        w.recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -737,7 +746,10 @@ async fn a_bad_request_is_the_callers_error_and_reveals_nothing_about_accounts()
     let mut about_ghost = request("ghost", "conveyor.run.failed");
     about_ghost.vars.remove("run");
     assert!(w.notify(&about_ghost).await.is_err());
-    assert!(w.recorder.sent().is_empty());
+    assert_eq!(
+        w.recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -1012,7 +1024,10 @@ async fn the_endpoint_says_why_it_skipped() {
         assert_eq!(json["status"], "skipped");
         assert_eq!(json["reason"], reason);
     }
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -1043,7 +1058,10 @@ async fn the_endpoint_rejects_a_malformed_request_with_the_reason() {
         ))
         .await;
     assert!(resp.status().is_client_error());
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]

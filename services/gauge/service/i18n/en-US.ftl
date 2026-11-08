@@ -70,6 +70,15 @@ ui_col_errors = Errors
 ui_tcp_retrans = TCP retransmits
 ui_fans = Fans
 ui_col_speed = Speed
+ui_disk_health = Disk health
+ui_col_model = Model
+ui_col_health = Health
+ui_col_power_on = Powered on
+ui_col_sectors = Sectors (reallocated / pending / uncorrectable)
+ui_smart_ok = OK
+ui_smart_failing = Failing
+ui_alert_smart_failed = Drive failing (SMART)
+ui_alert_smart_sectors = Bad sectors
 
 # ── Screens across hosts ─────────────────────────────────────────────────────
 

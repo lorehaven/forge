@@ -116,7 +116,10 @@ fn registry_token_reports_an_unreachable_gatehouse() {
 #[quench_test::test]
 fn the_build_gets_the_stored_signing_passwords_unless_the_environment_has_them() {
     let dir = quench_core::tmp::TempDir::new().unwrap();
-    assert!(keystore_env(dir.path(), |_| false).unwrap().is_empty());
+    assert_eq!(
+        keystore_env(dir.path(), |_| false).unwrap(),
+        [] as [(&str, String); 0]
+    );
 
     let credentials = Credentials {
         gatehouse_url: "https://host/gatehouse".to_string(),

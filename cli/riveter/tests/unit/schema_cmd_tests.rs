@@ -131,12 +131,17 @@ fn one_crd_is_an_object_and_several_are_a_list() {
     assert_eq!(crds_from_kubectl(&many).unwrap().len(), 2);
 
     // `--ignore-not-found` with nothing found prints nothing, or an empty list.
-    assert!(crds_from_kubectl("").unwrap().is_empty());
-    assert!(crds_from_kubectl("  \n").unwrap().is_empty());
-    assert!(
-        crds_from_kubectl(r#"{"kind":"List","items":[]}"#)
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        crds_from_kubectl("").unwrap(),
+        [] as [quench_serde::Value; 0]
+    );
+    assert_eq!(
+        crds_from_kubectl("  \n").unwrap(),
+        [] as [quench_serde::Value; 0]
+    );
+    assert_eq!(
+        crds_from_kubectl(r#"{"kind":"List","items":[]}"#).unwrap(),
+        [] as [quench_serde::Value; 0]
     );
     assert!(crds_from_kubectl("not json").is_err());
 }

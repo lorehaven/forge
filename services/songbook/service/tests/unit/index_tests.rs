@@ -458,7 +458,10 @@ fn the_blacklist_is_listed_added_by_name_changed_and_let_go_of() {
             // Let go of: the entry goes (the next sync brings the album back).
             assert!(follow::blacklist_remove(db, id)?);
             assert!(!follow::blacklist_remove(db, id)?);
-            assert!(follow::blacklist_entries(db)?.is_empty());
+            assert_eq!(
+                follow::blacklist_entries(db)?,
+                [] as [(i64, String, String); 0]
+            );
             Ok(())
         })
         .unwrap();
@@ -494,7 +497,10 @@ fn followed_artists_and_categories_are_managed_in_the_index() {
             assert!(follow::set_category(db, "Who", "")?.is_err());
             assert_eq!(follow::clean(" a | b # c\nd "), "a   b   c d");
             follow::remove_follow(db, "NAS")?;
-            assert!(follow::follows(db)?.is_empty());
+            assert_eq!(
+                follow::follows(db)?,
+                [] as [songbook_service::index::follow::Follow; 0]
+            );
             Ok(())
         })
         .unwrap();
@@ -643,7 +649,7 @@ fn top_and_suggested_list_songs_by_popularity() {
                 ..Filter::default()
             });
             assert_eq!(top.albums.len(), 1);
-            assert!(top.albums[0].album.is_empty());
+            assert_eq!(top.albums[0].album, "");
             let order: Vec<i64> = top.albums[0].tracks.iter().map(|t| t.id).collect();
             assert_eq!(order, vec![ids[1], ids[0]]);
             assert!(top.albums[0].tracks[0].score > top.albums[0].tracks[1].score);
@@ -750,7 +756,10 @@ fn suggestions_keep_their_best_songs() {
             follow::set_suggestions(db, &list)?;
             assert_eq!(follow::suggestions(db)?, list);
             follow::set_suggestions(db, &[])?;
-            assert!(follow::suggestions(db)?.is_empty());
+            assert_eq!(
+                follow::suggestions(db)?,
+                [] as [songbook_core::Suggestion; 0]
+            );
             let left = db.query("SELECT COUNT(*) FROM suggestion_tracks", &[])?;
             assert_eq!(left.rows[0][0], quench_sqlite::Value::Integer(0));
             Ok(())

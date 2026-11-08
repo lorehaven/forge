@@ -317,7 +317,6 @@ pub fn schemas_command(cmd: &SchemasCmd) -> Result<()> {
                     },
                 );
             }
-            Ok(())
         }
         SchemasCmd::Fetch {
             crd,
@@ -348,9 +347,9 @@ pub fn schemas_command(cmd: &SchemasCmd) -> Result<()> {
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
-            Ok(())
         }
     }
+    Ok(())
 }
 
 /// "document N is not valid YAML", N being the document the error's line falls in (documents are

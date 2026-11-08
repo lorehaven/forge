@@ -336,7 +336,7 @@ fn usize_to_f64(n: usize) -> f64 {
     let n = u64::try_from(n).unwrap_or(u64::MAX);
     let high = u32::try_from(n >> 32).unwrap_or(u32::MAX);
     let low = u32::try_from(n & 0xFFFF_FFFF).unwrap_or(u32::MAX);
-    f64::from(high) * 4_294_967_296.0 + f64::from(low)
+    f64::mul_add(f64::from(high), 4_294_967_296.0, f64::from(low))
 }
 
 #[must_use]

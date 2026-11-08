@@ -185,7 +185,10 @@ async fn admin_and_disabled_accounts_are_not_mailed() {
         assert_eq!(status, StatusCode::FOUND);
         assert!(location.contains(ok_location()), "{name}: {location}");
     }
-    assert!(h.recorder.sent().is_empty());
+    assert_eq!(
+        h.recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]

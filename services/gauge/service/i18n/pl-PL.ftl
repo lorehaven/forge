@@ -70,6 +70,15 @@ ui_col_errors = Błędy
 ui_tcp_retrans = Retransmisje TCP
 ui_fans = Wentylatory
 ui_col_speed = Prędkość
+ui_disk_health = Stan dysków
+ui_col_model = Model
+ui_col_health = Stan
+ui_col_power_on = Czas pracy
+ui_col_sectors = Sektory (realokowane / oczekujące / nienaprawialne)
+ui_smart_ok = OK
+ui_smart_failing = Awaria
+ui_alert_smart_failed = Dysk ulega awarii (SMART)
+ui_alert_smart_sectors = Uszkodzone sektory
 
 # ── Screens across hosts ─────────────────────────────────────────────────────
 

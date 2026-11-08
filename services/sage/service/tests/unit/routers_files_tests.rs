@@ -362,7 +362,7 @@ async fn list_chunks_returns_an_empty_list_for_a_file_with_none() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let chunks: Vec<quench_serde::Value> = json_body(resp).await;
-    assert!(chunks.is_empty());
+    assert_eq!(chunks, [] as [quench_serde::Value; 0]);
 }
 
 #[quench_test::test]

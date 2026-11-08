@@ -292,7 +292,7 @@ fn mistakes_in_the_setup_are_named_before_anything_is_sent() {
     config.artifacts.programs.get_mut("hoist").unwrap().targets[0].build = vec!["false".into()];
     let (result, _, sent, _) = run(&config, &dir, &Options::default(), 201);
     assert!(result.unwrap_err().contains("failed"));
-    assert!(sent.is_empty());
+    assert_eq!(sent, [] as [anvil::commands::artifact::Upload; 0]);
     config.artifacts.programs.get_mut("hoist").unwrap().targets[0].build = vec!["true".into()];
     config.artifacts.programs.get_mut("hoist").unwrap().targets[0].file = "dist/missing.apk".into();
     let (result, ..) = run(&config, &dir, &Options::default(), 201);
@@ -549,7 +549,10 @@ fn the_warehouses_list_is_read_and_a_wrong_answer_is_said() {
         published.contains(&("linux".to_string(), "deb".to_string(), 1003)),
         "yanked ones count: they still hold the version"
     );
-    assert!(parse_published("[]").unwrap().is_empty());
+    assert_eq!(
+        parse_published("[]").unwrap(),
+        [] as [(String, String, u32); 0]
+    );
     assert!(parse_published("not json").is_err());
     assert!(parse_published("{}").is_err());
     assert_eq!(
@@ -727,7 +730,7 @@ fn a_dry_run_says_what_a_real_run_would_raise_and_changes_nothing() {
     };
     let (result, out, sent, _) = managed(&config, &dir, &options, (200, BOTH));
     result.unwrap();
-    assert!(sent.is_empty());
+    assert_eq!(sent, [] as [anvil::commands::artifact::Upload; 0]);
     assert!(out.contains("would release 0.1.4"), "{out}");
     assert_eq!(read_version(&dir.join("Cargo.toml")).unwrap(), "0.1.3");
     assert!(!dir.join("dist").exists(), "nothing was built");

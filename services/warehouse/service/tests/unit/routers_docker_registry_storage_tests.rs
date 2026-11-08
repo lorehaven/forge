@@ -35,7 +35,7 @@ const DIGEST: &str = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca49
 fn list_repositories_is_empty_on_a_fresh_storage_root() {
     let storage = WithStorageRoot::new();
     std::fs::create_dir_all(storage.dir.path()).unwrap();
-    assert!(list_repositories().is_empty());
+    assert_eq!(list_repositories(), [] as [String; 0]);
     drop(storage);
 }
 

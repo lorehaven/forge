@@ -93,7 +93,7 @@ fn fans_skip_the_gpu_and_the_ones_that_do_not_spin() {
 #[quench_test::test]
 fn error_counters_that_moved_are_faults_and_zeroes_are_not() {
     let healthy = node::reading(&parse(OSSIRIAND), 1.0);
-    assert!(healthy.faults.is_empty());
+    assert_eq!(healthy.faults, [] as [gauge_core::Fault; 0]);
     let sick = parse(
         "node_btrfs_device_errors_total{device=\"sda\",type=\"corruption\",uuid=\"u\"} 3\nnode_btrfs_device_errors_total{device=\"sda\",type=\"flush\",uuid=\"u\"} 0\nnode_edac_uncorrectable_errors_total{controller=\"0\"} 1\n",
     );
@@ -112,4 +112,34 @@ fn a_side_agent_fills_in_what_the_main_one_lacks() {
     assert!(main.psi.is_some() && main.mem_parts.is_some());
     assert_eq!(main.gpus.len(), 2);
     assert!(!main.disk_io.is_empty());
+}
+
+const SMARTMON: &str = include_str!("../fixtures/node_smartmon.txt");
+
+#[quench_test::test]
+fn smartmon_drives_are_read_with_their_counters_and_nvme_has_only_its_verdict() {
+    let r = node::reading(&parse(SMARTMON), 1.0);
+    let names: Vec<&str> = r.disk_health.iter().map(|d| d.device.as_str()).collect();
+    assert_eq!(names, ["nvme0", "sda", "sdb", "sdc", "sdd", "sde"]);
+    assert!(r.disk_health.iter().all(|d| d.healthy));
+    let sdd = &r.disk_health[4];
+    assert_eq!(sdd.model.as_deref(), Some("TOSHIBA HDWD240"));
+    assert_eq!(sdd.reallocated, Some(163.0));
+    assert_eq!(sdd.pending, Some(0.0));
+    assert_eq!(sdd.power_on_hours, Some(33079.0));
+    assert_eq!(sdd.temp_c, Some(33.0));
+    let nvme = &r.disk_health[0];
+    assert_eq!(nvme.model, None);
+    assert!(nvme.temp_c.is_none() && nvme.reallocated.is_none());
+}
+
+#[quench_test::test]
+fn a_pcp_host_takes_its_smart_data_from_the_side_agent() {
+    let mut main = pcp::reading(&parse("mem_physmem 1\n"), 1.0);
+    main.merge(node::reading(&parse(SMARTMON), 1.0));
+    assert_eq!(main.disk_health.len(), 6);
+    assert_eq!(
+        node::reading(&parse(OSSIRIAND), 1.0).disk_health,
+        [] as [gauge_core::DiskHealth; 0]
+    );
 }

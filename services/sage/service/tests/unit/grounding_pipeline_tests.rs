@@ -313,7 +313,10 @@ async fn gather_says_so_when_the_search_finds_nothing_usable() {
     .await
     .expect("a notice, not silence");
     assert!(grounding.unavailable);
-    assert!(grounding.sources.is_empty());
+    assert_eq!(
+        grounding.sources,
+        [] as [sage_service::grounding::WebSource; 0]
+    );
     assert!(
         grounding.block.contains("no usable results"),
         "{}",

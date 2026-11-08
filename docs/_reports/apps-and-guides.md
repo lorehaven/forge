@@ -84,7 +84,7 @@ Merged from the per-slice reports below.
 * `foreman.toml` header and `.anvil/release.toml`: `anvil release --help` says "packages configured in `[publish].packages`", but the config uses `[release]`.
 * `homecloud/overlays/forge/daybook/deployment.yaml.j2` comment says "API only - no UI"; the service serves a browser client at `/daybook/ui` (`WASM_PACKAGE=daybook-web`).
 * `homecloud/overlays/forge/values.yaml`: `GANTRY_RUNNER_IMAGE` is `.../gantry/runner:0.1.0` while gantry-service is 0.2.2 and `scripts/image.sh` tags the runner with Gantry's version.
-* `images/Dockerfile.alpine` default cargo index is `https://ennor.ddns.net/index/`; `images/gantry-runner/Dockerfile` uses `https://ennor.ddns.net/warehouse/index/`. One of them is probably stale.
+* ~~`images/Dockerfile.alpine` default cargo index is `https://ennor.ddns.net/index/`; `images/gantry-runner/Dockerfile` uses `https://ennor.ddns.net/warehouse/index/`. One of them is probably stale.~~ Fixed 2026-11-08: `/index/` answers 404; every default is now `/warehouse/index/`.
 * `permissions.toml` header says gatehouse "needs no rebuild"; `clients.toml` is also read at startup (not verified whether it hot-reloads).
 * `foreman.toml` comments say "no shared secret anywhere now", yet every client still has a `GATEHOUSE_CLIENT_SECRET` (client secrets, not JWT keys; consistent but misleading).
 * REFRESH_TOKEN_TTL_SECS default in code is 604800; overlay sets 2592000.

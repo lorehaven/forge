@@ -1,0 +1,58 @@
+smartmon_airflow_temperature_cel_raw_value{disk="/dev/sdb",smart_id="190",type="sat"} 34
+smartmon_airflow_temperature_cel_raw_value{disk="/dev/sdc",smart_id="190",type="sat"} 40
+smartmon_airflow_temperature_cel_raw_value{disk="/dev/sde",smart_id="190",type="sat"} 36
+smartmon_current_pending_sector_raw_value{disk="/dev/sda",smart_id="197",type="sat"} 0
+smartmon_current_pending_sector_raw_value{disk="/dev/sdb",smart_id="197",type="sat"} 0
+smartmon_current_pending_sector_raw_value{disk="/dev/sdc",smart_id="197",type="sat"} 0
+smartmon_current_pending_sector_raw_value{disk="/dev/sdd",smart_id="197",type="sat"} 0
+smartmon_current_pending_sector_raw_value{disk="/dev/sde",smart_id="197",type="sat"} 0
+smartmon_device_active{disk="/dev/nvme0",type="nvme"} 1
+smartmon_device_active{disk="/dev/sda",type="sat"} 1
+smartmon_device_active{disk="/dev/sdb",type="sat"} 1
+smartmon_device_active{disk="/dev/sdc",type="sat"} 1
+smartmon_device_active{disk="/dev/sdd",type="sat"} 1
+smartmon_device_active{disk="/dev/sde",type="sat"} 1
+smartmon_device_info{device_model="",disk="/dev/nvme0",firmware_version="EIFM80.0",lun_id="",model_family="",product="",revision="",serial_number="TEST",type="nvme",vendor=""} 1
+smartmon_device_info{device_model="ST12000VN0008-3MH101",disk="/dev/sdc",firmware_version="SC60",lun_id="",model_family="Seagate IronWolf",product="",revision="",serial_number="TEST",type="sat",vendor=""} 1
+smartmon_device_info{device_model="ST4000NE001-2MA101",disk="/dev/sdb",firmware_version="EN01",lun_id="",model_family="Seagate IronWolf Pro",product="",revision="",serial_number="TEST",type="sat",vendor=""} 1
+smartmon_device_info{device_model="ST4000NE001-2MA101",disk="/dev/sde",firmware_version="EN01",lun_id="",model_family="Seagate IronWolf Pro",product="",revision="",serial_number="TEST",type="sat",vendor=""} 1
+smartmon_device_info{device_model="TOSHIBA HDWD110",disk="/dev/sda",firmware_version="MS2OA8R0",lun_id="",model_family="Toshiba P300 (CMR)",product="",revision="",serial_number="TEST",type="sat",vendor=""} 1
+smartmon_device_info{device_model="TOSHIBA HDWD240",disk="/dev/sdd",firmware_version="KQ000A",lun_id="",model_family="Toshiba P300 (SMR)",product="",revision="",serial_number="TEST",type="sat",vendor=""} 1
+smartmon_device_smart_available{disk="/dev/nvme0",type="nvme"} 1
+smartmon_device_smart_available{disk="/dev/sda",type="sat"} 1
+smartmon_device_smart_available{disk="/dev/sdb",type="sat"} 1
+smartmon_device_smart_available{disk="/dev/sdc",type="sat"} 1
+smartmon_device_smart_available{disk="/dev/sdd",type="sat"} 1
+smartmon_device_smart_available{disk="/dev/sde",type="sat"} 1
+smartmon_device_smart_enabled{disk="/dev/nvme0",type="nvme"} 1
+smartmon_device_smart_enabled{disk="/dev/sda",type="sat"} 1
+smartmon_device_smart_enabled{disk="/dev/sdb",type="sat"} 1
+smartmon_device_smart_enabled{disk="/dev/sdc",type="sat"} 1
+smartmon_device_smart_enabled{disk="/dev/sdd",type="sat"} 1
+smartmon_device_smart_enabled{disk="/dev/sde",type="sat"} 1
+smartmon_device_smart_healthy{disk="/dev/nvme0",type="nvme"} 1
+smartmon_device_smart_healthy{disk="/dev/sda",type="sat"} 1
+smartmon_device_smart_healthy{disk="/dev/sdb",type="sat"} 1
+smartmon_device_smart_healthy{disk="/dev/sdc",type="sat"} 1
+smartmon_device_smart_healthy{disk="/dev/sdd",type="sat"} 1
+smartmon_device_smart_healthy{disk="/dev/sde",type="sat"} 1
+smartmon_offline_uncorrectable_raw_value{disk="/dev/sda",smart_id="198",type="sat"} 0
+smartmon_offline_uncorrectable_raw_value{disk="/dev/sdb",smart_id="198",type="sat"} 0
+smartmon_offline_uncorrectable_raw_value{disk="/dev/sdc",smart_id="198",type="sat"} 0
+smartmon_offline_uncorrectable_raw_value{disk="/dev/sdd",smart_id="198",type="sat"} 0
+smartmon_offline_uncorrectable_raw_value{disk="/dev/sde",smart_id="198",type="sat"} 0
+smartmon_power_on_hours_raw_value{disk="/dev/sda",smart_id="9",type="sat"} 25882
+smartmon_power_on_hours_raw_value{disk="/dev/sdb",smart_id="9",type="sat"} 3700
+smartmon_power_on_hours_raw_value{disk="/dev/sdc",smart_id="9",type="sat"} 526
+smartmon_power_on_hours_raw_value{disk="/dev/sdd",smart_id="9",type="sat"} 33079
+smartmon_power_on_hours_raw_value{disk="/dev/sde",smart_id="9",type="sat"} 23953
+smartmon_reallocated_sector_ct_raw_value{disk="/dev/sda",smart_id="5",type="sat"} 0
+smartmon_reallocated_sector_ct_raw_value{disk="/dev/sdb",smart_id="5",type="sat"} 0
+smartmon_reallocated_sector_ct_raw_value{disk="/dev/sdc",smart_id="5",type="sat"} 0
+smartmon_reallocated_sector_ct_raw_value{disk="/dev/sdd",smart_id="5",type="sat"} 163
+smartmon_reallocated_sector_ct_raw_value{disk="/dev/sde",smart_id="5",type="sat"} 0
+smartmon_temperature_celsius_raw_value{disk="/dev/sda",smart_id="194",type="sat"} 35
+smartmon_temperature_celsius_raw_value{disk="/dev/sdb",smart_id="194",type="sat"} 34
+smartmon_temperature_celsius_raw_value{disk="/dev/sdc",smart_id="194",type="sat"} 40
+smartmon_temperature_celsius_raw_value{disk="/dev/sdd",smart_id="194",type="sat"} 33
+smartmon_temperature_celsius_raw_value{disk="/dev/sde",smart_id="194",type="sat"} 36

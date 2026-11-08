@@ -20,8 +20,8 @@ fn test_short_text_single_chunk() {
 
 #[quench_test::test]
 fn test_empty_text() {
-    assert!(chunk_text("", &config(512, 50)).is_empty());
-    assert!(chunk_text("\n\n\n\n", &config(512, 50)).is_empty());
+    assert_eq!(chunk_text("", &config(512, 50)), [] as [String; 0]);
+    assert_eq!(chunk_text("\n\n\n\n", &config(512, 50)), [] as [String; 0]);
 }
 
 #[quench_test::test]

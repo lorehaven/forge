@@ -79,9 +79,9 @@ async fn requests_carry_the_services_own_token_from_the_client_credentials_grant
         Some((&gatehouse.uri(), "lectern-warehouse", "its-secret")),
         true,
     );
-    assert!(source.books().await.unwrap().is_empty());
+    assert_eq!(source.books().await.unwrap(), [] as [String; 0]);
     // the token is kept, not asked for again (the mock allows one exchange)
-    assert!(source.books().await.unwrap().is_empty());
+    assert_eq!(source.books().await.unwrap(), [] as [String; 0]);
 }
 
 #[quench_test::test]

@@ -119,7 +119,7 @@ fn deployments_are_declared_and_survive_a_round_trip() {
 #[quench_test::test]
 fn a_manifest_without_deployments_is_unchanged() {
     let manifest = Manifest::parse(HEADER).unwrap();
-    assert!(manifest.deployments.is_empty());
+    assert_eq!(manifest.deployments, [] as [rivet_package::Deployment; 0]);
     assert!(!manifest.to_toml().unwrap().contains("deployment"));
 }
 

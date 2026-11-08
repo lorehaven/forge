@@ -78,7 +78,7 @@ async fn the_files_are_public_and_the_module_may_be_missing() {
     assert!(body.contains(".gt-app"), "{body}");
     let (status, body) = get("/ui/assets/quench.js", &rig).await;
     assert_eq!(status, StatusCode::OK);
-    assert!(!body.is_empty());
+    assert_ne!(body, "");
     let (status, _) = get("/ui/assets/app.wasm", &rig).await;
     assert!(
         status == StatusCode::OK || status == StatusCode::NOT_FOUND,

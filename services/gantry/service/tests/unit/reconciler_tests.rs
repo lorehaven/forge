@@ -193,7 +193,7 @@ async fn a_service_that_died_between_claiming_and_creating_starts_the_runner_on_
 
     // Claimed (running) but the Job never got created.
     rig.store.claim_next().await.unwrap().unwrap();
-    assert!(rig.cluster.job_names().is_empty());
+    assert_eq!(rig.cluster.job_names(), [] as [String; 0]);
 
     let report = tick(&gantry).await.unwrap();
     assert_eq!(report.restarted, 1);
@@ -311,7 +311,7 @@ async fn cancelling_a_queued_operation_is_immediate_and_a_running_one_stops_its_
     tick(&gantry).await.unwrap();
     let stopped = rig.store.get(&running.id).await.unwrap().unwrap();
     assert_eq!(stopped.state, State::Cancelled);
-    assert!(rig.cluster.job_names().is_empty());
+    assert_eq!(rig.cluster.job_names(), [] as [String; 0]);
 }
 
 #[quench_test::test]

@@ -612,8 +612,8 @@ fn build_release_plan_against_the_real_workspace_never_panics_and_is_read_only()
     for package in ["forge-toolbox", "conveyor-pipeline", "foundry", "workbench"] {
         let plan = build_release_plan(&config, &metadata, &[package.to_string()]).unwrap();
         for item in &plan {
-            assert!(!item.package.is_empty());
-            assert!(!item.tag_to_create.is_empty());
+            assert_ne!(item.package, "");
+            assert_ne!(item.tag_to_create, "");
         }
     }
 }
@@ -680,7 +680,7 @@ fn bump_patch_versions_skips_items_not_flagged_for_a_bump() {
     });
     let plan = vec![plan_item("pkg-a", ReleaseKind::Cargo, false, false)];
     let touched = bump_patch_versions(&metadata, &plan).unwrap();
-    assert!(touched.is_empty());
+    assert_eq!(touched, [] as [std::path::PathBuf; 0]);
 }
 
 fn deps(publish: &[&str], dev: &[&str]) -> PackageDependencies {

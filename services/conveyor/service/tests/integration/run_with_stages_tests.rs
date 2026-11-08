@@ -172,7 +172,10 @@ async fn a_stage_that_does_not_exist_fails_the_run_and_says_which_there_are() {
     let error = run.error.expect("a reason");
     assert!(error.contains("securty"), "{error}");
     assert!(error.contains("check, build, security"), "{error}");
-    assert!(queue::list_jobs(&db, &run.id).await.unwrap().is_empty());
+    assert_eq!(
+        queue::list_jobs(&db, &run.id).await.unwrap(),
+        [] as [conveyor_service::domain::Job; 0]
+    );
 }
 
 #[quench_test::test(flavor = "multi_thread", worker_threads = 2)]
@@ -230,7 +233,10 @@ async fn the_known_stages_come_from_recent_runs_and_start_out_the_way_an_ordinar
     let repo = register_repo(&db, "known", &origin.url()).await;
 
     // Never run: nothing to offer yet.
-    assert!(stages::known(&db, &repo.id).await.unwrap().is_empty());
+    assert_eq!(
+        stages::known(&db, &repo.id).await.unwrap(),
+        [] as [conveyor_service::scheduler::stages::KnownStage; 0]
+    );
 
     let _work = start_scheduler(&db);
     settle(&db, &started(&db, &repo.id, None).await.id).await;

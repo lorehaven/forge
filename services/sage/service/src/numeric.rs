@@ -5,7 +5,7 @@
 pub fn u64_to_f64(n: u64) -> f64 {
     let high = u32::try_from(n >> 32).unwrap_or(u32::MAX);
     let low = u32::try_from(n & 0xFFFF_FFFF).unwrap_or(u32::MAX);
-    f64::from(high) * 4_294_967_296.0 + f64::from(low)
+    f64::mul_add(f64::from(high), 4_294_967_296.0, f64::from(low))
 }
 
 /// `n` as an `f64`; a count too big for a `u64` saturates there.

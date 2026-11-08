@@ -407,7 +407,10 @@ async fn refusals_look_the_same_for_accounts_that_do_not_exist() {
             .await
             .contains("err=ui_login_rate_limited")
     );
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -518,5 +521,8 @@ async fn a_reset_for_an_account_without_an_address_works_and_says_nothing() {
     let user = realm::get(&db, "alice").await.unwrap();
     assert!(user.verify_password("new-password"));
     assert!(user.email_verified_at.is_none(), "nothing to confirm");
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }

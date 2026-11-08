@@ -396,7 +396,10 @@ async fn workloads_are_listed_per_namespace_with_their_replica_counts() {
         )
         .await;
     }
-    assert!(cluster.list_workloads(&[]).await.unwrap().is_empty());
+    assert_eq!(
+        cluster.list_workloads(&[]).await.unwrap(),
+        [] as [gantry_service::domain::cluster::Workload; 0]
+    );
 
     // a kind the account may not list fails the call
     server.reset().await;

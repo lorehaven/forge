@@ -113,7 +113,7 @@ fn handle_repl_command_env_list_and_show_work_without_a_current_environment() {
         // like the others and errors the same way.
         assert!(!handle_repl_command("env list").unwrap());
         let err = handle_repl_command("env show").unwrap_err();
-        assert!(!err.to_string().is_empty());
+        assert_ne!(err.to_string(), "");
     });
 }
 

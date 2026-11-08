@@ -12,7 +12,7 @@ The interface (not run for the book; documented from `main.rs` and `lib.rs`, who
 ```text
 Forge Toolbox Status
 
-registry: ennor (sparse+https://ennor.ddns.net/index/)
+registry: ennor (sparse+https://ennor.ddns.net/warehouse/index/)
 note: forge-toolbox is up to date
 controls: ↑/↓ move, Enter install/update, r refresh, q quit
 

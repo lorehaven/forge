@@ -17,7 +17,7 @@ cd forge/cli/toolbox
 cargo install --path .
 ```
 
-Requires `cargo` on `PATH` (checked at start: `` `cargo` not found ... toolbox drives cargo search/install against the workspace registry ``) and a Cargo registry named `ennor` configured in `~/.cargo/config.toml` (`sparse+https://ennor.ddns.net/index/` is shown on screen; the name `ennor` is hard-coded).
+Requires `cargo` on `PATH` (checked at start: `` `cargo` not found ... toolbox drives cargo search/install against the workspace registry ``) and a Cargo registry named `ennor` configured in `~/.cargo/config.toml` (`sparse+https://ennor.ddns.net/warehouse/index/` is shown on screen; the name `ennor` is hard-coded).
 
 ## Synopsis
 

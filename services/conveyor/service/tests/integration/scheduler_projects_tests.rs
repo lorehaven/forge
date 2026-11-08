@@ -276,11 +276,11 @@ async fn descendant_ids_is_empty_for_an_empty_root_list() {
         return skipped("descendant_ids_is_empty_for_an_empty_root_list");
     };
 
-    assert!(
+    assert_eq!(
         projects::descendant_ids(&db, &[])
             .await
-            .expect("descendants")
-            .is_empty()
+            .expect("descendants"),
+        [] as [String; 0]
     );
 }
 

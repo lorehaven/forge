@@ -228,7 +228,10 @@ fn parse_machete_output_reads_no_unused_dependencies_as_empty() {
     let findings = parse_machete_output(
         "cargo-machete didn't find any unused dependencies in this directory. Good job!\n",
     );
-    assert!(findings.is_empty());
+    assert_eq!(
+        findings,
+        [] as [anvil::commands::workspace::MacheteFinding; 0]
+    );
 }
 
 #[quench_test::test]
@@ -264,8 +267,9 @@ fn parse_machete_output_reads_one_finding_per_crate_block() {
 
 #[quench_test::test]
 fn parse_machete_output_ignores_unrecognised_text() {
-    assert!(
-        parse_machete_output("Analyzing dependencies of crates in this directory...\n").is_empty()
+    assert_eq!(
+        parse_machete_output("Analyzing dependencies of crates in this directory...\n"),
+        [] as [anvil::commands::workspace::MacheteFinding; 0]
     );
 }
 

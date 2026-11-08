@@ -40,5 +40,5 @@ fn a_need_that_is_not_in_the_run_or_a_cycle_cannot_hide_a_stage() {
     assert_eq!(ordered(&[job("b", &["gone"]), job("a", &[])]), ["a", "b"]);
     let cycle = ordered(&[job("x", &["y"]), job("y", &["x"])]);
     assert_eq!(cycle.len(), 2, "{cycle:?}");
-    assert!(ordered(&[]).is_empty());
+    assert_eq!(ordered(&[]), [] as [String; 0]);
 }

@@ -475,7 +475,7 @@ fn searching_waits_for_a_pause_in_the_typing() {
     let l = started("/songbook/ui/admin/library");
     l.type_into("q", "pup");
     l.type_into("q", "puppy");
-    assert!(l.take().is_empty());
+    assert_eq!(l.take(), [] as [songbook_app::Request; 0]);
     tick(250.0);
     assert_eq!(
         l.take(),
@@ -496,7 +496,7 @@ fn a_song_is_replaced_by_the_file_of_another_link() {
     // Without a link there is nothing to download.
     l.take();
     l.click("button", ("id", "link-replace"));
-    assert!(l.take().is_empty());
+    assert_eq!(l.take(), [] as [songbook_app::Request; 0]);
     assert!(l.text_of("snack").contains("Enter the video URL first"));
     l.type_into("link-url", " https://youtu.be/right ");
     l.click("button", ("id", "link-replace"));
@@ -697,7 +697,7 @@ fn following_nobody_does_nothing_and_an_old_name_says_so() {
     let l = started("/songbook/ui/admin/library");
     l.click("button", ("id", "add-artist"));
     l.r.fire(l.find("form", ("class", "sb-dialog-form")), &Event::Submit);
-    assert!(l.take().is_empty());
+    assert_eq!(l.take(), [] as [songbook_app::Request; 0]);
     l.type_into("artist-name", "Nas");
     l.r.fire(l.find("form", ("class", "sb-dialog-form")), &Event::Submit);
     l.take();

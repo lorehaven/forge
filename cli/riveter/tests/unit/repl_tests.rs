@@ -271,7 +271,7 @@ fn find_orphans_is_empty_when_the_cluster_has_nothing_extra() {
     with_fake_kubectl("Deployment\tmy-app\t\t", || {
         let rendered = manifest(vec![resource("Deployment", "my-app")], vec![]);
         let orphans = find_orphans("test-env", &rendered).unwrap();
-        assert!(orphans.is_empty());
+        assert_eq!(orphans, [] as [riveter::repl::LiveResource; 0]);
     });
 }
 

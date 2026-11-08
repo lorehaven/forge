@@ -41,7 +41,6 @@ impl Debug for AgentNode {
 
 use crate::ui::{BLUE, BOLD, CYAN, DIM, RESET, SEP, SEP_THIN, YELLOW};
 
-#[must_use]
 pub fn execute<'a, S: std::hash::BuildHasher + Sync>(
     name: &'a str,
     input: String,

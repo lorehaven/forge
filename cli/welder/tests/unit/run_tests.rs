@@ -34,7 +34,7 @@ fn load_workflow_reads_and_parses_a_toml_file() {
 #[quench_test::test]
 fn load_workflow_errors_for_a_missing_file() {
     let err = load_workflow("/does/not/exist/workflow.toml").unwrap_err();
-    assert!(!err.to_string().is_empty());
+    assert_ne!(err.to_string(), "");
 }
 
 #[quench_test::test]
@@ -330,9 +330,9 @@ fn build_agents_applies_defaults_when_the_workflow_omits_them() {
     let agents = build_agents(&workflow, |_cfg| Ok(Arc::new(NoopLlm) as Arc<dyn Llm>)).unwrap();
     let agent = &agents["a"];
     assert_eq!(agent.max_tool_steps, 8);
-    assert!(agent.children.is_empty());
-    assert!(agent.tools.is_empty());
-    assert!(agent.run_cmd_allowlist.is_empty());
+    assert_eq!(agent.children, [] as [String; 0]);
+    assert_eq!(agent.tools, [] as [String; 0]);
+    assert_eq!(agent.run_cmd_allowlist, [] as [String; 0]);
     assert!((agent.temperature - llm::DEFAULT_TEMPERATURE).abs() < f32::EPSILON);
     assert_eq!(agent.max_tokens, llm::DEFAULT_MAX_TOKENS);
 }

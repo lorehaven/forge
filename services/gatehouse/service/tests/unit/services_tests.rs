@@ -208,5 +208,5 @@ fn the_shipped_catalog_offers_every_estate_service_but_not_gatehouse() {
         .map(|s| s.name)
         .collect();
     assert_eq!(public, ["lectern"]);
-    assert!(shipped.actions_for("lectern").is_empty());
+    assert_eq!(shipped.actions_for("lectern"), [] as [String; 0]);
 }

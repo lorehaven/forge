@@ -670,7 +670,10 @@ async fn a_question_about_the_tools_does_not_run_them() {
         request(CHAT_ID, "What tools do you have?", "c1"),
     )
     .await;
-    assert!(streamed_requests(&rig.server, true).await.is_empty());
+    assert_eq!(
+        streamed_requests(&rig.server, true).await,
+        [] as [quench_serde::Value; 0]
+    );
     assert_eq!(messages(&rig.db).await.len(), 2);
 }
 

@@ -432,7 +432,10 @@ fn load_dir_reads_schemas_ignores_a_missing_directory_and_refuses_junk() {
 
     set.load_dir(&dir.path().join("does-not-exist"), Source::Cache)
         .unwrap();
-    assert!(set.list().is_empty());
+    assert_eq!(
+        set.list(),
+        [] as [(&riveter::schema::CrdSchema, riveter::schema::Source); 0]
+    );
 
     let schema = CrdSchema::from_crd(&crd(
         "example.io",

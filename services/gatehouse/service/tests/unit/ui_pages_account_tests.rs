@@ -505,7 +505,10 @@ async fn a_failed_password_change_sends_nothing() {
         .call(post_form("/ui/account/password", &mismatch, &container))
         .await;
     assert!(location(resp).contains("err="));
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -626,7 +629,10 @@ async fn asking_for_a_new_address_mails_the_new_one_and_changes_nothing_yet() {
         Some("old@example.test"),
         "nothing changed yet"
     );
-    assert!(recorder.sent_of("email-changed").is_empty());
+    assert_eq!(
+        recorder.sent_of("email-changed"),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -643,7 +649,10 @@ async fn the_current_password_is_required_and_a_wrong_one_sends_nothing() {
             "{password:?}: {target}"
         );
     }
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -660,7 +669,10 @@ async fn an_undeliverable_address_is_refused_before_anything_else() {
             "{bad:?}: {target}"
         );
     }
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]
@@ -675,7 +687,10 @@ async fn your_own_confirmed_address_is_not_a_change() {
         target.contains("err=ui_account_error_email_same"),
         "{target}"
     );
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 }
 
 #[quench_test::test]

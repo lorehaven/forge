@@ -233,7 +233,7 @@ async fn a_page_the_client_already_has_is_not_sent_again() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_MODIFIED);
-    assert!(body.is_empty());
+    assert_eq!(body, "");
 }
 
 #[quench_test::test]

@@ -655,7 +655,7 @@ fn a_playlist_page_lists_its_songs_and_takes_one_out() {
     assert_eq!(l.take(), vec![Request::SetPlaylist(4, vec![1, 3])]);
     // Deleting asks twice.
     l.click("delete-playlist");
-    assert!(l.take().is_empty());
+    assert_eq!(l.take(), [] as [songbook_player::Request; 0]);
     l.click("delete-playlist");
     assert_eq!(l.take(), vec![Request::DeletePlaylist(4)]);
 }

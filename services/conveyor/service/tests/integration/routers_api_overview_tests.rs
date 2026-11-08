@@ -204,7 +204,10 @@ async fn the_history_is_paged_and_scoped() {
 
     // A page past the end is an empty page, not an error; an empty history is still page 1 of 1.
     let (_, past) = get(&app, "/api/v1/overview/history?page=9").await;
-    assert!(past["runs"].as_array().unwrap().is_empty());
+    assert_eq!(
+        past["runs"].as_array().unwrap().as_slice(),
+        [] as [quench_serde::Value; 0]
+    );
     let (status, _) = get(&app, "/api/v1/overview/history?project=nope").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
@@ -223,12 +226,18 @@ async fn a_repository_that_never_ran_has_a_scan_with_nothing_in_it() {
     let rows = chips.as_array().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["repo_id"], a.id.as_str());
-    assert!(rows[0]["checks"].as_array().unwrap().is_empty());
+    assert_eq!(
+        rows[0]["checks"].as_array().unwrap().as_slice(),
+        [] as [quench_serde::Value; 0]
+    );
 
     let (status, scan) = get(&app, &format!("/api/v1/repos/{}/scan", a.id)).await;
     assert_eq!(status, StatusCode::OK);
     assert!(scan["run"].is_null());
-    assert!(scan["checks"].as_array().unwrap().is_empty());
+    assert_eq!(
+        scan["checks"].as_array().unwrap().as_slice(),
+        [] as [quench_serde::Value; 0]
+    );
 
     let (status, _) = get(&app, "/api/v1/repos/nope/scan").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
@@ -271,7 +280,10 @@ async fn credentials_are_listed_without_their_tokens() {
 
     let (status, none) = get(&app, "/api/v1/credentials").await;
     assert_eq!(status, StatusCode::OK);
-    assert!(none.as_array().unwrap().is_empty());
+    assert_eq!(
+        none.as_array().unwrap().as_slice(),
+        [] as [quench_serde::Value; 0]
+    );
 
     for path in [
         format!("/api/v1/projects/{p}/credentials"),

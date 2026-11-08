@@ -173,7 +173,7 @@ fn the_new_errors_have_statuses_messages_and_translation_keys() {
         ),
     ] {
         assert_eq!(err.status(), status);
-        assert!(!err.message().is_empty());
+        assert_ne!(err.message(), "");
         assert_eq!(err.i18n_key(), key);
     }
 }
@@ -246,7 +246,10 @@ async fn an_invitation_needs_an_address_and_reports_a_send_failure() {
         .await
         .unwrap_err();
     assert!(err.contains("no email"), "{err}");
-    assert!(recorder.sent().is_empty());
+    assert_eq!(
+        recorder.sent(),
+        [] as [gatehouse_service::test_support::SentMail; 0]
+    );
 
     let user = invited(&db, "alice", "alice@example.test").await;
     let err = send_invite(&tokens, &Failing, &base(), &user, None)

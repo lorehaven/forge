@@ -10,7 +10,7 @@ Forge Toolbox has **no configuration file, environment variables or flags**. Eve
 | Constant | Value |
 |---|---|
 | `REGISTRY_NAME` | `ennor` (the registry name `cargo` must know: `[registries.ennor]` in `~/.cargo/config.toml`) |
-| `REGISTRY_INDEX` | `sparse+https://ennor.ddns.net/index/` (displayed only) |
+| `REGISTRY_INDEX` | `sparse+https://ennor.ddns.net/warehouse/index/` (displayed only) |
 
 Monitored crates (`MONITORED_CRATES`, in display order):
 

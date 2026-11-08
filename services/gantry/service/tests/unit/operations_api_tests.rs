@@ -96,7 +96,10 @@ async fn a_plan_that_fails_validation_is_422_and_nothing_is_recorded() {
             .await,
     )
     .await;
-    assert!(listed.as_array().unwrap().is_empty());
+    assert_eq!(
+        listed.as_array().unwrap().as_slice(),
+        [] as [quench_serde::Value; 0]
+    );
 }
 
 #[quench_test::test]

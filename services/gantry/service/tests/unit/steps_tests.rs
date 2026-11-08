@@ -450,7 +450,7 @@ fn the_runner_refuses_a_plan_outside_its_allow_list_before_touching_anything() {
         &mut Vec::new(),
     );
     assert!(matches!(outcome, Outcome::Failed(_)));
-    assert!(exec.ran.is_empty());
+    assert_eq!(exec.ran, [] as [String; 0]);
 }
 
 #[quench_test::test]

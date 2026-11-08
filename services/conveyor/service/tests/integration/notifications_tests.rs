@@ -139,11 +139,11 @@ async fn deleting_a_repository_takes_its_subscriptions_with_it() {
         .await
         .unwrap();
 
-    assert!(
+    assert_eq!(
         subscriptions::list_for_user(&db, "conveyor-tests")
             .await
-            .unwrap()
-            .is_empty()
+            .unwrap(),
+        [] as [conveyor_service::notifications::subscriptions::Subscription; 0]
     );
 }
 
@@ -371,7 +371,10 @@ async fn nothing_is_queued_for_a_run_nobody_needs_to_hear_about() {
             .unwrap(),
         0
     );
-    assert!(due(&db).await.is_empty());
+    assert_eq!(
+        due(&db).await,
+        [] as [conveyor_service::notifications::outbox::Pending; 0]
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -440,7 +443,10 @@ async fn a_claimed_message_is_leased_so_a_second_sender_skips_it() {
     let first = outbox::claim_due(&db, 10).await.unwrap();
     assert_eq!(first.len(), 1);
     assert_eq!(first[0].attempts, 1);
-    assert!(outbox::claim_due(&db, 10).await.unwrap().is_empty());
+    assert_eq!(
+        outbox::claim_due(&db, 10).await.unwrap(),
+        [] as [conveyor_service::notifications::outbox::Pending; 0]
+    );
 }
 
 #[quench_test::test]
@@ -490,7 +496,10 @@ async fn a_message_gatehouse_refuses_is_set_aside_not_retried() {
     let (_, error, failed) = row(&db, &run_id).await.expect("kept for a human");
     assert!(failed);
     assert_eq!(error.as_deref(), Some("HTTP 400: bad variable"));
-    assert!(outbox::claim_due(&db, 10).await.unwrap().is_empty());
+    assert_eq!(
+        outbox::claim_due(&db, 10).await.unwrap(),
+        [] as [conveyor_service::notifications::outbox::Pending; 0]
+    );
 }
 
 #[quench_test::test]

@@ -442,7 +442,7 @@ fn leaves_alone_what_it_cannot_or_need_not_pin() {
 
     let packed = pack(&opts(&root, &dir.path().join("out")), Some(&resolver)).unwrap();
 
-    assert!(packed.pinned.is_empty());
+    assert_eq!(packed.pinned, [] as [riveter::package::PinnedImage; 0]);
     assert!(resolver.seen.borrow().is_empty());
     assert_eq!(packed.unpinned.len(), 2, "{:?}", packed.unpinned);
     assert!(packed.unpinned[0].contains("templated"));
@@ -613,7 +613,10 @@ fn requirements_gate_on_the_running_riveter() {
     let mut manifest = Manifest::new("demo", "1.0.0");
     manifest.requires.riveter = Some(">=0.3, <0.5".to_string());
 
-    assert!(check_requirements(&manifest, "0.4.2").unwrap().is_empty());
+    assert_eq!(
+        check_requirements(&manifest, "0.4.2").unwrap(),
+        [] as [String; 0]
+    );
     let err = check_requirements(&manifest, "0.2.11").unwrap_err();
     assert!(
         err.to_string().contains("requires riveter >=0.3, <0.5"),
@@ -906,7 +909,7 @@ fn a_secret_made_of_placeholders_is_fine() {
     let overlay = secret_overlay(
         "  - kind: secret\n    name: db\n    string_data:\n      PASSWORD: ${DB_PASSWORD}\n      URL: postgres://u:${DB_PASSWORD}@db/app\n",
     );
-    assert!(literal_secret_values(&overlay).is_empty());
+    assert_eq!(literal_secret_values(&overlay), [] as [String; 0]);
 }
 
 #[quench_test::test]
@@ -948,7 +951,7 @@ fn other_kinds_and_a_secret_without_values_are_ignored() {
     let overlay = secret_overlay(
         "  - kind: configmap\n    name: c\n    data:\n      PASSWORD: not-a-secret-kind\n  - kind: secret\n    name: empty\n",
     );
-    assert!(literal_secret_values(&overlay).is_empty());
+    assert_eq!(literal_secret_values(&overlay), [] as [String; 0]);
 }
 
 #[quench_test::test]
@@ -963,7 +966,7 @@ fn a_raw_secret_cannot_be_checked_so_it_is_refused() {
     // A raw resource that is not a Secret is left alone.
     let overlay =
         secret_overlay("  - kind: raw\n    name: fine\n    manifest: |\n      kind: ConfigMap\n");
-    assert!(literal_secret_values(&overlay).is_empty());
+    assert_eq!(literal_secret_values(&overlay), [] as [String; 0]);
 }
 
 #[quench_test::test]

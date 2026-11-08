@@ -43,6 +43,7 @@ pub struct Reading {
     pub procs_blocked: Option<f64>,
     pub fans: Vec<Fan>,
     pub faults: Vec<Fault>,
+    pub disk_health: Vec<DiskHealth>,
 }
 
 impl Reading {
@@ -63,6 +64,9 @@ impl Reading {
         }
         if self.links.is_empty() {
             self.links = extra.links;
+        }
+        if self.disk_health.is_empty() {
+            self.disk_health = extra.disk_health;
         }
     }
 }
@@ -129,6 +133,25 @@ pub struct Fan {
 pub struct Fault {
     pub what: String,
     pub count: f64,
+}
+
+/// What a drive says about itself (SMART). Counters are totals over the drive's life; `None` when the drive does
+/// not report it (NVMe drives report only `healthy`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct DiskHealth {
+    /// `sda`, `nvme0`: the device the SMART data is of, without `/dev/`.
+    pub device: String,
+    pub model: Option<String>,
+    /// The drive's own overall verdict (`smartctl -H`).
+    pub healthy: bool,
+    pub temp_c: Option<f64>,
+    pub power_on_hours: Option<f64>,
+    /// Sectors the drive moved to spares (ATA 5).
+    pub reallocated: Option<f64>,
+    /// Sectors waiting to be remapped (ATA 197).
+    pub pending: Option<f64>,
+    /// Sectors that could not be read (ATA 198).
+    pub uncorrectable: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -245,6 +268,8 @@ pub struct View {
     pub procs_blocked: Option<f64>,
     pub fans: Vec<Fan>,
     pub faults: Vec<Fault>,
+    #[serde(default)]
+    pub disk_health: Vec<DiskHealth>,
     pub alerts: Vec<Alert>,
 }
 
@@ -435,6 +460,9 @@ fn alerts(view: &View, prev: Option<&Reading>, cur: &Reading) -> Vec<Alert> {
             );
         }
     }
+    for d in &view.disk_health {
+        disk_alerts(d, &mut add);
+    }
     let swapping = view.swap_in_per_sec.unwrap_or(0.0) + view.swap_out_per_sec.unwrap_or(0.0);
     if swapping >= 1024.0 * 1024.0 {
         add(
@@ -445,6 +473,56 @@ fn alerts(view: &View, prev: Option<&Reading>, cur: &Reading) -> Vec<Alert> {
         );
     }
     out
+}
+
+/// Drive temperature (SMART) from which it is an alert, and from which a severe one. Lower than the chip limit of
+/// `hot`: spinning disks are rated to about 60 °C.
+pub const DISK_HOT_C: f64 = 55.0;
+pub const DISK_HOT_SEVERE_C: f64 = 60.0;
+
+/// A drive that calls itself failing; one with bad sectors (remapped ones are a warning, ones it cannot read or
+/// has yet to remap are severe); a drive that runs hot. These are levels, not changes: SMART is read every few
+/// minutes, and a disk with 163 remapped sectors is worth seeing every time, not once.
+fn disk_alerts(d: &DiskHealth, add: &mut impl FnMut(String, &str, String, bool)) {
+    if !d.healthy {
+        add(
+            format!("smart_failed:{}", d.device),
+            "smart_failed",
+            d.device.clone(),
+            true,
+        );
+    }
+    let count = |v: Option<f64>| v.unwrap_or(0.0).max(0.0);
+    let (moved, pending, unreadable) = (
+        count(d.reallocated),
+        count(d.pending),
+        count(d.uncorrectable),
+    );
+    if moved + pending + unreadable > 0.0 {
+        let parts: Vec<String> = [
+            (moved, "reallocated"),
+            (pending, "pending"),
+            (unreadable, "uncorrectable"),
+        ]
+        .iter()
+        .filter(|(n, _)| *n > 0.0)
+        .map(|(n, what)| format!("{n:.0} {what}"))
+        .collect();
+        add(
+            format!("smart_sectors:{}", d.device),
+            "smart_sectors",
+            format!("{} · {}", d.device, parts.join(", ")),
+            pending + unreadable > 0.0,
+        );
+    }
+    if let Some(c) = d.temp_c.filter(|c| *c >= DISK_HOT_C) {
+        add(
+            format!("hot:{}", d.device),
+            "hot",
+            format!("{} {c:.0} °C", d.device),
+            c >= DISK_HOT_SEVERE_C,
+        );
+    }
 }
 
 /// Days left under which a filling disk is an alert, and under which it is a severe one.
@@ -542,6 +620,7 @@ impl View {
             procs_blocked: cur.procs_blocked,
             fans: cur.fans.clone(),
             faults: cur.faults.clone(),
+            disk_health: cur.disk_health.clone(),
             alerts: Vec::new(),
         }
         .with_alerts(prev, cur)

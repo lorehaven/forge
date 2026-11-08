@@ -27,25 +27,46 @@ fn parse_storages_reads_every_well_formed_entry() {
 
 #[quench_test::test]
 fn parse_storages_is_empty_for_a_blank_string() {
-    assert!(parse_storages("").is_empty());
-    assert!(parse_storages("   ").is_empty());
+    assert_eq!(
+        parse_storages(""),
+        [] as [warehouse_service::routers::files::Storage; 0]
+    );
+    assert_eq!(
+        parse_storages("   "),
+        [] as [warehouse_service::routers::files::Storage; 0]
+    );
 }
 
 #[quench_test::test]
 fn parse_storages_drops_entries_with_no_equals_sign() {
-    assert!(parse_storages("not-a-pair").is_empty());
+    assert_eq!(
+        parse_storages("not-a-pair"),
+        [] as [warehouse_service::routers::files::Storage; 0]
+    );
 }
 
 #[quench_test::test]
 fn parse_storages_drops_entries_with_an_empty_name_or_path() {
-    assert!(parse_storages("=/root").is_empty());
-    assert!(parse_storages("name=").is_empty());
+    assert_eq!(
+        parse_storages("=/root"),
+        [] as [warehouse_service::routers::files::Storage; 0]
+    );
+    assert_eq!(
+        parse_storages("name="),
+        [] as [warehouse_service::routers::files::Storage; 0]
+    );
 }
 
 #[quench_test::test]
 fn parse_storages_drops_names_with_disallowed_characters() {
-    assert!(parse_storages("has space=/root").is_empty());
-    assert!(parse_storages("has/slash=/root").is_empty());
+    assert_eq!(
+        parse_storages("has space=/root"),
+        [] as [warehouse_service::routers::files::Storage; 0]
+    );
+    assert_eq!(
+        parse_storages("has/slash=/root"),
+        [] as [warehouse_service::routers::files::Storage; 0]
+    );
 }
 
 #[quench_test::test]
@@ -183,6 +204,6 @@ fn path_error_messages_are_distinct_and_non_empty() {
         PathError::Invalid.message(),
     ];
     for message in messages {
-        assert!(!message.is_empty());
+        assert_ne!(message, "");
     }
 }

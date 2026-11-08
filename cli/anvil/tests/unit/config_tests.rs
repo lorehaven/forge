@@ -8,9 +8,9 @@ use support::stable_cwd_lock;
 fn test_default_config() {
     let config = Config::default();
     assert!(config.docker.modules.is_empty());
-    assert!(config.install.packages.is_empty());
-    assert!(config.release.registry.is_empty());
-    assert!(config.release.packages.is_empty());
+    assert_eq!(config.install.packages, [] as [String; 0]);
+    assert_eq!(config.release.registry, "");
+    assert_eq!(config.release.packages, [] as [String; 0]);
 }
 
 #[quench_test::test]

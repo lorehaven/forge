@@ -141,7 +141,7 @@ fn only_songs_with_a_file_are_in_the_catalog_and_they_are_found_by_album_artist_
         ids: ids[2].to_string(),
         ..SongQuery::default()
     });
-    assert!(third.ids.is_empty());
+    assert_eq!(third.ids, [] as [i64; 0]);
 
     assert_eq!(
         catalog.file(ids[0]).unwrap().rsplit_once('.').unwrap().1,
@@ -243,7 +243,10 @@ fn playlists_belong_to_their_owner_and_keep_their_order() {
         "Trip"
     );
     assert!(lists.delete("ann", mine.id).unwrap());
-    assert!(lists.list("ann").unwrap().is_empty());
+    assert_eq!(
+        lists.list("ann").unwrap(),
+        [] as [songbook_core::PlaylistInfo; 0]
+    );
 }
 
 #[quench_test::test]
@@ -626,8 +629,8 @@ fn a_song_has_its_albums_cover_a_singles_own_and_else_its_artists_picture() {
         "no album: the artist's picture"
     );
     assert_eq!(catalog.art("artist", "nate dogg"), ["artist-359.jpg"]);
-    assert!(catalog.art("artist", "nobody").is_empty());
-    assert!(catalog.art("song", "999999").is_empty());
+    assert_eq!(catalog.art("artist", "nobody"), [] as [String; 0]);
+    assert_eq!(catalog.art("song", "999999"), [] as [String; 0]);
     let album_id = catalog.albums(&AlbumQuery::default())[0].id;
     assert_eq!(catalog.art("album", &album_id.to_string()).len(), 1);
 }
@@ -687,7 +690,7 @@ fn what_a_person_played_last_is_theirs_newest_first_and_each_song_once() {
     );
     assert_eq!(lists.recent("ann", 2).unwrap(), vec![1, 3]);
     assert_eq!(lists.recent("bob", 10).unwrap(), vec![9]);
-    assert!(lists.recent("nobody", 10).unwrap().is_empty());
+    assert_eq!(lists.recent("nobody", 10).unwrap(), [] as [i64; 0]);
 }
 
 #[quench_test::test]

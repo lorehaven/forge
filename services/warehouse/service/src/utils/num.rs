@@ -6,7 +6,7 @@ pub fn i64_to_f64(n: i64) -> f64 {
     let magnitude = n.unsigned_abs();
     let high = u32::try_from(magnitude >> 32).unwrap_or(u32::MAX);
     let low = u32::try_from(magnitude & 0xFFFF_FFFF).unwrap_or(u32::MAX);
-    let value = f64::from(high) * 4_294_967_296.0 + f64::from(low);
+    let value = f64::mul_add(f64::from(high), 4_294_967_296.0, f64::from(low));
     if n < 0 { -value } else { value }
 }
 

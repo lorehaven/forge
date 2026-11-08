@@ -165,7 +165,7 @@ fn build_gguf_estimates_only_covers_the_models_own_quant() {
 fn estimate_weights_gb_scales_linearly_with_params_and_bytes() {
     let one_byte = estimate_weights_gb(1.0, 1.0);
     let two_bytes = estimate_weights_gb(1.0, 2.0);
-    assert!((two_bytes - one_byte * 2.0).abs() < 1e-9);
+    assert!(one_byte.mul_add(-2.0, two_bytes).abs() < 1e-9);
     assert!(one_byte > 0.0);
 }
 
@@ -173,7 +173,7 @@ fn estimate_weights_gb_scales_linearly_with_params_and_bytes() {
 fn estimate_kv_cache_gb_scales_with_layers_hidden_and_context() {
     let base = estimate_kv_cache_gb(32, 4096, 8192);
     let double_context = estimate_kv_cache_gb(32, 4096, 16384);
-    assert!((double_context - base * 2.0).abs() < 1e-9);
+    assert!(base.mul_add(-2.0, double_context).abs() < 1e-9);
 }
 
 #[quench_test::test]

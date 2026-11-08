@@ -332,7 +332,7 @@ async fn a_plan_that_replaces_gantry_itself_applies_it_last_alone_and_guarded() 
     else {
         panic!()
     };
-    assert!(except.is_empty());
+    assert_eq!(except.as_slice(), [] as [String; 0]);
     assert_eq!(targets, &["deployment/gantry"]);
     assert!(*no_wait);
     let Some(Step::Rollout {

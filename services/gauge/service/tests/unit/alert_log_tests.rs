@@ -43,7 +43,10 @@ fn an_alert_opens_once_however_long_it_lasts_and_closes_when_it_is_gone() {
         ["hot:k10temp"]
     );
     assert!(matches!(end[0], AlertChange::Closed { at, .. } if (at - 3.0).abs() < 1e-9));
-    assert!(log.seen("h", 4.0, &[]).is_empty());
+    assert_eq!(
+        log.seen("h", 4.0, &[]),
+        [] as [gauge_service::domain::alert_log::AlertChange; 0]
+    );
 }
 
 #[quench_test::test]
@@ -66,7 +69,10 @@ fn a_silent_host_is_one_alert_and_its_other_alerts_wait_for_it() {
     log.seen("h", 1.0, &[alert("hot:x", "1")]);
     let down = log.silent("h", 2.0, "connection refused");
     assert_eq!(down.iter().filter_map(opened).collect::<Vec<_>>(), ["down"]);
-    assert!(log.silent("h", 3.0, "still refused").is_empty());
+    assert_eq!(
+        log.silent("h", 3.0, "still refused"),
+        [] as [gauge_service::domain::alert_log::AlertChange; 0]
+    );
     // It comes back and the heat is still there: the outage ends, the heat was never interrupted.
     let back = log.seen("h", 4.0, &[alert("hot:x", "1")]);
     assert_eq!(back.iter().filter_map(closed).collect::<Vec<_>>(), ["down"]);

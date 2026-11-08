@@ -157,7 +157,10 @@ async fn sync_adds_new_schedules_keeps_known_ones_and_drops_withdrawn_ones() {
     assert_eq!(left[0].timezone, "Europe/Warsaw");
 
     schedules::sync(&db, &repo.id, &[], now).await.unwrap();
-    assert!(schedules::list(&db, &repo.id).await.unwrap().is_empty());
+    assert_eq!(
+        schedules::list(&db, &repo.id).await.unwrap(),
+        [] as [conveyor_service::scheduler::schedules::StoredSchedule; 0]
+    );
 }
 
 #[quench_test::test]
@@ -173,7 +176,10 @@ async fn a_default_branch_run_registers_the_pipelines_schedule_and_a_due_one_run
     let _work = start_scheduler(&db);
 
     // Nothing is scheduled until a default-branch run has read the pipeline.
-    assert!(schedules::list(&db, &repo.id).await.unwrap().is_empty());
+    assert_eq!(
+        schedules::list(&db, &repo.id).await.unwrap(),
+        [] as [conveyor_service::scheduler::schedules::StoredSchedule; 0]
+    );
     let push = push_run(&db, &repo.id, "refs/heads/master", &origin.sha).await;
     let push = settle(&db, &push).await;
     assert_eq!(push.status, Status::Success, "{:?}", push.error);
@@ -315,11 +321,9 @@ async fn a_disabled_repository_is_skipped_but_its_schedule_keeps_ticking_forward
     let later = Time::now() + days(2);
     let tick = schedules::fire_due(&db, later).await.unwrap();
     assert_eq!((tick.started, tick.skipped), (0, 1));
-    assert!(
-        queue::list_runs(&db, Some(&repo.id), 10)
-            .await
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        queue::list_runs(&db, Some(&repo.id), 10).await.unwrap(),
+        [] as [conveyor_service::domain::Run; 0]
     );
     // Advanced, so re-enabling later does not fire a stale night.
     assert!(schedules::list(&db, &repo.id).await.unwrap()[0].next_run_at > later);
@@ -361,5 +365,8 @@ async fn a_feature_branch_cannot_register_a_schedule() {
     // declared on a non-default branch must still not be registered.
     let run = push_run(&db, &repo.id, "refs/heads/feature", &origin.sha).await;
     settle(&db, &run).await;
-    assert!(schedules::list(&db, &repo.id).await.unwrap().is_empty());
+    assert_eq!(
+        schedules::list(&db, &repo.id).await.unwrap(),
+        [] as [conveyor_service::scheduler::schedules::StoredSchedule; 0]
+    );
 }

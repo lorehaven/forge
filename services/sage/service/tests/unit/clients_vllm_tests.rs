@@ -115,7 +115,7 @@ fn flush_produces_parseable_tool_call() {
 fn flush_skips_nameless_entries() {
     let mut accum = std::collections::BTreeMap::new();
     accum.insert(0usize, (String::new(), "{}".to_string()));
-    assert!(flush_streamed_tool_calls(&mut accum).is_empty());
+    assert_eq!(flush_streamed_tool_calls(&mut accum), [] as [String; 0]);
 }
 
 // ---- the HTTP calls, against a mock vLLM -----------------------------------------------------

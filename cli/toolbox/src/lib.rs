@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use quench_core::version::Version;
 
 pub const REGISTRY_NAME: &str = "ennor";
-pub const REGISTRY_INDEX: &str = "sparse+https://ennor.ddns.net/index/";
+pub const REGISTRY_INDEX: &str = "sparse+https://ennor.ddns.net/warehouse/index/";
 
 #[derive(Clone, Copy)]
 pub struct MonitoredCrate {

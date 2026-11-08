@@ -35,9 +35,18 @@ fn whitespace_around_entries_is_ignored() {
 
 #[quench_test::test]
 fn an_empty_setting_configures_nothing() {
-    assert!(parse_storages("").is_empty());
-    assert!(parse_storages("   ").is_empty());
-    assert!(parse_storages(";;").is_empty());
+    assert_eq!(
+        parse_storages(""),
+        [] as [warehouse_service::routers::files::Storage; 0]
+    );
+    assert_eq!(
+        parse_storages("   "),
+        [] as [warehouse_service::routers::files::Storage; 0]
+    );
+    assert_eq!(
+        parse_storages(";;"),
+        [] as [warehouse_service::routers::files::Storage; 0]
+    );
 }
 
 #[quench_test::test]

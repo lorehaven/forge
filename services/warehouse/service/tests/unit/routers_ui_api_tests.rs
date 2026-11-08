@@ -122,7 +122,7 @@ async fn the_overview_says_who_asks_and_what_is_on() {
     let (status, body) = get(&app, "/ui/api/overview").await;
     assert_eq!(status, StatusCode::OK);
     let overview: Overview = json::from_str(&json::to_string(&body)).unwrap();
-    assert!(!overview.username.is_empty());
+    assert_ne!(overview.username, "");
     assert!(overview.can_manage, "auth off is all access");
     assert!(overview.features.rivets);
 }
@@ -486,7 +486,7 @@ async fn storages_with_no_database_are_just_the_configured_ones() {
     let (status, body) = get(&app, "/ui/api/files/storages").await;
     assert_eq!(status, StatusCode::OK);
     let storages: Storages = json::from_str(&json::to_string(&body)).unwrap();
-    assert!(storages.dynamic.is_empty());
+    assert_eq!(storages.dynamic, [] as [warehouse_core::DynamicStorage; 0]);
 }
 
 #[quench_test::test]

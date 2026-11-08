@@ -157,7 +157,7 @@ async fn a_commit_on_master_runs_every_stage_in_order() {
     let (workspace, outcome) = perform_run(&origin, "refs/heads/master", work.path()).await;
 
     assert_eq!(outcome.ran, ["build/build", "test/test", "deploy/deploy"]);
-    assert!(outcome.skipped.is_empty());
+    assert_eq!(outcome.skipped, [] as [String; 0]);
     assert!(
         outcome
             .statuses

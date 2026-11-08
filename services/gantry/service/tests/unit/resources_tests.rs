@@ -452,7 +452,7 @@ async fn applying_a_missing_resource_applies_only_it_from_the_installed_version_
     assert_eq!(version, "1.0.0");
     assert_eq!(targets, &["deployment/trainer"]);
     assert_eq!(namespace, "ml");
-    assert!(except.is_empty());
+    assert_eq!(except.as_slice(), [] as [String; 0]);
 }
 
 #[quench_test::test]
@@ -748,7 +748,7 @@ fn a_dry_run_writes_nothing_to_the_cluster_but_still_shows_the_command() {
     let mut context = ctx(dir.path());
     context.dry_run = true;
     run(&plan, &context, &mut exec, &mut out);
-    assert!(exec.ran.is_empty());
+    assert_eq!(exec.ran, [] as [String; 0]);
     assert!(
         String::from_utf8(out)
             .unwrap()
