@@ -9,7 +9,7 @@ What the collector reads, how a scrape becomes a view, and when an alert exists.
 
 ## Collector
 
-`collector::spawn` starts one tokio task per target. Each loop: scrape, `store.record(name, result)`, sleep `interval_secs`. A failed scrape is logged at warn once per outage (`<name>: scrape failed: <error>`). The first scrape of a host has no rates, so no history point is drawn until the second succeeds. After a failure the host keeps its last view and error; its previous reading is discarded (counters would span the gap) and one gap point is appended to the history if the last point was not already a gap. A host is `up` when it has no error and has a view; before the first scrape its error is `waiting for the first scrape`.
+`collector::spawn` starts one tokio task per target. Each loop: scrape, `store.record(name, result)`, sleep `interval_secs`. A failed scrape is logged at warn once per outage (`<name>: scrape failed: <error>`). The first scrape of a host has no rates, so no history point is drawn until the second succeeds. After a failure the host keeps its last view and error; its previous reading is discarded (counters would span the gap) and one gap point is appended to the history if the last point was not already a gap. A host is `up` when it has no error and a live reading (its last scrape answered); a host that is not up may still have a view, its last one, shown as not live. Before the first scrape its error is `waiting for the first scrape`.
 
 ## What is read
 
