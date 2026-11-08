@@ -9,7 +9,7 @@
 #   * with --pcp: PCP's pmcd and pmproxy on :44322 (plus the nvidia/amdgpu PMDAs when such a GPU is present), for
 #     a `kind = "pcp"` target. Such a target still needs node_exporter as its `also` for sensors and SMART.
 #
-# Usage:  sudo bash plans/gauge-host-setup-arch.sh [--pcp] [--no-nvme]
+# Usage:  sudo bash helpers/gauge-host-setup-arch.sh [--pcp] [--no-nvme]
 #
 # Safe to run again: packages are --needed, files are rewritten, existing node_exporter flags are kept. The two
 # textfile scripts are downloaded from prometheus-community's node-exporter-textfile-collector-scripts and run as

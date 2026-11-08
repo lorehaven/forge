@@ -14,7 +14,7 @@
 # ship different versions of the scripts; when the packaged one does not give those names (or there is no packaged
 # timer), its timer is disabled and prometheus-community's current script runs on a timer of this script's own.
 #
-# Usage:  sudo bash plans/gauge-host-setup-debian.sh [--pcp] [--no-nvme]
+# Usage:  sudo bash helpers/gauge-host-setup-debian.sh [--pcp] [--no-nvme]
 #
 # Safe to run again. SD cards (a Raspberry Pi's mmcblk0) have no SMART: such a host shows no disk health.
 

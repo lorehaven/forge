@@ -10,7 +10,7 @@
 #
 # PCP is not offered: Void does not package it, so a Void host is a `kind = "node"` target.
 #
-# Usage:  sudo bash plans/gauge-host-setup-void.sh [--no-nvme]
+# Usage:  sudo bash helpers/gauge-host-setup-void.sh [--no-nvme]
 #
 # Safe to run again: existing node_exporter settings in /etc/sv/node_exporter/conf are kept, files are
 # rewritten. The two scripts are downloaded from prometheus-community's node-exporter-textfile-collector-scripts
@@ -158,7 +158,7 @@ step "runit services"
 install -d /etc/sv/smartmon
 cat >/etc/sv/smartmon/run <<EOF
 #!/bin/sh
-# Written by plans/gauge-host-setup-void.sh: SMART (and NVMe, when the script is installed) for node_exporter's
+# Written by helpers/gauge-host-setup-void.sh: SMART (and NVMe, when the script is installed) for node_exporter's
 # textfile collector, every 5 minutes. A temp file and mv: node_exporter never reads a half-written file.
 exec 2>&1
 dir=$DIR
