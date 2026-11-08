@@ -1454,7 +1454,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-package"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "quench-archive",
  "quench-core",
@@ -1826,7 +1826,7 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "warehouse"
-version = "0.8.10"
+version = "0.8.11"
 dependencies = [
  "forge-web",
  "quench-archive",
