@@ -11,8 +11,8 @@ fn status(
     updatable: bool,
 ) -> CrateStatus {
     CrateStatus {
-        package: "anvil",
-        binary: "anvil",
+        package: "anvil".to_string(),
+        binary: "anvil".to_string(),
         installed_version: installed.map(|v| Version::parse(v).unwrap()),
         latest_version: latest.map(|v| Version::parse(v).unwrap()),
         installable,

@@ -29,8 +29,8 @@ fn header_and_controls_are_always_present() {
 #[quench_test::test]
 fn package_and_binary_names_appear_in_their_row() {
     let statuses = vec![CrateStatus {
-        package: "anvil",
-        binary: "anvil",
+        package: "anvil".to_string(),
+        binary: "anvil".to_string(),
         installed_version: Some(v("1.0.0")),
         latest_version: Some(v("1.0.0")),
         installable: true,
@@ -45,8 +45,8 @@ fn package_and_binary_names_appear_in_their_row() {
 #[quench_test::test]
 fn an_updatable_crate_shows_the_update_action() {
     let statuses = vec![CrateStatus {
-        package: "riveter",
-        binary: "riveter",
+        package: "riveter".to_string(),
+        binary: "riveter".to_string(),
         installed_version: Some(v("1.0.0")),
         latest_version: Some(v("2.0.0")),
         installable: true,
@@ -61,8 +61,8 @@ fn an_updatable_crate_shows_the_update_action() {
 #[quench_test::test]
 fn an_uninstalled_installable_crate_shows_the_install_action() {
     let statuses = vec![CrateStatus {
-        package: "welder",
-        binary: "welder",
+        package: "welder".to_string(),
+        binary: "welder".to_string(),
         installed_version: None,
         latest_version: Some(v("1.0.0")),
         installable: true,
@@ -76,8 +76,8 @@ fn an_uninstalled_installable_crate_shows_the_install_action() {
 #[quench_test::test]
 fn a_crate_with_an_error_shows_a_warning_line() {
     let statuses = vec![CrateStatus {
-        package: "pulley",
-        binary: "pulley",
+        package: "pulley".to_string(),
+        binary: "pulley".to_string(),
         installed_version: None,
         latest_version: None,
         installable: false,
@@ -93,8 +93,8 @@ fn a_crate_with_an_error_shows_a_warning_line() {
 fn the_selected_row_is_marked() {
     let statuses = vec![
         CrateStatus {
-            package: "a",
-            binary: "a",
+            package: "a".to_string(),
+            binary: "a".to_string(),
             installed_version: None,
             latest_version: None,
             installable: false,
@@ -102,8 +102,8 @@ fn the_selected_row_is_marked() {
             error: None,
         },
         CrateStatus {
-            package: "b",
-            binary: "b",
+            package: "b".to_string(),
+            binary: "b".to_string(),
             installed_version: None,
             latest_version: None,
             installable: false,
@@ -134,8 +134,8 @@ fn with_no_transient_status_the_app_message_is_shown() {
 #[quench_test::test]
 fn a_very_narrow_terminal_still_renders_every_line() {
     let statuses = vec![CrateStatus {
-        package: "warehouse-cli",
-        binary: "warehouse",
+        package: "warehouse-cli".to_string(),
+        binary: "warehouse".to_string(),
         installed_version: Some(v("1.0.0")),
         latest_version: Some(v("1.2.0")),
         installable: true,

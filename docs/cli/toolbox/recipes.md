@@ -19,10 +19,10 @@ Select each row marked `update` with the arrow keys and press `Enter`; wait for 
 
 ## Update Toolbox itself
 
-The `note:` line suggests `forge-toolbox self-update`, which does not exist. Use:
+The `note:` line suggests the command:
 
 ```bash
-cargo install forge-toolbox --registry ennor --force
+forge-toolbox self-update     # same as: cargo install forge-toolbox --registry ennor --force
 ```
 
 ## Install from a checkout instead

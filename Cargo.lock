@@ -322,7 +322,9 @@ version = "0.1.19"
 dependencies = [
  "quench-args",
  "quench-cli",
+ "quench-client",
  "quench-core",
+ "quench-serde",
  "quench-test",
 ]
 

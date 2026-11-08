@@ -8,8 +8,8 @@ fn status(
     latest: &str,
 ) -> CrateStatus {
     CrateStatus {
-        package,
-        binary,
+        package: package.to_string(),
+        binary: binary.to_string(),
         installed_version: Some(Version::parse(installed).unwrap()),
         latest_version: Some(Version::parse(latest).unwrap()),
         installable: true,
@@ -105,8 +105,8 @@ fn shrink_widths_to_fit_clamps_the_installed_column_once_it_is_the_widest() {
     // so an impossibly narrow terminal must shrink package and binary down
     // to their floor *and then* clamp installed too.
     let statuses = vec![CrateStatus {
-        package: "a",
-        binary: "b",
+        package: "a".to_string(),
+        binary: "b".to_string(),
         installed_version: None,
         latest_version: Some(Version::parse("1.0.0").unwrap()),
         installable: true,

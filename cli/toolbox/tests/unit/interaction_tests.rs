@@ -7,10 +7,10 @@ use quench_cli::keys::KeyCode;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-const fn status(package: &'static str) -> CrateStatus {
+fn status(package: &'static str) -> CrateStatus {
     CrateStatus {
-        package,
-        binary: package,
+        package: package.to_string(),
+        binary: package.to_string(),
         installed_version: None,
         latest_version: None,
         installable: true,
@@ -403,8 +403,8 @@ fn on_key_spawns_for_an_installable_action() {
 #[quench_test::test]
 fn on_key_resolves_synchronously_for_a_not_installable_action() {
     let mut state = app(vec![CrateStatus {
-        package: "b",
-        binary: "b",
+        package: "b".to_string(),
+        binary: "b".to_string(),
         installed_version: None,
         latest_version: None,
         installable: false,

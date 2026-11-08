@@ -4,7 +4,11 @@ use quench_serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct SearchQuery {
+    #[serde(default)]
     q: String,
+    /// Only crates that build a binary, each listing its binary names; allows an empty `q` (list them all).
+    #[serde(default)]
+    bins: bool,
     #[serde(default = "default_per_page")]
     per_page: usize,
     #[serde(default = "default_page")]
@@ -23,6 +27,8 @@ pub struct SearchCrate {
     name: String,
     max_version: String,
     description: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    bins: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -40,7 +46,7 @@ pub struct SearchResponse {
 pub async fn handle(Query(query): Query<SearchQuery>) -> Response {
     let q = query.q.trim().to_ascii_lowercase();
 
-    if q.is_empty() {
+    if q.is_empty() && !query.bins {
         return Response::json(
             StatusCode::BAD_REQUEST,
             &quench_serde::json!({ "errors": [{ "detail": "search query must not be empty" }] }),
@@ -70,10 +76,19 @@ pub async fn handle(Query(query): Query<SearchQuery>) -> Response {
             let max_version = find_max_version(&entry.path()).await;
 
             if let Some(version) = max_version {
+                let bins = if query.bins {
+                    binaries_of(&entry.path(), &name, &version).await
+                } else {
+                    Vec::new()
+                };
+                if query.bins && bins.is_empty() {
+                    continue;
+                }
                 matches.push(SearchCrate {
                     name: name.clone(),
                     max_version: version,
                     description: None,
+                    bins,
                 });
             }
         }
@@ -93,6 +108,64 @@ pub async fn handle(Query(query): Query<SearchQuery>) -> Response {
         },
     )
     .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+/// The binary names a published version builds, from the `[[bin]]` tables of the `Cargo.toml` inside its `.crate`.
+///
+/// The answer is cached beside the crate as `bins.json`, so a version is unpacked once; crates published before this
+/// existed are read the first time they are asked for, with no republish. A crate with no `[[bin]]` table (or an
+/// unreadable archive) has none.
+pub async fn binaries_of(crate_dir: &std::path::Path, name: &str, version: &str) -> Vec<String> {
+    let version_dir = crate_dir.join(version);
+    let cache = version_dir.join("bins.json");
+    if let Ok(text) = tokio::fs::read_to_string(&cache).await
+        && let Ok(bins) = quench_serde::json::from_str::<Vec<String>>(&text)
+    {
+        return bins;
+    }
+    let Ok(archive) = tokio::fs::read(version_dir.join(format!("{name}-{version}.crate"))).await else {
+        return Vec::new();
+    };
+    let bins = binaries_in_archive(&archive, name, version);
+    let _ = tokio::fs::write(&cache, quench_serde::json::to_string(&bins)).await;
+    bins
+}
+
+/// [`binaries_of`] on the bytes of a `.crate` (a gzip tar holding `<name>-<version>/Cargo.toml`).
+#[must_use]
+pub fn binaries_in_archive(archive: &[u8], name: &str, version: &str) -> Vec<String> {
+    const LIMIT: usize = 512 * 1024 * 1024;
+    let Ok(tar) = quench_archive::gzip::decompress(archive, LIMIT) else {
+        return Vec::new();
+    };
+    let manifest = format!("{name}-{version}/Cargo.toml");
+    for entry in quench_archive::tar::Reader::new(&tar).flatten() {
+        if entry.path == manifest {
+            return binaries_in_manifest(&String::from_utf8_lossy(entry.data));
+        }
+    }
+    Vec::new()
+}
+
+/// The `name` of every `[[bin]]` table in a manifest, in order.
+#[must_use]
+pub fn binaries_in_manifest(manifest: &str) -> Vec<String> {
+    let mut bins = Vec::new();
+    let mut in_bin = false;
+    for line in manifest.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_bin = line == "[[bin]]";
+        } else if in_bin
+            && let Some(rest) = line.strip_prefix("name")
+            && let Some(value) = rest.trim_start().strip_prefix('=')
+        {
+            let value = value.trim().trim_matches('"');
+            if !value.is_empty() {
+                bins.push(value.to_string());
+            }
+        }
+    }
+    bins
 }
 
 pub fn register_routes() {

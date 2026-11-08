@@ -45,7 +45,7 @@ A package whose registry lookup failed has its row followed by `warn: Failed to 
 
 | Note | When |
 |---|---|
-| `note: forge-toolbox update available: X -> Y. run forge-toolbox self-update` | A newer version exists. **There is no `self-update` command** (see the report); update it with `cargo install forge-toolbox --registry ennor --force`. |
+| `note: forge-toolbox update available: X -> Y. run forge-toolbox self-update` | A newer version exists. `forge-toolbox self-update` runs `cargo install forge-toolbox --registry ennor --force` with its output on the terminal (or prints that it is up to date). |
 | `note: forge-toolbox is up to date` | Same version. |
 | `note: forge-toolbox is not installed (latest Y)` | Not in `cargo install --list` (for example run with `cargo run`). |
 | `note: could not determine latest forge-toolbox version from registry` | Lookup failed. |
@@ -78,4 +78,4 @@ Because the install runs `cargo install` with output captured, a long compile sh
 
 ## Monitored crates
 
-Fixed in the source (`MONITORED_CRATES`); see [Configuration](configuration.md).
+Discovered from the registry at every start and refresh: toolbox asks `GET <registry>/api/v1/crates?bins=true&per_page=100` and lists each crate that builds a binary (the `binary` column is its first `[[bin]]`), sorted by package, without `forge-toolbox` itself. Warehouse reads the binary names from the `Cargo.toml` inside the crate's newest `.crate` and caches them as `bins.json` beside it, so crates published earlier appear without a republish. If the registry cannot be asked, or lists no tools, toolbox falls back to the fixed list `MONITORED_CRATES` in the source; see [Configuration](configuration.md).

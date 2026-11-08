@@ -168,3 +168,51 @@ fn spinner_frames_cycle_through_ten_glyphs() {
     assert_eq!(frames.len(), 10);
     assert_eq!(frames[0], "⠋");
 }
+
+#[quench_test::test]
+fn plan_self_update_installs_a_newer_version() {
+    use forge_toolbox::{SelfUpdate, plan_self_update};
+    assert_eq!(
+        plan_self_update(Some(&v("0.1.0")), Some(&v("0.2.0"))),
+        SelfUpdate::Install(v("0.2.0"))
+    );
+    assert_eq!(
+        plan_self_update(None, Some(&v("0.2.0"))),
+        SelfUpdate::Install(v("0.2.0"))
+    );
+}
+
+#[quench_test::test]
+fn plan_self_update_leaves_a_current_or_newer_install_alone() {
+    use forge_toolbox::{SelfUpdate, plan_self_update};
+    assert_eq!(
+        plan_self_update(Some(&v("0.2.0")), Some(&v("0.2.0"))),
+        SelfUpdate::UpToDate(v("0.2.0"))
+    );
+    assert_eq!(
+        plan_self_update(Some(&v("0.3.0")), Some(&v("0.2.0"))),
+        SelfUpdate::UpToDate(v("0.3.0"))
+    );
+}
+
+#[quench_test::test]
+fn plan_self_update_needs_the_registry_to_have_toolbox() {
+    use forge_toolbox::{SelfUpdate, plan_self_update};
+    assert_eq!(
+        plan_self_update(Some(&v("0.1.0")), None),
+        SelfUpdate::NotPublished
+    );
+}
+
+#[quench_test::test]
+fn self_update_command_force_installs_toolbox_from_the_registry() {
+    let cmd = forge_toolbox::self_update_command();
+    let args: Vec<_> = cmd
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        args,
+        ["install", "forge-toolbox", "--registry", "ennor", "--force"]
+    );
+}

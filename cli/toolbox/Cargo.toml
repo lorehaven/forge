@@ -24,6 +24,8 @@ path = "src/lib.rs"
 quench-core = { workspace = true }
 quench-args = { workspace = true }
 quench-cli = { workspace = true }
+quench-client = { workspace = true, features = ["blocking"] }
+quench-serde = { workspace = true }
 
 [[test]]
 name = "unit"

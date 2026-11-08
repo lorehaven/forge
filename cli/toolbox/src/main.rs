@@ -1,8 +1,9 @@
 use forge_toolbox::{
-    ActionDispatch, App, KeyOutcome, PollOutcome, dispatch_action, handle_key, poll_in_flight,
-    refresh_app_state, render, run_selected_action,
+    ActionDispatch, App, KeyOutcome, PollOutcome, SelfUpdate, dispatch_action,
+    fetch_latest_registry_version, handle_key, installed_versions, plan_self_update,
+    poll_in_flight, refresh_app_state, render, run_selected_action, self_update_command,
 };
-use quench_args::Parser;
+use quench_args::{Parser, Subcommand};
 use quench_cli::keys::Keys;
 use quench_cli::prelude::{Tone, print_status, require_binary};
 use quench_cli::term::{ENTER_ALTERNATE_SCREEN, LEAVE_ALTERNATE_SCREEN, clear_screen, size};
@@ -19,7 +20,16 @@ use std::time::{Duration, Instant};
     version,
     about = "Interactive monitor and installer for Forge crates"
 )]
-struct Cli {}
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Install the newest forge-toolbox from the registry, replacing this one
+    SelfUpdate,
+}
 
 /// Raw mode and the alternate screen for as long as it lives; both are undone on drop.
 struct TerminalGuard {
@@ -46,13 +56,52 @@ impl Drop for TerminalGuard {
 }
 
 fn main() -> Result<()> {
-    let _ = Cli::parse();
+    let cli = Cli::parse();
     require_binary(
         "cargo",
         "toolbox drives cargo search/install against the workspace registry",
     )?;
+    if matches!(cli.command, Some(Command::SelfUpdate)) {
+        return self_update();
+    }
     print_status(Tone::Info, "toolbox", "launching interactive monitor");
     run_repl()
+}
+
+/// `forge-toolbox self-update`: runs `cargo install` with its output on the terminal, since a build takes minutes.
+fn self_update() -> Result<()> {
+    let installed = installed_versions()?;
+    let latest = fetch_latest_registry_version("forge-toolbox")?;
+    match plan_self_update(installed.get("forge-toolbox"), latest.as_ref()) {
+        SelfUpdate::UpToDate(version) => {
+            print_status(
+                Tone::Info,
+                "toolbox",
+                &format!("forge-toolbox {version} is up to date"),
+            );
+            Ok(())
+        }
+        SelfUpdate::NotPublished => quench_core::bail!("forge-toolbox is not in the registry"),
+        SelfUpdate::Install(version) => {
+            print_status(
+                Tone::Info,
+                "toolbox",
+                &format!("installing forge-toolbox {version}"),
+            );
+            let status = self_update_command()
+                .status()
+                .context("failed to run cargo install")?;
+            if !status.success() {
+                quench_core::bail!("cargo install forge-toolbox failed ({status})");
+            }
+            print_status(
+                Tone::Info,
+                "toolbox",
+                &format!("forge-toolbox {version} installed"),
+            );
+            Ok(())
+        }
+    }
 }
 
 fn run_repl() -> Result<()> {

@@ -18,7 +18,8 @@ pub struct MonitoredCrate {
     pub binary: &'static str,
 }
 
-/// Every installable the workspace builds, in the order they are listed.
+/// The installables toolbox falls back to when the registry cannot be asked which crates install a binary
+/// ([`discover_tools`]).
 ///
 /// `forge-toolbox` is deliberately absent: it cannot replace its own running
 /// binary from inside this list, so it reports on itself through
@@ -46,6 +47,10 @@ pub const MONITORED_CRATES: &[MonitoredCrate] = &[
         binary: "riveter",
     },
     MonitoredCrate {
+        package: "loupe",
+        binary: "loupe",
+    },
+    MonitoredCrate {
         package: "welder",
         binary: "welder",
     },
@@ -62,8 +67,8 @@ pub const MONITORED_CRATES: &[MonitoredCrate] = &[
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CrateStatus {
-    pub package: &'static str,
-    pub binary: &'static str,
+    pub package: String,
+    pub binary: String,
     pub installed_version: Option<Version>,
     pub latest_version: Option<Version>,
     pub installable: bool,
@@ -105,8 +110,8 @@ pub fn content_widths(statuses: &[CrateStatus]) -> TableWidths {
     let mut action = char_width("action");
 
     for status in statuses {
-        package = package.max(char_width(status.package));
-        binary = binary.max(char_width(status.binary));
+        package = package.max(char_width(&status.package));
+        binary = binary.max(char_width(&status.binary));
         installed = installed.max(char_width(&display_installed(status)));
         latest = latest.max(char_width(&display_latest(status)));
         updatable = updatable.max(char_width(display_updatable(status)));
@@ -253,7 +258,7 @@ pub const fn action_label(status: &CrateStatus) -> &'static str {
 #[must_use]
 pub fn action_request(status: &CrateStatus) -> ActionRequest {
     ActionRequest {
-        package: status.package.to_string(),
+        package: status.package.clone(),
         installable: status.installable,
         installed: status.installed_version.is_some(),
         updatable: status.updatable,
@@ -340,8 +345,8 @@ pub const fn spinner_frames() -> &'static [&'static str] {
 /// can be tested without shelling out to `cargo`.
 #[must_use]
 pub fn build_status(
-    package: &'static str,
-    binary: &'static str,
+    package: &str,
+    binary: &str,
     installed_version: Option<Version>,
     latest_result: Result<Option<Version>>,
 ) -> CrateStatus {
@@ -353,8 +358,8 @@ pub fn build_status(
                 _ => false,
             };
             CrateStatus {
-                package,
-                binary,
+                package: package.to_string(),
+                binary: binary.to_string(),
                 installed_version,
                 latest_version,
                 installable,
@@ -363,8 +368,8 @@ pub fn build_status(
             }
         }
         Err(err) => CrateStatus {
-            package,
-            binary,
+            package: package.to_string(),
+            binary: binary.to_string(),
             installed_version,
             latest_version: None,
             installable: false,
@@ -378,15 +383,120 @@ pub fn build_status(
 pub fn collect_statuses<S: BuildHasher>(
     installed: &HashMap<String, Version, S>,
 ) -> Vec<CrateStatus> {
-    MONITORED_CRATES
+    let discovered = discover_tools();
+    let tools: Vec<(String, String)> = discovered.unwrap_or_else(|_| {
+        MONITORED_CRATES
+            .iter()
+            .map(|item| (item.package.to_string(), item.binary.to_string()))
+            .collect()
+    });
+    tools
         .iter()
-        .map(|item| {
-            let installed_version = installed.get(item.package).cloned();
-            let latest_result = fetch_latest_registry_version(item.package)
-                .with_context(|| format!("Failed to fetch latest version for {}", item.package));
-            build_status(item.package, item.binary, installed_version, latest_result)
+        .map(|(package, binary)| {
+            let installed_version = installed.get(package).cloned();
+            let latest_result = fetch_latest_registry_version(package)
+                .with_context(|| format!("Failed to fetch latest version for {package}"));
+            build_status(package, binary, installed_version, latest_result)
         })
         .collect()
+}
+
+/// The registry's JSON API root, derived from [`REGISTRY_INDEX`]
+/// (`sparse+https://host/warehouse/index/` -> `https://host/warehouse/api/v1/crates`).
+#[must_use]
+pub fn tools_url() -> String {
+    let base = REGISTRY_INDEX.trim_start_matches("sparse+");
+    let root = base.trim_end_matches('/');
+    let root = root.strip_suffix("/index").unwrap_or(root);
+    format!("{root}/api/v1/crates?bins=true&per_page=100")
+}
+
+/// Asks the registry which crates install a binary, as `(package, binary)` sorted by package.
+///
+/// `forge-toolbox` is left out: it reports on itself through [`format_toolbox_note`].
+///
+/// # Errors
+/// The registry cannot be reached, answers an error, or sends something that is not a crate list.
+pub fn discover_tools() -> Result<Vec<(String, String)>> {
+    let client = quench_client::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .context("Failed to build the HTTP client")?;
+    let response = client
+        .get(tools_url())
+        .send()
+        .context("Failed to ask the registry for its tools")?;
+    if !response.status().is_success() {
+        quench_core::bail!("registry tool listing failed: HTTP {}", response.status());
+    }
+    let body = response
+        .bytes()
+        .context("Failed to read the registry tool listing")?;
+    parse_tools(&String::from_utf8_lossy(&body))
+}
+
+/// The parsing half of [`discover_tools`]: the `crates` of a search response that list a binary.
+///
+/// # Errors
+/// The text is not a search response, or lists no installable tool at all.
+pub fn parse_tools(json: &str) -> Result<Vec<(String, String)>> {
+    #[derive(quench_serde::Deserialize)]
+    struct Listing {
+        crates: Vec<Item>,
+    }
+    #[derive(quench_serde::Deserialize)]
+    struct Item {
+        name: String,
+        #[serde(default)]
+        bins: Vec<String>,
+    }
+    let listing: Listing =
+        quench_serde::json::from_str(json).context("Registry tool listing is not a crate list")?;
+    let mut tools: Vec<(String, String)> = listing
+        .crates
+        .into_iter()
+        .filter(|item| item.name != "forge-toolbox")
+        .filter_map(|item| item.bins.into_iter().next().map(|bin| (item.name, bin)))
+        .collect();
+    if tools.is_empty() {
+        quench_core::bail!("Registry lists no installable tools");
+    }
+    tools.sort();
+    Ok(tools)
+}
+
+/// What `forge-toolbox self-update` should do, given the installed and latest versions.
+#[derive(Debug, PartialEq, Eq)]
+pub enum SelfUpdate {
+    /// Already at (or ahead of) the registry's newest version.
+    UpToDate(Version),
+    /// Install this version; also taken when toolbox is not in `cargo install --list` (run from a build).
+    Install(Version),
+    /// The registry has no `forge-toolbox`.
+    NotPublished,
+}
+
+#[must_use]
+pub fn plan_self_update(installed: Option<&Version>, latest: Option<&Version>) -> SelfUpdate {
+    match (installed, latest) {
+        (_, None) => SelfUpdate::NotPublished,
+        (Some(current), Some(latest)) if latest <= current => SelfUpdate::UpToDate(current.clone()),
+        (_, Some(latest)) => SelfUpdate::Install(latest.clone()),
+    }
+}
+
+/// The command `self-update` runs: replaces the installed binary (a running executable can be replaced on Linux).
+#[must_use]
+pub fn self_update_command() -> Command {
+    let mut cmd = Command::new("cargo");
+    cmd.args([
+        "install",
+        "forge-toolbox",
+        "--registry",
+        REGISTRY_NAME,
+        "--force",
+    ]);
+    cmd
 }
 
 /// Pure formatting for the toolbox self-update banner, given the installed
@@ -893,8 +1003,8 @@ pub fn render(app: &App, transient_status: Option<&str>, term_width: usize) -> V
         lines.push(format!(
             "│{}│{}│{}│{}│{}│{}│{}│",
             marker,
-            fit_cell(status.package, widths.package).white(),
-            fit_cell(status.binary, widths.binary).white(),
+            fit_cell(&status.package, widths.package).white(),
+            fit_cell(&status.binary, widths.binary).white(),
             installed_cell,
             latest_cell,
             updatable_cell,

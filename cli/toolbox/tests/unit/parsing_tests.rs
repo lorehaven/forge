@@ -1,4 +1,6 @@
-use forge_toolbox::{parse_installed_list, parse_search_line};
+use forge_toolbox::{
+    MONITORED_CRATES, parse_installed_list, parse_search_line, parse_tools, tools_url,
+};
 use quench_core::version::Version;
 
 #[quench_test::test]
@@ -169,4 +171,49 @@ fn parse_search_output_errors_with_stderr_when_the_command_fails() {
     };
     let err = parse_search_output("anvil", output).unwrap_err();
     assert!(err.to_string().contains("registry index not found"));
+}
+
+#[quench_test::test]
+fn parse_tools_lists_each_crate_with_its_first_binary_sorted_by_package() {
+    let json = r#"{"crates":[
+        {"name":"warehouse-cli","max_version":"0.1.18","bins":["warehouse"]},
+        {"name":"loupe","max_version":"0.1.0","bins":["loupe","loupe-extra"]},
+        {"name":"no-bins","max_version":"1.0.0"}
+    ],"meta":{"total":3}}"#;
+    assert_eq!(
+        parse_tools(json).unwrap(),
+        vec![
+            ("loupe".to_string(), "loupe".to_string()),
+            ("warehouse-cli".to_string(), "warehouse".to_string()),
+        ]
+    );
+}
+
+#[quench_test::test]
+fn parse_tools_leaves_out_the_toolbox_itself() {
+    let json = r#"{"crates":[
+        {"name":"forge-toolbox","max_version":"0.1.19","bins":["forge-toolbox"]},
+        {"name":"anvil","max_version":"0.4.34","bins":["anvil"]}
+    ]}"#;
+    let tools = parse_tools(json).unwrap();
+    assert_eq!(tools, vec![("anvil".to_string(), "anvil".to_string())]);
+}
+
+#[quench_test::test]
+fn parse_tools_fails_when_nothing_is_installable_so_the_caller_falls_back() {
+    assert!(parse_tools(r#"{"crates":[]}"#).is_err());
+    assert!(parse_tools("not json").is_err());
+}
+
+#[quench_test::test]
+fn tools_url_points_at_the_registry_search_api_asking_for_binaries() {
+    assert_eq!(
+        tools_url(),
+        "https://ennor.ddns.net/warehouse/api/v1/crates?bins=true&per_page=100"
+    );
+}
+
+#[quench_test::test]
+fn the_fallback_list_includes_loupe() {
+    assert!(MONITORED_CRATES.iter().any(|c| c.package == "loupe"));
 }

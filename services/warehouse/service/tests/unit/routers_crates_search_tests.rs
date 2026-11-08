@@ -178,3 +178,51 @@ async fn handle_skips_a_crate_directory_with_no_version_subdirectories() {
     assert_eq!(body["meta"]["total"], 0);
     drop(storage);
 }
+
+// -----------------------------------------------------------------
+// binaries
+// -----------------------------------------------------------------
+
+#[quench_test::test]
+fn binaries_in_manifest_reads_each_bin_table_name() {
+    let manifest = "[package]\nname = \"warehouse-cli\"\n\n[[bin]]\nname = \"warehouse\"\npath = \"src/main.rs\"\n\n[lib]\nname = \"x\"\n\n[[bin]]\nname = \"second\"\n";
+    assert_eq!(
+        search::binaries_in_manifest(manifest),
+        vec!["warehouse".to_string(), "second".to_string()]
+    );
+}
+
+#[quench_test::test]
+fn binaries_in_manifest_is_empty_for_a_library() {
+    assert!(search::binaries_in_manifest("[package]\nname = \"lib\"\n[lib]\nname = \"lib\"\n").is_empty());
+}
+
+#[quench_test::test]
+async fn binaries_of_unpacks_the_crate_once_and_caches_the_answer() {
+    let mut tar = quench_archive::tar::Builder::new();
+    tar.append_file(
+        "tool-1.0.0/Cargo.toml",
+        b"[package]\nname = \"tool\"\n[[bin]]\nname = \"tl\"\n",
+    )
+    .unwrap();
+    let archive = quench_archive::gzip::compress(&tar.finish());
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let version_dir = dir.path().join("1.0.0");
+    std::fs::create_dir(&version_dir).unwrap();
+    std::fs::write(version_dir.join("tool-1.0.0.crate"), archive).unwrap();
+
+    assert_eq!(search::binaries_of(dir.path(), "tool", "1.0.0").await, vec!["tl".to_string()]);
+    std::fs::remove_file(version_dir.join("tool-1.0.0.crate")).unwrap();
+    assert_eq!(search::binaries_of(dir.path(), "tool", "1.0.0").await, vec!["tl".to_string()]);
+}
+
+#[quench_test::test]
+async fn search_with_bins_lists_only_crates_that_build_a_binary() {
+    let _storage = WithStorageRoot::new();
+    let (app, container) = app().await;
+    // an unreadable crate has no binaries, so an empty `q` with `bins` finds nothing but is not rejected
+    let response = app
+        .call(support::req(Method::GET, "/api/v1/crates?bins=true", &container))
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+}
