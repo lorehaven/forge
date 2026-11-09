@@ -62,6 +62,13 @@ ui_files_add_folder = Dodaj folder
 ui_files_bulk_download = Pobierz zbiorczo
 ui_files_bulk_delete = Usuń zbiorczo
 ui_files_up = W górę
+ui_preview_back = Wróć do plików
+ui_preview_prev = Poprzedni
+ui_preview_next = Następny
+ui_preview_zoom_in = Powiększ
+ui_preview_zoom_out = Pomniejsz
+ui_preview_zoom_reset = Dopasuj
+ui_preview_window = Otwórz w nowym oknie
 ui_files_empty_storages = Brak skonfigurowanych magazynów.
 ui_files_empty_dir = Katalog jest pusty.
 

@@ -325,6 +325,7 @@ fn routes(env: &Env, state: &State, base: &str) -> Routes {
         ("/ui/crates/catalog", screens::crates),
         ("/ui/files/storages", screens::storages),
         ("/ui/files/browse", screens::browse),
+        ("/ui/files/preview", screens::preview_page),
         ("/ui/artifacts/catalog", screens::artifacts),
         ("/ui/rivets/catalog", screens::rivets),
     ] {
@@ -385,7 +386,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
 
     // Everything under the bar is drawn again when the language changes; the router (and so the address) stays.
     let content = {
-        let (env, state, router, base) = (env.clone(), state.clone(), router, base);
+        let (env, state, router, base) = (env.clone(), state.clone(), router, base.clone());
         move || -> View {
             let _ = env.t.language();
             untrack(|| {
@@ -399,20 +400,54 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         }
     };
 
-    div()
-        .attr("id", "warehouse")
-        .class("fui-app fui-client")
-        .child(forge_shell::sidebar(
-            &bar,
-            vec![screens::sidebar(&env, &state)],
-        ))
-        .child(
+    // A file preview is a window of its own: just the file, none of the app around it.
+    let preview_path = format!("{base}/ui/files/preview");
+    let browse_path = format!("{base}/ui/files/browse");
+    let (router_now, shared) = (env.router.clone(), Rc::new(content));
+    let full = {
+        let (bar, env, state, shared) = (bar, env, state, Rc::clone(&shared));
+        move || -> View {
             div()
-                .class("fui-client-col")
-                .child(View::dynamic(top))
-                .child(main().class("wh-main").child(View::dynamic(content))),
-        )
-        .into_view()
+                .attr("id", "warehouse")
+                .class("fui-app fui-client")
+                .child(forge_shell::sidebar(
+                    &bar,
+                    vec![screens::sidebar(&env, &state)],
+                ))
+                .child(
+                    div()
+                        .class("fui-client-col")
+                        .child(View::dynamic(top.clone()))
+                        .child(main().class("wh-main").child(View::dynamic({
+                            let shared = Rc::clone(&shared);
+                            move || shared()
+                        }))),
+                )
+                .into_view()
+        }
+    };
+    View::dynamic(move || {
+        let here = router_now.location().path;
+        let at = here.trim_end_matches('/');
+        // A file's own window, or preview mode: only the file (and its tree), none of the app around it.
+        let alone = at == preview_path
+            || (at == browse_path
+                && router_now.location().query_get("mode").as_deref() == Some("preview"));
+        untrack(|| {
+            if alone {
+                div()
+                    .attr("id", "warehouse")
+                    .class("fui-app wh-bare")
+                    .child(View::dynamic({
+                        let shared = Rc::clone(&shared);
+                        move || shared()
+                    }))
+                    .into_view()
+            } else {
+                full()
+            }
+        })
+    })
 }
 
 fn base_login(base: &str) -> String {

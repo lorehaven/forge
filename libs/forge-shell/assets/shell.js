@@ -26,8 +26,24 @@
     if (chosen && !localStorage.getItem('q:language')) localStorage.setItem('q:language', chosen);
   } catch (e) { /* storage may be blocked */ }
 
+  // The side panel: folded to its icons or not, kept in the page's storage.
+  function folded(on) {
+    if (on) root.setAttribute('data-fui-nav', 'folded'); else root.removeAttribute('data-fui-nav');
+  }
+  try { folded(localStorage.getItem('fui-nav') === 'folded'); } catch (e) { /* storage may be blocked */ }
+  // A folded item has no visible text: its name is the tooltip.
+  document.addEventListener('mouseover', function (e) {
+    var item = e.target.closest && e.target.closest('.fui-nav-item');
+    if (item && !item.getAttribute('title')) item.setAttribute('title', item.textContent.trim());
+  });
+
   document.addEventListener('click', function (e) {
     var t = e.target.closest ? e.target : e.target.parentNode;
+    if (t.closest('[data-fui-nav-toggle]')) {
+      var on = !root.hasAttribute('data-fui-nav');
+      folded(on);
+      try { localStorage.setItem('fui-nav', on ? 'folded' : 'open'); } catch (err) { /* storage may be blocked */ }
+    }
     var m = t.closest('[data-fui-mode]');
     if (m) { put('qtheme', 'default-' + m.getAttribute('data-fui-mode')); apply(); }
     var p = t.closest('[data-fui-palette]');
@@ -46,6 +62,89 @@
     var img = e.target;
     if (img && img.tagName === 'IMG' && img.parentNode && img.parentNode.classList.contains('fui-avatar')) img.parentNode.classList.add('has-avatar');
   }, true);
+
+  // A canvas: `[data-canvas]` holds one thing (its first child) that zooms with the wheel or the `[data-canvas-zoom]`
+  // buttons (`in`, `out`, `reset`; `[data-canvas-level]` shows the percentage) and is dragged around with the pointer.
+  // The state lives on the canvas element, so a canvas drawn again starts fitted.
+  var LIMITS = [0.1, 16];
+  function view(c) { return c._v || (c._v = { s: 1, x: 0, y: 0 }); }
+  function paint(c) {
+    var v = view(c), item = c.firstElementChild;
+    if (item) item.style.transform = 'translate(' + v.x + 'px,' + v.y + 'px) scale(' + v.s + ')';
+    var n = document.querySelectorAll('[data-canvas-level]');
+    for (var i = 0; i < n.length; i++) n[i].textContent = Math.round(v.s * 100) + '%';
+  }
+  // Zoom to `s`, keeping the point (px, py), measured from the canvas centre, where it is.
+  function zoomAt(c, s, px, py) {
+    var v = view(c);
+    s = Math.min(LIMITS[1], Math.max(LIMITS[0], s));
+    var k = s / v.s;
+    v.x = px - k * (px - v.x);
+    v.y = py - k * (py - v.y);
+    v.s = s;
+    paint(c);
+  }
+  function fromCentre(c, e) {
+    var r = c.getBoundingClientRect();
+    return [e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2];
+  }
+  document.addEventListener('wheel', function (e) {
+    var c = e.target.closest && e.target.closest('[data-canvas]');
+    if (!c) return;
+    e.preventDefault();
+    var p = fromCentre(c, e);
+    zoomAt(c, view(c).s * Math.pow(1.0015, -e.deltaY), p[0], p[1]);
+  }, { passive: false });
+  var panning = null;
+  document.addEventListener('pointerdown', function (e) {
+    var c = e.target.closest && e.target.closest('[data-canvas]');
+    if (!c || e.button !== 0) return;
+    panning = { c: c, x: e.clientX, y: e.clientY };
+    c.classList.add('dragging');
+    if (c.setPointerCapture) c.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  document.addEventListener('pointermove', function (e) {
+    if (!panning) return;
+    var v = view(panning.c);
+    v.x += e.clientX - panning.x;
+    v.y += e.clientY - panning.y;
+    panning.x = e.clientX;
+    panning.y = e.clientY;
+    paint(panning.c);
+  });
+  function release() { if (panning) panning.c.classList.remove('dragging'); panning = null; }
+  document.addEventListener('pointerup', release);
+  document.addEventListener('pointercancel', release);
+  document.addEventListener('dblclick', function (e) {
+    var c = e.target.closest && e.target.closest('[data-canvas]');
+    if (c) { c._v = null; paint(c); }
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-canvas-zoom]');
+    var c = b && document.querySelector('[data-canvas]');
+    if (!c) return;
+    var how = b.getAttribute('data-canvas-zoom'), v = view(c);
+    if (how === 'reset') { c._v = null; paint(c); }
+    else zoomAt(c, v.s * (how === 'in' ? 1.25 : 0.8), 0, 0);
+  });
+
+  // Keyboard: an element with `data-shortcut="prev"` or `"next"` is clicked by the arrow keys (left and up, right and
+  // down); the canvas zooms with `+` and `-` and fits with `0`.
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var t = e.target;
+    if (t && t.closest && t.closest('input, textarea, select, [contenteditable], audio, video')) return;
+    var k = e.key, target = null;
+    if (k === 'ArrowLeft' || k === 'ArrowUp') target = document.querySelector('[data-shortcut="prev"]');
+    else if (k === 'ArrowRight' || k === 'ArrowDown') target = document.querySelector('[data-shortcut="next"]');
+    else if (k === '+' || k === '=') target = document.querySelector('[data-canvas-zoom="in"]');
+    else if (k === '-' || k === '_') target = document.querySelector('[data-canvas-zoom="out"]');
+    else if (k === '0') target = document.querySelector('[data-canvas-zoom="reset"]');
+    if (!target || target.disabled) return;
+    e.preventDefault();
+    target.click();
+  });
 
   // Drag and drop: a `[data-drag-id]` element can be dropped on a `[data-drop-value]` one. The drop sets the element's
   // `<select>` (named by `data-drag-select`) to the value and fires its input event, so a drag does what the select does.

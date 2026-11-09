@@ -244,6 +244,16 @@ pub fn sidebar(bar: &Bar, nav: Vec<View>) -> Element {
                 .attr("aria-label", "Main")
                 .children(nav),
         )
+        .child(
+            div().class("fui-sidebar-foot").child(
+                button()
+                    .attr("type", "button")
+                    .attr("data-fui-nav-toggle", "")
+                    .attr("aria-label", "Fold or unfold the side panel")
+                    .class("fui-icon-btn fui-sidebar-toggle")
+                    .child(icon("sidebar")),
+            ),
+        )
 }
 
 /// A link to a screen of the client, or to a page, as the bar is told.

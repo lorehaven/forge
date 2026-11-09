@@ -364,11 +364,8 @@ fn create_form(env: &Env) -> Element {
 /// The tree of the loaded storage, built once per load.
 type Tree = Option<(String, String, FileNode, bool)>;
 
+/// One panel: a bar with the path and the actions, and the directory's entries below it. A file opens in its own window.
 #[must_use]
-#[allow(
-    clippy::too_many_lines,
-    reason = "builds the whole browse screen (storage, path and listing) as one view tree"
-)]
 pub fn browse(env: &Env, state: &State) -> View {
     // A storage is the way in; without one the storages list is where one is picked.
     if env.query("storage").is_empty() {
@@ -384,7 +381,6 @@ pub fn browse(env: &Env, state: &State) -> View {
             }
         });
     }
-    // (storage, access, tree, truncated)
     let tree = {
         let state = state.clone();
         create_memo(move || -> Tree {
@@ -400,132 +396,104 @@ pub fn browse(env: &Env, state: &State) -> View {
             })
         })
     };
-
-    let left = {
-        let (env, tree) = (env.clone(), tree.clone());
-        View::dynamic(move || {
-            let storage = env.query("storage");
-            let path = normalize_path(&env.query("path"));
-            tree.with(|tree| match tree.as_ref().filter(|t| t.0 == storage) {
-                None => waiting(&env),
+    let (env, state) = (env.clone(), state.clone());
+    View::dynamic(move || {
+        let storage = env.query("storage");
+        let path = normalize_path(&env.query("path"));
+        let manage = can_manage(&state);
+        let previewing = env.query("mode") == "preview";
+        tree.with(|tree| {
+            if previewing
+                && let Some((_, _, root, _)) = tree
+                    .as_ref()
+                    .filter(|t| t.0 == storage && t.1 == Browse::READABLE)
+                && let Selection::File { path, .. } = root.resolve(&path)
+            {
+                return preview_mode(&env, &storage, root, &path);
+            }
+            let body = match tree.as_ref().filter(|t| t.0 == storage) {
+                None => return div().class("wh-fm").child(waiting(&env)).into_view(),
                 Some((_, access, _, _)) if access != Browse::READABLE => {
                     empty(access_text(&env, access)).into_view()
                 }
                 Some((_, _, root, truncated)) => {
-                    let mut wrapper = div().class("wh-scroll");
-                    wrapper = wrapper.child(
-                        ul().class("wh-tree").child(
-                            li().child(
-                                nav(&env, &browse_at(&env, &storage, ""))
-                                    .class(if path.is_empty() {
-                                        "wh-link active"
-                                    } else {
-                                        "wh-link"
-                                    })
-                                    .attr("data-path", "")
-                                    .text(env.t.t("ui_storage_files_title")),
-                            ),
-                        ),
-                    );
-                    if root.children.is_empty() {
-                        wrapper = wrapper.child(empty(env.t.t("ui_files_empty_dir")));
-                    } else {
-                        let mut list = ul().class("wh-tree");
-                        for (name, node) in root.sorted_children() {
-                            if !node.is_leaf() {
-                                list = list.child(dir_node(&env, &storage, name, node, "", &path));
-                            }
+                    // A file's address shows the directory that holds it.
+                    let dir = match root.resolve(&path) {
+                        Selection::Missing(_) => None,
+                        Selection::Dir(dir) => Some(dir),
+                        Selection::File { path, .. } => Some(parent_dir(&path)),
+                    };
+                    match dir {
+                        None => empty(env.t.t("api_error_file_not_found"))
+                            .attr("id", "file-missing")
+                            .into_view(),
+                        Some(dir) => {
+                            listing(&env, &state, &storage, root, &dir, manage, *truncated)
                         }
-                        wrapper = wrapper.child(list);
                     }
-                    if *truncated {
-                        wrapper = wrapper.child(
-                            div()
-                                .class("wh-truncated")
-                                .attr("id", "truncated")
-                                .text(env.t.t("ui_storage_files_truncated")),
-                        );
-                    }
-                    wrapper.into_view()
                 }
-            })
+            };
+            let here = root_dir(tree.as_ref(), &path);
+            div()
+                .class("wh-fm")
+                .child(toolbar(&env, &storage, &here))
+                .child(div().class("wh-fm-body").child(body))
+                .into_view()
         })
-    };
+    })
+}
 
-    let right =
-        {
-            let (env, state) = (env.clone(), state.clone());
-            View::dynamic(move || {
-                let storage = env.query("storage");
-                let path = normalize_path(&env.query("path"));
-                let manage = can_manage(&state);
-                tree.with(|tree| match tree.as_ref().filter(|t| t.0 == storage) {
-                    None => waiting(&env),
-                    Some((_, access, root, _)) => {
-                        let files_title = || panel_title(env.t.t("ui_storage_files_title"));
-                        if access != Browse::READABLE {
-                            return div()
-                                .class("wh-detail")
-                                .child(files_title())
-                                .child(
-                                    div()
-                                        .class("wh-scroll")
-                                        .child(empty(access_text(&env, access))),
-                                )
-                                .into_view();
-                        }
-                        match root.resolve(&path) {
-                            Selection::Missing(_) => div()
-                                .class("wh-detail")
-                                .child(files_title())
-                                .child(
-                                    div().class("wh-scroll").child(
-                                        empty(env.t.t("api_error_file_not_found"))
-                                            .attr("id", "file-missing"),
-                                    ),
-                                )
-                                .into_view(),
-                            Selection::Dir(dir) => div()
-                                .class("wh-detail")
-                                .child(files_title())
-                                .child(
-                                    div()
-                                        .class("wh-scroll wh-stack")
-                                        .child(breadcrumbs(&env, &storage, &dir))
-                                        .child(listing(&env, &storage, root, &dir)),
-                                )
-                                .into_view(),
-                            Selection::File { path, size } => div()
-                                .class("wh-detail")
-                                .child(metadata_title(&env, Some(last_segment(&path))))
-                                .child(div().class("wh-scroll").child(file_detail(
-                                    &env, &state, &storage, &path, size, manage,
-                                )))
-                                .into_view(),
-                        }
-                    }
-                })
-            })
+/// The directory the listing shows for `path` (a file's is its parent), as far as it can be told before the tree is loaded.
+fn root_dir(tree: Option<&(String, String, FileNode, bool)>, path: &str) -> String {
+    match tree.map(|t| t.2.resolve(path)) {
+        Some(Selection::File { path, .. }) => parent_dir(&path),
+        _ => path.to_string(),
+    }
+}
+
+/// The top bar: where we are (storage > dir > dir) on the left, the actions on the right.
+fn toolbar(env: &Env, storage: &str, dir: &str) -> Element {
+    let mut crumbs = div().class("wh-crumbs").child(
+        nav(env, &browse_at(env, storage, ""))
+            .attr("data-crumb", "")
+            .text(storage.to_string()),
+    );
+    let mut so_far = String::new();
+    for segment in dir.split('/').filter(|s| !s.is_empty()) {
+        so_far = if so_far.is_empty() {
+            segment.to_string()
+        } else {
+            format!("{so_far}/{segment}")
         };
-
-    let back = nav(
-        env,
-        &format!(
-            "{}?storage={}",
-            env.path("/files/storages"),
-            encode(&env.query("storage"))
-        ),
-    )
-    .attr("id", "back")
-    .class("wh-back")
-    .text(format!("← {}", env.query("storage")));
-    split(
-        div()
-            .class("wh-pane")
-            .child(div().class("wh-panel-title").child(back))
-            .child(left),
-        div().class("wh-pane").child(right),
-    )
+        crumbs = crumbs.child(span().class("wh-faint").text(">")).child(
+            nav(env, &browse_at(env, storage, &so_far))
+                .attr("data-crumb", so_far.clone())
+                .text(segment.to_string()),
+        );
+    }
+    let mut actions = div().class("wh-fm-actions");
+    if !dir.is_empty() {
+        actions = actions.child(
+            nav(env, &browse_at(env, storage, &parent_dir(dir)))
+                .attr("id", "up")
+                .class("wh-btn")
+                .text(format!("↑ {}", env.t.t("ui_files_up"))),
+        );
+    }
+    actions = actions.child(
+        nav(
+            env,
+            &format!(
+                "{}?storage={}",
+                env.path("/files/storages"),
+                encode(storage)
+            ),
+        )
+        .attr("id", "back")
+        .class("wh-btn")
+        .text(env.t.t("ui_nav_files")),
+    );
+    div().class("wh-fm-bar").child(crumbs).child(actions)
 }
 
 fn access_text(env: &Env, access: &str) -> String {
@@ -549,8 +517,288 @@ fn browse_at(env: &Env, storage: &str, path: &str) -> String {
     }
 }
 
-/// A directory of the tree: a folder with the directories below it when there are some.
-fn dir_node(
+fn preview_at(env: &Env, storage: &str, path: &str) -> String {
+    format!(
+        "{}?storage={}&path={}",
+        env.path("/files/preview"),
+        encode(storage),
+        encode(path)
+    )
+}
+
+fn file_url(env: &Env, storage: &str, path: &str, extra: &str) -> String {
+    format!(
+        "{}/api/v1/files/{}/file?path={}{extra}",
+        env.base,
+        encode(storage),
+        encode(path)
+    )
+}
+
+/// The directory's entries, directories first: name, type, size, and what can be done to a file.
+fn listing(
+    env: &Env,
+    state: &State,
+    storage: &str,
+    root: &FileNode,
+    path: &str,
+    manage: bool,
+    truncated: bool,
+) -> View {
+    let Some(node) = root.node_at(path) else {
+        return empty(env.t.t("api_error_file_not_found")).into_view();
+    };
+    if node.children.is_empty() {
+        return empty(env.t.t("ui_files_empty_dir"))
+            .attr("id", "empty-dir")
+            .into_view();
+    }
+    let mut list = div().class("wh-fm-list").child(
+        div()
+            .class("wh-fm-row wh-fm-head")
+            .child(span())
+            .child(span().text(env.t.t("ui_files_col_name")))
+            .child(span().text(env.t.t("ui_files_col_type")))
+            .child(span().class("wh-fm-num").text(env.t.t("ui_files_col_size")))
+            .child(span()),
+    );
+    for (name, child) in node.sorted_children() {
+        let child_path = if path.is_empty() {
+            name.clone()
+        } else {
+            format!("{path}/{name}")
+        };
+        let mut row = div().class("wh-fm-row");
+        if child.is_file {
+            let size = child.size.map_or_else(String::new, format_bytes);
+            let mut actions = div().class("wh-fm-row-actions").child(
+                a().attr("data-download", child_path.clone())
+                    .class("wh-fm-act")
+                    .attr("href", file_url(env, storage, &child_path, ""))
+                    .attr("download", name.clone())
+                    .attr("title", env.t.t("ui_file_download"))
+                    .text("⤓"),
+            );
+            if manage {
+                let (state, storage, target) =
+                    (state.clone(), storage.to_string(), child_path.clone());
+                actions = actions.child(
+                    button()
+                        .attr("type", "button")
+                        .attr("data-delete", target.clone())
+                        .class("wh-fm-act wh-fm-del")
+                        .attr("title", env.t.t("ui_file_delete"))
+                        .on_click(move || {
+                            confirm(
+                                &state,
+                                "ui_modal_delete_title",
+                                "ui_file_delete_confirm_text",
+                                format!("{storage}/{target}"),
+                                Request::DeleteFile {
+                                    storage: storage.clone(),
+                                    path: target.clone(),
+                                },
+                            );
+                        })
+                        .text("✕"),
+                );
+            }
+            row = row
+                .child(span().class("wh-faint").text("▫"))
+                .child(
+                    nav(env, &preview_mode_at(env, storage, &child_path))
+                        .class("wh-file-name")
+                        .attr("data-entry", child_path.clone())
+                        .text(name.clone()),
+                )
+                .child(
+                    span()
+                        .class("wh-faint wh-mono")
+                        .text(content_type(&child_path)),
+                )
+                .child(span().class("wh-fm-num wh-mono").text(size))
+                .child(actions);
+        } else {
+            row = row
+                .child(span().class("wh-faint").text("▸"))
+                .child(
+                    nav(env, &browse_at(env, storage, &child_path))
+                        .class("wh-file-name")
+                        .attr("data-entry", child_path.clone())
+                        .text(name.clone()),
+                )
+                .child(span().class("wh-faint").text("—"))
+                .child(span().class("wh-fm-num"))
+                .child(span());
+        }
+        list = list.child(row);
+    }
+    let mut out = div().child(list);
+    if truncated {
+        out = out.child(
+            div()
+                .class("wh-truncated")
+                .attr("id", "truncated")
+                .text(env.t.t("ui_storage_files_truncated")),
+        );
+    }
+    out.into_view()
+}
+
+fn preview_mode_at(env: &Env, storage: &str, path: &str) -> String {
+    format!("{}&mode=preview", browse_at(env, storage, path))
+}
+
+/// The files of directory `dir`, as paths, in listing order.
+fn siblings_of(root: &FileNode, dir: &str) -> Vec<String> {
+    root.node_at(dir)
+        .map(|n| {
+            n.sorted_children()
+                .into_iter()
+                .filter(|(_, c)| c.is_file)
+                .map(|(n, _)| {
+                    if dir.is_empty() {
+                        n.clone()
+                    } else {
+                        format!("{dir}/{n}")
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn preview_bar(env: &Env, storage: &str, root: &FileNode, path: &str) -> Element {
+    let name = last_segment(path);
+    let dir = parent_dir(path);
+    let siblings = siblings_of(root, &dir);
+    let at = siblings.iter().position(|p| p == path).unwrap_or(0);
+    let step = |id: &'static str, key: &str, target: Option<&String>| -> Element {
+        let label = env.t.t(key);
+        match target {
+            Some(to) => nav(env, &preview_mode_at(env, storage, to))
+                .attr("id", id)
+                .attr("data-shortcut", id)
+                .class("wh-btn")
+                .attr("title", label.clone())
+                .text(label),
+            None => button()
+                .attr("type", "button")
+                .attr("id", id)
+                .attr("disabled", "disabled")
+                .class("wh-btn")
+                .text(label),
+        }
+    };
+    let prev = step(
+        "prev",
+        "ui_preview_prev",
+        at.checked_sub(1).and_then(|i| siblings.get(i)),
+    );
+    let next = step("next", "ui_preview_next", siblings.get(at + 1));
+
+    // Zoom and drag are the page script's (`data-canvas`): the buttons only name what they do. Images only.
+    let zoom_button = |id: &'static str, how: &'static str, key: &str, text: &str| {
+        button()
+            .attr("type", "button")
+            .attr("id", id)
+            .attr("data-canvas-zoom", how)
+            .class("wh-btn")
+            .attr("title", env.t.t(key))
+            .text(text.to_string())
+    };
+    let zoom = matches!(preview_kind(path), PreviewKind::Image).then(|| {
+        div()
+            .class("wh-fm-actions")
+            .child(zoom_button("zoom-out", "out", "ui_preview_zoom_out", "−"))
+            .child(
+                span()
+                    .attr("id", "zoom-level")
+                    .attr("data-canvas-level", "")
+                    .class("wh-faint wh-mono wh-fm-zoom")
+                    .text("100%"),
+            )
+            .child(zoom_button("zoom-in", "in", "ui_preview_zoom_in", "+"))
+            .child(zoom_button(
+                "zoom-reset",
+                "reset",
+                "ui_preview_zoom_reset",
+                "1:1",
+            ))
+    });
+    div()
+        .class("wh-fm-bar")
+        .child(
+            div()
+                .class("wh-fm-actions")
+                .child(
+                    nav(env, &browse_at(env, storage, &dir))
+                        .attr("id", "leave-preview")
+                        .class("wh-btn")
+                        .text(format!("← {}", env.t.t("ui_preview_back"))),
+                )
+                .child(span().attr("id", "preview-name").text(name.to_string()))
+                .child(span().class("wh-faint wh-mono").text(content_type(path))),
+        )
+        .child(
+            div()
+                .class("wh-fm-actions")
+                .child(prev)
+                .child(
+                    span()
+                        .class("wh-faint")
+                        .text(format!("{} / {}", at + 1, siblings.len())),
+                )
+                .child(next)
+                .child(zoom)
+                .child(
+                    a().attr("id", "open-window")
+                        .class("wh-btn")
+                        .attr("href", preview_at(env, storage, path))
+                        .attr("target", "_blank")
+                        .attr("rel", "noopener")
+                        .text(env.t.t("ui_preview_window")),
+                )
+                .child(
+                    a().attr("id", "download")
+                        .class("wh-btn")
+                        .attr("href", file_url(env, storage, path, ""))
+                        .attr("download", name.to_string())
+                        .text(env.t.t("ui_file_download")),
+                ),
+        )
+}
+
+fn preview_mode(env: &Env, storage: &str, root: &FileNode, path: &str) -> View {
+    let name = last_segment(path);
+    let bar = preview_bar(env, storage, root, path);
+    let mut tree = ul().class("wh-tree");
+    for (child, node) in root.sorted_children() {
+        tree = tree.child(tree_node(env, storage, child, node, "", path));
+    }
+    let mut stage = div().class("wh-fm-stage").child(preview(
+        env,
+        &file_url(env, storage, path, "&disposition=inline"),
+        name,
+        path,
+    ));
+    if matches!(preview_kind(path), PreviewKind::Image) {
+        stage = stage.attr("data-canvas", "").class("wh-canvas");
+    }
+    div()
+        .class("wh-fm")
+        .child(bar)
+        .child(
+            div()
+                .class("wh-fm-split")
+                .child(div().class("wh-fm-tree").child(tree))
+                .child(stage),
+        )
+        .into_view()
+}
+
+/// A node of the file tree: a directory (open along the way to the shown file) or a file that opens in the preview.
+fn tree_node(
     env: &Env,
     storage: &str,
     name: &str,
@@ -563,174 +811,82 @@ fn dir_node(
     } else {
         format!("{parent}/{name}")
     };
-    let here = nav(env, &browse_at(env, storage, &full))
-        .class(if selected == full {
-            "wh-link active"
-        } else {
-            "wh-link"
-        })
-        .attr("data-path", full.clone())
-        .text(name.to_string());
-    let subdirs: Vec<_> = node
-        .sorted_children()
-        .into_iter()
-        .filter(|(_, n)| !n.is_leaf())
-        .collect();
-    if subdirs.is_empty() {
-        return li().child(div().class("wh-folder").child(here));
+    if node.is_leaf() {
+        return li().child(
+            nav(env, &preview_mode_at(env, storage, &full))
+                .class(if selected == full {
+                    "wh-link active"
+                } else {
+                    "wh-link"
+                })
+                .attr("data-tree-file", full.clone())
+                .text(name.to_string()),
+        );
     }
     let mut details = element("details").attr("data-path", full.clone());
-    if selected == full || selected.starts_with(&format!("{full}/")) {
+    if selected.starts_with(&format!("{full}/")) {
         details = details.attr("open", "open");
     }
     let mut list = ul().class("wh-tree");
-    for (child, child_node) in subdirs {
-        list = list.child(dir_node(env, storage, child, child_node, &full, selected));
+    for (child, child_node) in node.sorted_children() {
+        list = list.child(tree_node(env, storage, child, child_node, &full, selected));
     }
     li().child(
         details
-            .child(element("summary").class("wh-folder").child(here))
+            .child(element("summary").class("wh-folder").text(name.to_string()))
             .child(list),
     )
 }
 
-fn breadcrumbs(env: &Env, storage: &str, path: &str) -> Element {
-    let mut crumbs = div().class("wh-crumbs").child(
-        nav(env, &browse_at(env, storage, ""))
-            .attr("data-crumb", "")
-            .text(storage.to_string()),
-    );
-    let mut so_far = String::new();
-    for segment in path.split('/').filter(|s| !s.is_empty()) {
-        so_far = if so_far.is_empty() {
-            segment.to_string()
-        } else {
-            format!("{so_far}/{segment}")
-        };
-        crumbs = crumbs.child(span().class("wh-faint").text(" / ")).child(
-            nav(env, &browse_at(env, storage, &so_far))
-                .attr("data-crumb", so_far.clone())
-                .text(segment.to_string()),
-        );
-    }
-    crumbs
-}
+// ── The file preview ─────────────────────────────────────────────────────────
 
-/// The directory's entries, directories first, with an "Up" link below the root.
-fn listing(env: &Env, storage: &str, root: &FileNode, path: &str) -> Element {
-    let Some(node) = root.node_at(path) else {
-        return empty(env.t.t("api_error_file_not_found"));
-    };
-    let mut section = div();
-    if !path.is_empty() {
-        section = section.child(
-            nav(env, &browse_at(env, storage, &parent_dir(path)))
-                .attr("id", "up")
-                .class("wh-back")
-                .text(format!("↑ {}", env.t.t("ui_files_up"))),
-        );
+/// A file on its own, for a window of its own: its name and a download in a slim bar, the file filling the rest.
+#[must_use]
+pub fn preview_page(env: &Env, _state: &State) -> View {
+    let storage = env.query("storage");
+    let path = normalize_path(&env.query("path"));
+    if storage.is_empty() || path.is_empty() {
+        return empty(env.t.t("api_error_file_not_found"))
+            .attr("id", "file-missing")
+            .into_view();
     }
-    if node.children.is_empty() {
-        return section.child(empty(env.t.t("ui_files_empty_dir")).attr("id", "empty-dir"));
-    }
-    let mut list = ul().class("wh-files");
-    for (name, child) in node.sorted_children() {
-        let child_path = if path.is_empty() {
-            name.clone()
-        } else {
-            format!("{path}/{name}")
-        };
-        let size = match (child.is_file, child.size) {
-            (true, Some(bytes)) => format_bytes(bytes),
-            _ => String::new(),
-        };
-        list = list.child(
-            li().class("wh-file-row")
-                .child(
-                    span()
-                        .class("wh-faint")
-                        .text(if child.is_file { "▫" } else { "▸" }),
-                )
-                .child(
-                    nav(env, &browse_at(env, storage, &child_path))
-                        .class("wh-file-name")
-                        .attr("data-entry", child_path.clone())
-                        .text(name.clone()),
-                )
-                .child(span().class("wh-file-size wh-mono").text(size)),
-        );
-    }
-    section.child(list)
-}
-
-fn file_detail(
-    env: &Env,
-    state: &State,
-    storage: &str,
-    path: &str,
-    size: Option<i64>,
-    manage: bool,
-) -> Element {
-    let name = last_segment(path);
-    let size_text = size.map_or_else(|| "—".to_string(), format_bytes);
-    let meta_list = div()
-        .class("wh-meta-list")
-        .child(meta_text(env.t.t("ui_files_col_name"), name))
-        .child(meta_text(env.t.t("ui_files_col_path"), path))
-        .child(meta_text(env.t.t("ui_files_col_type"), content_type(path)))
-        .child(meta_text(env.t.t("ui_files_col_size"), &size_text));
-
-    let file_url = |extra: &str| {
-        format!(
-            "{}/api/v1/files/{}/file?path={}{extra}",
-            env.base,
-            encode(storage),
-            encode(path)
+    let name = last_segment(&path);
+    let bar = div()
+        .class("wh-fm-bar")
+        .child(
+            div()
+                .class("wh-crumbs")
+                .child(span().attr("id", "preview-name").text(name.to_string()))
+                .child(span().class("wh-faint wh-mono").text(content_type(&path))),
         )
-    };
-    let mut actions = div().class("wh-actions-row").child(
-        a().attr("id", "download")
-            .class("wh-btn")
-            .attr("href", file_url(""))
-            .attr("download", name.to_string())
-            .text(env.t.t("ui_file_download")),
-    );
-    if manage {
-        let (state, storage, path) = (state.clone(), storage.to_string(), path.to_string());
-        actions = actions.child(
-            button()
-                .attr("type", "button")
-                .attr("id", "delete-file")
-                .class("wh-btn wh-danger")
-                .on_click(move || {
-                    confirm(
-                        &state,
-                        "ui_modal_delete_title",
-                        "ui_file_delete_confirm_text",
-                        format!("{storage}/{path}"),
-                        Request::DeleteFile {
-                            storage: storage.clone(),
-                            path: path.clone(),
-                        },
-                    );
-                })
-                .text(env.t.t("ui_file_delete")),
+        .child(
+            div().class("wh-fm-actions").child(
+                a().attr("id", "download")
+                    .class("wh-btn")
+                    .attr("href", file_url(env, &storage, &path, ""))
+                    .attr("download", name.to_string())
+                    .text(env.t.t("ui_file_download")),
+            ),
         );
-    }
     div()
-        .child(meta_list)
-        .child(preview(env, &file_url("&disposition=inline"), name, path))
-        .child(actions)
+        .class("wh-fm wh-fm-solo")
+        .child(bar)
+        .child(div().class("wh-fm-stage").child(preview(
+            env,
+            &file_url(env, &storage, &path, "&disposition=inline"),
+            name,
+            &path,
+        )))
+        .into_view()
 }
 
-/// The file shown where it is, by what its extension says it is.
+/// The file shown by what its extension says it is.
 fn preview(env: &Env, url: &str, name: &str, path: &str) -> Element {
     let media = match preview_kind(path) {
         PreviewKind::Image => element("img")
             .class("wh-preview-media")
             .attr("src", url.to_string())
-            .attr("alt", name.to_string())
-            .attr("loading", "lazy"),
+            .attr("alt", name.to_string()),
         PreviewKind::Video => element("video")
             .class("wh-preview-media")
             .attr("src", url.to_string())

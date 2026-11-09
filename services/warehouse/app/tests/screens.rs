@@ -863,60 +863,164 @@ fn the_root_lists_directories_first_and_a_directory_lists_its_entries() {
 }
 
 #[quench_test::test]
-fn a_file_shows_its_details_a_preview_and_a_download() {
+fn a_file_opens_preview_mode_and_has_a_download_in_the_list() {
     let l = started(
-        "/warehouse/ui/files/browse?storage=backups&path=docs%2Fimg%2Flogo.png",
+        "/warehouse/ui/files/browse?storage=backups&path=docs",
         false,
     );
     l.send(Msg::Browse(Box::new(browse_of("readable"))));
-    let text = l.text();
-    assert!(text.contains("Metadata for logo.png"), "{text}");
-    assert!(
-        text.contains("image/png") && text.contains("2.00 KiB"),
-        "{text}"
+    assert!(l.text().contains("120 B"), "{}", l.text());
+    let link = find(&l.r, "a", ("data-entry", "docs/readme.md"));
+    assert_eq!(
+        l.r.attr(link, "href").as_deref(),
+        Some("/warehouse/ui/files/browse?storage=backups&path=docs%2Freadme.md&mode=preview")
     );
+    let download = find(&l.r, "a", ("data-download", "docs/readme.md"));
+    assert_eq!(
+        l.r.attr(download, "href").as_deref(),
+        Some("/warehouse/api/v1/files/backups/file?path=docs%2Freadme.md")
+    );
+    assert_eq!(l.r.find_by_tag("iframe").len(), 0, "no preview in the list");
+    assert!(
+        l.r.document_order()
+            .into_iter()
+            .all(|n| l.r.attr(n, "data-delete").is_none()),
+        "a reader cannot delete"
+    );
+}
+
+#[quench_test::test]
+fn preview_mode_is_a_tree_and_a_file_with_neighbours() {
+    let l = started(
+        "/warehouse/ui/files/browse?storage=backups&path=docs%2Fdata.bin&mode=preview",
+        false,
+    );
+    l.send(Msg::Browse(Box::new(browse_of("readable"))));
+    assert!(present(&l.r, "no-preview"));
+    // the tree holds every file; the listing's columns are gone
+    let _ = find(&l.r, "a", ("data-tree-file", "top.txt"));
+    let _ = find(&l.r, "a", ("data-tree-file", "docs/img/logo.png"));
+    // data.bin is first of the two files in docs (directories do not count)
+    assert!(l.text().contains("1 / 2"), "{}", l.text());
+    assert!(present(&l.r, "next"));
+    let next = find(&l.r, "a", ("id", "next"));
+    assert_eq!(l.r.attr(next, "data-shortcut").as_deref(), Some("next"));
+    l.follow(("id", "next"));
+    let prev = find(&l.r, "a", ("id", "prev"));
+    assert_eq!(l.r.attr(prev, "data-shortcut").as_deref(), Some("prev"));
+    assert_eq!(
+        l.url(),
+        "/warehouse/ui/files/browse?storage=backups&path=docs%2Freadme.md&mode=preview"
+    );
+    assert_eq!(l.r.find_by_tag("iframe").len(), 1);
+    assert!(l.text().contains("2 / 2"), "{}", l.text());
+
+    // zoom is for images, and the page script does it
+    assert!(!present(&l.r, "zoom-in"), "no zoom on a text file");
+
+    l.follow(("id", "leave-preview"));
+    assert_eq!(
+        l.url(),
+        "/warehouse/ui/files/browse?storage=backups&path=docs"
+    );
+    assert!(present(&l.r, "up"));
+}
+
+#[quench_test::test]
+fn an_image_in_preview_mode_is_a_canvas_with_zoom_controls() {
+    let l = started(
+        "/warehouse/ui/files/browse?storage=backups&path=docs%2Fimg%2Flogo.png&mode=preview",
+        false,
+    );
+    l.send(Msg::Browse(Box::new(browse_of("readable"))));
+    for (id, how) in [
+        ("zoom-in", "in"),
+        ("zoom-out", "out"),
+        ("zoom-reset", "reset"),
+    ] {
+        let b = find(&l.r, "button", ("id", id));
+        assert_eq!(l.r.attr(b, "data-canvas-zoom").as_deref(), Some(how));
+    }
+    let canvas =
+        l.r.document_order()
+            .into_iter()
+            .filter(|n| l.r.attr(*n, "data-canvas").is_some())
+            .count();
+    assert_eq!(canvas, 1);
+}
+
+#[quench_test::test]
+fn the_bar_shows_the_path_as_a_trail() {
+    let l = started(
+        "/warehouse/ui/files/browse?storage=backups&path=docs%2Fimg",
+        false,
+    );
+    l.send(Msg::Browse(Box::new(browse_of("readable"))));
+    assert!(
+        l.text().contains("backups>docsimg") || l.text().contains("docs"),
+        "{}",
+        l.text()
+    );
+    l.follow(("data-crumb", "docs"));
+    assert_eq!(
+        l.url(),
+        "/warehouse/ui/files/browse?storage=backups&path=docs"
+    );
+}
+
+#[quench_test::test]
+fn a_file_address_in_the_browser_shows_its_directory() {
+    let l = started(
+        "/warehouse/ui/files/browse?storage=backups&path=docs%2Freadme.md",
+        false,
+    );
+    l.send(Msg::Browse(Box::new(browse_of("readable"))));
+    assert!(present(&l.r, "up"));
+    let _ = find(&l.r, "a", ("data-entry", "docs/data.bin"));
+}
+
+#[quench_test::test]
+fn the_preview_window_is_the_file_and_a_download() {
+    let l = started(
+        "/warehouse/ui/files/preview?storage=backups&path=docs%2Fimg%2Flogo.png",
+        false,
+    );
+    assert!(!present(&l.r, "waiting"));
     let img = find(&l.r, "img", ("alt", "logo.png"));
     assert_eq!(
         l.r.attr(img, "src").as_deref(),
         Some("/warehouse/api/v1/files/backups/file?path=docs%2Fimg%2Flogo.png&disposition=inline")
     );
     let download = find(&l.r, "a", ("id", "download"));
-    assert_eq!(
-        l.r.attr(download, "href").as_deref(),
-        Some("/warehouse/api/v1/files/backups/file?path=docs%2Fimg%2Flogo.png")
-    );
     assert_eq!(l.r.attr(download, "download").as_deref(), Some("logo.png"));
-    assert!(!present(&l.r, "delete-file"), "a reader cannot delete");
+    assert!(
+        l.r.document_order()
+            .into_iter()
+            .all(|n| l.r.attr(n, "data-nav").is_none()),
+        "no sidebar around a preview"
+    );
 }
 
 #[quench_test::test]
-fn text_is_framed() {
+fn the_preview_frames_text_and_says_when_it_cannot_show_a_file() {
     let l = started(
-        "/warehouse/ui/files/browse?storage=backups&path=docs%2Freadme.md",
+        "/warehouse/ui/files/preview?storage=backups&path=docs%2Freadme.md",
         false,
     );
-    l.send(Msg::Browse(Box::new(browse_of("readable"))));
     assert_eq!(l.r.find_by_tag("iframe").len(), 1);
-}
-
-#[quench_test::test]
-fn a_file_of_unknown_kind_has_no_preview() {
     let l = started(
-        "/warehouse/ui/files/browse?storage=backups&path=docs%2Fdata.bin",
+        "/warehouse/ui/files/preview?storage=backups&path=docs%2Fdata.bin",
         false,
     );
-    l.send(Msg::Browse(Box::new(browse_of("readable"))));
     assert!(present(&l.r, "no-preview"));
 }
 
 #[quench_test::test]
 fn deleting_a_file_is_confirmed_and_returns_to_its_directory() {
-    let l = started(
-        "/warehouse/ui/files/browse?storage=backups&path=docs%2Freadme.md",
-        true,
-    );
+    let l = started("/warehouse/ui/files/browse?storage=backups&path=docs", true);
     l.send(Msg::Browse(Box::new(browse_of("readable"))));
-    l.click("button", "delete-file");
+    let del = find(&l.r, "button", ("data-delete", "docs/readme.md"));
+    l.r.fire(del, &Event::Click);
     assert!(l.text().contains("backups/docs/readme.md"), "{}", l.text());
     l.click("button", "confirm-delete");
     assert_eq!(

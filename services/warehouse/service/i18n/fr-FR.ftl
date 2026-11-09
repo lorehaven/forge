@@ -62,6 +62,13 @@ ui_files_add_folder = Ajouter un dossier
 ui_files_bulk_download = Téléchargement groupé
 ui_files_bulk_delete = Suppression groupée
 ui_files_up = Remonter
+ui_preview_back = Retour aux fichiers
+ui_preview_prev = Précédent
+ui_preview_next = Suivant
+ui_preview_zoom_in = Agrandir
+ui_preview_zoom_out = Réduire
+ui_preview_zoom_reset = Ajuster
+ui_preview_window = Ouvrir dans une nouvelle fenêtre
 ui_files_empty_storages = Aucun stockage configuré.
 ui_files_empty_dir = Le répertoire est vide.
 

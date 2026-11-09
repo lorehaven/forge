@@ -115,7 +115,7 @@ address = "localhost:6379"
 role = "migrate"
 description = "applying the migration catalog"
 containers = ["postgres"]
-build = ["cargo", "build", "-q", "--package", "foundry-service"]
+build = ["cargo", "build", "-q", "--package", "foundry"]
 # One flag per module: `--install` is repeatable but takes a single spec, and
 # only FOUNDRY_INSTALL splits on commas.
 each_selected = ["--install", "${service}"]

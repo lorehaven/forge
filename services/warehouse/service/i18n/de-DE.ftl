@@ -62,6 +62,13 @@ ui_files_add_folder = Ordner hinzufügen
 ui_files_bulk_download = Massen-Download
 ui_files_bulk_delete = Massen-Löschung
 ui_files_up = Nach oben
+ui_preview_back = Zurück zu den Dateien
+ui_preview_prev = Zurück
+ui_preview_next = Weiter
+ui_preview_zoom_in = Vergrößern
+ui_preview_zoom_out = Verkleinern
+ui_preview_zoom_reset = Einpassen
+ui_preview_window = In neuem Fenster öffnen
 ui_files_empty_storages = Keine Speicher konfiguriert.
 ui_files_empty_dir = Das Verzeichnis ist leer.
 

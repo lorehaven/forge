@@ -17,7 +17,7 @@ mod rivets;
 pub(crate) use artifacts::artifacts;
 pub(crate) use crates::crates;
 pub(crate) use docker::docker;
-pub(crate) use files::{browse, storages};
+pub(crate) use files::{browse, preview_page, storages};
 pub(crate) use rivets::rivets;
 
 /// What every screen needs of the app.

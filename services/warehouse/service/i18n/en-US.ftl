@@ -62,6 +62,13 @@ ui_files_add_folder = Add folder
 ui_files_bulk_download = Bulk download
 ui_files_bulk_delete = Bulk delete
 ui_files_up = Up
+ui_preview_back = Back to files
+ui_preview_prev = Previous
+ui_preview_next = Next
+ui_preview_zoom_in = Zoom in
+ui_preview_zoom_out = Zoom out
+ui_preview_zoom_reset = Fit
+ui_preview_window = Open in a new window
 ui_files_empty_storages = No storages configured.
 ui_files_empty_dir = Directory is empty.
 
