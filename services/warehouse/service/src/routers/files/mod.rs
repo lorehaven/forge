@@ -252,8 +252,11 @@ pub fn wrap_auth(
     jwt_config: JwtConfig,
     base_path: &str,
 ) -> Arc<dyn Endpoint> {
-    let prefix: &'static str = Box::leak(format!("{base_path}/api/v1/files").into_boxed_str());
-    wrap(app, OnPathPrefix::new(prefix, Auth::new(jwt_config)))
+    let files: &'static str = Box::leak(format!("{base_path}/api/v1/files").into_boxed_str());
+    // The index of the dynamic storages (`ops::list::storage_index`) reads the same claims, so it is mounted the same way.
+    let index: &'static str = Box::leak(format!("{base_path}/api/v1/storages").into_boxed_str());
+    let app = wrap(app, OnPathPrefix::new(files, Auth::new(jwt_config.clone())));
+    wrap(app, OnPathPrefix::new(index, Auth::new(jwt_config)))
 }
 
 pub fn register_routes() {

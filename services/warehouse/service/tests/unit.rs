@@ -112,6 +112,8 @@ mod routers_files_ops_list_tests;
 mod routers_files_ops_upload_tests;
 #[path = "unit/routers_files_pagination_tests.rs"]
 mod routers_files_pagination_tests;
+#[path = "unit/routers_files_wrap_auth_tests.rs"]
+mod routers_files_wrap_auth_tests;
 #[path = "unit/routers_mod_tests.rs"]
 mod routers_mod_tests;
 #[path = "unit/routers_rivets_tests.rs"]
