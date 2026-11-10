@@ -32,6 +32,7 @@ gatehouse-auth = { workspace = true }
 quench-client = { workspace = true }
 quench-cli = { workspace = true }
 quench-archive = { workspace = true }
+quench-html = { workspace = true }
 quench-crypto = { workspace = true }
 
 [dev-dependencies]

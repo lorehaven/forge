@@ -1,12 +1,11 @@
-// The forge look for a just-the-docs book: the design tokens of the forge services (light and dark mode, six colour
-// palettes, chosen by the same cookies), applied to the theme's pages. `anvil docs build` stages this as
-// `_sass/custom/custom.scss` unless the book brings its own. The tokens come first (forge-tokens.css, a copy of
-// forge-shell's) and are followed by these rules.
+/* The forge look for a book: the design tokens of the forge services (light and dark mode, six colour palettes, chosen
+   by the same cookies) applied to the pages `anvil docs build` writes. forge-tokens.css comes first (a copy of forge-shell
+   tokens) and layout.css before both. */
 
 html { color-scheme: dark; }
 html[data-fui-theme="light"] { color-scheme: light; }
 
-// A syntax colour for each mode, from the palette.
+/* A syntax colour for each mode, from the palette. */
 :root, html[data-fui-theme="dark"] {
   --docs-keyword: var(--fui-brand-300);
   --docs-string: var(--fui-blue-200);
@@ -26,9 +25,8 @@ html[data-fui-theme="light"] {
   --docs-error: var(--fui-error-700);
 }
 
-// The theme (and the colour scheme a book asks for) has selectors of up to three classes; the doubled `:root` lifts
-// everything below to that, and these rules come last, so they win.
-:root:root {
+/* The theme (and the colour scheme a book asks for) has selectors of up to three classes; the doubled `:root` lifts */
+/* everything below to that, and these rules come last, so they win. */
 body {
   background: var(--fui-bg);
   color: var(--fui-text);
@@ -45,7 +43,7 @@ hr { border-color: var(--fui-border); background: var(--fui-border); }
 :focus-visible { outline: 2px solid var(--fui-brand-500); outline-offset: 2px; }
 ::selection { background: var(--fui-brand-soft-bg); }
 
-// ---- the sidebar: brand, then the book's navigation
+/* ---- the sidebar: brand, then the book's navigation */
 .side-bar {
   background: var(--fui-surface);
   border-right: 1px solid var(--fui-border);
@@ -80,7 +78,7 @@ hr { border-color: var(--fui-border); background: var(--fui-border); }
 .nav-category { color: var(--fui-text-tertiary); }
 .site-footer { color: var(--fui-text-tertiary); border-top: 1px solid var(--fui-border); }
 
-// ---- the main column: header (search, theme), breadcrumbs, content
+/* ---- the main column: header (search, theme), breadcrumbs, content */
 .main { background: var(--fui-bg); }
 .main-header { background: var(--fui-bg); border-bottom: 1px solid var(--fui-border); height: var(--fui-topbar-h, 4rem); gap: 0.5rem; }
 .main-content-wrap { padding-top: 1rem; }
@@ -103,8 +101,8 @@ hr { border-color: var(--fui-border); background: var(--fui-border); }
 .search-result-rel-url { color: var(--fui-text-tertiary); }
 .search-no-result { color: var(--fui-text-tertiary); }
 
-// ---- content
-// Inline code (crate, type, function names) is a chip: a soft brand tint, a hairline border, a little padding.
+/* ---- content */
+/* Inline code (crate, type, function names) is a chip: a soft brand tint, a hairline border, a little padding. */
 code, code.highlighter-rouge {
   padding: 0.1em 0.45em; background: var(--fui-brand-soft-bg); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-sm);
   color: var(--fui-brand-soft-text); font-family: var(--fui-mono); font-size: 0.85em; font-weight: 500; white-space: nowrap;
@@ -143,7 +141,7 @@ blockquote { border-left: 3px solid var(--fui-brand-500); color: var(--fui-text-
 .toc-list a, .toc a { color: var(--fui-text-secondary); }
 .skip-to-main { background: var(--fui-surface); color: var(--fui-text); }
 
-// ---- the theme menu in the header (mode and colour), like the other services'
+/* ---- the theme menu in the header (mode and colour), like the other services' */
 .fui-dropdown { position: relative; }
 .fui-dropdown > summary { list-style: none; cursor: pointer; }
 .fui-dropdown > summary::-webkit-details-marker { display: none; }
@@ -176,9 +174,8 @@ blockquote { border-left: 3px solid var(--fui-brand-500); color: var(--fui-text-
 .fui-swatch[data-fui-palette="rose"] { background: #f63d68; }
 .fui-swatch[data-fui-palette="orange"] { background: #fb6514; }
 
-}
 
-// The chosen mode and colour in the menu.
+/* The chosen mode and colour in the menu. */
 html[data-fui-theme="dark"] .fui-theme-mode[data-fui-mode="dark"], html[data-fui-theme="light"] .fui-theme-mode[data-fui-mode="light"] {
   background: var(--fui-brand-soft-bg); border-color: var(--fui-brand-500); color: var(--fui-brand-soft-text);
 }
@@ -188,5 +185,5 @@ html[data-fui-palette="rose"] .fui-swatch[data-fui-palette="rose"], html[data-fu
   border-color: var(--fui-text);
 }
 
-// Inside Lectern's frame: its top bar has the theme menu, and the book's header is just the search.
+/* Inside Lectern's frame: its top bar has the theme menu, and the book's header is just the search. */
 html.fui-embedded .main-header .fui-dropdown { display: none; }

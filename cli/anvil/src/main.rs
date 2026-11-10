@@ -154,7 +154,6 @@ fn docs(config: &config::Config, command: DocsCommands) -> Result<()> {
         DocsCommands::Check { book } => docs::check(config, &root, book.as_deref(), &mut out),
         DocsCommands::Build {
             book,
-            remote_theme,
             no_check,
             out: dir,
             baseurl,
@@ -163,7 +162,6 @@ fn docs(config: &config::Config, command: DocsCommands) -> Result<()> {
             &root,
             book.as_deref(),
             &Options {
-                remote_theme,
                 no_check,
                 out: dir,
                 baseurl,
@@ -175,14 +173,12 @@ fn docs(config: &config::Config, command: DocsCommands) -> Result<()> {
         DocsCommands::Release {
             book,
             dry_run,
-            remote_theme,
             no_check,
             baseurl,
         } => docs::release(
             config,
             book.as_deref(),
             &Options {
-                remote_theme,
                 no_check,
                 out: None,
                 baseurl,

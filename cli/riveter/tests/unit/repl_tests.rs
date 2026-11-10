@@ -1,10 +1,9 @@
-use crate::env_support::cwd_lock;
+use crate::fake_cluster::{FakeCluster, with_cluster, with_clusters};
 use riveter::render::{RenderedManifest, ResourceRef, ResourceScope};
 use riveter::repl::{
-    LiveResource, WaitPolicy, describe, find_orphans, kubectl, note_skipped, parse_args,
+    LiveResource, WaitPolicy, connect, describe, find_orphans, note_skipped, parse_args,
     parse_scope_value, print_resource_list, report_prune, unknown_option,
 };
-use std::os::unix::fs::PermissionsExt;
 
 /// `parse_args` skips element 0, the way the REPL hands it the command word.
 fn apply(line: &str) -> quench_core::Result<riveter::repl::ParsedArgs> {
@@ -198,81 +197,104 @@ fn wait_policy_default_waits_up_to_five_minutes() {
     assert_eq!(policy.timeout_seconds, 300);
 }
 
-/// Writes an executable `kubectl` shim into a fresh temp dir printing
-/// `output` to stdout and exiting 0, prepends that dir to `$PATH`, and runs
-/// `body` with it in effect. Holds `cwd_lock` for the duration - `$PATH` is
-/// process-global, exactly like the cwd that lock already protects, and
-/// nothing else in this binary needs a fake `kubectl` on the path at the
-/// same time.
-fn with_fake_kubectl<T>(output: &str, body: impl FnOnce() -> T) -> T {
-    let _guard = cwd_lock()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = quench_core::tmp::TempDir::new().unwrap();
-    let script_path = dir.path().join("kubectl");
-    std::fs::write(
-        &script_path,
-        format!("#!/bin/sh\ncat <<'EOF_OUTPUT'\n{output}\nEOF_OUTPUT\n"),
-    )
-    .unwrap();
-    std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+/// A cluster holding objects riveter labelled for `test-env`, as `kind name [owner]`, in the namespace a connection defaults to.
+fn labelled_cluster(objects: &[(&str, &str, &str, &str)]) -> FakeCluster {
+    let cluster = FakeCluster::start();
+    for (plural, kind, name, extra) in objects {
+        cluster.insert(
+            plural,
+            &format!(
+                r#"{{"apiVersion":"v1","kind":"{kind}","metadata":{{"name":"{name}","namespace":"default","labels":{{"app.kubernetes.io/managed-by":"riveter","env":"test-env"}}{extra}}}}}"#
+            ),
+        );
+    }
+    cluster
+}
 
-    let original_path = std::env::var("PATH").unwrap_or_default();
-    let new_path = format!("{}:{original_path}", dir.path().display());
-    quench_core::env::set("PATH", &new_path);
-
-    let result = body();
-
-    quench_core::env::set("PATH", &original_path);
-    result
+fn orphans_of(cluster: &FakeCluster, rendered: &RenderedManifest) -> Vec<LiveResource> {
+    with_cluster(cluster, || {
+        let connection = connect(rendered).unwrap();
+        find_orphans(&connection, "test-env", rendered).unwrap()
+    })
 }
 
 #[quench_test::test]
 fn find_orphans_reports_live_resources_the_overlay_no_longer_selects() {
-    // kind, name, owners, selector - the fields `prune` asks kubectl to print, tab-separated.
-    with_fake_kubectl("Deployment\tmy-app\t\t\nService\tmy-app\t\t", || {
-        let rendered = manifest(vec![resource("Deployment", "my-app")], vec![]);
-        let orphans = find_orphans("test-env", &rendered).unwrap();
+    let cluster = labelled_cluster(&[
+        ("deployments", "Deployment", "my-app", ""),
+        ("services", "Service", "my-app", ""),
+    ]);
+    let rendered = manifest(vec![resource("Deployment", "my-app")], vec![]);
+    let orphans = orphans_of(&cluster, &rendered);
 
-        assert_eq!(orphans.len(), 1);
-        assert_eq!(orphans[0].kind, "service");
-        assert_eq!(orphans[0].name, "my-app");
-    });
+    assert_eq!(orphans.len(), 1);
+    assert_eq!(orphans[0].kind, "service");
+    assert_eq!(orphans[0].name, "my-app");
+}
+
+#[quench_test::test]
+fn find_orphans_ignores_what_carries_other_labels() {
+    let cluster = labelled_cluster(&[("deployments", "Deployment", "mine", "")]);
+    cluster.insert(
+        "deployments",
+        r#"{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"someone-elses","namespace":"default","labels":{"app.kubernetes.io/managed-by":"helm","env":"test-env"}}}"#,
+    );
+    let orphans = orphans_of(&cluster, &manifest(vec![], vec![]));
+    assert_eq!(orphans.len(), 1, "{orphans:?}");
+    assert_eq!(orphans[0].to_string(), "deployment/mine");
 }
 
 #[quench_test::test]
 fn find_orphans_leaves_alone_what_the_cluster_derived_from_declared_resources() {
     // The listing that used to propose deleting every certificate, endpoint and endpoint slice: all of
     // them carry riveter's labels, none of them is riveter's.
-    let listing = "Deployment\tmy-app\t\t\n\
-                   Service\tmy-app\t\t{\"app\":\"my-app\"}\n\
-                   Endpoints\tmy-app\t\t\n\
-                   EndpointSlice\tmy-app-x7k2p\tService\t\n\
-                   Certificate\tmy-app-tls\tIngress\t\n\
-                   Job\tstale-release\t\t";
-    with_fake_kubectl(listing, || {
-        let rendered = manifest(
-            vec![
-                resource("Deployment", "my-app"),
-                resource("Service", "my-app"),
-            ],
-            vec![],
-        );
-        let orphans = find_orphans("test-env", &rendered).unwrap();
+    let owner = |kind: &str| format!(r#","ownerReferences":[{{"kind":"{kind}","name":"x"}}]"#);
+    let cluster = labelled_cluster(&[
+        ("deployments", "Deployment", "my-app", ""),
+        ("endpoints", "Endpoints", "my-app", ""),
+        ("jobs", "Job", "stale-release", ""),
+        (
+            "pods",
+            "Pod",
+            "my-app-5f9b6b444b-abcde",
+            &owner("ReplicaSet"),
+        ),
+    ]);
+    cluster.insert(
+        "services",
+        r#"{"apiVersion":"v1","kind":"Service","metadata":{"name":"my-app","namespace":"default","labels":{"app.kubernetes.io/managed-by":"riveter","env":"test-env"}},"spec":{"selector":{"app":"my-app"}}}"#,
+    );
+    let rendered = manifest(
+        vec![
+            resource("Deployment", "my-app"),
+            resource("Service", "my-app"),
+        ],
+        vec![],
+    );
+    let orphans = orphans_of(&cluster, &rendered);
 
-        // Only the Job the overlay genuinely stopped declaring.
-        assert_eq!(orphans.len(), 1, "{orphans:?}");
-        assert_eq!(orphans[0].to_string(), "job/stale-release");
-    });
+    // Only the Job the overlay genuinely stopped declaring... and the Deployment, which the list cannot tell is declared.
+    let names: Vec<String> = orphans.iter().map(ToString::to_string).collect();
+    assert!(
+        names.contains(&"job/stale-release".to_string()),
+        "{names:?}"
+    );
+    assert!(
+        !names
+            .iter()
+            .any(|n| n.starts_with("pod/") || n.starts_with("endpoints/")),
+        "{names:?}"
+    );
 }
 
 #[quench_test::test]
-fn find_orphans_is_empty_when_the_cluster_has_nothing_extra() {
-    with_fake_kubectl("Deployment\tmy-app\t\t", || {
-        let rendered = manifest(vec![resource("Deployment", "my-app")], vec![]);
-        let orphans = find_orphans("test-env", &rendered).unwrap();
-        assert_eq!(orphans, [] as [riveter::repl::LiveResource; 0]);
-    });
+fn find_orphans_is_empty_when_the_cluster_has_nothing() {
+    let cluster = FakeCluster::start();
+    let orphans = orphans_of(
+        &cluster,
+        &manifest(vec![resource("Deployment", "my-app")], vec![]),
+    );
+    assert_eq!(orphans, [] as [riveter::repl::LiveResource; 0]);
 }
 
 fn manifest_with_context(kube_context: Option<&str>) -> RenderedManifest {
@@ -289,17 +311,31 @@ fn manifest_with_context(kube_context: Option<&str>) -> RenderedManifest {
 }
 
 #[quench_test::test]
-fn kubectl_binds_the_overlays_context_when_it_pins_one() {
-    let cmd = kubectl(&manifest_with_context(Some("prod-cluster")));
-    assert_eq!(cmd.get_program(), "kubectl");
-    let args: Vec<&str> = cmd.get_args().map(|a| a.to_str().unwrap()).collect();
-    assert_eq!(args, vec!["--context", "prod-cluster"]);
+fn the_connection_is_bound_to_the_overlays_context_when_it_pins_one() {
+    let current = FakeCluster::start();
+    let pinned = FakeCluster::start();
+    pinned.insert(
+        "namespaces",
+        r#"{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"only-on-prod"}}"#,
+    );
+
+    with_clusters(&[("dev", &current), ("prod-cluster", &pinned)], || {
+        let bound = connect(&manifest_with_context(Some("prod-cluster"))).unwrap();
+        assert_eq!(bound.namespace_exists("only-on-prod"), Some(true));
+
+        // No pin: the kubeconfig's current context, which is the other cluster.
+        let ambient = connect(&manifest_with_context(None)).unwrap();
+        assert_eq!(ambient.namespace_exists("only-on-prod"), Some(false));
+    });
 }
 
 #[quench_test::test]
-fn kubectl_adds_no_context_flag_when_the_overlay_pins_none() {
-    let cmd = kubectl(&manifest_with_context(None));
-    assert_eq!(cmd.get_args().count(), 0);
+fn an_unknown_context_is_refused() {
+    let cluster = FakeCluster::start();
+    with_cluster(&cluster, || {
+        let err = connect(&manifest_with_context(Some("nope"))).unwrap_err();
+        assert!(err.to_string().contains("nope"), "{err}");
+    });
 }
 
 #[quench_test::test]

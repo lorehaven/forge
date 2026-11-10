@@ -11,7 +11,7 @@ use riveter::package_cmd::{
 use riveter::render::ResourceScope;
 use riveter::render::{Selector, generate_manifests_selected, list_resources};
 use riveter::repl::{
-    WaitPolicy, describe, kubectl_apply, kubectl_delete, kubectl_diff, note_skipped, ok,
+    WaitPolicy, cluster_apply, cluster_delete, cluster_diff, describe, note_skipped, ok,
     print_resource_list, prune, repl, report_prune, warn,
 };
 use riveter::schema_cmd::{schemas_command, validate_env, validate_files};
@@ -73,7 +73,7 @@ fn main() -> Result<()> {
                 return apply_many(&envs, dry_run, map_apply_scope(scope), &selector, wait);
             }
             let env = &envs[0];
-            let rendered = kubectl_apply(env, dry_run, map_apply_scope(scope), &selector, wait)?;
+            let rendered = cluster_apply(env, dry_run, map_apply_scope(scope), &selector, wait)?;
 
             if rendered.resource_count == 0 {
                 ok("no resources matched selected scope");
@@ -114,7 +114,7 @@ fn main() -> Result<()> {
                 return diff_many(&envs, map_apply_scope(scope), &selector);
             }
             let env = &envs[0];
-            let (rendered, differs) = kubectl_diff(env, map_apply_scope(scope), &selector)?;
+            let (rendered, differs) = cluster_diff(env, map_apply_scope(scope), &selector)?;
 
             if rendered.resource_count == 0 {
                 ok("no resources matched selected scope");
@@ -133,7 +133,7 @@ fn main() -> Result<()> {
         Some(Cmd::Delete { scope, targets }) => {
             let env = resolve_env(cli.env.as_deref())?;
             let selector = Selector::parse(&targets)?;
-            let rendered = kubectl_delete(&env, map_apply_scope(scope), &selector)?;
+            let rendered = cluster_delete(&env, map_apply_scope(scope), &selector)?;
 
             if rendered.resource_count == 0 {
                 ok("no resources matched selected scope");

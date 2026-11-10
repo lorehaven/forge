@@ -20,21 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
-          bundler-cache: true
-          working-directory: docs
+      - uses: dtolnay/rust-toolchain@stable
       - id: pages
         uses: actions/configure-pages@v5
       - name: Build
-        working-directory: docs
-        env:
-          JEKYLL_ENV: production
-        run: bundle exec jekyll build --baseurl "${{ steps.pages.outputs.base_path }}"
+        run: cargo run --release -p anvil -- docs build forge --baseurl "${{ steps.pages.outputs.base_path }}"
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/_site
+          path: target/docs/forge/site
 
   deploy:
     needs: build

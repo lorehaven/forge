@@ -218,7 +218,7 @@ pub enum Commands {
         #[command(subcommand)]
         command: ArtifactCommands,
     },
-    /// Check, build and release documentation books (Jekyll sites of Markdown files)
+    /// Check, build and release documentation books (sites of Markdown files)
     Docs {
         #[command(subcommand)]
         command: DocsCommands,
@@ -297,13 +297,10 @@ pub enum DocsCommands {
         /// The book, as named under [docs.books] (every book when left out)
         book: Option<String>,
     },
-    /// Check a book, build it with Jekyll and pack the site as <out>/<book>/<book>-<version>.tar.gz with a manifest.json
+    /// Check a book, build its site and pack it as <out>/<book>/<book>-<version>.tar.gz with a manifest.json
     Build {
         /// The book, as named under [docs.books] (every book when left out)
         book: Option<String>,
-        /// Use the theme the book's `_config.yml` names (a remote theme: needs the `jekyll-remote-theme` gem and the network) instead of the installed `just-the-docs` gem
-        #[arg(long)]
-        remote_theme: bool,
         /// Skip the checks
         #[arg(long)]
         no_check: bool,
@@ -321,9 +318,6 @@ pub enum DocsCommands {
         /// Build and check everything, but send nothing
         #[arg(long)]
         dry_run: bool,
-        /// Use the theme the book's `_config.yml` names (a remote theme: needs the `jekyll-remote-theme` gem and the network) instead of the installed `just-the-docs` gem
-        #[arg(long)]
-        remote_theme: bool,
         /// Skip the checks
         #[arg(long)]
         no_check: bool,

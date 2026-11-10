@@ -5,7 +5,7 @@ grand_parent: Command-line tools
 nav_order: 4
 ---
 
-`anvil docs` checks, builds and releases documentation **books**: directories of Markdown files that Jekyll turns into a site (the `just-the-docs` theme takes its navigation from the pages' front matter). Books are declared under `[docs.books.<name>]`, see [Configuration](configuration.md#docs).
+`anvil docs` checks, builds and releases documentation **books**: directories of Markdown files that anvil turns into a static site (the navigation comes from the pages' front matter: `parent`, `nav_order`, `has_children`, as in the `just-the-docs` Jekyll theme the books were first written for). No Jekyll and no Ruby are involved. Books are declared under `[docs.books.<name>]`, see [Configuration](configuration.md#docs).
 
 ```text
 anvil docs list
@@ -28,7 +28,7 @@ quench  ../quench/docs  Quench
 
 ## anvil docs check
 
-Checks the Markdown and the OpenAPI documents without running Jekyll, so it needs no Ruby. The page, navigation and link checks are those of the [docs-book](../../libs/docs-book/index.md) library, which loupe uses to browse a book; the OpenAPI checks are anvil's own. Every problem of every book is printed; the exit code is `1` if there is any.
+Checks the Markdown and the OpenAPI documents. The page, navigation and link checks are those of the [docs-book](../../libs/docs-book/index.md) library, which loupe uses to browse a book; the OpenAPI checks are anvil's own. Every problem of every book is printed; the exit code is `1` if there is any.
 
 ```text
 $ anvil docs check
@@ -40,7 +40,7 @@ What is checked:
 
 | Check | Problem reported |
 |---|---|
-| Front matter | A `.md` file without front matter (Jekyll would copy it as it is, not render it); front matter that is not valid YAML; a page without `title`. |
+| Front matter | A `.md` file without front matter (it would be copied as it is, not rendered); front matter that is not valid YAML; a page without `title`. |
 | Navigation | A `parent` that is no page's `title`; a `parent` whose page lacks `has_children: true`; a `parent` title shared by several pages with children and no `grand_parent` to tell them apart; two pages under one parent with the same `nav_order`. |
 | Links | A relative `[text](target)` that names no file (a directory counts when it has an `index.md`). Fenced code blocks and code spans are skipped, and so are `http(s):`, `mailto:`, `#anchor` and any other scheme. A link starting with `/` is read from the book's directory. A link to a file under a `_` or `.` path (e.g. `_reports/`) is reported too: the file exists in the repository, but Jekyll leaves it out of the site, so the link is dead there. |
 | OpenAPI | Only for a book with `[docs.books.<name>.openapi]`: for every `<dir>/<specs>/<service>/openapi.yaml`, the YAML must parse and declare `openapi: 3.1.x` with `info` and `paths`; every route in the service's source must be a documented path and method, and every documented path and method must have a route; every `$ref` must resolve inside the document. |
@@ -51,37 +51,36 @@ Files and directories whose names start with `_` or `.`, and what `exclude:` lis
 
 ## anvil docs build
 
-Checks the book (unless `--no-check`), runs `jekyll build`, and packs the result.
+Checks the book (unless `--no-check`), writes the site, and packs the result.
 
 | Option | Meaning |
 |---|---|
-| `--remote-theme` | Use the theme the book's `_config.yml` names (`remote_theme`, fetched from GitHub: needs the `jekyll-remote-theme` gem and the network). By default the installed `just-the-docs` gem is the theme and only `jekyll-seo-tag` is loaded, so nothing is fetched. |
 | `--no-check` | Skip the checks. |
 | `--out <dir>` | Where the builds go (default: `out` under `[docs]`, else `target/docs`). |
 | `--baseurl <url>` | The `baseurl` the site is built for, for a site served below a path (`/docs/forge`). Default: the book's `baseurl`, else the one in `_config.yml`. |
 
-Jekyll is started as `jekyll build --source <out>/<book>/src --disable-disk-cache --destination <out>/<book>/site --config <out>/<book>/src/_config.yml,<out>/<book>/jekyll-override.yml [--baseurl <url>]` with `JEKYLL_ENV=production`. The command is `jekyll` unless `[docs].jekyll` says otherwise (`bundle exec jekyll`). If it cannot be run, anvil says how to install it. A failed Jekyll run prints the last 25 lines of its error output, and names a missing gem (`gem install <gem>`).
+The site is written by anvil itself ([`quench-html`](../../libs/docs-book/index.md)'s Markdown, CommonMark with GFM tables, task lists, strikethrough and footnotes): each page becomes an HTML page in a layout of a sidebar with the navigation, a header with search and the theme menu, breadcrumbs, and links to the previous and next page. Headings get anchors (`## Loupe --book` is `#loupe---book`), links between pages (`[x](other.md#part)`) point at the pages as written, tables scroll sideways in a wrapper, and the search is a client-side search over `assets/js/search-data.json` (one entry per page and per section). Every address is written from the site's root (`/x/`, with the `baseurl` in front when there is one), which Lectern rewrites for the path it serves a book under. Files that are not pages (images, downloads, a `.md` without front matter) are copied as they are; names starting with `_`, `.` or `#`, `Gemfile` and what `_config.yml` lists under `exclude` are left out.
+
+Liquid is read as far as the books use it: `{% raw %}`/`{% endraw %}` are dropped and `{{ site.baseurl }}`, `{{ site.title }}` and `{{ page.title }}` replaced, unless `render_with_liquid: false` is set in the page's front matter or in a `defaults` scope of `_config.yml` that covers it. Not done: syntax highlighting (code blocks are `<pre><code class="language-x">`), kramdown attribute lists, collections, plugins.
 
 What a build leaves under `<out>/<book>/`:
 
 | File | Content |
 |---|---|
-| `site/` | The Jekyll output; cleared at the start of every build. |
+| `site/` | The site; cleared at the start of every build. |
 | `<book>-<version>.tar.gz` | Every file of `site/` (paths relative to it), then the book's Markdown sources under `_source/` (see below), as a gzip-compressed tar. The archive is **reproducible**: entries are sorted, owner is root, modification time is 0, so the same book gives the same bytes. |
 | `manifest.json` | `book`, `title`, `version`, `built` (UTC, RFC 3339), `archive` (file name), `archive_bytes`, `archive_sha256`, `files` (the site's files), `site_bytes`, `sources` (`"_source/"`), `source_files`, and `baseurl` when there is one. |
 
 The `_source/` part of the archive is the book as written, for readers that want the pages rather than the site ([loupe](../loupe/index.md)'s `--book`): every page docs-book reads (with its front matter, from the book's own directory, not the staged copy whose links were rewritten to `.html`), `_config.yml`, and every local image a page links to (`png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `avif`; relative to the page, or from the site root with the `baseurl` taken off), with their paths in the book. Files no page references, drafts and other `_` directories are left out. Lectern serves the site from the same archive and leaves `_source/` out: it is neither served nor counted.
-| `src/` | The staged copy of the book that Jekyll reads: relative links to `.md` pages are rewritten to `.html` (what the `jekyll-relative-links` plugin does, so that plugin is not needed), and the files of the `forge` theme are added (below). The book itself is not changed. |
-| `jekyll-override.yml` | The theme and plugin override passed to Jekyll. |
 
-The **forge theme** (`[docs].theme`, on unless it is `none`) is a layer on `just-the-docs`, staged into `src/` so that every book gets it without carrying it: `_sass/custom/custom.scss` (forge's design tokens, then rules that map the theme's pages onto them), `_includes/head_custom.html` (applies the mode and colour from the cookies `qtheme` and `fui_palette`, the ones the forge services share, so a choice made in one place holds in all), `_includes/header_custom.html` (the theme menu), `_includes/title.html` (the brand mark in the sidebar) and `_includes/nav_footer_custom.html`. Inside a frame (see [Lectern](../../services/lectern/index.md)) the book hides its own theme menu, since the bar around it has one. The tokens are a copy of `libs/forge-shell/assets/tokens.css`; a test fails when the two differ.
+The **forge theme** (`[docs].theme`, on unless it is `none`) is the look of the forge services: their design tokens, the light and dark modes and six colour palettes, applied from the cookies `qtheme` and `fui_palette` (the ones the forge services share, so a choice made in one place holds in all), the theme menu in the header and the brand mark in the sidebar. It is written into `assets/css/site.css` after the layout; `none` leaves the layout alone. Inside a frame (see [Lectern](../../services/lectern/index.md)) the book hides its own theme menu, since the bar around it has one. The tokens are a copy of `libs/forge-shell/assets/tokens.css`; a test fails when the two differ.
 
 The **version** of a book is, in this order: `version` from the configuration; the version of its `version_file` (a `Cargo.toml`, `[workspace.package]` else `[package]`); today's date (`2026-10-30`).
 
 ```text
 $ anvil docs build forge
 ok   forge
-running: jekyll build /mnt/extdrive/projects/lorehaven/forge/docs
+wrote 213 page(s) and 228 file(s)
 built forge 2026-10-30: 223 files, 14727801 bytes -> target/docs/forge/forge-2026-10-30.tar.gz
 ```
 
@@ -100,14 +99,14 @@ An upload to an existing path replaces it, so releasing a version again replaces
 | Option | Meaning |
 |---|---|
 | `--dry-run` | Build and check everything, then print `would send <storage>/<path> (<bytes> bytes)` for each file; asks for no token and sends nothing. |
-| `--remote-theme`, `--no-check`, `--baseurl` | As for `build`. |
+| `--no-check`, `--baseurl` | As for `build`. |
 
 Refusals: `401`/`403` say to run `anvil login --scope warehouse:write` (and that the storage needs a write grant); `404` says the files storage does not exist (in the cluster it is a static storage, `docs=/docs` in `FILE_STORAGES` of the Warehouse deployment in homecloud; a dynamic storage can be created with the Warehouse's `POST /api/v1/files`); any other status prints the status and the body. `warehouse_url` comes from `[docs]`, else `[artifacts]`; `storage` is required.
 
 ```text
 $ anvil docs release forge --dry-run
 ok   forge
-running: jekyll build /mnt/extdrive/projects/lorehaven/forge/docs
+wrote 213 page(s) and 228 file(s)
 built forge 2026-10-30: 224 files, 14814378 bytes -> /mnt/extdrive/projects/lorehaven/forge/target/docs/forge/forge-2026-10-30.tar.gz
 would send docs/forge/2026-10-30/forge-2026-10-30.tar.gz (2124805 bytes)
 would send docs/forge/2026-10-30/manifest.json (311 bytes)

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 #[command(
     about = "Loupe - Markdown files and documentation books in the terminal",
     long_about = "Renders a Markdown file (or `-` for stdin) to the terminal's width and pages through it; a \
-                  directory is read as a documentation book (a Jekyll site with just-the-docs navigation). \
+                  directory is read as a documentation book (Markdown pages with just-the-docs style navigation). \
                   When stdout is not a terminal, or with --plain or NO_COLOR, the page is printed as plain text."
 )]
 pub struct Cli {

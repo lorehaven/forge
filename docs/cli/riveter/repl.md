@@ -37,7 +37,7 @@ riveter(dev)>
 | `list [options] [target...]` | `ls` | `--scope` (default `all`) | |
 | `render [options] [target...]` | `r` | `--scope` (default `mutable`) | |
 | `apply [options] [target...]` | `a` | `--scope` (default `mutable`), `--dry-run` | Waits for rollouts with the default 300 s timeout. |
-| `diff [options] [target...]` | `df` | `--scope` (default `mutable`) | `kubectl diff` only. |
+| `diff [options] [target...]` | `df` | `--scope` (default `mutable`) | Against the cluster only. |
 | `delete [options] [target...]` | `del`, `d` | `--scope` (default `mutable`) | Prints a `warn deleted N resource(s) ...` line. |
 | `prune [--dry-run]` | | `--dry-run` | The flag is detected anywhere on the line. |
 | `validate [options] [target...]` | | `--scope` (default `all`) | |

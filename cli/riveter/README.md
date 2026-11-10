@@ -2,7 +2,7 @@
 Kubernetes manifest renderer and applier, with `.rivet` packages.
 
 ## What it is
-`riveter` renders Kubernetes manifests from per-environment overlays (`overlays/<env>/overlay.yaml`, minijinja templates) and applies, diffs, deletes and prunes them with `kubectl`. It also packs an overlay into a versioned `.rivet` package and publishes it to, and installs it from, Warehouse. With no subcommand it starts a REPL.
+`riveter` renders Kubernetes manifests from per-environment overlays (`overlays/<env>/overlay.yaml`, minijinja templates) and applies, diffs, deletes and prunes them by talking to the cluster directly (no `kubectl` needed). It also packs an overlay into a versioned `.rivet` package and publishes it to, and installs it from, Warehouse. With no subcommand it starts a REPL.
 
 ## Use cases
 - Render and validate an environment's manifests without a cluster.

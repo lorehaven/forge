@@ -1,3 +1,4 @@
+use crate::cluster::{self, Cluster};
 use crate::env::{current_env, env_list, env_set, env_show};
 use crate::help;
 use crate::render::{
@@ -5,9 +6,11 @@ use crate::render::{
     generate_manifests_selected, list_resources,
 };
 use quench_cli::prelude::{
-    ReplControl, Tone, print_box_banner, print_status, repl_prompt, repl_run, require_binary,
+    ReplControl, Tone, print_box_banner, print_status, repl_prompt, repl_run,
 };
-use std::process::Command;
+use std::time::Duration;
+
+pub use crate::cluster::JobState;
 
 pub fn ok(msg: &str) {
     print_status(Tone::Success, "ok", msg);
@@ -102,7 +105,7 @@ pub fn handle_repl_command(input: &str) -> quench_core::Result<bool> {
             let env = current_env()?;
             let parsed = parse_args(&args, ResourceScope::Mutable, false)?;
 
-            let (rendered, differs) = kubectl_diff(&env, parsed.scope, &parsed.selector)?;
+            let (rendered, differs) = cluster_diff(&env, parsed.scope, &parsed.selector)?;
             if rendered.resource_count == 0 {
                 ok("no resources matched selected scope");
             } else if differs {
@@ -129,7 +132,7 @@ pub fn handle_repl_command(input: &str) -> quench_core::Result<bool> {
                 ..WaitPolicy::default()
             };
 
-            let rendered = kubectl_apply(&env, dry, parsed.scope, &parsed.selector, wait)?;
+            let rendered = cluster_apply(&env, dry, parsed.scope, &parsed.selector, wait)?;
             if rendered.resource_count == 0 {
                 ok("no resources matched selected scope");
             } else {
@@ -146,7 +149,7 @@ pub fn handle_repl_command(input: &str) -> quench_core::Result<bool> {
             let env = current_env()?;
             let parsed = parse_args(&args, ResourceScope::Mutable, false)?;
 
-            let rendered = kubectl_delete(&env, parsed.scope, &parsed.selector)?;
+            let rendered = cluster_delete(&env, parsed.scope, &parsed.selector)?;
             if rendered.resource_count == 0 {
                 ok("no resources matched selected scope");
             } else {
@@ -208,37 +211,22 @@ pub fn repl() -> quench_core::Result<()> {
     Ok(())
 }
 
-/// A kubectl invocation bound to the overlay's context when it pins one, so the
+/// A connection to the cluster the overlay's environment is bound to: the overlay's `kube_context` when it pins one, so the
 /// environment decides the cluster rather than the shell's ambient state.
-#[must_use]
-pub fn kubectl(rendered: &RenderedManifest) -> Command {
-    let mut cmd = Command::new("kubectl");
-    if let Some(context) = &rendered.kube_context {
-        cmd.args(["--context", context]);
-    }
-    cmd
+pub fn connect(rendered: &RenderedManifest) -> quench_core::Result<Cluster> {
+    Cluster::connect(rendered.kube_context.as_deref())
 }
 
-/// The context kubectl would pick on its own.
+/// The context a command would use when the overlay names none: the kubeconfig's current one.
 #[must_use]
 pub fn current_kube_context() -> Option<String> {
-    let out = Command::new("kubectl")
-        .args(["config", "current-context"])
-        .output()
-        .ok()?;
-
-    if !out.status.success() {
-        return None;
-    }
-
-    let context = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (!context.is_empty()).then_some(context)
+    cluster::current_context()
 }
 
 /// Says which cluster is about to be touched.
 ///
 /// An overlay that sets `kube_context` gets that binding enforced. One that does
-/// not is at the mercy of whatever `kubectl config current-context` happens to
+/// not is at the mercy of whatever the kubeconfig's `current-context` happens to
 /// be — for a tool whose job is multi-environment deploys, that is worth saying
 /// out loud rather than discovering afterwards.
 pub fn announce_target(env: &str, rendered: &RenderedManifest) {
@@ -249,7 +237,7 @@ pub fn announce_target(env: &str, rendered: &RenderedManifest) {
 
     let current = current_kube_context().unwrap_or_else(|| "unknown".to_string());
     warn(&format!(
-        "{env} pins no kube_context, so this uses kubectl's current context `{current}` — \
+        "{env} pins no kube_context, so this uses the kubeconfig's current context `{current}` — \
          add `kube_context: <name>` to overlays/{env}/overlay.yaml to bind the environment \
          to its cluster"
     ));
@@ -257,34 +245,23 @@ pub fn announce_target(env: &str, rendered: &RenderedManifest) {
 
 /// Whether the target namespace is known to be absent.
 ///
-/// `--ignore-not-found` turns "absent" into a successful, empty result, so a
-/// cluster we simply cannot reach stays distinguishable from one where the
-/// namespace really is missing — only the latter is worth failing on.
-fn namespace_is_absent(rendered: &RenderedManifest, namespace: &str) -> Option<bool> {
-    let out = kubectl(rendered)
-        .args([
-            "get",
-            "namespace",
-            namespace,
-            "--ignore-not-found",
-            "-o",
-            "name",
-        ])
-        .output()
-        .ok()?;
-
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).trim().is_empty())
+/// A cluster that cannot be asked stays distinguishable from one where the namespace really is missing: only the latter
+/// is worth failing on.
+fn namespace_is_absent(cluster: &Cluster, namespace: &str) -> Option<bool> {
+    cluster.namespace_exists(namespace).map(|exists| !exists)
 }
 
-/// Fails before kubectl does when the environment's namespace does not exist
+/// Fails before the cluster does when the environment's namespace does not exist
 /// and this apply would not create it.
 ///
 /// Marking `namespace` immutable is the documented pattern, but the default
 /// scope then excludes it, so bootstrapping a fresh environment otherwise dies
 /// one confusing `namespaces "x" not found` at a time — once per resource.
-fn ensure_namespace_exists(env: &str, rendered: &RenderedManifest) -> quench_core::Result<()> {
+fn ensure_namespace_exists(
+    cluster: &Cluster,
+    env: &str,
+    rendered: &RenderedManifest,
+) -> quench_core::Result<()> {
     if rendered.creates_namespace {
         return Ok(());
     }
@@ -293,7 +270,7 @@ fn ensure_namespace_exists(env: &str, rendered: &RenderedManifest) -> quench_cor
         return Ok(());
     };
 
-    if namespace_is_absent(rendered, namespace) != Some(true) {
+    if namespace_is_absent(cluster, namespace) != Some(true) {
         return Ok(());
     }
 
@@ -324,8 +301,6 @@ fn ensure_namespace_exists(env: &str, rendered: &RenderedManifest) -> quench_cor
 /// (see [`namespace_is_absent`]), and an overlay that declares no namespace is left to the apply to
 /// report on.
 pub fn create_namespace_if_missing(env: &str) -> quench_core::Result<bool> {
-    require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
-
     let declares = crate::render::list_resources(env)?
         .iter()
         .any(|r| r.kind.eq_ignore_ascii_case("namespace"));
@@ -338,15 +313,15 @@ pub fn create_namespace_if_missing(env: &str) -> quench_core::Result<bool> {
     let Some(namespace) = rendered.namespace.clone() else {
         return Ok(false);
     };
-    if namespace_is_absent(&rendered, &namespace) != Some(true) {
+    let cluster = connect(&rendered)?;
+    if namespace_is_absent(&cluster, &namespace) != Some(true) {
         return Ok(false);
     }
 
     print_status(Tone::Info, "namespace", &format!("creating {namespace}"));
-    let status = kubectl(&rendered)
-        .args(["apply", "-f", &rendered.path])
-        .status()?;
-    quench_core::ensure!(status.success(), "could not create namespace {namespace}");
+    cluster
+        .apply(&cluster::read_manifest(&rendered.path)?)
+        .map_err(|e| quench_core::err!("could not create namespace {namespace}: {e}"))?;
     Ok(true)
 }
 
@@ -366,15 +341,19 @@ impl Default for WaitPolicy {
     }
 }
 
-/// Kinds whose readiness `kubectl rollout status` can report on.
+/// Kinds whose readiness a rollout wait can report on.
 const ROLLOUT_KINDS: &[&str] = &["deployment", "statefulset", "daemonset"];
 
 /// Waits for everything just applied to actually become ready.
 ///
-/// kubectl accepting a manifest only means the API server stored it. Without
+/// The API server accepting a manifest only means it stored it. Without
 /// this, a rollout that never starts a healthy pod still reports success, which
 /// is precisely the case where being told the truth matters.
-fn await_rollouts(rendered: &RenderedManifest, wait: WaitPolicy) -> quench_core::Result<()> {
+fn await_rollouts(
+    cluster: &Cluster,
+    rendered: &RenderedManifest,
+    wait: WaitPolicy,
+) -> quench_core::Result<()> {
     let rollouts: Vec<&ResourceRef> = rendered
         .selected
         .iter()
@@ -385,12 +364,8 @@ fn await_rollouts(rendered: &RenderedManifest, wait: WaitPolicy) -> quench_core:
         })
         .collect();
 
-    if rollouts.is_empty() {
-        return Ok(());
-    }
-
     for res in rollouts {
-        await_rollout(rendered, res, wait.timeout_seconds)?;
+        await_rollout(cluster, rendered, res, wait.timeout_seconds)?;
     }
 
     Ok(())
@@ -398,6 +373,7 @@ fn await_rollouts(rendered: &RenderedManifest, wait: WaitPolicy) -> quench_core:
 
 /// Waits for one `Deployment`, `StatefulSet` or `DaemonSet` to finish rolling out.
 fn await_rollout(
+    cluster: &Cluster,
     rendered: &RenderedManifest,
     res: &ResourceRef,
     timeout_seconds: u64,
@@ -408,65 +384,31 @@ fn await_rollout(
         &format!("{res} (up to {timeout_seconds}s)"),
     );
 
-    let mut cmd = kubectl(rendered);
-    cmd.args(["rollout", "status"]);
-    if let Some(namespace) = &rendered.namespace {
-        cmd.args(["-n", namespace]);
-    }
-    let status = cmd
-        .arg(format!("{}/{}", res.kind.to_lowercase(), res.name))
-        .arg(format!("--timeout={timeout_seconds}s"))
-        .status()?;
-
-    quench_core::ensure!(
-        status.success(),
-        "{res} did not become ready within {timeout_seconds}s — the manifests were applied, \
-         but the rollout has not completed\n\n\
-         inspect it with `kubectl rollout status {}/{}`, or pass `--no-wait` \
-         to skip this check",
-        res.kind.to_lowercase(),
-        res.name
-    );
-
-    Ok(())
-}
-
-/// What `kubectl get job` is asked to print: whether it has completed, whether it has failed, and why.
-const JOB_STATE: &str = r#"jsonpath={.status.conditions[?(@.type=="Complete")].status}|{.status.conditions[?(@.type=="Failed")].status}|{.status.conditions[?(@.type=="Failed")].message}"#;
-
-/// Where a Job is, as far as its conditions say.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum JobState {
-    /// Neither completed nor failed yet.
-    Running,
-    /// Finished successfully.
-    Complete,
-    /// Gave up, with the reason Kubernetes recorded.
-    Failed(String),
-}
-
-/// Reads [`JOB_STATE`] output: `<Complete>|<Failed>|<message>`.
-#[must_use]
-pub fn parse_job_state(output: &str) -> JobState {
-    let mut fields = output.trim_end().splitn(3, '|');
-    let complete = fields.next().unwrap_or_default().trim();
-    let failed = fields.next().unwrap_or_default().trim();
-    let message = fields.next().unwrap_or_default().trim();
-
-    if complete.eq_ignore_ascii_case("true") {
-        JobState::Complete
-    } else if failed.eq_ignore_ascii_case("true") {
-        JobState::Failed(message.to_string())
-    } else {
-        JobState::Running
-    }
+    cluster
+        .rollout_status(
+            &res.kind,
+            &res.name,
+            rendered.namespace.as_deref(),
+            Duration::from_secs(timeout_seconds),
+        )
+        .map_err(|why| {
+            quench_core::err!(
+                "{res} did not become ready within {timeout_seconds}s — the manifests were applied, \
+                 but the rollout has not completed ({why})\n\n\
+                 inspect it with `kubectl rollout status {}/{}`, or pass `--no-wait` \
+                 to skip this check",
+                res.kind.to_lowercase(),
+                res.name
+            )
+        })
 }
 
 /// Waits for a Job to complete, and stops the moment it has failed rather than at the timeout.
 ///
-/// `kubectl wait --for=condition=complete` would sit out the whole timeout on a Job that has already
+/// Waiting for the `complete` condition alone would sit out the whole timeout on a Job that has already
 /// exhausted its retries, which for a migration is exactly the case worth being told about at once.
 fn await_job(
+    cluster: &Cluster,
     rendered: &RenderedManifest,
     res: &ResourceRef,
     timeout_seconds: u64,
@@ -477,23 +419,15 @@ fn await_job(
         &format!("{res} to complete (up to {timeout_seconds}s)"),
     );
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_seconds);
-    let interval = std::time::Duration::from_millis((timeout_seconds * 250).clamp(100, 2000));
+    let deadline = std::time::Instant::now() + Duration::from_secs(timeout_seconds);
+    let interval = Duration::from_millis((timeout_seconds * 250).clamp(100, 2000));
 
     loop {
-        let mut cmd = kubectl(rendered);
-        cmd.args(["get", "job", &res.name]);
-        if let Some(namespace) = &rendered.namespace {
-            cmd.args(["-n", namespace]);
-        }
-        let out = cmd.args(["-o", JOB_STATE]).output()?;
-        quench_core::ensure!(
-            out.status.success(),
-            "could not read {res}: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
+        let state = cluster
+            .job_state(&res.name, rendered.namespace.as_deref())
+            .map_err(|why| quench_core::err!("could not read {res}: {why}"))?;
 
-        match parse_job_state(&String::from_utf8_lossy(&out.stdout)) {
+        match state {
             JobState::Complete => return Ok(()),
             JobState::Failed(reason) => quench_core::bail!(
                 "{res} failed{}\n\ninspect it with `kubectl logs job/{}`",
@@ -519,14 +453,15 @@ fn await_job(
 
 /// Waits at one gate.
 fn wait_at_gate(
+    cluster: &Cluster,
     rendered: &RenderedManifest,
     gate: &Gate,
     default_timeout: u64,
 ) -> quench_core::Result<()> {
     let timeout = gate.timeout.unwrap_or(default_timeout);
     match gate.wait {
-        WaitFor::Complete => await_job(rendered, &gate.resource, timeout),
-        WaitFor::Ready => await_rollout(rendered, &gate.resource, timeout),
+        WaitFor::Complete => await_job(cluster, rendered, &gate.resource, timeout),
+        WaitFor::Ready => await_rollout(cluster, rendered, &gate.resource, timeout),
     }
 }
 
@@ -547,7 +482,11 @@ fn names_in(phases: &[crate::render::Phase]) -> String {
 ///
 /// If anything fails, says what had been applied and what had not, because with several phases "the
 /// apply failed" leaves a cluster in a state the reader has to reconstruct.
-fn apply_in_phases(rendered: &RenderedManifest, wait: WaitPolicy) -> quench_core::Result<()> {
+fn apply_in_phases(
+    cluster: &Cluster,
+    rendered: &RenderedManifest,
+    wait: WaitPolicy,
+) -> quench_core::Result<()> {
     let total = rendered.phases.len();
 
     for (index, phase) in rendered.phases.iter().enumerate() {
@@ -561,14 +500,12 @@ fn apply_in_phases(rendered: &RenderedManifest, wait: WaitPolicy) -> quench_core
             ),
         );
 
-        let status = kubectl(rendered)
-            .args(["apply", "-f", &phase.path])
-            .status()?;
-        if !status.success() {
-            // kubectl applies a manifest resource by resource, so this phase may be partly applied:
-            // say which phases are known to be complete, which one broke, and which never started.
+        if let Err(why) = cluster::read_manifest(&phase.path).and_then(|docs| cluster.apply(&docs))
+        {
+            // A phase is applied object by object, so this one may be partly applied: say which phases are known to be
+            // complete, which one broke, and which never started.
             quench_core::bail!(
-                "kubectl apply failed in phase {}/{total}\n\n\
+                "apply failed in phase {}/{total}: {why}\n\n\
                  applied: {}\nfailed, possibly partly applied: {}\nnot applied: {}",
                 index + 1,
                 names_in(&rendered.phases[..index]),
@@ -578,7 +515,7 @@ fn apply_in_phases(rendered: &RenderedManifest, wait: WaitPolicy) -> quench_core
         }
 
         if let Some(gate) = &phase.gate
-            && let Err(err) = wait_at_gate(rendered, gate, wait.timeout_seconds)
+            && let Err(err) = wait_at_gate(cluster, rendered, gate, wait.timeout_seconds)
         {
             // What this phase applied *was* applied; only what follows is held back.
             return Err(quench_core::err!(
@@ -592,14 +529,16 @@ fn apply_in_phases(rendered: &RenderedManifest, wait: WaitPolicy) -> quench_core
     Ok(())
 }
 
-pub fn kubectl_apply(
+/// Applies an environment's manifests to its cluster, waiting for what it applied to become ready.
+///
+/// A dry run does not reach the cluster at all: it lists what would be sent.
+pub fn cluster_apply(
     env: &str,
     dry: bool,
     scope: ResourceScope,
     selector: &Selector,
     wait: WaitPolicy,
 ) -> quench_core::Result<RenderedManifest> {
-    require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
     let rendered = generate_manifests_selected(env, scope, selector)?;
     if rendered.resource_count == 0 {
         return Ok(rendered);
@@ -607,43 +546,39 @@ pub fn kubectl_apply(
 
     announce_target(env, &rendered);
 
-    // A client-side dry run never reaches the cluster, so there is nothing to
-    // check against and nothing that could fail on a missing namespace.
-    if !dry {
-        ensure_namespace_exists(env, &rendered)?;
+    // A dry run never reaches the cluster, so there is nothing to check against and nothing that could fail on a missing
+    // namespace.
+    if dry {
+        cluster::dry_run(&cluster::read_manifest(&rendered.path)?)?;
+        return Ok(rendered);
     }
 
-    // Stopping at gates only makes sense when something is really applied and waiting is wanted; a dry
-    // run or `--no-wait` applies the whole, dependency-ordered manifest in one go.
-    if !dry && wait.enabled && !rendered.phases.is_empty() {
-        apply_in_phases(&rendered, wait)?;
+    let cluster = connect(&rendered)?;
+    ensure_namespace_exists(&cluster, env, &rendered)?;
+
+    // Stopping at gates only makes sense when waiting is wanted; `--no-wait` applies the whole, dependency-ordered manifest
+    // in one go.
+    if wait.enabled && !rendered.phases.is_empty() {
+        apply_in_phases(&cluster, &rendered, wait)?;
     } else {
-        let mut cmd = kubectl(&rendered);
-        cmd.arg("apply");
-        if dry {
-            cmd.arg("--dry-run=client");
-        }
-        let status = cmd.arg("-f").arg(&rendered.path).status()?;
-        quench_core::ensure!(status.success(), "kubectl apply failed");
+        cluster.apply(&cluster::read_manifest(&rendered.path)?)?;
     }
 
-    if !dry && wait.enabled {
-        await_rollouts(&rendered, wait)?;
+    if wait.enabled {
+        await_rollouts(&cluster, &rendered, wait)?;
     }
 
     Ok(rendered)
 }
 
-/// Shows what applying would change, via `kubectl diff`.
+/// Shows what applying would change, as a unified diff per object.
 ///
-/// Returns whether anything differs. `kubectl diff` exits 1 to mean "there is a
-/// diff", which is not an error, so only a higher code is treated as one.
-pub fn kubectl_diff(
+/// Returns whether anything differs.
+pub fn cluster_diff(
     env: &str,
     scope: ResourceScope,
     selector: &Selector,
 ) -> quench_core::Result<(RenderedManifest, bool)> {
-    require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
     let rendered = generate_manifests_selected(env, scope, selector)?;
     if rendered.resource_count == 0 {
         return Ok((rendered, false));
@@ -651,23 +586,16 @@ pub fn kubectl_diff(
 
     announce_target(env, &rendered);
 
-    let status = kubectl(&rendered)
-        .args(["diff", "-f", &rendered.path])
-        .status()?;
-
-    match status.code() {
-        Some(0) => Ok((rendered, false)),
-        Some(1) => Ok((rendered, true)),
-        _ => quench_core::bail!("kubectl diff failed"),
-    }
+    let cluster = connect(&rendered)?;
+    let differs = cluster.diff(&cluster::read_manifest(&rendered.path)?)?;
+    Ok((rendered, differs))
 }
 
-pub fn kubectl_delete(
+pub fn cluster_delete(
     env: &str,
     scope: ResourceScope,
     selector: &Selector,
 ) -> quench_core::Result<RenderedManifest> {
-    require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
     let rendered = generate_manifests_selected(env, scope, selector)?;
     if rendered.resource_count == 0 {
         return Ok(rendered);
@@ -675,10 +603,8 @@ pub fn kubectl_delete(
 
     announce_target(env, &rendered);
 
-    let status = kubectl(&rendered)
-        .args(["delete", "-f", &rendered.path])
-        .status()?;
-    quench_core::ensure!(status.success(), "kubectl delete failed");
+    let cluster = connect(&rendered)?;
+    cluster.delete(&cluster::read_manifest(&rendered.path)?)?;
     Ok(rendered)
 }
 
@@ -686,7 +612,7 @@ pub fn kubectl_delete(
 /// `env`, it identifies the resources one environment owns.
 const MANAGED_BY: &str = "app.kubernetes.io/managed-by=riveter";
 
-/// One live resource riveter owns, as `kind/name` from `kubectl -o name`.
+/// One live resource riveter owns, as `kind/name`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LiveResource {
     pub kind: String,
@@ -699,15 +625,7 @@ impl std::fmt::Display for LiveResource {
     }
 }
 
-/// What `kubectl get -o jsonpath` is asked to print per object, tab-separated: its kind, its name, the
-/// kinds that own it, and its `spec.selector`.
-///
-/// Fields rather than `-o json` on purpose: the kinds queried include `secret`, and a prune has no
-/// business reading Secret contents into memory just to decide what to delete.
-const LISTING: &str = r#"{range .items[*]}{.kind}{"\t"}{.metadata.name}{"\t"}{.metadata.ownerReferences[*].kind}{"\t"}{.spec.selector}{"\n"}{end}"#;
-
-/// Reads [`LISTING`] output into the resources riveter itself created, leaving out the ones something
-/// else derived from them.
+/// The resources riveter itself created among what a listing found, leaving out the ones something else derived from them.
 ///
 /// The cluster's own controllers copy a Service's or Ingress's labels onto what they generate, so the
 /// `managed-by` selector alone also matches objects riveter never made and must never delete:
@@ -719,44 +637,23 @@ const LISTING: &str = r#"{range .items[*]}{.kind}{"\t"}{.metadata.name}{"\t"}{.m
 ///   *without* a selector is the hand-written kind riveter's `endpoints` template exists for, and
 ///   stays prunable.
 #[must_use]
-pub fn parse_live_listing(listing: &str) -> Vec<LiveResource> {
-    struct Row<'a> {
-        kind: String,
-        name: &'a str,
-        owned: bool,
-        selector: &'a str,
-    }
-
-    let rows: Vec<Row<'_>> = listing
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split('\t');
-            let kind = fields.next()?.trim();
-            let name = fields.next()?.trim();
-            if kind.is_empty() || name.is_empty() {
-                return None;
-            }
-            Some(Row {
-                kind: kind.to_lowercase(),
-                name,
-                owned: !fields.next().unwrap_or_default().trim().is_empty(),
-                selector: fields.next().unwrap_or_default().trim(),
-            })
-        })
-        .collect();
-
-    let selecting_services: std::collections::HashSet<&str> = rows
+pub fn orphan_candidates(listed: &[cluster::Listed]) -> Vec<LiveResource> {
+    let selecting_services: std::collections::HashSet<&str> = listed
         .iter()
-        .filter(|r| r.kind == "service" && !r.selector.is_empty())
-        .map(|r| r.name)
+        .filter(|r| r.kind.eq_ignore_ascii_case("service") && r.selects)
+        .map(|r| r.name.as_str())
         .collect();
 
-    rows.iter()
-        .filter(|r| !r.owned)
-        .filter(|r| !(r.kind == "endpoints" && selecting_services.contains(r.name)))
+    listed
+        .iter()
+        .filter(|r| r.owner_kinds.is_empty())
+        .filter(|r| {
+            !(r.kind.eq_ignore_ascii_case("endpoints")
+                && selecting_services.contains(r.name.as_str()))
+        })
         .map(|r| LiveResource {
-            kind: r.kind.clone(),
-            name: r.name.to_string(),
+            kind: r.kind.to_lowercase(),
+            name: r.name.clone(),
         })
         .collect()
 }
@@ -764,48 +661,31 @@ pub fn parse_live_listing(listing: &str) -> Vec<LiveResource> {
 /// Asks the cluster what it holds for this environment.
 ///
 /// Queries the kinds riveter can render, since a resource it never created is
-/// not its to remove - see [`parse_live_listing`] for the objects that merely
+/// not its to remove - see [`orphan_candidates`] for the objects that merely
 /// look like it. `raw` resources are unreachable this way - they carry
 /// whatever labels the overlay wrote - so they are never pruned.
 fn live_resources(
+    cluster: &Cluster,
     env: &str,
     rendered: &RenderedManifest,
 ) -> quench_core::Result<Vec<LiveResource>> {
-    let kinds = crate::render::prunable_kinds().join(",");
+    let kinds = crate::render::prunable_kinds();
     let selector = format!("{MANAGED_BY},env={env}");
+    // Kinds the cluster does not serve (a CRD that is not installed) are left out rather than failing the query.
+    let listed = cluster
+        .list_labelled(&kinds, &selector, rendered.namespace.as_deref())
+        .map_err(|why| quench_core::err!("could not list live resources for {env}:\n{why}"))?;
 
-    let mut cmd = kubectl(rendered);
-    cmd.args([
-        "get",
-        &kinds,
-        "-l",
-        &selector,
-        "-o",
-        &format!("jsonpath={LISTING}"),
-    ]);
-    if let Some(namespace) = &rendered.namespace {
-        cmd.args(["-n", namespace]);
-    }
-    // Kinds the cluster does not serve (a CRD that is not installed) would
-    // otherwise abort the whole query.
-    cmd.arg("--ignore-not-found");
-
-    let out = cmd.output()?;
-    quench_core::ensure!(
-        out.status.success(),
-        "could not list live resources for {env}:\n{}",
-        String::from_utf8_lossy(&out.stderr).trim()
-    );
-
-    Ok(parse_live_listing(&String::from_utf8_lossy(&out.stdout)))
+    Ok(orphan_candidates(&listed))
 }
 
 /// Live resources this environment owns that the overlay no longer declares.
 pub fn find_orphans(
+    cluster: &Cluster,
     env: &str,
     rendered: &RenderedManifest,
 ) -> quench_core::Result<Vec<LiveResource>> {
-    let live = live_resources(env, rendered)?;
+    let live = live_resources(cluster, env, rendered)?;
 
     let mut orphans: Vec<LiveResource> = live
         .into_iter()
@@ -826,26 +706,21 @@ pub fn find_orphans(
 /// forever: `delete` only ever removes what the overlay still renders, so the
 /// resource becomes invisible to every riveter command.
 pub fn prune(env: &str, dry_run: bool) -> quench_core::Result<Vec<LiveResource>> {
-    require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
     // The full overlay, so a resource excluded only by scope is not mistaken
     // for one the overlay has dropped.
     let rendered = generate_manifests_selected(env, ResourceScope::All, &Selector::default())?;
     announce_target(env, &rendered);
 
-    let orphans = find_orphans(env, &rendered)?;
+    let cluster = connect(&rendered)?;
+    let orphans = find_orphans(&cluster, env, &rendered)?;
     if orphans.is_empty() || dry_run {
         return Ok(orphans);
     }
 
     for orphan in &orphans {
-        let mut cmd = kubectl(&rendered);
-        cmd.args(["delete", &format!("{}/{}", orphan.kind, orphan.name)]);
-        if let Some(namespace) = &rendered.namespace {
-            cmd.args(["-n", namespace]);
-        }
-
-        let status = cmd.status()?;
-        quench_core::ensure!(status.success(), "failed to delete {orphan}");
+        cluster
+            .delete_named(&orphan.kind, &orphan.name, rendered.namespace.as_deref())
+            .map_err(|why| quench_core::err!("failed to delete {orphan}: {why}"))?;
     }
 
     Ok(orphans)

@@ -61,7 +61,7 @@ A YAML file with minijinja templating available (`{% raw %}{% include %}{% endra
 | Key | Type | Meaning |
 |---|---|---|
 | `namespace_name` | string | Namespace of every namespaced resource; also the name of a `namespace` resource that has none. |
-| `kube_context` | string | kubectl context this environment deploys to; riveter passes `--context`. Consumed by riveter, not rendered. May use `${VAR}`. With several environments in `--env a,b` it is mandatory. |
+| `kube_context` | string | kubeconfig context this environment deploys to; riveter connects with it. Consumed by riveter, not rendered. May use `${VAR}`. With several environments in `--env a,b` it is mandatory. |
 | `defaults` | mapping | Fallbacks for pod-based kinds: `container_name`, `service_account`, `pull_policy`, `restart_policy`, `host_path_type`. Must be a mapping (error otherwise). Precedence: resource field, then `defaults:`, then the kind's own default. |
 | `resources` | list | The resources. |
 

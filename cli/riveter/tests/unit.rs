@@ -5,12 +5,18 @@
 mod against_tests;
 #[path = "unit/cli_tests.rs"]
 mod cli_tests;
+#[path = "unit/cluster_tests.rs"]
+mod cluster_tests;
 #[path = "unit/config_tests.rs"]
 mod config_tests;
+#[path = "unit/diff_tests.rs"]
+mod diff_tests;
 #[path = "unit/env_support.rs"]
 mod env_support;
 #[path = "unit/env_tests.rs"]
 mod env_tests;
+#[path = "support/fake_cluster.rs"]
+mod fake_cluster;
 #[path = "unit/gate_tests.rs"]
 mod gate_tests;
 #[path = "unit/golden_tests.rs"]

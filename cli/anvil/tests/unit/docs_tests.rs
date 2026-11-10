@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use anvil::commands::artifact::Upload;
 use anvil::commands::docs::{
-    Options, check_book, destinations, forge_theme_files, links, normalise_route, openapi_problems,
-    release_with, rewrite_links, source_routes, split_front_matter,
+    Options, check_book, destinations, links, normalise_route, openapi_problems, release_with,
+    source_routes, split_front_matter,
 };
 use anvil::config::Config;
 
@@ -215,22 +215,6 @@ paths:
     );
 }
 
-/// A stand-in for Jekyll: answers `--version`, and `build` writes a small site into `--destination`.
-#[cfg(unix)]
-fn fake_jekyll(root: &Path) -> String {
-    use std::os::unix::fs::PermissionsExt as _;
-    let script = root.join("fake-jekyll");
-    std::fs::write(
-        &script,
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo jekyll 4; exit 0; fi\n\
-         while [ $# -gt 0 ]; do case \"$1\" in --destination) dest=\"$2\"; shift;; esac; shift; done\n\
-         mkdir -p \"$dest/sub\" && echo '<h1>hi</h1>' > \"$dest/index.html\" && echo x > \"$dest/sub/a.html\"\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    script.to_string_lossy().into_owned()
-}
-
 #[cfg(unix)]
 fn demo(label: &str) -> (PathBuf, Config) {
     let root = temp(label);
@@ -239,16 +223,7 @@ fn demo(label: &str) -> (PathBuf, Config) {
         "docs/index.md",
         &page("Demo", "nav_order: 1\n", "hello"),
     );
-    let jekyll = fake_jekyll(&root);
-    let config = config(BOOK);
-    let config = Config {
-        docs: anvil::config::DocsConfig {
-            jekyll: Some(jekyll),
-            ..config.docs
-        },
-        ..config
-    };
-    (root, config)
+    (root, config(BOOK))
 }
 
 #[cfg(unix)]
@@ -286,7 +261,7 @@ fn a_release_sends_the_archive_the_manifest_and_the_latest_pointer() {
     assert_eq!(&sent[0].body[..2], &[0x1f, 0x8b]);
     let manifest = String::from_utf8(sent[1].body.clone()).unwrap();
     assert!(
-        manifest.contains("\"book\": \"demo\"") && manifest.contains("\"files\": 2"),
+        manifest.contains("\"book\": \"demo\"") && manifest.contains("\"files\": 4"),
         "{manifest}"
     );
     let latest = String::from_utf8(sent[2].body.clone()).unwrap();
@@ -382,43 +357,18 @@ fn the_destinations_are_book_version_and_latest() {
 }
 
 #[quench_test::test]
-fn links_between_pages_point_at_the_html_jekyll_writes() {
-    let body = "[a](a.md) [b](../dir/b.md#part) [c](c.md?x=1) [d](https://x.example/d.md) [e](dir/) [f](f.pdf)\n\
-                `[no](code.md)`\n```\n[no](fenced.md)\n```\n[g](G.MD)\n";
-    assert_eq!(
-        rewrite_links(body),
-        "[a](a.html) [b](../dir/b.html#part) [c](c.html?x=1) [d](https://x.example/d.md) [e](dir/) [f](f.pdf)\n\
-         `[no](code.md)`\n```\n[no](fenced.md)\n```\n[g](G.html)\n"
-    );
-}
-
-#[cfg(unix)]
-#[quench_test::test]
-fn jekyll_is_given_a_staged_copy_with_the_links_rewritten() {
-    use std::os::unix::fs::PermissionsExt as _;
-    let (root, config) = demo("staged");
+fn the_site_links_pages_to_the_pages_it_writes() {
+    let (root, config) = demo("site");
     write(
         &root,
         "docs/other.md",
-        &page("Other", "nav_order: 2\n", "[home](index.md)"),
+        &page(
+            "Other",
+            "nav_order: 2\n",
+            "[home](index.md) [part](index.md#top-part) [out](https://x.example/d.md) [file](data.json)\n\n## Top part\n\n```rust\nfn x() {}\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+        ),
     );
-    // A Jekyll that copies what it is given, so the test can look at it.
-    let script = root.join("copy-jekyll");
-    std::fs::write(
-        &script,
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then exit 0; fi\n\
-         while [ $# -gt 0 ]; do case \"$1\" in --destination) dest=\"$2\"; shift;; --source) src=\"$2\"; shift;; esac; shift; done\n\
-         mkdir -p \"$dest\" && cp -r \"$src\"/. \"$dest\"/\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let config = Config {
-        docs: anvil::config::DocsConfig {
-            jekyll: Some(script.to_string_lossy().into_owned()),
-            ..config.docs
-        },
-        ..config
-    };
+    write(&root, "docs/data.json", "{}");
     anvil::commands::docs::build(
         &config,
         &root,
@@ -427,107 +377,105 @@ fn jekyll_is_given_a_staged_copy_with_the_links_rewritten() {
         &mut Vec::new(),
     )
     .unwrap();
-    let built = std::fs::read_to_string(root.join("target/docs/demo/site/other.md")).unwrap();
-    assert!(built.contains("[home](index.html)"), "{built}");
+    let site = root.join("target/docs/demo/site");
+    let html = std::fs::read_to_string(site.join("other.html")).unwrap();
+    assert!(html.contains("href=\"/\">home"), "{html}");
+    assert!(html.contains("href=\"/#top-part\">part"), "{html}");
+    assert!(html.contains("href=\"https://x.example/d.md\""), "{html}");
+    assert!(html.contains("href=\"data.json\""), "{html}");
+    assert!(html.contains("<h2 id=\"top-part\">Top part"), "{html}");
+    assert!(
+        html.contains("class=\"language-rust highlighter-rouge\""),
+        "{html}"
+    );
+    assert!(
+        html.contains("<div class=\"table-wrapper\"><table>"),
+        "{html}"
+    );
+    // the navigation lists both pages, and this one is the current one
+    assert!(html.contains("class=\"nav-list-link active\""), "{html}");
+    assert!(site.join("index.html").is_file());
+    assert!(site.join("data.json").is_file(), "other files are copied");
+    let search = std::fs::read_to_string(site.join("assets/js/search-data.json")).unwrap();
+    assert!(
+        search.contains("\"title\": \"Top part\"")
+            && search.contains("\"url\": \"/other.html#top-part\""),
+        "{search}"
+    );
     // The book itself is untouched.
     let original = std::fs::read_to_string(root.join("docs/other.md")).unwrap();
     assert!(original.contains("[home](index.md)"), "{original}");
 }
 
-#[cfg(unix)]
 #[quench_test::test]
-fn a_missing_gem_is_named_in_the_error() {
-    use std::os::unix::fs::PermissionsExt as _;
-    let (root, config) = demo("gem");
-    let script = root.join("bad-jekyll");
-    std::fs::write(
-        &script,
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then exit 0; fi\n\
-         echo \"cannot load such file -- jekyll-remote-theme (LoadError)\" >&2\nexit 1\n",
+fn a_baseurl_goes_in_front_of_every_address() {
+    let (root, config) = demo("baseurl");
+    write(&root, "docs/_config.yml", "title: Demo\nbaseurl: /demo\n");
+    anvil::commands::docs::build(
+        &config,
+        &root,
+        Some("demo"),
+        &Options::default(),
+        &mut Vec::new(),
     )
     .unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let config = Config {
-        docs: anvil::config::DocsConfig {
-            jekyll: Some(script.to_string_lossy().into_owned()),
-            ..config.docs
-        },
-        ..config
-    };
-    let err =
-        anvil::commands::docs::build(&config, &root, None, &Options::default(), &mut Vec::new())
-            .unwrap_err()
-            .to_string();
-    assert!(err.contains("gem install jekyll-remote-theme"), "{err}");
-}
-
-#[quench_test::test]
-fn the_forge_theme_is_made_of_the_forge_tokens_and_scripts_that_survive_minification() {
-    let files = forge_theme_files();
-    let paths: Vec<&str> = files.iter().map(|(path, _)| *path).collect();
-    assert_eq!(
-        paths,
-        [
-            "_sass/custom/custom.scss",
-            "_includes/head_custom.html",
-            "_includes/header_custom.html",
-            "_includes/title.html",
-            "_includes/nav_footer_custom.html",
-        ]
-    );
-    let scss = &files[0].1;
+    let html = std::fs::read_to_string(root.join("target/docs/demo/site/index.html")).unwrap();
     assert!(
-        scss.contains("--fui-brand-500") && scss.contains(".nav-list"),
-        "tokens, then rules"
+        html.contains("href=\"/demo/assets/css/site.css\""),
+        "{html}"
     );
-    // Jekyll collapses a page's whitespace: a `//` comment would swallow the rest of the script.
-    let head = &files[1].1;
-    for line in head.lines() {
-        assert!(
-            !line.trim_start().starts_with("//"),
-            "line comment in the head script: {line}"
-        );
-    }
+    assert!(html.contains("href=\"/demo/\""), "{html}");
 }
 
 #[quench_test::test]
-fn the_tokens_are_the_ones_of_the_forge_services() {
-    let shell =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libs/forge-shell/assets/tokens.css");
-    // Only inside the forge repository: a published copy of anvil has no forge-shell beside it.
-    if let Ok(original) = std::fs::read_to_string(shell) {
-        assert_eq!(
-            forge_theme_files()[0]
-                .1
-                .split_once('\n')
-                .map(|(first, _)| first),
-            original.lines().next()
-        );
-        assert!(
-            forge_theme_files()[0].1.contains(&original),
-            "assets/docs-theme/forge-tokens.css differs from libs/forge-shell/assets/tokens.css: copy it again"
-        );
-    }
+fn heading_anchors_are_written_the_way_the_links_to_them_are() {
+    use anvil::commands::site::heading_slug;
+    assert_eq!(heading_slug("loupe --book"), "loupe---book");
+    assert_eq!(
+        heading_slug("The scheduler (forklift_core::Engine)"),
+        "the-scheduler-forklift_coreengine"
+    );
+    assert_eq!(
+        heading_slug("`[[stage.job.service]]` sidecar containers"),
+        "stagejobservice-sidecar-containers"
+    );
+    assert_eq!(heading_slug("???"), "section");
 }
 
-#[cfg(unix)]
 #[quench_test::test]
-fn a_build_stages_the_forge_theme_unless_the_book_has_its_own_or_asks_for_none() {
+fn a_heading_may_name_its_own_anchor() {
+    let html = anvil::commands::site::decorated("## Help templates {#help-templates}\n");
+    assert!(
+        html.contains("<h2 id=\"help-templates\">Help templates<a"),
+        "{html}"
+    );
+}
+
+#[quench_test::test]
+fn repeated_headings_get_numbered_anchors() {
+    let html = anvil::commands::site::decorated("## Same\n\n## Same\n");
+    assert!(
+        html.contains("id=\"same\"") && html.contains("id=\"same-1\""),
+        "{html}"
+    );
+}
+
+#[quench_test::test]
+fn the_forge_theme_is_the_forge_tokens_and_a_script_without_line_comments() {
     let (root, config) = demo("theme");
-    write(&root, "docs/_includes/title.html", "my own title");
     let mut log = Vec::new();
     anvil::commands::docs::build(&config, &root, Some("demo"), &Options::default(), &mut log)
         .unwrap();
-    let stage = root.join("target/docs/demo/src");
+    let site = root.join("target/docs/demo/site");
+    let css = std::fs::read_to_string(site.join("assets/css/site.css")).unwrap();
     assert!(
-        std::fs::read_to_string(stage.join("_sass/custom/custom.scss"))
-            .unwrap()
-            .contains("--fui-bg")
+        css.contains("--fui-brand-500") && css.contains(".nav-list"),
+        "tokens, then rules"
     );
-    assert!(stage.join("_includes/head_custom.html").is_file());
-    assert_eq!(
-        std::fs::read_to_string(stage.join("_includes/title.html")).unwrap(),
-        "my own title"
+    let html = std::fs::read_to_string(site.join("index.html")).unwrap();
+    assert!(
+        html.contains("fui-dropdown") && html.contains("fui-brand-mark"),
+        "the theme menu and brand"
     );
 
     let none = Config {
@@ -539,7 +487,41 @@ fn a_build_stages_the_forge_theme_unless_the_book_has_its_own_or_asks_for_none()
     };
     anvil::commands::docs::build(&none, &root, Some("demo"), &Options::default(), &mut log)
         .unwrap();
-    assert!(!root.join("target/docs/demo/src/_sass").exists());
+    let css = std::fs::read_to_string(site.join("assets/css/site.css")).unwrap();
+    assert!(!css.contains("--fui-brand-500"), "layout alone");
+    let html = std::fs::read_to_string(site.join("index.html")).unwrap();
+    assert!(!html.contains("fui-dropdown"));
+
+    let bad = Config {
+        docs: anvil::config::DocsConfig {
+            theme: Some("neon".to_string()),
+            ..none.docs
+        },
+        ..none
+    };
+    let err =
+        anvil::commands::docs::build(&bad, &root, Some("demo"), &Options::default(), &mut log)
+            .unwrap_err()
+            .to_string();
+    assert!(err.contains("neon"), "{err}");
+}
+
+#[quench_test::test]
+fn the_tokens_are_the_ones_of_the_forge_services() {
+    let shell =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libs/forge-shell/assets/tokens.css");
+    let ours = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/docs-theme/forge-tokens.css"),
+    )
+    .unwrap();
+    // Only inside the forge repository: a published copy of anvil has no forge-shell beside it.
+    if let Ok(original) = std::fs::read_to_string(shell) {
+        assert_eq!(ours.lines().next(), original.lines().next());
+        assert!(
+            ours.contains(&original),
+            "assets/docs-theme/forge-tokens.css differs from libs/forge-shell/assets/tokens.css: copy it again"
+        );
+    }
 }
 
 /// The paths in a release archive.
@@ -604,8 +586,9 @@ fn the_archive_carries_the_markdown_sources_under_source() {
             "index.md",
         ]
     );
-    // The site comes first, as before; the sources keep their front matter.
-    assert_eq!(paths[0], "index.html");
+    // The site is in the archive beside the sources, which keep their front matter.
+    assert!(paths.iter().any(|p| p == "index.html"), "{paths:?}");
+    let site_files = paths.iter().filter(|p| !p.starts_with("_source/")).count();
     let tar =
         quench_archive::gzip::decompress(&std::fs::read(&built.archive).unwrap(), 1 << 26).unwrap();
     let index = quench_archive::tar::Reader::new(&tar)
@@ -628,7 +611,9 @@ fn the_archive_carries_the_markdown_sources_under_source() {
         built.manifest_text
     );
     assert!(
-        built.manifest_text.contains("\"files\": 2"),
+        built
+            .manifest_text
+            .contains(&format!("\"files\": {site_files}")),
         "the site's files only: {}",
         built.manifest_text
     );

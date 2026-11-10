@@ -132,17 +132,16 @@ Read by [`anvil docs`](commands-docs.md).
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `out` | string | `target/docs` | Where builds go, from the workspace root: `<out>/<book>/`. |
-| `jekyll` | string | `jekyll` | The command that runs Jekyll, split on spaces (`bundle exec jekyll`). |
 | `warehouse_url` | string | `[artifacts].warehouse_url` | Warehouse including base path. Required by `docs release` (here or under `[artifacts]`). |
 | `storage` | string | none | The warehouse files storage the books are kept in. Required by `docs release`. |
-| `theme` | string | `forge` | The look of the books: `forge` is the forge services' own (their design tokens, the light and dark modes and six colour palettes chosen by the same cookies, a theme menu), `none` leaves the `just-the-docs` theme as it comes. A file the book has itself (`_sass/custom/custom.scss`, `_includes/head_custom.html`, `header_custom.html`, `title.html`, `nav_footer_custom.html`) is kept. |
+| `theme` | string | `forge` | The look of the books: `forge` is the forge services' own (their design tokens, the light and dark modes and six colour palettes chosen by the same cookies, a theme menu), `none` leaves the layout alone, without colours or a theme menu. (`jekyll` under `[docs]` is gone: `anvil config check` says so.) |
 | `books` | table | empty | `[docs.books.<name>]`. |
 
 ### [docs.books.\<name\>]
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `dir` | string | required | The Jekyll source directory, from the workspace root (`docs`, `../quench/docs`). |
+| `dir` | string | required | The book's directory, from the workspace root (`docs`, `../quench/docs`). |
 | `title` | string | the book's name | Shown in the manifest. |
 | `version` | string | none | The book's version, literally. |
 | `version_file` | string | none | A `Cargo.toml` whose version is the book's. Used when `version` is not set; without both, today's date is the version. |

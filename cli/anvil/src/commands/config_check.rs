@@ -35,14 +35,7 @@ impl fmt::Display for ConfigIssue {
 const TOP_FIELDS: &[&str] = &["docker", "install", "release", "artifacts", "docs", "build"];
 const BUILD_FIELDS: &[&str] = &["max_target_gb"];
 const ARTIFACTS_FIELDS: &[&str] = &["warehouse_url", "programs"];
-const DOCS_FIELDS: &[&str] = &[
-    "out",
-    "jekyll",
-    "warehouse_url",
-    "storage",
-    "theme",
-    "books",
-];
+const DOCS_FIELDS: &[&str] = &["out", "warehouse_url", "storage", "theme", "books"];
 const BOOK_FIELDS: &[&str] = &[
     "dir",
     "title",
@@ -105,9 +98,15 @@ fn unknown_fields(
 ) {
     for key in table.keys() {
         if !known.contains(&key.as_str()) {
+            // A field that used to exist says it is gone, rather than that it was never there.
+            let message = if path == "docs" && key == "jekyll" {
+                "no longer used: books are built by anvil itself, without Jekyll or Ruby - remove it".to_string()
+            } else {
+                format!("unknown field `{key}`")
+            };
             issues.push(ConfigIssue {
                 path: join(path, key),
-                message: format!("unknown field `{key}`"),
+                message,
             });
         }
     }
@@ -291,7 +290,7 @@ fn check_docs(docs: &Value, issues: &mut Vec<ConfigIssue>) {
         return;
     };
     unknown_fields(table, DOCS_FIELDS, "docs", issues);
-    for field in ["out", "jekyll", "warehouse_url", "storage", "theme"] {
+    for field in ["out", "warehouse_url", "storage", "theme"] {
         if let Some(v) = table.get(field) {
             expect_string(v, &format!("docs.{field}"), issues);
         }

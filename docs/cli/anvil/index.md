@@ -32,7 +32,6 @@ Anvil requires `cargo` on `PATH` at start-up (`require_binary("cargo", ...)` in 
 | `nightly` toolchain | `test --json` (runs `cargo +nightly test ... -Z unstable-options`) |
 | `docker` | `docker ...`, `release` of a Docker package, `artifact release` with an `image` |
 | `git` | `release`, `semver-check`, `artifact release` |
-| `jekyll` (Ruby gem; `[docs].jekyll` can name another command) | `docs build`, `docs release` |
 
 ## Global options
 

@@ -2,20 +2,18 @@
 //!
 //! A `.env` is gitignored and `pack` never includes it, so nothing that reads a package - Warehouse, a pod
 //! installing one - can see the values an install needs. This puts them in the cluster, as one Secret per
-//! overlay, written with the caller's own `kubectl` access and read later by whatever installs the package
+//! overlay, written with the caller's own cluster access (their kubeconfig) and read later by whatever installs the package
 //! (Gantry's runner Job mounts it as `--env-file`).
 //!
-//! The values are handled as little as possible: they go to `kubectl` over standard input, never in an
-//! argument; the type that reports what was done has no field for a value, so nothing here can print one;
+//! The values are handled as little as possible: they go to the API server in the request body, never in a
+//! command line; the type that reports what was done has no field for a value, so nothing here can print one;
 //! and the Secret carries a hash of what it holds, so a later install can tell the values have changed
 //! without reading them.
 
 use crate::render::parse_dotenv;
 use quench_core::{Context as _, Result, bail, ensure};
 use quench_serde::json;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 /// The Secret an overlay's values are kept in: `gantry-values-<package>`.
 #[must_use]
@@ -39,7 +37,7 @@ pub struct SyncRequest {
     pub all: bool,
     /// The namespace the Secrets go in - Gantry's, so its runner can mount them.
     pub namespace: String,
-    /// A kubectl context other than the current one.
+    /// A kubeconfig context other than the current one.
     pub context: Option<String>,
     /// Report what would be synced without touching the cluster.
     pub dry_run: bool,
@@ -76,7 +74,7 @@ pub fn overlays_with_values(overlays_dir: &Path) -> Result<Vec<String>> {
     Ok(found)
 }
 
-/// The Secret for `package`, as the manifest sent to `kubectl apply`.
+/// The Secret for `package`, as the manifest that is applied.
 #[must_use]
 pub fn manifest(package: &str, namespace: &str, contents: &[u8]) -> quench_serde::Value {
     json!({
@@ -95,32 +93,11 @@ pub fn manifest(package: &str, namespace: &str, contents: &[u8]) -> quench_serde
     })
 }
 
-/// Sends a manifest to `kubectl apply -f -` over standard input.
+/// Applies a manifest to the cluster, quietly: the values it holds are never printed.
 fn apply(manifest: &quench_serde::Value, context: Option<&str>) -> Result<()> {
-    let mut command = Command::new("kubectl");
-    if let Some(context) = context {
-        command.args(["--context", context]);
-    }
-    let mut child = command
-        .args(["apply", "-f", "-"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("could not run kubectl")?;
-
-    child
-        .stdin
-        .take()
-        .context("kubectl's stdin was not available")?
-        .write_all(manifest.to_string().as_bytes())?;
-
-    let out = child.wait_with_output()?;
-    ensure!(
-        out.status.success(),
-        "kubectl could not apply the Secret:\n{}",
-        String::from_utf8_lossy(&out.stderr).trim()
-    );
+    crate::cluster::Cluster::connect(context)?
+        .apply_quietly(std::slice::from_ref(manifest))
+        .context("could not apply the Secret")?;
     Ok(())
 }
 

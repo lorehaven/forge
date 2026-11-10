@@ -1,5 +1,5 @@
 [run_cmd]
-common = ["rg", "ls", "cat", "sed -n", "git status", "git diff"]
+common = ["ls", "cat", "sed -n", "git status", "git diff"]
 
 [run_cmd.by_tech]
 rust = ["cargo check", "cargo test", "cargo clippy", "cargo fmt --check"]

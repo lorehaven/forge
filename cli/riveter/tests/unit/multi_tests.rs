@@ -2,13 +2,13 @@
 //! stopping behaviour of a run across several clusters.
 
 use crate::env_support::cwd_lock;
+use crate::fake_cluster::{FakeCluster, with_clusters};
 use riveter::env::{ENV_VAR, Workspace, resolve_env, resolve_envs, with_workspace};
 use riveter::multi::{EnvReport, Outcome, apply_many, diff_many, finish, preflight, run_in_order};
 use riveter::render::{ResourceScope, Selector};
 use riveter::repl::WaitPolicy;
 use std::collections::HashMap;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 
 fn names(list: &[&str]) -> Vec<String> {
     list.iter().map(ToString::to_string).collect()
@@ -203,16 +203,14 @@ fn a_failure_stops_the_run_and_the_rest_are_not_attempted() {
         |env| {
             seen.push(env.to_string());
             if env == "b" {
-                quench_core::bail!("kubectl apply failed")
+                quench_core::bail!("apply failed")
             }
             Ok(applied(1))
         },
     );
     assert_eq!(seen, ["a", "b"], "c was never started");
     assert_eq!(reports[0].outcome, applied(1));
-    assert!(
-        matches!(&reports[1].outcome, Outcome::Failed(why) if why.contains("kubectl apply failed"))
-    );
+    assert!(matches!(&reports[1].outcome, Outcome::Failed(why) if why.contains("apply failed")));
     assert_eq!(reports[2].outcome, Outcome::NotAttempted);
 }
 
@@ -255,65 +253,44 @@ fn a_diff_that_differs_is_not_a_failure() {
     assert!(finish(&reports).is_ok());
 }
 
-// --- against a fake kubectl -------------------------------------------------
+// --- against fake clusters ---------------------------------------------------
 
-/// Plays kubectl: logs every call, and fails any call made with `--context <bad>`.
-fn with_kubectl<T>(bad_context: &str, body: impl FnOnce(&std::path::Path) -> T) -> T {
-    let _guard = cwd_lock()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = quench_core::tmp::TempDir::new().unwrap();
-    let log = dir.path().join("calls.log");
-    let script = format!(
-        "#!/bin/sh\necho \"$@\" >> '{log}'\ncase \"$*\" in *'--context {bad}'*) echo 'cluster unreachable' >&2; exit 1 ;; esac\nexit 0\n",
-        log = log.display(),
-        bad = bad_context,
+/// A cluster that has the namespace the overlays use.
+fn cluster() -> FakeCluster {
+    let cluster = FakeCluster::start();
+    cluster.insert(
+        "namespaces",
+        r#"{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"demo"}}"#,
     );
-    let path = dir.path().join("kubectl");
-    fs::write(&path, script).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-
-    let original = std::env::var("PATH").unwrap_or_default();
-    quench_core::env::set("PATH", format!("{}:{original}", dir.path().display()));
-    let result = body(&log);
-    quench_core::env::set("PATH", &original);
-    result
+    cluster
 }
 
-/// The `--context` of each kubectl call, in call order, without repeats.
-fn contexts_called(log: &std::path::Path) -> Vec<String> {
-    let mut seen: Vec<String> = Vec::new();
-    for line in fs::read_to_string(log).unwrap_or_default().lines() {
-        let mut words = line.split(' ');
-        if words.next() == Some("--context")
-            && let Some(context) = words.next()
-            && seen.last().map(String::as_str) != Some(context)
-        {
-            seen.push(context.to_string());
-        }
+const fn policy() -> WaitPolicy {
+    WaitPolicy {
+        enabled: false,
+        timeout_seconds: 1,
     }
-    seen
 }
 
 #[quench_test::test]
 fn apply_goes_to_each_environments_own_cluster_in_order() {
     let (_dir, ws) = workspace(&[("canary", Some("ctx-canary")), ("prod", Some("ctx-prod"))]);
-    with_kubectl("none", |log| {
+    let (canary, prod) = (cluster(), cluster());
+    with_clusters(&[("ctx-canary", &canary), ("ctx-prod", &prod)], || {
         with_workspace(ws, || {
             apply_many(
                 &names(&["canary", "prod"]),
-                true,
+                false,
                 ResourceScope::All,
                 &Selector::default(),
-                WaitPolicy {
-                    enabled: false,
-                    timeout_seconds: 1,
-                },
+                policy(),
             )
         })
         .unwrap();
-        assert_eq!(contexts_called(log), ["ctx-canary", "ctx-prod"]);
     });
+    let (first, second) = (canary.first_asked().unwrap(), prod.first_asked().unwrap());
+    assert!(first < second, "canary first: {first} {second}");
+    assert!(!canary.calls().is_empty() && !prod.calls().is_empty());
 }
 
 #[quench_test::test]
@@ -323,62 +300,67 @@ fn a_failing_cluster_stops_the_rollout_before_the_next_one_is_touched() {
         ("bad", Some("ctx-bad")),
         ("prod", Some("ctx-prod")),
     ]);
-    with_kubectl("ctx-bad", |log| {
-        let err = with_workspace(ws, || {
-            apply_many(
-                &names(&["canary", "bad", "prod"]),
-                true,
-                ResourceScope::All,
-                &Selector::default(),
-                WaitPolicy {
-                    enabled: false,
-                    timeout_seconds: 1,
-                },
-            )
-        })
-        .unwrap_err()
-        .to_string();
+    let (canary, bad, prod) = (cluster(), cluster(), cluster());
+    // Whatever is applied to `bad` is refused.
+    bad.refuses_everything();
+    with_clusters(
+        &[
+            ("ctx-canary", &canary),
+            ("ctx-bad", &bad),
+            ("ctx-prod", &prod),
+        ],
+        || {
+            let err = with_workspace(ws, || {
+                apply_many(
+                    &names(&["canary", "bad", "prod"]),
+                    false,
+                    ResourceScope::All,
+                    &Selector::default(),
+                    policy(),
+                )
+            })
+            .unwrap_err()
+            .to_string();
 
-        assert!(err.contains("1 environment(s) not attempted"), "{err}");
-        assert!(err.contains("bad:"), "{err}");
-        assert_eq!(
-            contexts_called(log),
-            ["ctx-canary", "ctx-bad"],
-            "prod's cluster was never contacted"
-        );
-    });
+            assert!(err.contains("1 environment(s) not attempted"), "{err}");
+            assert!(err.contains("bad:"), "{err}");
+        },
+    );
+    assert!(canary.first_asked().is_some());
+    assert!(bad.first_asked().is_some());
+    assert_eq!(
+        prod.first_asked(),
+        None,
+        "prod's cluster was never contacted"
+    );
 }
 
 #[quench_test::test]
 fn an_environment_that_pins_no_context_stops_everything_before_any_apply() {
     let (_dir, ws) = workspace(&[("canary", Some("ctx-canary")), ("prod", None)]);
-    with_kubectl("none", |log| {
+    let canary = cluster();
+    with_clusters(&[("ctx-canary", &canary)], || {
         let err = with_workspace(ws, || {
             apply_many(
                 &names(&["canary", "prod"]),
-                true,
+                false,
                 ResourceScope::All,
                 &Selector::default(),
-                WaitPolicy {
-                    enabled: false,
-                    timeout_seconds: 1,
-                },
+                policy(),
             )
         })
         .unwrap_err()
         .to_string();
         assert!(err.contains("prod: pins no kube_context"), "{err}");
-        assert!(
-            fs::read_to_string(log).unwrap_or_default().is_empty(),
-            "canary was not applied either"
-        );
     });
+    assert_eq!(canary.first_asked(), None, "canary was not applied either");
 }
 
 #[quench_test::test]
 fn diff_visits_each_cluster_in_order() {
     let (_dir, ws) = workspace(&[("a", Some("ctx-a")), ("b", Some("ctx-b"))]);
-    with_kubectl("none", |log| {
+    let (a, b) = (cluster(), cluster());
+    with_clusters(&[("ctx-a", &a), ("ctx-b", &b)], || {
         with_workspace(ws, || {
             diff_many(
                 &names(&["a", "b"]),
@@ -387,6 +369,6 @@ fn diff_visits_each_cluster_in_order() {
             )
         })
         .unwrap();
-        assert_eq!(contexts_called(log), ["ctx-a", "ctx-b"]);
     });
+    assert!(a.first_asked().unwrap() < b.first_asked().unwrap());
 }

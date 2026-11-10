@@ -2,7 +2,9 @@
 
 pub mod against;
 pub mod cli;
+pub mod cluster;
 pub mod config;
+pub mod diff;
 pub mod env;
 pub mod help;
 pub mod image_updates;

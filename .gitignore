@@ -26,10 +26,8 @@ plans/
 .*.secret.toml
 .*/secret.toml
 
-# docs (Jekyll)
+# docs (built by `anvil docs build` into target/docs)
 docs/_site/
-docs/.jekyll-cache/
-docs/Gemfile.lock
 
 # The estate's shared dev certificate (certs/README.md)
 /certs/*.pem

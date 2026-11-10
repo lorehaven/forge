@@ -1,8 +1,9 @@
 //! The package commands as `main` runs them (`pack`, `publish`, `pull`, `remote`, `install`):
-//! Warehouse is a mock server, the cluster a `kubectl` script that records its calls, and the
+//! Warehouse is a mock server, the cluster a fake API server that records its calls, and the
 //! overlay a directory in a temporary tree.
 
 use crate::env_support::{cwd_lock, env_lock};
+use crate::fake_cluster::{self, FakeCluster};
 use quench_test::mock::matchers::{header, method, path};
 use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use riveter::cli::{ApplyScope, RemoteCmd};
@@ -12,7 +13,6 @@ use riveter::package_cmd::{
 };
 use riveter::repl::WaitPolicy;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 const OVERLAY: &str = r#"env: demo
@@ -458,45 +458,29 @@ async fn remote_lists_the_catalog_and_the_versions_of_a_package() {
 
 // --- install ------------------------------------------------------------------
 
+/// What a cluster was asked, once the body has run.
 struct Cluster {
-    log: PathBuf,
-    _dir: quench_core::tmp::TempDir,
+    fake: FakeCluster,
 }
 
 impl Cluster {
     fn calls(&self) -> Vec<String> {
-        fs::read_to_string(&self.log)
-            .unwrap_or_default()
-            .lines()
-            .map(str::to_string)
-            .collect()
+        self.fake.calls()
     }
 }
 
-/// Puts a recording `kubectl` first on `PATH`; `namespace` is `present` or `absent`.
+/// Runs `body` against a fake cluster, which has the package's namespace if `namespace` is `present`.
 fn with_cluster<T>(namespace: &str, body: impl FnOnce(&Cluster) -> T) -> T {
-    let dir = quench_core::tmp::TempDir::new().unwrap();
-    let log = dir.path().join("calls.log");
-    let script = format!(
-        "#!/bin/sh
-echo \"$@\" >> '{log}'
-case \"$1 $2\" in
-  \"get namespace\") case '{namespace}' in present) echo namespace/demo-ns ;; esac ;;
-  \"config current-context\") echo test ;;
-esac
-exit 0
-",
-        log = log.display(),
-    );
-    let path = dir.path().join("kubectl");
-    fs::write(&path, script).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-
-    let original = std::env::var("PATH").unwrap_or_default();
-    quench_core::env::set("PATH", format!("{}:{original}", dir.path().display()));
-    let result = body(&Cluster { log, _dir: dir });
-    quench_core::env::set("PATH", &original);
-    result
+    let cluster = Cluster {
+        fake: FakeCluster::start(),
+    };
+    if namespace == "present" {
+        cluster.fake.insert(
+            "namespaces",
+            r#"{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"demo-ns"}}"#,
+        );
+    }
+    fake_cluster::with_cluster(&cluster.fake, || body(&cluster))
 }
 
 const fn install_args<'a>(
@@ -533,26 +517,26 @@ fn install_applies_a_package_file_with_the_values_it_is_given() {
     let sets = vec!["API_TOKEN=s3cret".to_string()];
 
     with_cluster("present", |cluster| {
-        // dry run: reaches no namespace
+        // dry run: reaches no cluster at all
         let mut args = install_args(&package, &sets, &[], &[]);
         args.inventory = true;
         install_command(&args).unwrap();
-        let calls = cluster.calls();
         assert!(
-            calls
-                .iter()
-                .any(|c| c.starts_with("apply --dry-run=client")),
-            "{calls:?}"
-        );
-        assert!(
-            !calls.iter().any(|c| c.starts_with("get namespace")),
-            "a dry run reaches no cluster: {calls:?}"
+            cluster.calls().is_empty(),
+            "a dry run reaches no cluster: {:?}",
+            cluster.calls()
         );
 
-        // for real: a missing namespace is created first
+        // for real: what the package holds is applied
         let mut args = install_args(&package, &sets, &[], &[]);
         args.dry_run = false;
         install_command(&args).unwrap();
+        let calls = cluster.calls();
+        assert!(
+            calls.iter().any(|c| c == "apply deployments/api"),
+            "{calls:?}"
+        );
+        assert!(cluster.fake.has("deployments", "demo-ns", "api"));
     });
 
     with_cluster("absent", |cluster| {
@@ -560,20 +544,19 @@ fn install_applies_a_package_file_with_the_values_it_is_given() {
         args.dry_run = false;
         install_command(&args).unwrap();
         let calls = cluster.calls();
-        // the namespace is looked for; this package declares its own, so it is applied with the
-        // rest - first, as the selection that gates the rest of the manifest
-        assert!(
-            calls.iter().any(|c| c.starts_with("get namespace demo-ns")),
+        // this package declares its own namespace, so it is created first, as the selection that gates the rest of the
+        // manifest, and then applied with the rest
+        let applies: Vec<_> = calls.iter().filter(|c| c.starts_with("apply")).collect();
+        assert_eq!(
+            applies,
+            [
+                "apply namespaces/demo-ns",
+                "apply namespaces/demo-ns",
+                "apply deployments/api"
+            ],
             "{calls:?}"
         );
-        assert!(!calls.iter().any(|c| c.contains("create")), "{calls:?}");
-        let applies: Vec<_> = calls.iter().filter(|c| c.starts_with("apply")).collect();
-        assert_eq!(applies.len(), 2, "{calls:?}");
-        assert!(applies[0].ends_with(".selection.yaml"), "{applies:?}");
-        assert!(
-            applies.iter().all(|c| !c.contains("--dry-run")),
-            "{applies:?}"
-        );
+        assert!(cluster.fake.has("namespaces", "", "demo-ns"));
     });
 }
 
@@ -621,7 +604,9 @@ async fn install_fetches_a_named_package_from_warehouse() {
     let result = blocking(|| {
         with_cluster("present", |cluster| {
             let sets = vec!["API_TOKEN=x".to_string()];
-            let r = install_command(&install_args("demo@0.4.0", &sets, &[], &[]));
+            let mut args = install_args("demo@0.4.0", &sets, &[], &[]);
+            args.dry_run = false;
+            let r = install_command(&args);
             (r, cluster.calls())
         })
     })
@@ -629,7 +614,7 @@ async fn install_fetches_a_named_package_from_warehouse() {
     forget_warehouse();
     result.0.unwrap();
     assert!(
-        result.1.iter().any(|c| c.contains("apply")),
+        result.1.iter().any(|c| c.starts_with("apply ")),
         "{:?}",
         result.1
     );

@@ -1,18 +1,17 @@
 //! Dependency ordering and `wait:` gates: what the overlay language promises, and the sequence of
-//! kubectl calls an apply makes to keep it.
+//! calls an apply makes to the cluster to keep it.
 
-use crate::env_support::cwd_lock;
+use crate::fake_cluster::{FakeCluster, JobMode, NamespaceMode, with_cluster};
 use quench_serde::Value as YamlValue;
+use riveter::cluster::{JobState, job_state_of};
 use riveter::env::{Workspace, with_workspace};
 use riveter::order::{WaitFor, gate_of, gates_of, order_by_dependencies};
 use riveter::render::{
     ResourceRef, ResourceScope, Selector, generate_manifests_selected, render_to_string,
 };
-use riveter::repl::{JobState, WaitPolicy, kubectl_apply, parse_job_state};
+use riveter::repl::{WaitPolicy, cluster_apply};
 use std::collections::HashMap;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
 
 fn yaml(text: &str) -> YamlValue {
     quench_serde::yaml::from_str(text).unwrap()
@@ -288,21 +287,38 @@ fn gates_are_collected_in_overlay_order() {
     assert_eq!((gates[1].1, gates[1].2), (WaitFor::Complete, Some(60)));
 }
 
+fn job(conditions: &str) -> YamlValue {
+    yaml(&format!("{{status: {{conditions: {conditions}}}}}"))
+}
+
 #[quench_test::test]
 fn job_state_is_read_from_its_conditions() {
-    assert_eq!(parse_job_state("True||"), JobState::Complete);
-    assert_eq!(parse_job_state("true||\n"), JobState::Complete);
-    assert_eq!(parse_job_state("||"), JobState::Running);
-    assert_eq!(parse_job_state(""), JobState::Running);
     assert_eq!(
-        parse_job_state("|True|Job has reached the specified backoff limit"),
+        job_state_of(&job("[{type: Complete, status: 'True'}]")),
+        JobState::Complete
+    );
+    assert_eq!(
+        job_state_of(&job("[{type: Complete, status: 'false'}]")),
+        JobState::Running
+    );
+    assert_eq!(job_state_of(&job("[]")), JobState::Running);
+    assert_eq!(job_state_of(&yaml("{}")), JobState::Running);
+    assert_eq!(
+        job_state_of(&job(
+            "[{type: Failed, status: 'True', message: Job has reached the specified backoff limit}]"
+        )),
         JobState::Failed("Job has reached the specified backoff limit".to_string())
     );
-    assert_eq!(parse_job_state("|True|"), JobState::Failed(String::new()));
-    // A message may itself contain the separator.
     assert_eq!(
-        parse_job_state("|True|exited | with 1"),
-        JobState::Failed("exited | with 1".to_string())
+        job_state_of(&job("[{type: Failed, status: 'True'}]")),
+        JobState::Failed(String::new())
+    );
+    // Completion wins over a failed condition that came before it.
+    assert_eq!(
+        job_state_of(&job(
+            "[{type: Failed, status: 'True'}, {type: Complete, status: 'True'}]"
+        )),
+        JobState::Complete
     );
 }
 
@@ -412,156 +428,102 @@ fn only_the_gates_of_selected_resources_split_a_render() {
     assert!(rendered.phases.is_empty(), "nothing selected is gated");
 }
 
-/// A `kubectl` that records every call and plays a cluster: namespaces exist, rollouts succeed, applies
-/// succeed unless told otherwise, and `get job` answers with a fixed state.
-struct Cluster {
-    log: std::path::PathBuf,
-    _dir: quench_core::tmp::TempDir,
+/// A cluster to apply to, with the calls made to it as short strings: `apply deployments/db`, `get jobs/migrate`.
+fn cluster(job: JobMode) -> FakeCluster {
+    let cluster = FakeCluster::start();
+    cluster.job_is(job);
+    cluster
 }
 
-fn with_cluster<T>(
-    job_state: &str,
-    fail_apply_of: Option<&str>,
-    body: impl FnOnce(&Cluster) -> T,
-) -> T {
-    with_cluster_and_namespace("present", job_state, fail_apply_of, body)
-}
-
-/// `namespace`: `present`, `absent` (kubectl finds nothing) or `unreachable` (kubectl cannot ask).
-fn with_cluster_and_namespace<T>(
-    namespace: &str,
-    job_state: &str,
-    fail_apply_of: Option<&str>,
-    body: impl FnOnce(&Cluster) -> T,
-) -> T {
-    let _guard = cwd_lock()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = quench_core::tmp::TempDir::new().unwrap();
-    let log = dir.path().join("calls.log");
-    let script = format!(
-        "#!/bin/sh
-echo \"$@\" >> '{log}'
-case \"$1 $2\" in
-  \"get namespace\") case '{namespace}' in present) echo namespace/demo ;; unreachable) echo 'unable to connect' >&2; exit 1 ;; esac ;;
-  \"config current-context\") echo test ;;
-  \"get job\") printf '%s' '{job_state}' ;;
-  \"apply -f\") case \"$3\" in *{fail}*) echo 'error from the server' >&2; exit 1 ;; esac ;;
-esac
-exit 0
-",
-        log = log.display(),
-        namespace = namespace,
-        fail = fail_apply_of.unwrap_or("NEVER-MATCHES-ANY-PATH"),
-    );
-    let path = dir.path().join("kubectl");
-    fs::write(&path, script).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-
-    let original = std::env::var("PATH").unwrap_or_default();
-    quench_core::env::set("PATH", format!("{}:{original}", dir.path().display()));
-    let result = body(&Cluster { log, _dir: dir });
-    quench_core::env::set("PATH", &original);
-    result
-}
-
-impl Cluster {
-    /// The kubectl calls made, one string each, with temp paths trimmed to their file names.
-    fn calls(&self) -> Vec<String> {
-        fs::read_to_string(&self.log)
-            .unwrap_or_default()
-            .lines()
-            .map(|line| {
-                line.split(' ')
-                    .map(|word| {
-                        Path::new(word)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .filter(|_| word.starts_with('/'))
-                            .unwrap_or(word)
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            })
-            .filter(|line| !line.starts_with("config ") && !line.starts_with("get namespace"))
-            .collect()
-    }
-}
+const DEMO_NAMESPACE: &str = r#"{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"demo"}}"#;
 
 fn apply(
+    cluster: &FakeCluster,
     ws: Workspace,
     dry: bool,
     wait: WaitPolicy,
 ) -> quench_core::Result<riveter::render::RenderedManifest> {
-    with_workspace(ws, || {
-        kubectl_apply("demo", dry, ResourceScope::All, &Selector::default(), wait)
+    with_cluster(cluster, || {
+        with_workspace(ws, || {
+            cluster_apply("demo", dry, ResourceScope::All, &Selector::default(), wait)
+        })
     })
+}
+
+/// Where in `calls` the first call after `after` that is exactly `call` stands.
+fn after(calls: &[String], after: usize, call: &str) -> usize {
+    calls
+        .iter()
+        .enumerate()
+        .skip(after + 1)
+        .find(|(_, c)| c.as_str() == call)
+        .unwrap_or_else(|| panic!("no `{call}` after call {after} in {calls:#?}"))
+        .0
+}
+
+fn position(calls: &[String], call: &str) -> usize {
+    calls
+        .iter()
+        .position(|c| c == call)
+        .unwrap_or_else(|| panic!("`{call}` not in {calls:#?}"))
+}
+
+fn count(calls: &[String], call: &str) -> usize {
+    calls.iter().filter(|c| c.as_str() == call).count()
 }
 
 #[quench_test::test]
 fn an_apply_stops_at_each_gate_before_the_next_phase_goes_out() {
     let (_dir, ws) = workspace(GATED);
-    with_cluster("True||", None, |cluster| {
-        apply(ws, false, WaitPolicy::default()).unwrap();
+    let cluster = cluster(JobMode::Complete);
+    apply(&cluster, ws, false, WaitPolicy::default()).unwrap();
 
-        let calls = cluster.calls();
-        let position = |needle: &str| {
-            calls
-                .iter()
-                .position(|c| c.contains(needle))
-                .unwrap_or_else(|| panic!("{needle} not in {calls:#?}"))
-        };
+    let calls = cluster.calls();
+    let phase1 = position(&calls, "apply deployments/db");
+    let db_ready = after(&calls, phase1, "get deployments/db");
+    let phase2 = position(&calls, "apply jobs/migrate");
+    let job_done = after(&calls, phase2, "get jobs/migrate");
+    let phase3 = position(&calls, "apply deployments/api");
 
-        let phase1 = position("apply -f demo-manifests.phase-1.yaml");
-        let db_ready = position("rollout status -n demo deployment/db");
-        let phase2 = position("apply -f demo-manifests.phase-2.yaml");
-        let job_done = position("get job migrate");
-        let phase3 = position("apply -f demo-manifests.phase-3.yaml");
-
-        // apply, wait, apply, wait, apply - never two phases without the wait between them.
-        assert!(phase1 < db_ready && db_ready < phase2, "{calls:#?}");
-        assert!(phase2 < job_done && job_done < phase3, "{calls:#?}");
-        // The whole manifest is not applied in one go as well.
-        assert!(
-            !calls
-                .iter()
-                .any(|c| c.ends_with("apply -f demo-manifests.yaml")),
-            "{calls:#?}"
-        );
-    });
+    // apply, wait, apply, wait, apply - never two phases without the wait between them.
+    assert!(phase1 < db_ready && db_ready < phase2, "{calls:#?}");
+    assert!(phase2 < job_done && job_done < phase3, "{calls:#?}");
+    assert!(
+        position(&calls, "apply services/api") > phase3,
+        "{calls:#?}"
+    );
+    // Nothing goes out twice because the whole manifest was sent as well.
+    assert_eq!(count(&calls, "apply deployments/db"), 1, "{calls:#?}");
 }
 
 #[quench_test::test]
 fn a_job_that_fails_stops_the_apply_and_says_what_was_and_was_not_applied() {
     let (_dir, ws) = workspace(GATED);
-    with_cluster(
-        "|True|Job has reached the specified backoff limit",
-        None,
-        |cluster| {
-            let err = apply(ws, false, WaitPolicy::default())
-                .unwrap_err()
-                .to_string();
+    let cluster = cluster(JobMode::Failed(
+        "Job has reached the specified backoff limit".to_string(),
+    ));
+    let err = apply(&cluster, ws, false, WaitPolicy::default())
+        .unwrap_err()
+        .to_string();
 
-            assert!(
-                err.contains("job/migrate failed: Job has reached the specified backoff limit"),
-                "{err}"
-            );
-            assert!(err.contains("kubectl logs job/migrate"), "{err}");
-            assert!(
-                err.contains("applied: namespace/demo, deployment/db, job/migrate"),
-                "{err}"
-            );
-            assert!(
-                err.contains("not applied: deployment/api, service/api"),
-                "{err}"
-            );
+    assert!(
+        err.contains("job/migrate failed: Job has reached the specified backoff limit"),
+        "{err}"
+    );
+    assert!(err.contains("kubectl logs job/migrate"), "{err}");
+    assert!(
+        err.contains("applied: namespace/demo, deployment/db, job/migrate"),
+        "{err}"
+    );
+    assert!(
+        err.contains("not applied: deployment/api, service/api"),
+        "{err}"
+    );
 
-            let calls = cluster.calls();
-            assert!(
-                !calls.iter().any(|c| c.contains("phase-3")),
-                "the phase after a failed gate must not be applied: {calls:#?}"
-            );
-        },
+    let calls = cluster.calls();
+    assert!(
+        !calls.iter().any(|c| c == "apply deployments/api"),
+        "the phase after a failed gate must not be applied: {calls:#?}"
     );
 }
 
@@ -569,124 +531,135 @@ fn a_job_that_fails_stops_the_apply_and_says_what_was_and_was_not_applied() {
 fn a_job_that_never_finishes_times_out_naming_the_knob() {
     let overlay = GATED.replace("wait_timeout: 60", "wait_timeout: 1");
     let (_dir, ws) = workspace(&overlay);
-    with_cluster("||", None, |cluster| {
-        let started = std::time::Instant::now();
-        let err = apply(ws, false, WaitPolicy::default())
-            .unwrap_err()
-            .to_string();
+    let cluster = cluster(JobMode::Running);
+    let started = std::time::Instant::now();
+    let err = apply(&cluster, ws, false, WaitPolicy::default())
+        .unwrap_err()
+        .to_string();
 
-        assert!(
-            err.contains("job/migrate did not complete within 1s"),
-            "{err}"
-        );
-        assert!(err.contains("wait_timeout"), "{err}");
-        assert!(
-            started.elapsed() < std::time::Duration::from_secs(10),
-            "should time out promptly"
-        );
-        assert!(!cluster.calls().iter().any(|c| c.contains("phase-3")));
-    });
+    assert!(
+        err.contains("job/migrate did not complete within 1s"),
+        "{err}"
+    );
+    assert!(err.contains("wait_timeout"), "{err}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(10),
+        "should time out promptly"
+    );
+    assert!(!cluster.has("deployments", "demo", "api"));
 }
 
 #[quench_test::test]
 fn the_apply_timeout_is_the_default_for_a_gate_that_sets_none() {
-    // The db gate has no wait_timeout of its own, so `--timeout` applies to it.
-    let (_dir, ws) = workspace(GATED);
-    with_cluster("True||", None, |cluster| {
-        apply(
-            ws,
-            false,
-            WaitPolicy {
-                enabled: true,
-                timeout_seconds: 42,
-            },
-        )
-        .unwrap();
-        assert!(
-            cluster
-                .calls()
-                .iter()
-                .any(|c| c == "rollout status -n demo deployment/db --timeout=42s"),
-            "{:#?}",
-            cluster.calls()
-        );
-    });
+    // The job gate has no wait_timeout of its own, so `--timeout` applies to it.
+    let overlay = GATED.replace(
+        "    wait_timeout: 60
+",
+        "",
+    );
+    let (_dir, ws) = workspace(&overlay);
+    let cluster = cluster(JobMode::Running);
+    let err = apply(
+        &cluster,
+        ws,
+        false,
+        WaitPolicy {
+            enabled: true,
+            timeout_seconds: 1,
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("job/migrate did not complete within 1s"),
+        "{err}"
+    );
 }
 
 #[quench_test::test]
 fn a_failed_apply_in_a_phase_says_which_phase_and_that_it_may_be_partial() {
     let (_dir, ws) = workspace(GATED);
-    with_cluster("True||", Some("phase-2"), |cluster| {
-        let err = apply(ws, false, WaitPolicy::default())
-            .unwrap_err()
-            .to_string();
+    let cluster = cluster(JobMode::Complete);
+    cluster.refuses("job/migrate");
+    let err = apply(&cluster, ws, false, WaitPolicy::default())
+        .unwrap_err()
+        .to_string();
 
-        assert!(err.contains("kubectl apply failed in phase 2/3"), "{err}");
-        assert!(
-            err.contains("applied: namespace/demo, deployment/db"),
-            "{err}"
-        );
-        assert!(
-            err.contains("failed, possibly partly applied: job/migrate"),
-            "{err}"
-        );
-        assert!(
-            err.contains("not applied: deployment/api, service/api"),
-            "{err}"
-        );
-        assert!(!cluster.calls().iter().any(|c| c.contains("phase-3")));
-    });
+    assert!(err.contains("apply failed in phase 2/3"), "{err}");
+    assert!(
+        err.contains("applied: namespace/demo, deployment/db"),
+        "{err}"
+    );
+    assert!(
+        err.contains("failed, possibly partly applied: job/migrate"),
+        "{err}"
+    );
+    assert!(
+        err.contains("not applied: deployment/api, service/api"),
+        "{err}"
+    );
+    assert!(!cluster.has("deployments", "demo", "api"));
 }
 
 #[quench_test::test]
 fn no_wait_applies_the_whole_ordered_manifest_in_one_go() {
     let (_dir, ws) = workspace(GATED);
-    with_cluster("||", None, |cluster| {
-        apply(
-            ws,
-            false,
-            WaitPolicy {
-                enabled: false,
-                timeout_seconds: 300,
-            },
-        )
-        .unwrap();
+    // A job that is still running would hold a gate up; with no wait nothing looks at it.
+    let cluster = cluster(JobMode::Running);
+    apply(
+        &cluster,
+        ws,
+        false,
+        WaitPolicy {
+            enabled: false,
+            timeout_seconds: 300,
+        },
+    )
+    .unwrap();
 
-        let calls = cluster.calls();
-        assert_eq!(calls, ["apply -f demo-manifests.yaml"], "{calls:#?}");
-    });
+    let applied: Vec<String> = cluster
+        .calls()
+        .into_iter()
+        .filter(|c| c.starts_with("apply "))
+        .collect();
+    assert_eq!(
+        applied,
+        [
+            "apply namespaces/demo",
+            "apply deployments/db",
+            "apply jobs/migrate",
+            "apply deployments/api",
+            "apply services/api"
+        ]
+    );
+    let calls = cluster.calls();
+    assert_eq!(
+        count(&calls, "get jobs/migrate"),
+        1,
+        "only apply's own look: {calls:#?}"
+    );
 }
 
 #[quench_test::test]
-fn a_dry_run_applies_the_whole_manifest_client_side_and_waits_for_nothing() {
+fn a_dry_run_never_reaches_the_cluster() {
     let (_dir, ws) = workspace(GATED);
-    with_cluster("||", None, |cluster| {
-        apply(ws, true, WaitPolicy::default()).unwrap();
-
-        let calls = cluster.calls();
-        assert_eq!(
-            calls,
-            ["apply --dry-run=client -f demo-manifests.yaml"],
-            "{calls:#?}"
-        );
-    });
+    let cluster = cluster(JobMode::Running);
+    apply(&cluster, ws, true, WaitPolicy::default()).unwrap();
+    assert!(cluster.calls().is_empty(), "{:#?}", cluster.calls());
 }
 
 #[quench_test::test]
-fn an_overlay_without_gates_is_applied_in_one_go_as_before() {
+fn an_overlay_without_gates_is_applied_in_one_go_and_its_rollouts_awaited() {
     let (_dir, ws) = workspace(
         "env: demo\nnamespace_name: demo\nresources:\n  - kind: namespace\n    immutable: true\n  - kind: deployment\n    name: a\n    image: nginx\n",
     );
-    with_cluster("||", None, |cluster| {
-        apply(ws, false, WaitPolicy::default()).unwrap();
+    let cluster = cluster(JobMode::Complete);
+    apply(&cluster, ws, false, WaitPolicy::default()).unwrap();
 
-        let calls = cluster.calls();
-        assert_eq!(calls[0], "apply -f demo-manifests.yaml", "{calls:#?}");
-        assert!(
-            calls.iter().any(|c| c.starts_with("rollout status")),
-            "rollouts are still awaited: {calls:#?}"
-        );
-    });
+    let calls = cluster.calls();
+    assert_eq!(calls[0], "apply namespaces/demo", "{calls:#?}");
+    let applied = position(&calls, "apply deployments/a");
+    after(&calls, applied, "get deployments/a");
 }
 
 // --- creating the namespace on install -------------------------------------------------------
@@ -695,40 +668,41 @@ use riveter::repl::create_namespace_if_missing;
 
 const WITH_NAMESPACE: &str = "env: demo\nnamespace_name: demo\nresources:\n  - kind: namespace\n    immutable: true\n  - kind: deployment\n    name: a\n    image: nginx\n";
 
+fn create_namespace(cluster: &FakeCluster, ws: Workspace) -> bool {
+    with_cluster(cluster, || {
+        with_workspace(ws, || create_namespace_if_missing("demo")).unwrap()
+    })
+}
+
 #[quench_test::test]
 fn a_missing_namespace_is_created_with_only_the_namespace() {
     let (_dir, ws) = workspace(WITH_NAMESPACE);
-    with_cluster_and_namespace("absent", "||", None, |cluster| {
-        assert!(with_workspace(ws, || create_namespace_if_missing("demo")).unwrap());
+    let cluster = cluster(JobMode::Complete);
+    assert!(create_namespace(&cluster, ws));
 
-        let calls = cluster.calls();
-        assert_eq!(
-            calls,
-            ["apply -f demo-manifests.selection.yaml"],
-            "{calls:#?}"
-        );
-    });
+    assert_eq!(cluster.calls(), ["apply namespaces/demo"]);
+    assert!(cluster.has("namespaces", "", "demo"));
 }
 
 #[quench_test::test]
 fn an_existing_namespace_is_left_alone() {
     let (_dir, ws) = workspace(WITH_NAMESPACE);
-    with_cluster_and_namespace("present", "||", None, |cluster| {
-        assert!(!with_workspace(ws, || create_namespace_if_missing("demo")).unwrap());
-        assert!(cluster.calls().is_empty(), "{:#?}", cluster.calls());
-    });
+    let cluster = cluster(JobMode::Complete);
+    cluster.insert("namespaces", DEMO_NAMESPACE);
+    assert!(!create_namespace(&cluster, ws));
+    assert!(cluster.calls().is_empty(), "{:#?}", cluster.calls());
 }
 
 #[quench_test::test]
 fn an_unreachable_cluster_is_not_mistaken_for_a_missing_namespace() {
     let (_dir, ws) = workspace(WITH_NAMESPACE);
-    with_cluster_and_namespace("unreachable", "||", None, |cluster| {
-        assert!(!with_workspace(ws, || create_namespace_if_missing("demo")).unwrap());
-        assert!(
-            cluster.calls().is_empty(),
-            "nothing is applied to a cluster that could not be asked"
-        );
-    });
+    let cluster = cluster(JobMode::Complete);
+    cluster.namespaces_are(NamespaceMode::Unreachable);
+    assert!(!create_namespace(&cluster, ws));
+    assert!(
+        cluster.calls().is_empty(),
+        "nothing is applied to a cluster that could not be asked"
+    );
 }
 
 #[quench_test::test]
@@ -736,8 +710,7 @@ fn an_overlay_that_declares_no_namespace_is_left_for_the_apply_to_report_on() {
     let (_dir, ws) = workspace(
         "env: demo\nnamespace_name: demo\nresources:\n  - kind: deployment\n    name: a\n    image: nginx\n",
     );
-    with_cluster_and_namespace("absent", "||", None, |cluster| {
-        assert!(!with_workspace(ws, || create_namespace_if_missing("demo")).unwrap());
-        assert_eq!(cluster.calls(), [] as [String; 0]);
-    });
+    let cluster = cluster(JobMode::Complete);
+    assert!(!create_namespace(&cluster, ws));
+    assert_eq!(cluster.calls(), [] as [String; 0]);
 }

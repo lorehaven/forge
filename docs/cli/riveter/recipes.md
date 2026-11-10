@@ -20,7 +20,7 @@ riveter -e dev validate               # offline CRD check
 
 ```bash
 riveter env set prod
-riveter diff                          # kubectl diff of the mutable resources
+riveter diff                          # the mutable resources against the cluster
 riveter apply deployment/api          # one deployment, waits for the rollout
 riveter apply --scope all namespace   # bootstrap a fresh environment's namespace
 riveter prune --dry-run               # what the overlay no longer declares

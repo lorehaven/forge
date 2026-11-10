@@ -1,15 +1,21 @@
-//! What `prune` is willing to call an orphan: the parsing of `kubectl get -o jsonpath`, which has to tell
-//! what riveter created from what the cluster's own controllers derived from it.
+//! What `prune` is willing to call an orphan: the filtering of a listing, which has to tell what riveter created from what
+//! the cluster's own controllers derived from it.
 
-use riveter::repl::parse_live_listing;
+use riveter::cluster::Listed;
+use riveter::repl::orphan_candidates;
 
-/// One line as `LISTING` prints it: kind, name, owner kinds, service selector.
-fn row(kind: &str, name: &str, owners: &str, selector: &str) -> String {
-    format!("{kind}\t{name}\t{owners}\t{selector}\n")
+/// One live object as a listing reports it: kind, name, the kinds that own it, and whether it has a selector.
+fn row(kind: &str, name: &str, owners: &str, selector: &str) -> Listed {
+    Listed {
+        kind: kind.to_string(),
+        name: name.to_string(),
+        owner_kinds: owners.split_whitespace().map(str::to_string).collect(),
+        selects: !selector.is_empty(),
+    }
 }
 
-fn names(listing: &str) -> Vec<String> {
-    parse_live_listing(listing)
+fn names(listing: &[Listed]) -> Vec<String> {
+    orphan_candidates(listing)
         .into_iter()
         .map(|r| r.to_string())
         .collect()
@@ -17,7 +23,7 @@ fn names(listing: &str) -> Vec<String> {
 
 #[quench_test::test]
 fn objects_riveter_created_are_listed_by_lowercased_kind() {
-    let listing = [
+    let listing = vec![
         row(
             "Deployment",
             "api",
@@ -26,8 +32,7 @@ fn objects_riveter_created_are_listed_by_lowercased_kind() {
         ),
         row("ClusterRole", "viewer", "", ""),
         row("ConfigMap", "settings", "", ""),
-    ]
-    .concat();
+    ];
 
     assert_eq!(
         names(&listing),
@@ -39,13 +44,12 @@ fn objects_riveter_created_are_listed_by_lowercased_kind() {
 fn what_another_controller_created_is_never_an_orphan() {
     // cert-manager's Certificate for an Ingress, a Service's EndpointSlice, a Deployment's ReplicaSet and
     // Pod: all carry riveter's labels (copied down), all have an owner.
-    let listing = [
+    let listing = vec![
         row("Certificate", "api-tls", "Ingress", ""),
         row("EndpointSlice", "api-x7k2p", "Service", ""),
         row("ReplicaSet", "api-5f9b6b444b", "Deployment", ""),
         row("Pod", "api-5f9b6b444b-abcde", "ReplicaSet", ""),
-    ]
-    .concat();
+    ];
 
     assert_eq!(names(&listing), [] as [String; 0]);
 }
@@ -53,7 +57,7 @@ fn what_another_controller_created_is_never_an_orphan() {
 #[quench_test::test]
 fn an_object_with_several_owners_is_still_owned() {
     assert_eq!(
-        names(&row("Pod", "p", "ReplicaSet StatefulSet", "")),
+        names(&[row("Pod", "p", "ReplicaSet StatefulSet", "")]),
         [] as [String; 0]
     );
 }
@@ -61,7 +65,7 @@ fn an_object_with_several_owners_is_still_owned() {
 #[quench_test::test]
 fn a_certificate_riveter_rendered_itself_has_no_owner_so_it_stays_prunable() {
     assert_eq!(
-        names(&row("Certificate", "hand-written", "", "")),
+        names(&[row("Certificate", "hand-written", "", "")]),
         ["certificate/hand-written"]
     );
 }
@@ -69,11 +73,10 @@ fn a_certificate_riveter_rendered_itself_has_no_owner_so_it_stays_prunable() {
 #[quench_test::test]
 fn the_endpoints_of_a_service_with_a_selector_are_kubernetes_own() {
     // Endpoints carry no owner reference, so the only tell is the Service of the same name.
-    let listing = [
+    let listing = vec![
         row("Service", "api", "", "{\"app\":\"api\"}"),
         row("Endpoints", "api", "", ""),
-    ]
-    .concat();
+    ];
 
     assert_eq!(names(&listing), ["service/api"]);
 }
@@ -82,11 +85,10 @@ fn the_endpoints_of_a_service_with_a_selector_are_kubernetes_own() {
 fn the_endpoints_of_a_selectorless_service_are_hand_written_and_stay_prunable() {
     // The case riveter's `endpoints` template exists for: a Service pointing at something outside the
     // cluster, with its Endpoints written by hand.
-    let listing = [
+    let listing = vec![
         row("Service", "external-db", "", ""),
         row("Endpoints", "external-db", "", ""),
-    ]
-    .concat();
+    ];
 
     assert_eq!(
         names(&listing),
@@ -97,19 +99,18 @@ fn the_endpoints_of_a_selectorless_service_are_hand_written_and_stay_prunable() 
 #[quench_test::test]
 fn endpoints_with_no_service_in_the_listing_stay_prunable() {
     assert_eq!(
-        names(&row("Endpoints", "stray", "", "")),
+        names(&[row("Endpoints", "stray", "", "")]),
         ["endpoints/stray"]
     );
 }
 
 #[quench_test::test]
 fn a_selecting_service_only_hides_the_endpoints_of_its_own_name() {
-    let listing = [
+    let listing = vec![
         row("Service", "api", "", "{\"app\":\"api\"}"),
         row("Endpoints", "api", "", ""),
         row("Endpoints", "other", "", ""),
-    ]
-    .concat();
+    ];
 
     assert_eq!(names(&listing), ["service/api", "endpoints/other"]);
 }
@@ -117,11 +118,10 @@ fn a_selecting_service_only_hides_the_endpoints_of_its_own_name() {
 #[quench_test::test]
 fn a_service_of_another_kind_with_the_same_name_does_not_hide_anything() {
     // Only a *Service's* selector counts, not any object that happens to have the name.
-    let listing = [
+    let listing = vec![
         row("Deployment", "api", "", "{\"matchLabels\":{}}"),
         row("Endpoints", "api", "", ""),
-    ]
-    .concat();
+    ];
 
     assert_eq!(names(&listing), ["deployment/api", "endpoints/api"]);
 }
@@ -130,23 +130,23 @@ fn a_service_of_another_kind_with_the_same_name_does_not_hide_anything() {
 fn the_forge_namespace_that_proposed_31_deletions_now_proposes_only_the_stale_jobs() {
     // The shape that showed the bug: every service has an Ingress-owned Certificate, an owned
     // EndpointSlice and kubernetes' own Endpoints, around two old release Jobs that really are orphans.
-    let mut listing = String::new();
+    let mut listing = Vec::new();
     for service in ["conveyor", "gatehouse", "sage", "warehouse"] {
-        listing += &row("Deployment", service, "", "{\"matchLabels\":{}}");
-        listing += &row(
+        listing.push(row("Deployment", service, "", "x"));
+        listing.push(row("Service", service, "", "x"));
+        listing.push(row("Endpoints", service, "", ""));
+        listing.push(row(
+            "EndpointSlice",
+            &format!("{service}-4zpdn"),
             "Service",
-            service,
             "",
-            &format!("{{\"app\":\"{service}\"}}"),
-        );
-        listing += &row("Endpoints", service, "", "");
-        listing += &row("EndpointSlice", &format!("{service}-4zpdn"), "Service", "");
-        listing += &row("Certificate", &format!("{service}-tls"), "Ingress", "");
+        ));
+        listing.push(row("Certificate", &format!("{service}-tls"), "Ingress", ""));
     }
-    listing += &row("Job", "foundry-0-2-14", "", "");
-    listing += &row("Job", "foundry-0-2-15", "", "");
+    listing.push(row("Job", "foundry-0-2-14", "", ""));
+    listing.push(row("Job", "foundry-0-2-15", "", ""));
 
-    let live = parse_live_listing(&listing);
+    let live = orphan_candidates(&listing);
     assert_eq!(live.iter().filter(|r| r.kind == "job").count(), 2);
     assert!(live.iter().all(|r| !matches!(
         r.kind.as_str(),
@@ -156,12 +156,6 @@ fn the_forge_namespace_that_proposed_31_deletions_now_proposes_only_the_stale_jo
 }
 
 #[quench_test::test]
-fn blank_malformed_and_empty_output_is_ignored() {
-    assert_eq!(names(""), [] as [String; 0]);
-    assert_eq!(names("\n\n"), [] as [String; 0]);
-    assert_eq!(names("Deployment\n"), [] as [String; 0]);
-    assert_eq!(names("\tname-without-kind\t\t\n"), [] as [String; 0]);
-    assert_eq!(names("Deployment\t\t\t\n"), [] as [String; 0]);
-    // A row short of its trailing fields is a plain object, not a crash.
-    assert_eq!(names("Deployment\tapi\n"), ["deployment/api"]);
+fn an_empty_listing_has_no_candidates() {
+    assert_eq!(names(&[]), [] as [String; 0]);
 }

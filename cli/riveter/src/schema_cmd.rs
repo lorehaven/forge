@@ -12,7 +12,6 @@ use quench_core::{Context as _, Result, bail, ensure};
 use quench_serde::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// The API groups Kubernetes itself serves. A kind from one of these is not a custom resource, so having no
 /// schema for it is expected rather than something `schemas fetch` could put right.
@@ -202,19 +201,6 @@ pub fn validate_files(paths: &[PathBuf]) -> Result<()> {
     outcome(&report)
 }
 
-/// The CRDs in `kubectl get crd -o json` output: a single object for one name, a `List` for several.
-pub fn crds_from_kubectl(json: &str) -> Result<Vec<Value>> {
-    if json.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-    let value: Value = quench_serde::json::from_str(json).context("kubectl did not print JSON")?;
-    Ok(match value["items"].as_array() {
-        Some(items) => items.clone(),
-        None if value["kind"] == "CustomResourceDefinition" => vec![value],
-        None => Vec::new(),
-    })
-}
-
 /// What `schemas fetch` was asked for.
 #[derive(Debug, Default)]
 pub struct FetchRequest {
@@ -222,7 +208,7 @@ pub struct FetchRequest {
     pub crds: Vec<String>,
     /// Every CRD in the cluster.
     pub all: bool,
-    /// A kubectl context other than the current one.
+    /// A kubeconfig context other than the current one.
     pub context: Option<String>,
     /// Where to write, instead of the cache directory.
     pub output: Option<PathBuf>,
@@ -241,22 +227,7 @@ pub fn fetch(request: &FetchRequest) -> Result<Vec<CrdSchema>> {
         request.crds.clone()
     };
 
-    let mut command = Command::new("kubectl");
-    if let Some(context) = &request.context {
-        command.args(["--context", context]);
-    }
-    command.args(["get", "crd"]).args(&wanted);
-    command.args(["-o", "json", "--ignore-not-found"]);
-    let out = command
-        .output()
-        .context("could not run kubectl - schemas are read from a cluster's CRDs")?;
-    ensure!(
-        out.status.success(),
-        "kubectl could not list the CRDs:\n{}",
-        String::from_utf8_lossy(&out.stderr).trim()
-    );
-
-    let crds = crds_from_kubectl(&String::from_utf8_lossy(&out.stdout))?;
+    let crds = crate::cluster::Cluster::connect(request.context.as_deref())?.crds(&wanted)?;
     let mut schemas = Vec::new();
     for crd in &crds {
         match CrdSchema::from_crd(crd) {

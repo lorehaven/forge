@@ -1,14 +1,15 @@
-//! The `riveter` binary itself, run the way a user runs it: in a project directory, with a `kubectl`
-//! that only records what it was asked. Everything `main` dispatches is reached from here.
+//! The `riveter` binary itself, run the way a user runs it: in a project directory, with a kubeconfig
+//! whose clusters are fake API servers that keep and record what they are sent. Everything `main`
+//! dispatches is reached from here.
 //!
-//! Each run is a child process with its own working directory and `PATH`, so nothing is shared with
-//! the other tests and no lock is needed.
+//! Each run is a child process with its own working directory and kubeconfig, so nothing is shared
+//! with the other tests and no lock is needed.
 
+use crate::fake_cluster::FakeCluster;
 use quench_test::mock::matchers::{method, path};
 use quench_test::mock::{Mock, MockServer, ResponseTemplate};
 use std::fs;
 use std::io::Write as _;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -33,7 +34,10 @@ struct Run {
 
 struct Project {
     dir: quench_core::tmp::TempDir,
-    kubectl_log: PathBuf,
+    /// The clusters `ctx-dev` and `ctx-prod` reach.
+    dev: FakeCluster,
+    prod: FakeCluster,
+    kubeconfig: PathBuf,
 }
 
 impl Project {
@@ -56,23 +60,15 @@ impl Project {
         )
         .unwrap();
 
-        // A kubectl that records its arguments, answers the few questions riveter asks, and exits
-        // with $KUBECTL_DIFF_EXIT (0 unless a test says otherwise) when asked for a diff.
-        let bin = dir.path().join("bin");
-        fs::create_dir_all(&bin).unwrap();
-        let kubectl_log = dir.path().join("kubectl.log");
-        let script = "#!/bin/sh
-echo \"$@\" >> \"$KUBECTL_LOG\"
-case \" $* \" in
-  *\" diff \"*) exit \"$KUBECTL_DIFF_EXIT\" ;;
-  *\" get namespace \"*) echo namespace/demo ;;
-  *\" config current-context \"*) echo test ;;
-esac
-exit 0
-";
-        fs::write(bin.join("kubectl"), script).unwrap();
-        fs::set_permissions(bin.join("kubectl"), fs::Permissions::from_mode(0o755)).unwrap();
-        Self { dir, kubectl_log }
+        let (dev, prod) = (FakeCluster::start(), FakeCluster::start());
+        let kubeconfig =
+            FakeCluster::kubeconfig(dir.path(), &[("ctx-dev", &dev), ("ctx-prod", &prod)]);
+        Self {
+            dir,
+            dev,
+            prod,
+            kubeconfig,
+        }
     }
 
     fn path(&self) -> &Path {
@@ -81,17 +77,10 @@ exit 0
 
     fn command(&self, args: &[&str]) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_riveter"));
-        let path = format!(
-            "{}:{}",
-            self.path().join("bin").display(),
-            std::env::var("PATH").unwrap_or_default()
-        );
         command
             .current_dir(self.path())
             .args(args)
-            .env("PATH", path)
-            .env("KUBECTL_LOG", &self.kubectl_log)
-            .env("KUBECTL_DIFF_EXIT", "0")
+            .env("KUBECONFIG", &self.kubeconfig)
             .env("NO_COLOR", "1")
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_SYSTEM", "/dev/null")
@@ -105,14 +94,6 @@ exit 0
 
     fn run(&self, args: &[&str]) -> Run {
         finish(&self.command(args).output().unwrap())
-    }
-
-    fn kubectl_calls(&self) -> Vec<String> {
-        fs::read_to_string(&self.kubectl_log)
-            .unwrap_or_default()
-            .lines()
-            .map(str::to_string)
-            .collect()
     }
 }
 
@@ -330,24 +311,28 @@ fn diff_against_compares_an_environment_with_its_history() {
 // --- commands that reach the cluster ----------------------------------------------------
 
 #[quench_test::test]
-fn apply_goes_through_kubectl_with_the_overlays_context() {
+fn apply_goes_to_the_overlays_cluster() {
     let p = Project::new();
     let dry = p.run(&["-e", "dev", "apply", "--dry-run", "--scope", "all"]);
     assert!(dry.ok && dry.out.contains("would apply"), "{}", dry.out);
+    assert!(
+        p.dev.calls().is_empty(),
+        "a dry run reaches no cluster: {:?}",
+        p.dev.calls()
+    );
+
     let real = p.run(&["-e", "dev", "apply", "--no-wait", "--scope", "all"]);
     assert!(
         real.ok && real.out.contains("applied 2 resource(s)"),
         "{}",
         real.out
     );
-    let calls = p.kubectl_calls();
-    assert!(
-        calls.iter().all(|c| c.starts_with("--context ctx-dev")),
-        "{calls:?}"
-    );
-    assert!(
-        calls.iter().any(|c| c.contains("--dry-run=client")),
-        "{calls:?}"
+    assert!(p.dev.has("deployments", "demo", "api"));
+    assert!(p.dev.has("namespaces", "", "demo"));
+    assert_eq!(
+        p.prod.first_asked(),
+        None,
+        "the other cluster was left alone"
     );
 
     // a selector that matches nothing in scope applies nothing
@@ -367,23 +352,38 @@ fn apply_goes_through_kubectl_with_the_overlays_context() {
     );
 
     // several environments are applied in the order given
+    p.dev.forget_calls();
     let many = p.run(&["-e", "dev,prod", "apply", "--no-wait", "--scope", "all"]);
     assert!(many.ok, "{}", many.out);
-    let contexts: Vec<_> = p
-        .kubectl_calls()
-        .iter()
-        .filter_map(|c| c.split_whitespace().nth(1).map(str::to_string))
-        .collect();
-    let (dev, prod) = (
-        contexts.iter().rposition(|c| c == "ctx-dev").unwrap(),
-        contexts.iter().rposition(|c| c == "ctx-prod").unwrap(),
-    );
-    assert!(dev < prod, "{contexts:?}");
+    let (dev, prod) = (p.dev.first_asked().unwrap(), p.prod.first_asked().unwrap());
+    assert!(dev < prod, "{dev} {prod}");
+    assert!(p.prod.has("deployments", "demo", "api"));
 }
 
 #[quench_test::test]
 fn diff_reports_whether_the_cluster_differs() {
     let p = Project::new();
+    // Nothing is there yet, so everything would be created.
+    let fresh = p.run(&["-e", "dev", "diff", "--scope", "all"]);
+    assert!(
+        fresh.ok && fresh.out.contains("the cluster differs"),
+        "{}",
+        fresh.out
+    );
+    assert!(
+        fresh.out.contains("+  name: api") || fresh.out.contains("name: api"),
+        "{}",
+        fresh.out
+    );
+    assert!(
+        !p.dev.has("deployments", "demo", "api"),
+        "a diff changes nothing"
+    );
+
+    assert!(
+        p.run(&["-e", "dev", "apply", "--no-wait", "--scope", "all"])
+            .ok
+    );
     let same = p.run(&["-e", "dev", "diff", "--scope", "all"]);
     assert!(
         same.ok && same.out.contains("cluster matches"),
@@ -391,21 +391,37 @@ fn diff_reports_whether_the_cluster_differs() {
         same.out
     );
 
-    let differs = finish(
-        &p.command(&["-e", "dev", "diff", "--scope", "all"])
-            .env("KUBECTL_DIFF_EXIT", "1")
-            .output()
-            .unwrap(),
-    );
+    // change the overlay and the diff shows the change as lines
+    let overlay = p.path().join("overlays/dev/overlay.yaml");
+    fs::write(
+        &overlay,
+        fs::read_to_string(&overlay)
+            .unwrap()
+            .replace("nginx", "nginx:1.27"),
+    )
+    .unwrap();
+    let differs = p.run(&["-e", "dev", "diff", "--scope", "all"]);
     assert!(
         differs.ok && differs.out.contains("the cluster differs"),
         "{}",
         differs.out
     );
+    assert!(
+        differs.out.contains("-        image: nginx") || differs.out.contains("nginx:1.27"),
+        "{}",
+        differs.out
+    );
 
+    // a cluster that cannot be reached is an error, not a difference
+    let dead = p.path().join("dead-kubeconfig");
+    fs::write(
+        &dead,
+        "apiVersion: v1\nkind: Config\ncurrent-context: ctx-dev\nclusters:\n  - name: c\n    cluster:\n      server: http://127.0.0.1:1\nusers:\n  - name: u\n    user: {}\ncontexts:\n  - name: ctx-dev\n    context: {cluster: c, user: u}\n",
+    )
+    .unwrap();
     let broken = finish(
         &p.command(&["-e", "dev", "diff", "--scope", "all"])
-            .env("KUBECTL_DIFF_EXIT", "2")
+            .env("KUBECONFIG", &dead)
             .output()
             .unwrap(),
     );
@@ -416,19 +432,20 @@ fn diff_reports_whether_the_cluster_differs() {
 }
 
 #[quench_test::test]
-fn delete_and_prune_go_through_kubectl() {
+fn delete_and_prune_reach_the_cluster() {
     let p = Project::new();
+    assert!(
+        p.run(&["-e", "dev", "apply", "--no-wait", "--scope", "all"])
+            .ok
+    );
     let deleted = p.run(&["-e", "dev", "delete", "--scope", "all"]);
     assert!(
         deleted.ok && deleted.out.contains("deleted 2 resource(s)"),
         "{}",
         deleted.out
     );
-    assert!(
-        p.kubectl_calls().iter().any(|c| c.contains(" delete -f ")),
-        "{:?}",
-        p.kubectl_calls()
-    );
+    assert!(!p.dev.has("deployments", "demo", "api"));
+    assert!(p.dev.calls().iter().any(|c| c == "delete deployments/api"));
     let nothing = p.run(&["-e", "dev", "delete", "--scope", "immutable", "deployment"]);
     assert!(
         !nothing.ok || nothing.out.contains("no resources matched"),

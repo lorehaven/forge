@@ -6,7 +6,7 @@ has_children: true
 permalink: /cli/riveter/
 ---
 
-Riveter renders Kubernetes manifests from per-environment overlays (`overlays/<env>/overlay.yaml`, minijinja templates, `snake_case` resource declarations) and applies, diffs, deletes and prunes them with `kubectl`. It also packs an overlay into a versioned `.rivet` package, publishes it to Warehouse, installs packages, keeps secrets in git encrypted with age, and validates custom resources against CRD schemas offline.
+Riveter renders Kubernetes manifests from per-environment overlays (`overlays/<env>/overlay.yaml`, minijinja templates, `snake_case` resource declarations) and applies, diffs, deletes and prunes them by talking to the Kubernetes API directly, with your kubeconfig - no `kubectl` binary is needed. It also packs an overlay into a versioned `.rivet` package, publishes it to Warehouse, installs packages, keeps secrets in git encrypted with age, and validates custom resources against CRD schemas offline.
 
 Version: `riveter 0.4.15` (`forge/cli/riveter/Cargo.toml`). Binary: `riveter`. Library crate: `riveter`.
 
@@ -17,7 +17,7 @@ cd forge/cli/riveter
 cargo install --path .        # or: anvil install -p riveter
 ```
 
-Runtime requirements: `kubectl` on `PATH` for `apply`, `diff`, `delete`, `prune`, `install`, `secrets sync`, `schemas fetch` (riveter checks for the binary first and says why it needs it); `git` for `diff --against`. Everything else (`list`, `render`, `validate`, `pack --no-pin`, `secrets keygen|set|import|list|show|remove|rekey`, `env`) works offline and is the safe way to try the tool.
+Runtime requirements: a reachable cluster and a kubeconfig (`KUBECONFIG`, else `~/.kube/config`; inside a pod, its service account) for `apply`, `diff`, `delete`, `prune`, `install`, `secrets sync`, `schemas fetch`; `git` for `diff --against`. Everything else (`list`, `render`, `validate`, `pack --no-pin`, `secrets keygen|set|import|list|show|remove|rekey`, `env`) works offline and is the safe way to try the tool.
 
 ## Concepts
 
@@ -43,7 +43,7 @@ With no subcommand riveter starts the [REPL](repl.md).
 | Code | When |
 |---|---|
 | `0` | Success. Also: `diff` when the cluster differs (it only warns), `apply`/`delete` that matched no resources (`ok no resources matched selected scope`). |
-| `1` | Any error: printed as `Error: <message>` (with `Caused by:` lines). Includes `validate` failures, a failing `kubectl`, a rollout that did not become ready in time, `multi`-environment failures. |
+| `1` | Any error: printed as `Error: <message>` (with `Caused by:` lines). Includes `validate` failures, a cluster that refuses an object, a rollout that did not become ready in time, `multi`-environment failures. |
 | `2` | Argument parse error (unknown flag, missing argument). |
 
 ## Where to go next

@@ -37,23 +37,19 @@ pub struct BuildConfig {
     pub max_target_gb: Option<u64>,
 }
 
-/// `anvil docs`: documentation books that are checked, built with Jekyll and sent to the warehouse.
+/// `anvil docs`: documentation books that are checked, built into a site and sent to the warehouse.
 #[derive(Debug, Default, Deserialize)]
 pub struct DocsConfig {
     /// Where the builds go, from the workspace root (default `target/docs`).
     #[serde(default)]
     pub out: Option<String>,
-    /// The command that runs Jekyll, split on spaces (default `jekyll`; `bundle exec jekyll` for a Gemfile).
-    #[serde(default)]
-    pub jekyll: Option<String>,
     /// The warehouse, including its base path; `[artifacts].warehouse_url` when empty.
     #[serde(default)]
     pub warehouse_url: Option<String>,
     /// The warehouse files storage the books are kept in (`docs`): required to release.
     #[serde(default)]
     pub storage: Option<String>,
-    /// The look of the books: `forge` (default), the forge services' own, or `none` for the theme as it comes.
-    /// A file the book has itself (`_sass/custom/custom.scss`, `_includes/head_custom.html`...) is kept.
+    /// The look of the books: `forge` (default), the forge services' own, or `none` for the layout alone.
     #[serde(default)]
     pub theme: Option<String>,
     /// The books, by name: `[docs.books.<name>]`.
@@ -61,7 +57,7 @@ pub struct DocsConfig {
     pub books: BTreeMap<String, DocsBook>,
 }
 
-/// One Jekyll site made of Markdown files.
+/// One book: a site made of Markdown files.
 #[derive(Debug, Default, Deserialize)]
 pub struct DocsBook {
     /// The site's source directory, from the workspace root.

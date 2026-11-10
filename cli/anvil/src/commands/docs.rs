@@ -1,12 +1,12 @@
 //! `anvil docs`: checks, builds and releases documentation books.
 //!
-//! A book is a directory of Markdown files that Jekyll turns into a site (`just-the-docs` navigation from front
-//! matter). Anvil
+//! A book is a directory of Markdown files, with a navigation made from their front matter (`parent`, `nav_order`: the
+//! model of the `just-the-docs` Jekyll theme the books were first written for). Anvil
 //!
-//! * **checks** a book without Jekyll: every page has a `title`, every `parent` names a page that has children, the
+//! * **checks** a book: every page has a `title`, every `parent` names a page that has children, the
 //!   `nav_order` values of siblings differ, every relative link resolves, and every `openapi.yaml` describes exactly
 //!   the routes in the source it documents;
-//! * **builds** it: the checks, then `jekyll build`, then a reproducible `.tar.gz` of the site and a `manifest.json`;
+//! * **builds** it: the checks, then the site (see [`crate::commands::site`]: no Jekyll, no Ruby), then a reproducible `.tar.gz` of the site and a `manifest.json`;
 //!   the archive also holds the book's Markdown sources under `_source/` (pages, `_config.yml`, the local images
 //!   they show), for readers such as loupe;
 //! * **releases** it: the archive and the manifest go to a warehouse files storage under
@@ -16,20 +16,17 @@
 use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use quench_core::{Context, Result, bail};
 use quench_serde::{Map, Value};
 
 use crate::commands::artifact::{Answer, Upload, read_version, send};
+use crate::commands::site::{self, SiteOptions};
 use crate::config::{Config, DocsBook, DocsOpenApi};
 
 /// What `anvil docs build` and `anvil docs release` were asked.
 #[derive(Debug, Clone, Default)]
 pub struct Options {
-    /// Use the theme the book's `_config.yml` names (`remote_theme`: needs the `jekyll-remote-theme` gem and the
-    /// network) instead of the installed `just-the-docs` gem.
-    pub remote_theme: bool,
     /// Skip the checks.
     pub no_check: bool,
     /// Where the builds go, if not `[docs].out`.
@@ -524,250 +521,6 @@ fn local_image(target: &str, page_dir: &Path, base: &str) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join("/"))
 }
 
-fn jekyll_command(config: &Config) -> Vec<String> {
-    config
-        .docs
-        .jekyll
-        .as_deref()
-        .filter(|c| !c.trim().is_empty())
-        .unwrap_or("jekyll")
-        .split_whitespace()
-        .map(str::to_string)
-        .collect()
-}
-
-/// `[text](target.md#part)` as `[text](target.html#part)`, outside fenced blocks and code spans.
-///
-/// Only the targets that stay inside the book change. Jekyll writes `page.md` as `page.html`; the
-/// `jekyll-relative-links` plugin would do this, and building without it must not leave links to Markdown files.
-#[must_use]
-pub fn rewrite_links(body: &str) -> String {
-    let mut out = String::with_capacity(body.len());
-    let mut fenced = false;
-    for line in body.split_inclusive('\n') {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            fenced = !fenced;
-            out.push_str(line);
-            continue;
-        }
-        if fenced {
-            out.push_str(line);
-            continue;
-        }
-        let mut in_code = false;
-        let mut rest = line;
-        while let Some(c) = rest.chars().next() {
-            if c == '`' {
-                in_code = !in_code;
-            }
-            if !in_code && rest.starts_with("](") {
-                let after = &rest[2..];
-                let end = after
-                    .find(|c: char| c == ')' || c.is_whitespace())
-                    .unwrap_or(after.len());
-                let target = &after[..end];
-                let (path, tail) = target
-                    .find(['#', '?'])
-                    .map_or((target, ""), |at| (&target[..at], &target[at..]));
-                out.push_str("](");
-                if !outside(target) && path.to_ascii_lowercase().ends_with(".md") {
-                    out.push_str(&path[..path.len() - 3]);
-                    out.push_str(".html");
-                    out.push_str(tail);
-                } else {
-                    out.push_str(target);
-                }
-                rest = &after[end..];
-                continue;
-            }
-            out.push(c);
-            rest = &rest[c.len_utf8()..];
-        }
-    }
-    out
-}
-
-fn copy_staged(from: &Path, to: &Path) -> Result<()> {
-    std::fs::create_dir_all(to).with_context(|| format!("creating {}", to.display()))?;
-    let mut entries: Vec<_> = std::fs::read_dir(from)
-        .with_context(|| format!("reading {}", from.display()))?
-        .flatten()
-        .map(|e| e.path())
-        .collect();
-    entries.sort();
-    for path in entries {
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        if matches!(name, ".git" | ".jekyll-cache" | "_site" | ".sass-cache") {
-            continue;
-        }
-        let target = to.join(name);
-        if path.is_dir() {
-            copy_staged(&path, &target)?;
-        } else if path.extension().is_some_and(|e| e == "md") {
-            let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("reading {}", path.display()))?;
-            let text = match split_front_matter(&text) {
-                // Only a page (front matter) is rendered; a Markdown file without it is copied as it is.
-                Some((head, body)) => format!("---\n{head}---\n{}", rewrite_links(body)),
-                None => text,
-            };
-            std::fs::write(&target, text)
-                .with_context(|| format!("writing {}", target.display()))?;
-        } else {
-            std::fs::copy(&path, &target).with_context(|| format!("copying {}", path.display()))?;
-        }
-    }
-    Ok(())
-}
-
-/// Copies the book to `stage` with the links between its pages pointing at the pages Jekyll writes.
-fn stage_book(dir: &Path, stage: &Path) -> Result<()> {
-    if stage.is_dir() {
-        std::fs::remove_dir_all(stage).with_context(|| format!("clearing {}", stage.display()))?;
-    }
-    copy_staged(dir, stage)
-}
-
-/// The forge look for a just-the-docs book, as the files it adds to the site's source.
-const THEME_TOKENS: &str = include_str!("../../assets/docs-theme/forge-tokens.css");
-const THEME_RULES: &str = include_str!("../../assets/docs-theme/forge.scss");
-const THEME_HEAD: &str = include_str!("../../assets/docs-theme/head_custom.html");
-const THEME_HEADER: &str = include_str!("../../assets/docs-theme/header_custom.html");
-const THEME_TITLE: &str = include_str!("../../assets/docs-theme/title.html");
-const THEME_NAV_FOOTER: &str = include_str!("../../assets/docs-theme/nav_footer_custom.html");
-
-/// The files of the `forge` theme: `(path in the site, content)`.
-#[must_use]
-pub fn forge_theme_files() -> Vec<(&'static str, String)> {
-    vec![
-        (
-            "_sass/custom/custom.scss",
-            format!("{THEME_TOKENS}\n{THEME_RULES}"),
-        ),
-        ("_includes/head_custom.html", THEME_HEAD.to_string()),
-        ("_includes/header_custom.html", THEME_HEADER.to_string()),
-        ("_includes/title.html", THEME_TITLE.to_string()),
-        (
-            "_includes/nav_footer_custom.html",
-            THEME_NAV_FOOTER.to_string(),
-        ),
-    ]
-}
-
-/// Puts the configured theme's files in the staged site, leaving any file the book has itself.
-fn stage_theme(stage: &Path, theme: Option<&str>) -> Result<()> {
-    match theme.unwrap_or("forge") {
-        "none" => Ok(()),
-        "forge" => {
-            for (path, content) in forge_theme_files() {
-                let target = stage.join(path);
-                if target.exists() {
-                    continue;
-                }
-                if let Some(parent) = target.parent() {
-                    std::fs::create_dir_all(parent)
-                        .with_context(|| format!("creating {}", parent.display()))?;
-                }
-                std::fs::write(&target, content)
-                    .with_context(|| format!("writing {}", target.display()))?;
-            }
-            Ok(())
-        }
-        other => bail!("`[docs].theme` is `{other}`: use `forge` or `none`"),
-    }
-}
-
-/// What Jekyll says when a gem is missing, as advice.
-fn missing_gem_hint(stderr: &str) -> Option<String> {
-    let marker = "cannot load such file -- ";
-    let at = stderr.find(marker)?;
-    let gem: String = stderr[at + marker.len()..]
-        .chars()
-        .take_while(|c| !c.is_whitespace() && *c != '(')
-        .collect();
-    Some(format!("a Ruby gem is missing: `gem install {gem}`"))
-}
-
-fn run_jekyll(
-    config: &Config,
-    source: &Path,
-    site: &Path,
-    out_dir: &Path,
-    options: &Options,
-    baseurl: Option<&str>,
-    log: &mut dyn Write,
-) -> Result<()> {
-    let command = jekyll_command(config);
-    let Some((program, fixed)) = command.split_first() else {
-        bail!("`[docs].jekyll` is empty");
-    };
-    let probe = Command::new(program).args(fixed).arg("--version").output();
-    if probe.as_ref().map_or(true, |o| !o.status.success()) {
-        bail!(
-            "could not run `{}`: install Jekyll (`gem install jekyll`), or set `jekyll` under [docs] (`bundle exec jekyll`)",
-            command.join(" ")
-        );
-    }
-    // The staged copy has its links rewritten, so `jekyll-relative-links` is never needed. The theme is the
-    // installed `just-the-docs` gem unless the book's own (remote) theme is asked for.
-    let mut configs = Vec::new();
-    if source.join("_config.yml").is_file() {
-        configs.push(source.join("_config.yml"));
-    }
-    let override_file = out_dir.join("jekyll-override.yml");
-    let plugins = if options.remote_theme {
-        "plugins:\n  - jekyll-remote-theme\n  - jekyll-seo-tag\n"
-    } else {
-        "remote_theme: null\ntheme: just-the-docs\nplugins:\n  - jekyll-seo-tag\n"
-    };
-    std::fs::write(&override_file, plugins)
-        .with_context(|| format!("writing {}", override_file.display()))?;
-    configs.push(override_file);
-    let mut cmd = Command::new(program);
-    cmd.args(fixed)
-        .arg("build")
-        .arg("--source")
-        .arg(source)
-        .arg("--disable-disk-cache")
-        .arg("--destination")
-        .arg(site);
-    let list: Vec<String> = configs
-        .iter()
-        .map(|c| c.to_string_lossy().into_owned())
-        .collect();
-    cmd.arg("--config").arg(list.join(","));
-    if let Some(baseurl) = baseurl {
-        cmd.arg("--baseurl").arg(baseurl);
-    }
-    cmd.env("JEKYLL_ENV", "production");
-    writeln!(
-        log,
-        "running: {} build {}",
-        command.join(" "),
-        source.display()
-    )?;
-    let output = cmd
-        .output()
-        .with_context(|| format!("running `{}`", command.join(" ")))?;
-    if !output.status.success() {
-        let text = String::from_utf8_lossy(&output.stderr);
-        let lines: Vec<&str> = text.lines().collect();
-        let tail = &lines[lines.len().saturating_sub(25)..];
-        let hint = missing_gem_hint(&text)
-            .map(|h| format!("\n{h}"))
-            .unwrap_or_default();
-        bail!(
-            "jekyll failed ({}):\n{}{hint}",
-            output.status,
-            tail.join("\n")
-        );
-    }
-    Ok(())
-}
-
 fn json_string(value: &Value) -> String {
     quench_serde::json::to_string_pretty(value)
 }
@@ -775,7 +528,11 @@ fn json_string(value: &Value) -> String {
 /// Checks, builds and packages one book.
 ///
 /// # Errors
-/// An unknown book, a failed check, Jekyll missing or failing, files that cannot be read or written.
+/// An unknown book, a failed check, a book that cannot be read, files that cannot be read or written.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one build, step by step: check, site, archive, manifest"
+)]
 pub fn build_book(
     config: &Config,
     root: &Path,
@@ -811,14 +568,31 @@ pub fn build_book(
     }
     std::fs::create_dir_all(&out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
     let baseurl = options.baseurl.as_deref().or(book.baseurl.as_deref());
-    let stage = out_dir.join("src");
-    stage_book(&dir, &stage)?;
-    stage_theme(&stage, config.docs.theme.as_deref())?;
-    run_jekyll(config, &stage, &site, &out_dir, options, baseurl, log)?;
+    let plain = match config.docs.theme.as_deref().unwrap_or("forge") {
+        "forge" => false,
+        "none" => true,
+        other => bail!("`[docs].theme` is `{other}`: use `forge` or `none`"),
+    };
+    let written = site::build_site(
+        &dir,
+        &site,
+        &SiteOptions {
+            baseurl: baseurl.unwrap_or_default().to_string(),
+            plain,
+        },
+    )?;
+    writeln!(
+        log,
+        "wrote {} page(s) and {} file(s)",
+        written.pages, written.files
+    )?;
 
     let files = site_files(&site)?;
     if files.is_empty() {
-        bail!("jekyll built nothing into {}", site.display());
+        bail!(
+            "the site is empty: nothing was written into {}",
+            site.display()
+        );
     }
     let bytes: usize = files.iter().map(|(_, d)| d.len()).sum();
     // The Markdown sources come from the book itself, not the staged copy (whose links point at `.html`).

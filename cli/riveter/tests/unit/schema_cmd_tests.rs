@@ -1,16 +1,16 @@
 use crate::env_support::cwd_lock;
+use crate::fake_cluster::{FakeCluster, with_cluster, with_clusters};
 use quench_serde::{Value, json};
 use riveter::cli::SchemasCmd;
 use riveter::env::{Workspace, with_workspace};
 use riveter::render::{ResourceScope, Selector, render_to_string};
 use riveter::schema::{self, Outcome, SchemaSet, Source, bundled};
 use riveter::schema_cmd::{
-    FetchRequest, check_documents, crds_from_kubectl, fetch, is_built_in, label, parse_documents,
-    schemas_command, validate_env, validate_files,
+    FetchRequest, check_documents, fetch, is_built_in, label, parse_documents, schemas_command,
+    validate_env, validate_files,
 };
 use std::collections::HashMap;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 fn crd_json(group: &str, kind: &str, plural: &str) -> Value {
@@ -120,75 +120,26 @@ fn built_in_groups_are_recognised_by_their_api_version() {
     }
 }
 
-// --- what kubectl prints ---------------------------------------------------
+// --- fetching, against a cluster -----------------------------------------------
 
-#[quench_test::test]
-fn one_crd_is_an_object_and_several_are_a_list() {
-    let one = crd_json("a.io", "A", "as").to_string();
-    assert_eq!(crds_from_kubectl(&one).unwrap().len(), 1);
-
-    let many = json!({"kind": "List", "items": [crd_json("a.io", "A", "as"), crd_json("b.io", "B", "bs")]}).to_string();
-    assert_eq!(crds_from_kubectl(&many).unwrap().len(), 2);
-
-    // `--ignore-not-found` with nothing found prints nothing, or an empty list.
-    assert_eq!(
-        crds_from_kubectl("").unwrap(),
-        [] as [quench_serde::Value; 0]
-    );
-    assert_eq!(
-        crds_from_kubectl("  \n").unwrap(),
-        [] as [quench_serde::Value; 0]
-    );
-    assert_eq!(
-        crds_from_kubectl(r#"{"kind":"List","items":[]}"#).unwrap(),
-        [] as [quench_serde::Value; 0]
-    );
-    assert!(crds_from_kubectl("not json").is_err());
-}
-
-// --- fetching, against a stand-in kubectl ------------------------------------
-
-/// Puts a `kubectl` on `$PATH` that records its arguments and prints `output`, for the duration of `body`.
-fn with_fake_kubectl<T>(
-    output: &str,
-    exit_code: i32,
-    args_file: &Path,
-    body: impl FnOnce() -> T,
-) -> T {
-    let _guard = cwd_lock()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = quench_core::tmp::TempDir::new().unwrap();
-    let script = dir.path().join("kubectl");
-    fs::write(
-        &script,
-        format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\ncat <<'EOF_OUTPUT'{redirect}\n{output}\nEOF_OUTPUT\nexit {exit_code}\n",
-            args_file.display(),
-            // A failing kubectl says why on stderr.
-            redirect = if exit_code == 0 { "" } else { " >&2" }
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
-
-    let original = std::env::var("PATH").unwrap_or_default();
-    quench_core::env::set("PATH", format!("{}:{original}", dir.path().display()));
-    let result = body();
-    quench_core::env::set("PATH", &original);
-    result
+fn install(cluster: &FakeCluster, crd: &quench_serde::Value) {
+    cluster.insert("customresourcedefinitions", &crd.to_string());
 }
 
 #[quench_test::test]
 fn fetch_asks_for_the_templated_crds_by_default_and_writes_one_file_each() {
     let out = quench_core::tmp::TempDir::new().unwrap();
-    let args = out.path().join("args");
-    let list = json!({"kind": "List", "items": [
-        crd_json("cert-manager.io", "Certificate", "certificates"),
-        crd_json("traefik.io", "Middleware", "middlewares"),
-    ]});
+    let cluster = FakeCluster::start();
+    install(
+        &cluster,
+        &crd_json("cert-manager.io", "Certificate", "certificates"),
+    );
+    install(
+        &cluster,
+        &crd_json("traefik.io", "Middleware", "middlewares"),
+    );
 
-    let fetched = with_fake_kubectl(&list.to_string(), 0, &args, || {
+    let fetched = with_cluster(&cluster, || {
         fetch(&FetchRequest {
             output: Some(out.path().join("schemas")),
             ..FetchRequest::default()
@@ -208,19 +159,16 @@ fn fetch_asks_for_the_templated_crds_by_default_and_writes_one_file_each() {
             .is_file()
     );
 
-    // The seven CRDs riveter templates, by name, tolerating ones the cluster lacks.
-    let asked = fs::read_to_string(&args).unwrap();
+    // The CRDs riveter templates were asked for by name, the ones the cluster lacks included.
+    let asked = cluster.calls();
     for name in [
         "certificates.cert-manager.io",
         "httproutes.gateway.networking.k8s.io",
         "middlewares.traefik.io",
     ] {
-        assert!(
-            asked.lines().any(|l| l == name),
-            "{name} not requested: {asked}"
-        );
+        let call = format!("get customresourcedefinitions/{name}");
+        assert!(asked.contains(&call), "{name} not requested: {asked:#?}");
     }
-    assert!(asked.contains("--ignore-not-found"));
 
     // What was written round-trips through the loader.
     let mut set = SchemaSet::empty();
@@ -232,10 +180,12 @@ fn fetch_asks_for_the_templated_crds_by_default_and_writes_one_file_each() {
 #[quench_test::test]
 fn fetch_can_name_crds_take_everything_and_choose_a_context() {
     let out = quench_core::tmp::TempDir::new().unwrap();
-    let args = out.path().join("args");
-    let one = crd_json("a.io", "A", "as").to_string();
+    let ambient = FakeCluster::start();
+    let staging = FakeCluster::start();
+    install(&staging, &crd_json("a.io", "A", "as"));
+    install(&staging, &crd_json("b.io", "B", "bs"));
 
-    with_fake_kubectl(&one, 0, &args, || {
+    with_clusters(&[("dev", &ambient), ("staging", &staging)], || {
         fetch(&FetchRequest {
             crds: vec!["as.a.io".to_string()],
             context: Some("staging".to_string()),
@@ -243,49 +193,44 @@ fn fetch_can_name_crds_take_everything_and_choose_a_context() {
             ..FetchRequest::default()
         })
         .unwrap();
-    });
-    let asked: Vec<String> = fs::read_to_string(&args)
-        .unwrap()
-        .lines()
-        .map(str::to_string)
-        .collect();
-    assert_eq!(asked[..2], ["--context", "staging"]);
-    assert!(asked.contains(&"as.a.io".to_string()));
-    assert!(
-        !asked.contains(&"certificates.cert-manager.io".to_string()),
-        "an explicit name replaces the default set"
-    );
+        assert!(ambient.calls().is_empty(), "the context was ignored");
+        assert_eq!(staging.calls(), ["get customresourcedefinitions/as.a.io"]);
+        assert!(
+            !out.path().join("o/b.io_bs.json").exists(),
+            "an explicit name replaces the default set"
+        );
 
-    with_fake_kubectl(&one, 0, &args, || {
-        fetch(&FetchRequest {
+        let fetched = fetch(&FetchRequest {
             all: true,
+            context: Some("staging".to_string()),
             output: Some(out.path().join("all")),
             ..FetchRequest::default()
         })
         .unwrap();
+        assert_eq!(fetched.len(), 2);
     });
-    let asked = fs::read_to_string(&args).unwrap();
-    assert_eq!(
-        asked.lines().collect::<Vec<_>>(),
-        ["get", "crd", "-o", "json", "--ignore-not-found"]
-    );
 }
 
 #[quench_test::test]
-fn fetch_fails_clearly_when_kubectl_does_or_nothing_comes_back() {
+fn fetch_fails_clearly_when_the_cluster_cannot_be_found_or_nothing_comes_back() {
     let out = quench_core::tmp::TempDir::new().unwrap();
-    let args = out.path().join("args");
     let request = || FetchRequest {
         output: Some(out.path().join("s")),
+        context: Some("missing".to_string()),
         ..FetchRequest::default()
     };
 
-    let err = with_fake_kubectl("the connection to the server was refused", 1, &args, || {
-        fetch(&request()).unwrap_err()
-    });
-    assert!(format!("{err:#}").contains("refused"), "{err:#}");
+    let cluster = FakeCluster::start();
+    let err = with_cluster(&cluster, || fetch(&request()).unwrap_err());
+    assert!(format!("{err:#}").contains("missing"), "{err:#}");
 
-    let err = with_fake_kubectl("", 0, &args, || fetch(&request()).unwrap_err());
+    let err = with_cluster(&cluster, || {
+        fetch(&FetchRequest {
+            context: None,
+            ..request()
+        })
+        .unwrap_err()
+    });
     assert!(
         format!("{err:#}").contains("no CRD with a schema"),
         "{err:#}"

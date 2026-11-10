@@ -7,5 +7,7 @@
 
 #[path = "cli/binary_tests.rs"]
 mod binary_tests;
+#[path = "support/fake_cluster.rs"]
+mod fake_cluster;
 
 quench_test::main!();

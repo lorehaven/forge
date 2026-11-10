@@ -10,7 +10,7 @@ use crate::package::{
 };
 use crate::registry::{Registry, RemotePackage};
 use crate::render::{ResourceScope, Selector};
-use crate::repl::{WaitPolicy, create_namespace_if_missing, describe, kubectl_apply, ok, warn};
+use crate::repl::{WaitPolicy, cluster_apply, create_namespace_if_missing, describe, ok, warn};
 use quench_core::{Context as _, Result, bail, ensure};
 use rivet_package::{Limits, Package};
 use std::path::{Path, PathBuf};
@@ -336,7 +336,7 @@ pub fn install_command(args: &InstallArgs<'_>) -> Result<()> {
         if !args.dry_run {
             create_namespace_if_missing(&installation.env)?;
         }
-        kubectl_apply(&installation.env, args.dry_run, scope, &selector, args.wait)
+        cluster_apply(&installation.env, args.dry_run, scope, &selector, args.wait)
     })?;
 
     if rendered.resource_count == 0 {

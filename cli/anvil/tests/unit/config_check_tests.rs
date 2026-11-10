@@ -373,7 +373,6 @@ fn a_valid_docs_block_has_no_issues() {
 [docs]
 out = "target/docs"
 storage = "docs"
-jekyll = "bundle exec jekyll"
 
 [docs.books.forge]
 dir = "docs"

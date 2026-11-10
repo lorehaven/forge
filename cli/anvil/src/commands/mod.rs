@@ -8,4 +8,5 @@ pub mod lint;
 pub mod login;
 pub mod release;
 pub mod run;
+pub mod site;
 pub mod workspace;

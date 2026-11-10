@@ -1,10 +1,9 @@
-use crate::env_support::cwd_lock;
+use crate::fake_cluster::{FakeCluster, with_cluster, with_clusters};
 use quench_serde::Value;
 use riveter::secrets::{
     HASH_ANNOTATION, KEY, LABEL, SyncRequest, manifest, overlays_with_values, secret_name, sync,
 };
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 const SECRET_VALUE: &str = "hunter2-do-not-leak";
@@ -31,56 +30,31 @@ fn request(overlays: &[&str]) -> SyncRequest {
     }
 }
 
-/// A `kubectl` that records its arguments (one call per line) and what it was sent on stdin, and may fail.
+/// A cluster to sync to, and what was applied to it.
 struct Recorder {
-    args: PathBuf,
-    stdin: PathBuf,
-    _dir: quench_core::tmp::TempDir,
+    cluster: FakeCluster,
 }
 
-fn with_kubectl<T>(exit_code: i32, body: impl FnOnce(&Recorder) -> T) -> T {
-    let _guard = cwd_lock()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = quench_core::tmp::TempDir::new().unwrap();
-    let recorder = Recorder {
-        args: dir.path().join("args.log"),
-        stdin: dir.path().join("stdin.log"),
-        _dir: quench_core::tmp::TempDir::new().unwrap(),
-    };
-    let script = format!(
-        "#!/bin/sh\necho \"$@\" >> '{}'\ncat >> '{}'\nprintf '\\n---\\n' >> '{}'\n[ {exit_code} -ne 0 ] && echo 'the connection to the server was refused' >&2\nexit {exit_code}\n",
-        recorder.args.display(),
-        recorder.stdin.display(),
-        recorder.stdin.display(),
-    );
-    let path = dir.path().join("kubectl");
-    fs::write(&path, script).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-
-    let original = std::env::var("PATH").unwrap_or_default();
-    quench_core::env::set("PATH", format!("{}:{original}", dir.path().display()));
-    let result = body(&recorder);
-    quench_core::env::set("PATH", &original);
-    drop(dir);
-    result
+fn recorder() -> Recorder {
+    Recorder {
+        cluster: FakeCluster::start(),
+    }
 }
 
 impl Recorder {
+    /// What was applied, as `apply secrets/<name>`; the reads that come before an apply are left out.
     fn calls(&self) -> Vec<String> {
-        fs::read_to_string(&self.args)
-            .unwrap_or_default()
-            .lines()
-            .map(str::to_string)
+        self.cluster
+            .calls()
+            .into_iter()
+            .filter(|c| c.starts_with("apply "))
             .collect()
     }
-    fn manifests(&self) -> Vec<Value> {
-        fs::read_to_string(&self.stdin)
-            .unwrap_or_default()
-            .split("\n---\n")
-            .filter(|chunk| !chunk.trim().is_empty())
-            .map(|chunk| quench_serde::json::from_str(chunk.trim()).unwrap())
-            .collect()
+
+    fn secret(&self, namespace: &str, package: &str) -> Value {
+        self.cluster
+            .object("secrets", namespace, &secret_name(package))
+            .unwrap_or_else(|| panic!("no secret for {package} in {namespace}"))
     }
 }
 
@@ -159,23 +133,22 @@ fn only_overlays_with_both_a_manifest_and_a_dotenv_are_listed() {
 // --- syncing ---------------------------------------------------------------------
 
 #[quench_test::test]
-fn syncing_one_overlay_sends_its_secret_to_kubectl_over_stdin() {
+fn syncing_one_overlay_applies_its_secret() {
     let (_dir, root) = overlays(&[("media", Some(&format!("PORT=80\nTOKEN={SECRET_VALUE}\n")))]);
 
-    let synced = with_kubectl(0, |kubectl| {
-        let synced = sync(&request(&["media"]), &root).unwrap();
-
-        assert_eq!(
-            kubectl.calls(),
-            ["apply -f -"],
-            "exactly one call, reading the manifest from stdin"
-        );
-        let sent = kubectl.manifests();
-        assert_eq!(sent.len(), 1);
-        assert_eq!(sent[0]["metadata"]["name"], "gantry-values-media");
-        assert_eq!(stored(&sent[0]), format!("PORT=80\nTOKEN={SECRET_VALUE}\n"));
-        synced
+    let kubectl = recorder();
+    let synced = with_cluster(&kubectl.cluster, || {
+        sync(&request(&["media"]), &root).unwrap()
     });
+
+    assert_eq!(
+        kubectl.calls(),
+        ["apply secrets/gantry-values-media"],
+        "exactly one apply"
+    );
+    let sent = kubectl.secret("forge", "media");
+    assert_eq!(sent["metadata"]["name"], "gantry-values-media");
+    assert_eq!(stored(&sent), format!("PORT=80\nTOKEN={SECRET_VALUE}\n"));
 
     assert_eq!(synced.len(), 1);
     assert_eq!(synced[0].package, "media");
@@ -185,19 +158,19 @@ fn syncing_one_overlay_sends_its_secret_to_kubectl_over_stdin() {
 }
 
 #[quench_test::test]
-fn a_value_never_appears_in_an_argument_or_in_what_is_reported() {
+fn a_value_never_appears_in_a_url_or_in_what_is_reported() {
     let (_dir, root) = overlays(&[("media", Some(&format!("TOKEN={SECRET_VALUE}\n")))]);
 
-    with_kubectl(0, |kubectl| {
-        let synced = sync(&request(&["media"]), &root).unwrap();
-
-        assert!(
-            !kubectl.calls().join("\n").contains(SECRET_VALUE),
-            "a value reached kubectl's command line"
-        );
-        // The report type has no field for a value, so printing all of it cannot leak one.
-        assert!(!format!("{synced:?}").contains(SECRET_VALUE));
+    let kubectl = recorder();
+    let synced = with_cluster(&kubectl.cluster, || {
+        sync(&request(&["media"]), &root).unwrap()
     });
+    assert!(
+        !kubectl.cluster.calls().join("\n").contains(SECRET_VALUE),
+        "a value reached a request line"
+    );
+    // The report type has no field for a value, so printing all of it cannot leak one.
+    assert!(!format!("{synced:?}").contains(SECRET_VALUE));
 }
 
 #[quench_test::test]
@@ -212,40 +185,49 @@ fn all_syncs_every_overlay_that_has_values_and_a_context_comes_first() {
     all.context = Some("staging".to_string());
     all.namespace = "gantry".to_string();
 
-    with_kubectl(0, |kubectl| {
-        let synced = sync(&all, &root).unwrap();
+    let (ambient, staging) = (recorder(), recorder());
+    let synced = with_clusters(
+        &[("dev", &ambient.cluster), ("staging", &staging.cluster)],
+        || sync(&all, &root).unwrap(),
+    );
 
-        assert_eq!(
-            synced
-                .iter()
-                .map(|s| s.package.as_str())
-                .collect::<Vec<_>>(),
-            ["forge", "media"]
-        );
-        assert_eq!(
-            kubectl.calls(),
-            [
-                "--context staging apply -f -",
-                "--context staging apply -f -"
-            ]
-        );
-        let sent = kubectl.manifests();
-        assert_eq!(sent[0]["metadata"]["namespace"], "gantry");
-        assert_eq!(sent[1]["metadata"]["name"], "gantry-values-media");
-    });
+    assert_eq!(
+        synced
+            .iter()
+            .map(|s| s.package.as_str())
+            .collect::<Vec<_>>(),
+        ["forge", "media"]
+    );
+    assert_eq!(
+        staging.calls(),
+        [
+            "apply secrets/gantry-values-forge",
+            "apply secrets/gantry-values-media"
+        ]
+    );
+    assert_eq!(ambient.cluster.first_asked(), None);
+    assert_eq!(
+        staging.secret("gantry", "forge")["metadata"]["namespace"],
+        "gantry"
+    );
 }
 
 #[quench_test::test]
-fn a_dry_run_reports_without_calling_kubectl() {
+fn a_dry_run_reports_without_reaching_the_cluster() {
     let (_dir, root) = overlays(&[("media", Some("A=1\nB=2\n"))]);
     let mut dry = request(&["media"]);
     dry.dry_run = true;
 
-    with_kubectl(0, |kubectl| {
+    let kubectl = recorder();
+    with_cluster(&kubectl.cluster, || {
         let synced = sync(&dry, &root).unwrap();
         assert_eq!(synced[0].variables, ["A", "B"]);
-        assert!(kubectl.calls().is_empty(), "{:?}", kubectl.calls());
     });
+    assert!(
+        kubectl.cluster.calls().is_empty(),
+        "{:?}",
+        kubectl.cluster.calls()
+    );
 }
 
 #[quench_test::test]
@@ -276,7 +258,8 @@ fn an_overlay_that_cannot_be_synced_is_refused_before_anything_is_written() {
         ("empty", Some("# only a comment\n\n")),
     ]);
 
-    with_kubectl(0, |kubectl| {
+    let kubectl = recorder();
+    with_cluster(&kubectl.cluster, || {
         let err = sync(&request(&["nope"]), &root).unwrap_err().to_string();
         assert!(err.contains("overlay not found"), "{err}");
 
@@ -288,8 +271,8 @@ fn an_overlay_that_cannot_be_synced_is_refused_before_anything_is_written() {
 
         // The first overlay is fine; the second is not. The run stops, but the first has been synced.
         assert!(sync(&request(&["media", "vpn"]), &root).is_err());
-        assert_eq!(kubectl.calls().len(), 1);
     });
+    assert_eq!(kubectl.calls().len(), 1);
 }
 
 #[quench_test::test]
@@ -310,27 +293,27 @@ fn a_namespace_is_required() {
 }
 
 #[quench_test::test]
-fn a_kubectl_failure_names_the_overlay_and_says_why() {
+fn a_refusal_by_the_cluster_names_the_overlay_and_says_why() {
     let (_dir, root) = overlays(&[("media", Some("A=1\n"))]);
-    with_kubectl(1, |_| {
+    let kubectl = recorder();
+    kubectl.cluster.refuses("secret/gantry-values-media");
+    with_cluster(&kubectl.cluster, || {
         let err = format!("{:#}", sync(&request(&["media"]), &root).unwrap_err());
         assert!(err.contains("syncing media"), "{err}");
-        assert!(
-            err.contains("connection to the server was refused"),
-            "{err}"
-        );
+        assert!(err.contains("refused"), "{err}");
     });
 }
 
 #[quench_test::test]
 fn syncing_twice_is_the_same_apply_twice() {
-    // `apply` is idempotent, so a second sync is not an error and sends the same Secret.
+    // `apply` is idempotent, so a second sync is not an error and leaves the same Secret.
     let (_dir, root) = overlays(&[("media", Some("A=1\n"))]);
-    with_kubectl(0, |kubectl| {
+    let kubectl = recorder();
+    with_cluster(&kubectl.cluster, || {
         sync(&request(&["media"]), &root).unwrap();
+        let first = kubectl.secret("forge", "media");
         sync(&request(&["media"]), &root).unwrap();
-        let sent = kubectl.manifests();
-        assert_eq!(sent.len(), 2);
-        assert_eq!(sent[0], sent[1]);
+        assert_eq!(kubectl.secret("forge", "media"), first);
     });
+    assert_eq!(kubectl.calls().len(), 2);
 }

@@ -126,9 +126,9 @@ pub const COMMANDS: &[CommandHelp] = &[
         surface: Surface::Both,
         aliases: &["a"],
         usage: "[options] [target...]",
-        summary: "Apply manifests via kubectl",
-        detail: "Renders the selected resources, then runs `kubectl apply -f` on the\n\
-                 rendered file. Waits for each Deployment, StatefulSet and DaemonSet\n\
+        summary: "Apply manifests to the cluster",
+        detail: "Renders the selected resources, then applies each object to\n\
+                 the cluster (server-side apply, field manager `riveter`). Waits for each Deployment, StatefulSet and DaemonSet\n\
                  to become ready afterwards, so a rollout that never comes up is\n\
                  reported as a failure rather than a success.",
         subcommands: &[],
@@ -138,8 +138,8 @@ pub const COMMANDS: &[CommandHelp] = &[
                 "Set replicas on a deployment or statefulset; repeatable",
             ),
             ("--except <KIND/NAME>", "Leave a resource out; repeatable"),
-            ("--dry-run", "Pass --dry-run=client to kubectl"),
-            ("--no-wait", "Return once kubectl accepts the manifests"),
+            ("--dry-run", "List what would be applied; nothing reaches the cluster"),
+            ("--no-wait", "Return once the cluster accepts the manifests"),
             ("--timeout <seconds>", "Per-rollout wait, default 300"),
             ("--scope <scope>", SCOPE_MUTABLE),
         ],
@@ -163,8 +163,8 @@ pub const COMMANDS: &[CommandHelp] = &[
         aliases: &["df"],
         usage: "[options] [target...]",
         summary: "Show what applying would change",
-        detail: "Renders the selected resources, then runs `kubectl diff -f` on the\n\
-                 rendered file. Shows the change against live cluster state, which a\n\
+        detail: "Renders the selected resources, then compares each object with\n\
+                 the cluster (a server-side dry run). Shows the change against live cluster state, which a\n\
                  render on its own cannot.",
         subcommands: &[],
         options: &[
@@ -213,9 +213,9 @@ pub const COMMANDS: &[CommandHelp] = &[
         surface: Surface::Both,
         aliases: &["d", "del"],
         usage: "[options] [target...]",
-        summary: "Delete manifests via kubectl",
-        detail: "Renders the selected resources, then runs `kubectl delete -f` on the\n\
-                 rendered file. Immutable resources are skipped unless --scope says\n\
+        summary: "Delete manifests from the cluster",
+        detail: "Renders the selected resources, then deletes each object from\n\
+                 the cluster. Immutable resources are skipped unless --scope says\n\
                  otherwise.",
         subcommands: &[],
         options: &[("--scope <scope>", SCOPE_MUTABLE)],
@@ -397,7 +397,7 @@ pub const COMMANDS: &[CommandHelp] = &[
             ("--all", "fetch: every CRD in the cluster"),
             (
                 "--context <ctx>",
-                "fetch: a kubectl context other than the current",
+                "fetch: a kubeconfig context other than the current",
             ),
             ("--output <dir>", "fetch: write here instead of the cache"),
         ],
@@ -512,8 +512,8 @@ pub const COMMANDS: &[CommandHelp] = &[
                 "--set <KEY=VALUE>",
                 "One variable; repeatable, wins over all",
             ),
-            ("--dry-run", "Pass --dry-run=client to kubectl"),
-            ("--no-wait", "Return once kubectl accepts the manifests"),
+            ("--dry-run", "List what would be applied; nothing reaches the cluster"),
+            ("--no-wait", "Return once the cluster accepts the manifests"),
             ("--timeout <seconds>", "Per-rollout wait, default 300"),
             ("--scope <scope>", SCOPE_ALL),
         ],

@@ -90,19 +90,21 @@ riveter apply [--dry-run] [--no-wait] [--timeout <SECONDS>] [--scope <SCOPE>] [T
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--dry-run` | off | `kubectl apply --dry-run=client`; no cluster contact, no namespace check, no waiting. |
-| `--no-wait` | off | Do not wait for rollouts or gates; the whole manifest is applied in one `kubectl apply`. |
+| `--dry-run` | off | Lists what would be sent; no cluster contact, no namespace check, no waiting. |
+| `--no-wait` | off | Do not wait for rollouts or gates; the whole manifest is applied in one go. |
 | `--timeout <SECONDS>` | `300` | Per-rollout (and default per-gate) wait. |
 | `--scope` | `mutable` | |
 
 Behaviour:
 
-1. Requires `kubectl`. Renders (see [render](#render)); zero matches: `ok no resources matched selected scope`.
-2. Announces the cluster: `context  <env> -> <kube_context>` if the overlay pins `kube_context` (kubectl is then run with `--context <name>`), else a warning naming kubectl's current context.
+1. Renders (see [render](#render)); zero matches: `ok no resources matched selected scope`.
+2. Announces the cluster: `context  <env> -> <kube_context>` if the overlay pins `kube_context` (riveter connects with that context), else a warning naming the kubeconfig's current context.
 3. Unless `--dry-run`: if the overlay's namespace does not exist on the reachable cluster and this apply would not create it, fails (`re-run with --scope all to create it first` when the overlay declares an excluded `namespace` resource). An unreachable cluster is not treated as a missing namespace.
 4. If the overlay declares `depends_on`/`wait` gates and neither `--dry-run` nor `--no-wait` is given, applies phase by phase (`phase 1/2: ...`), waiting at each gate (`Job` complete or workload ready); a failure reports `applied:`, `failed, possibly partly applied:` and `not applied:` lists. Otherwise one `kubectl apply -f <file>`.
-5. Unless `--dry-run`/`--no-wait`: `kubectl rollout status <kind>/<name> -n <ns> --timeout=<T>s` for every selected Deployment, StatefulSet and DaemonSet; a timeout fails with `... did not become ready within <T>s — the manifests were applied, but the rollout has not completed`.
+5. Unless `--dry-run`/`--no-wait`: Waits (as `kubectl rollout status` would, with the same progress messages) for every selected Deployment, StatefulSet and DaemonSet; a timeout fails with `... did not become ready within <T>s — the manifests were applied, but the rollout has not completed`.
 6. Prints `ok applied N resource(s): ...` (`would apply` for `--dry-run`).
+
+Objects are applied **server side** (field manager `riveter`, conflicts forced), so the cluster tracks which fields riveter owns and a field dropped from an overlay is removed on the next apply. Objects first created by `kubectl apply` carry the older client-side bookkeeping (`last-applied-configuration`); the first server-side apply over them is safe, but fields that only the old annotation knew about are not removed until they are set once and dropped again.
 
 Several environments: `riveter --env canary,prod apply`. Each is rendered first; the run is refused if any fails to render or pins no `kube_context`; then they apply in the order given, stopping at the first failure; a final report has one line per environment (`applied 12 resource(s)`, `FAILED: ...`, `not attempted`) and the exit status is non-zero if any failed or were skipped. A name listed twice, an empty entry (`a,,b`) or one with no overlay is refused before anything runs.
 
@@ -116,7 +118,7 @@ riveter diff [--against <GIT_REF>] [--scope <SCOPE>] [TARGET]...      alias: df
 
 Default scope `mutable`.
 
-* Without `--against`: `kubectl diff -f <manifest>`; exit status 0 means no difference (`ok cluster matches these manifests`), 1 means differences (`warn the cluster differs from these manifests`), anything else is `kubectl diff failed`. **Riveter itself exits 0 in both cases.** `--env a,b` is supported (one report, `warn at least one environment differs from its manifests`).
+* Without `--against`: each object is sent to the cluster as a server-side dry run and compared with the live one, printed as a unified diff; no difference (`ok cluster matches these manifests`), any difference prints `warn the cluster differs from these manifests`, and a cluster that cannot be asked is an error. **Riveter itself exits 0 in both cases.** `--env a,b` is supported (one report, `warn at least one environment differs from its manifests`).
 * With `--against <GIT_REF>`: no cluster. Reads the overlay as of the commit/branch/tag from git, renders it and the current one, prints a unified diff (`a/<ref>/<env>.yaml` vs `b/working-tree/<env>.yaml`) and `warn <env> renders differently from <ref>` or `ok <env> renders the same as <ref>`. One environment only (`--against compares one environment with its own history; name one --env`). Needs `git`; `.env` is not in git so the current one is used for both sides; nothing is written to the working directory. A missing ref or an environment with no overlay at the ref is refused by name.
 
 ## delete
@@ -125,7 +127,7 @@ Default scope `mutable`.
 riveter delete [--scope <SCOPE>] [TARGET]...      aliases: d, del
 ```
 
-Default scope `mutable`, so immutable resources (typically the namespace) survive unless `--scope all` is given. Renders, then `kubectl delete -f <manifest>`. Prints `ok deleted N resource(s): ...`. Only removes what the overlay still declares; use `prune` for dropped entries. There is no confirmation prompt.
+Default scope `mutable`, so immutable resources (typically the namespace) survive unless `--scope all` is given. Renders, then deletes each object from the cluster (an object that is not there is an error, the rest are still deleted). Prints `ok deleted N resource(s): ...`. Only removes what the overlay still declares; use `prune` for dropped entries. There is no confirmation prompt.
 
 ## prune
 
@@ -133,7 +135,7 @@ Default scope `mutable`, so immutable resources (typically the namespace) surviv
 riveter prune [--dry-run]
 ```
 
-Finds live resources labelled `app.kubernetes.io/managed-by=riveter,env=<env>` (via `kubectl get <kinds> -l ... --ignore-not-found`), compares them with the whole overlay (not the current scope), and deletes the difference. Never pruned: kind `namespace` and `raw`; objects with an owner reference; `Endpoints` of a selecting Service. Output: `ok nothing to prune — the cluster matches the overlay`, or `warn N resource(s) the overlay no longer declares: ...` (`--dry-run`) / `warn pruned N resource(s): ...`.
+Finds live resources labelled `app.kubernetes.io/managed-by=riveter,env=<env>` (listing each kind the cluster serves by that label), compares them with the whole overlay (not the current scope), and deletes the difference. Never pruned: kind `namespace` and `raw`; objects with an owner reference; `Endpoints` of a selecting Service. Output: `ok nothing to prune — the cluster matches the overlay`, or `warn N resource(s) the overlay no longer declares: ...` (`--dry-run`) / `warn pruned N resource(s): ...`.
 
 ## images
 
@@ -182,7 +184,7 @@ riveter schemas fetch [--crd <NAME>]... [--all] [--context <CTX>] [--output <DIR
   gateway.networking.k8s.io    Gateway          v1,v1beta1 bundled   (28 CEL rule(s) not evaluated)
 ```
 
-`fetch` runs `kubectl get crd` against a cluster (Unverified, not run) and writes schemas to the cache directory (`$RIVETER_SCHEMA_DIR`, else `$XDG_CACHE_HOME/riveter/schemas`, else `~/.cache/riveter/schemas`; error `cannot find a cache directory: set RIVETER_SCHEMA_DIR`) or `--output <DIR>`. Without `--crd`/`--all` it takes the seven CRDs riveter has templates for (`certificates`, `clusterissuers`, `issuers` of cert-manager.io; `gateways`, `httproutes` of gateway.networking.k8s.io; `ingressroutes`, `middlewares` of traefik.io). `--all` takes every CRD in the cluster. `--context` picks the kubectl context.
+`fetch` reads the CRDs from a cluster and writes schemas to the cache directory (`$RIVETER_SCHEMA_DIR`, else `$XDG_CACHE_HOME/riveter/schemas`, else `~/.cache/riveter/schemas`; error `cannot find a cache directory: set RIVETER_SCHEMA_DIR`) or `--output <DIR>`. Without `--crd`/`--all` it takes the seven CRDs riveter has templates for (`certificates`, `clusterissuers`, `issuers` of cert-manager.io; `gateways`, `httproutes` of gateway.networking.k8s.io; `ingressroutes`, `middlewares` of traefik.io). `--all` takes every CRD in the cluster. `--context` picks the kubeconfig context.
 
 ## login
 

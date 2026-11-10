@@ -83,7 +83,7 @@ anvil artifact release --all --yes             # every program, versions looked 
 
 ```bash
 anvil docs check                       # front matter, navigation, links, OpenAPI against the routes
-anvil docs build forge                 # Jekyll with the installed just-the-docs gem -> target/docs/forge/
+anvil docs build forge                 # the site and its archive -> target/docs/forge/
 anvil docs release forge --dry-run     # build, show what would be sent
 anvil docs release                     # every book, to the warehouse files storage
 ```

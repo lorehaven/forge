@@ -1,18 +1,5 @@
 title: Forge
 description: Services, libraries and command-line tools built on Quench - reference and API
-remote_theme: just-the-docs/just-the-docs
-plugins:
-  - jekyll-remote-theme
-  - jekyll-relative-links
-  - jekyll-seo-tag
-relative_links:
-  enabled: true
-  collections: false
-search_enabled: true
-heading_anchors: true
-color_scheme: dark
-back_to_top: true
-back_to_top_text: "Back to top"
 exclude:
   - _reports/
 defaults:

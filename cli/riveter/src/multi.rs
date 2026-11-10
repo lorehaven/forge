@@ -7,7 +7,7 @@
 //! after the first two have already gone out.
 
 use crate::render::{ResourceScope, Selector, generate_manifests_selected};
-use crate::repl::{WaitPolicy, describe, kubectl_apply, kubectl_diff, ok, warn};
+use crate::repl::{WaitPolicy, cluster_apply, cluster_diff, describe, ok, warn};
 use quench_cli::prelude::{Tone, print_status};
 use quench_core::Result;
 
@@ -65,15 +65,15 @@ impl Outcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnvReport {
     pub env: String,
-    /// The kubectl context the environment is bound to.
+    /// The kubeconfig context the environment is bound to.
     pub context: String,
     pub outcome: Outcome,
 }
 
 /// Renders every environment and refuses the run if any of them cannot go ahead, returning each
-/// environment's pinned kubectl context.
+/// environment's pinned kubeconfig context.
 ///
-/// An environment that pins no `kube_context` would act on whichever cluster kubectl happens to
+/// An environment that pins no `kube_context` would act on whichever cluster the kubeconfig happens to
 /// have selected - for a single environment that is a warning, but across several it would send
 /// every one of them to the same place while reporting them as different clusters.
 pub fn preflight(
@@ -200,7 +200,7 @@ pub fn apply_many(
 
     let reports = run_in_order(envs, &contexts, |env| {
         ok(&format!("== {env} =="));
-        let rendered = kubectl_apply(env, dry_run, scope, selector, wait)?;
+        let rendered = cluster_apply(env, dry_run, scope, selector, wait)?;
         if rendered.resource_count == 0 {
             return Ok(Outcome::Nothing);
         }
@@ -225,7 +225,7 @@ pub fn diff_many(envs: &[String], scope: ResourceScope, selector: &Selector) -> 
 
     let reports = run_in_order(envs, &contexts, |env| {
         ok(&format!("== {env} =="));
-        let (rendered, differs) = kubectl_diff(env, scope, selector)?;
+        let (rendered, differs) = cluster_diff(env, scope, selector)?;
         Ok(if rendered.resource_count == 0 {
             Outcome::Nothing
         } else if differs {

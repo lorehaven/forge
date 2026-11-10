@@ -53,7 +53,7 @@ Allowlist selection per agent: `run_cmd_allowlist` if non-empty; otherwise deriv
 
 | Group | Entries |
 |---|---|
-| common | `rg`, `ls`, `cat`, `sed -n`, `git status`, `git diff` |
+| common | `ls`, `cat`, `sed -n`, `git status`, `git diff` |
 | rust | `cargo check`, `cargo test`, `cargo clippy`, `cargo fmt --check` |
 | node | `npm run`, `pnpm run`, `yarn`, `bun run` |
 | python | `python -m pytest`, `python -m unittest`, `python -m ruff`, `python -m mypy` |

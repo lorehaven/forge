@@ -70,13 +70,13 @@ pub enum Cmd {
         #[arg(value_name = "TARGET", help = TARGET_HELP)]
         targets: Vec<String>,
     },
-    /// Render the selected resources and apply them with kubectl
+    /// Render the selected resources and apply them to the cluster
     #[command(visible_alias = "a")]
     Apply {
-        /// Pass --dry-run=client to kubectl; nothing reaches the cluster
+        /// List what would be applied; nothing reaches the cluster
         #[arg(long)]
         dry_run: bool,
-        /// Return as soon as kubectl accepts the manifests, without waiting for
+        /// Return as soon as the cluster accepts the manifests, without waiting for
         /// the rollout to become ready
         #[arg(long)]
         no_wait: bool,
@@ -88,7 +88,7 @@ pub enum Cmd {
         #[arg(value_name = "TARGET", help = TARGET_HELP)]
         targets: Vec<String>,
     },
-    /// Show what applying would change, via `kubectl diff`
+    /// Show what applying would change, against the live objects
     ///
     /// With `--against <git-ref>`, instead shows what the overlay's rendered
     /// manifests changed since that commit, branch or tag. No cluster is
@@ -112,7 +112,7 @@ pub enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Render the selected resources and delete them with kubectl
+    /// Render the selected resources and delete them from the cluster
     #[command(visible_aliases = ["d", "del"])]
     Delete {
         #[arg(long, value_enum, default_value_t = ApplyScope::Mutable, help = SCOPE_HELP)]
@@ -178,7 +178,7 @@ pub enum Cmd {
         #[arg(long, value_name = "DIR", default_value = "packages")]
         out: std::path::PathBuf,
     },
-    /// Install a package: fetch it, render it and apply it with kubectl
+    /// Install a package: fetch it, render it and apply it to the cluster
     ///
     /// The package may be `name`, `name@version`, or the path of a `.rivet`
     /// file. Variables come from the package's own `values.toml`, then
@@ -203,10 +203,10 @@ pub enum Cmd {
         /// Also print everything the package declares as one JSON line (`riveter-inventory: [...]`), whatever was selected
         #[arg(long)]
         inventory: bool,
-        /// Pass --dry-run=client to kubectl; nothing reaches the cluster
+        /// List what would be applied; nothing reaches the cluster
         #[arg(long)]
         dry_run: bool,
-        /// Return as soon as kubectl accepts the manifests, without waiting for the rollout
+        /// Return as soon as the cluster accepts the manifests, without waiting for the rollout
         #[arg(long)]
         no_wait: bool,
         /// Seconds to wait for each rollout before giving up
@@ -365,8 +365,8 @@ pub enum SecretsCmd {
     },
     /// Write each named overlay's `.env` to a Secret `gantry-values-<overlay>`
     ///
-    /// One Secret per overlay, holding the file as it is under the key `env`, written with your own kubectl
-    /// access. Values go to kubectl over standard input and are never printed: only Secret and variable
+    /// One Secret per overlay, holding the file as it is under the key `env`, written with your own cluster
+    /// access (your kubeconfig). Values go to the API server in the request body and are never printed: only Secret and variable
     /// names are. `--all` takes every overlay that has a `.env`.
     Sync {
         /// Overlays to sync, by name
@@ -378,7 +378,7 @@ pub enum SecretsCmd {
         /// Namespace the Secrets go in
         #[arg(long, short = 'n', value_name = "NAMESPACE", default_value = "forge")]
         namespace: String,
-        /// kubectl context to write to, instead of the current one
+        /// kubeconfig context to write to, instead of the current one
         #[arg(long, value_name = "CONTEXT")]
         context: Option<String>,
         /// Report what would be synced without touching the cluster
@@ -403,7 +403,7 @@ pub enum SchemasCmd {
         /// Every CRD in the cluster
         #[arg(long)]
         all: bool,
-        /// kubectl context to read from, instead of the current one
+        /// kubeconfig context to read from, instead of the current one
         #[arg(long, value_name = "CONTEXT")]
         context: Option<String>,
         /// Write here instead of the cache directory

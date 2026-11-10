@@ -14,6 +14,7 @@ dependencies = [
  "quench-client",
  "quench-core",
  "quench-crypto",
+ "quench-html",
  "quench-serde",
  "quench-test",
 ]
@@ -1531,6 +1532,7 @@ dependencies = [
  "quench-client",
  "quench-core",
  "quench-crypto",
+ "quench-k8s",
  "quench-regex",
  "quench-schema",
  "quench-serde",

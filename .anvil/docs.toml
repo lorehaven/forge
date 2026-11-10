@@ -1,4 +1,4 @@
-# `anvil docs check|build|release`: the documentation books (Jekyll sites of Markdown files).
+# `anvil docs check|build|release`: the documentation books (sites of Markdown files).
 [docs]
 out = "target/docs"
 # The warehouse files storage the books are kept in: <book>/<version>/ and <book>/latest.json. It is a static
