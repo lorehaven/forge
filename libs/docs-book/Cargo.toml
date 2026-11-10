@@ -1,6 +1,6 @@
 [package]
 name = "docs-book"
-version = "0.1.1"
+version = "0.1.2"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "A documentation book (a Jekyll site of Markdown pages with just-the-docs navigation): its pages, navigation tree, link resolution and checks"

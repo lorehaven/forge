@@ -1,6 +1,6 @@
 [package]
 name = "gantry"
-version = "0.2.10"
+version = "0.2.11"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Gantry - installs, upgrades, scales and swaps what runs in the cluster"
