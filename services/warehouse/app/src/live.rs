@@ -12,7 +12,7 @@ use quench_ui::i18n::I18n;
 use quench_ui::prelude::*;
 use quench_ui::router::{History, Router, Routes};
 use warehouse_core::{
-    ArtifactEntry, Browse, CrateVersion, DockerTag, NewStorage, Overview, RivetEntry,
+    ArtifactEntry, Browse, CrateVersion, DockerTag, NewStorage, Overview, RivetEntry, ShareView,
     StorageChanges, Storages,
 };
 
@@ -62,6 +62,18 @@ pub enum Request {
         storage: String,
         path: String,
     },
+    /// The share links of a storage that the person may see.
+    Shares(String),
+    /// Make (or get again) the link for a file or directory; an empty path is the whole storage.
+    CreateShare {
+        storage: String,
+        path: String,
+    },
+    /// Withdraw a link; the storage's links come again.
+    DeleteShare {
+        id: String,
+        storage: String,
+    },
     /// The person chose a language (the host keeps it for next time).
     Language(String),
 }
@@ -96,6 +108,13 @@ pub enum Msg {
         storage: String,
         parent: String,
     },
+    /// A storage's share links, newest first.
+    Shares {
+        storage: String,
+        list: Vec<ShareView>,
+    },
+    /// A link was made (or already existed): the app shows it.
+    ShareReady(ShareView),
     /// The service refused or failed a change; the text is for the person (an `api_error_*` key is translated).
     Rejected(String),
     /// The service could not be reached, or answered something else.
@@ -190,6 +209,10 @@ pub(crate) struct State {
     pub rivets: Signal<Option<Vec<RivetEntry>>>,
     pub storages: Signal<Option<Storages>>,
     pub browse: Signal<Option<Browse>>,
+    /// The share links of a storage, as asked for it.
+    pub shares: Signal<Option<(String, Vec<ShareView>)>>,
+    /// The link being shown.
+    pub share_dialog: Signal<Option<ShareView>>,
     pub problem: Signal<Option<Problem>>,
     /// A refused change, until the person does something else.
     pub notice: Signal<Option<String>>,
@@ -276,6 +299,11 @@ fn receive(state: &State, router: &Router, base: &str, m: Msg) {
                 warehouse_core::fmt::encode(&parent)
             ));
         }
+        Msg::Shares { storage, list } => state.shares.set(Some((storage, list))),
+        Msg::ShareReady(share) => {
+            state.notice.set(None);
+            state.share_dialog.set(Some(share));
+        }
         Msg::Rejected(why) => state.notice.set(Some(why)),
         Msg::Failed(why) => state.problem.set(Some(Problem::Failed(why))),
         Msg::SignedOut => state.problem.set(Some(Problem::SignedOut)),
@@ -293,6 +321,8 @@ fn new_state() -> State {
         rivets: create_signal(None),
         storages: create_signal(None),
         browse: create_signal(None),
+        shares: create_signal(None),
+        share_dialog: create_signal(None),
         problem: create_signal(None),
         notice: create_signal(None),
         confirm: create_signal(None),
@@ -308,6 +338,7 @@ fn routes(env: &Env, state: &State, base: &str) -> Routes {
             state.problem.set(None);
             state.notice.set(None);
             state.confirm.set(None);
+            state.share_dialog.set(None);
             build(&env, &state)
         }
     };
@@ -395,6 +426,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     .child(banner(&env, &state, &base_login(&base)))
                     .child(routes(&env, &state, &base).view(&router))
                     .child(screens::confirm_dialog(&env, &state))
+                    .child(screens::share_dialog(&env, &state))
                     .into_view()
             })
         }

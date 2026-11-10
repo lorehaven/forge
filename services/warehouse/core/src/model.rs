@@ -247,6 +247,31 @@ pub struct FileRef {
     pub path: String,
 }
 
+/// `POST /ui/api/files/shares`: what to share. Empty `path` is the whole storage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewShare {
+    pub storage: String,
+    pub path: String,
+}
+
+/// A share link as its creator sees it. The link is `<service>/share/<token>`; anyone who has it can open what it names.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShareView {
+    pub id: String,
+    pub token: String,
+    pub storage: String,
+    /// Relative to the storage; empty is the storage itself.
+    pub path: String,
+    /// A directory (with everything below it) rather than a single file.
+    pub is_dir: bool,
+    pub created_by: String,
+    /// `2026-11-10 12:00 UTC`.
+    pub created: String,
+    /// The link to hand out, whole (`https://host/warehouse/share/<token>`) when the service knows its address, otherwise
+    /// the part after the host.
+    pub url: String,
+}
+
 /// A file of a storage, with the size when known.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BrowseFile {
@@ -264,6 +289,9 @@ pub struct Browse {
     pub files: Vec<BrowseFile>,
     /// There are more files than the browser lists.
     pub truncated: bool,
+    /// The caller may write here, and so may make a share link of something in it.
+    #[serde(default)]
+    pub can_share: bool,
 }
 
 impl Browse {

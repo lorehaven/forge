@@ -433,6 +433,133 @@ pub(crate) fn confirm_dialog(env: &Env, state: &State) -> View {
     })
 }
 
+/// The dialog that shows a share link: what it opens, the link to hand out, and the ways to withdraw it.
+#[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function builds the dialog, every button wired to its request"
+)]
+pub(crate) fn share_dialog(env: &Env, state: &State) -> View {
+    let (env, current) = (env.clone(), state.share_dialog.clone());
+    let state = state.clone();
+    View::dynamic(move || {
+        let Some(share) = current.get() else {
+            return View::Empty;
+        };
+        let close = {
+            let current = current.clone();
+            move || current.set(None)
+        };
+        let withdraw = {
+            let (state, share) = (state.clone(), share.clone());
+            move || {
+                state.share_dialog.set(None);
+                confirm(
+                    &state,
+                    "ui_share_withdraw_title",
+                    "ui_share_withdraw_text",
+                    share_name(&share),
+                    Request::DeleteShare {
+                        id: share.id.clone(),
+                        storage: share.storage.clone(),
+                    },
+                );
+            }
+        };
+        let what = if share.is_dir {
+            "ui_share_for_dir"
+        } else {
+            "ui_share_for_file"
+        };
+        div()
+            .attr("id", "share")
+            .class("wh-modal")
+            .child(
+                button()
+                    .attr("type", "button")
+                    .attr("aria-label", env.t.t("ui_close"))
+                    .class("wh-modal-backdrop")
+                    .on_click(close.clone()),
+            )
+            .child(
+                div()
+                    .class("wh-modal-content")
+                    .attr("role", "dialog")
+                    .child(
+                        div()
+                            .class("wh-modal-header")
+                            .child(
+                                div()
+                                    .class("wh-modal-title")
+                                    .text(env.t.t("ui_share_title")),
+                            )
+                            .child(
+                                button()
+                                    .attr("type", "button")
+                                    .attr("aria-label", env.t.t("ui_close"))
+                                    .class("wh-modal-close")
+                                    .on_click(close.clone())
+                                    .text("×"),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .class("wh-modal-body")
+                            .child(div().class("wh-confirm-target").text(share_name(&share)))
+                            .child(p().text(env.t.t(what)))
+                            .child(
+                                input()
+                                    .attr("type", "text")
+                                    .attr("id", "share-url")
+                                    .attr("readonly", "readonly")
+                                    .attr("aria-label", env.t.t("ui_share_link"))
+                                    .attr("value", share.url.clone())
+                                    .class("wh-input wh-mono wh-share-url"),
+                            )
+                            .child(p().class("wh-faint").text(env.t.t("ui_share_copy_hint")))
+                            .child(
+                                div()
+                                    .class("wh-actions")
+                                    .child(
+                                        button()
+                                            .attr("type", "button")
+                                            .attr("id", "share-withdraw")
+                                            .class("wh-btn wh-danger")
+                                            .on_click(withdraw)
+                                            .text(env.t.t("ui_share_withdraw")),
+                                    )
+                                    .child(
+                                        a().attr("id", "share-open")
+                                            .class("wh-btn")
+                                            .attr("href", share.url.clone())
+                                            .attr("target", "_blank")
+                                            .attr("rel", "noopener")
+                                            .text(env.t.t("ui_share_open")),
+                                    )
+                                    .child(
+                                        button()
+                                            .attr("type", "button")
+                                            .attr("id", "share-close")
+                                            .class("wh-btn")
+                                            .on_click(close)
+                                            .text(env.t.t("ui_close")),
+                                    ),
+                            ),
+                    ),
+            )
+            .into_view()
+    })
+}
+
+/// What a link opens, as a person reads it: `storage/path`, or the storage alone.
+pub(crate) fn share_name(share: &warehouse_core::ShareView) -> String {
+    if share.path.is_empty() {
+        share.storage.clone()
+    } else {
+        format!("{}/{}", share.storage, share.path)
+    }
+}
+
 /// A checkbox with a label, on `value`.
 pub(crate) fn checkbox_field(id: &str, text: String, value: &Signal<bool>) -> Element {
     let (shown, toggle) = (value.clone(), value.clone());

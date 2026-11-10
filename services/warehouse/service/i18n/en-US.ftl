@@ -265,3 +265,17 @@ ui_files_col_path = Path
 ui_loading = Loading…
 ui_not_found = There is nothing here.
 ui_session_ended = Your session ended.
+
+ui_share_button = Share this with a link
+ui_share_title = Share link
+ui_share_for_file = Anyone with this link can download this file, without signing in.
+ui_share_for_dir = Anyone with this link can open this folder and everything in it, including the folders inside, without signing in.
+ui_share_link = Link
+ui_share_open = Open
+ui_share_copy_hint = Select the link and copy it. Withdraw it to stop sharing.
+ui_share_withdraw = Withdraw link
+ui_share_withdraw_title = Withdraw link
+ui_share_withdraw_text = The link stops working for everyone who has it. What it opened stays where it is.
+ui_shares_title = Shared links
+api_error_share_not_found = That link no longer exists.
+api_error_share_storage_missing = No such storage.

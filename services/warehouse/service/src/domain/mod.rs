@@ -4,5 +4,6 @@ pub mod crate_index;
 pub mod db;
 pub mod docker_error;
 pub mod rivet;
+pub mod share;
 pub mod storage;
 pub mod storage_file;

@@ -26,9 +26,6 @@ struct Source {
     path: &'static str,
     id: Field,
     label: Label,
-    /// Only entries that have an owner: a warehouse's fixed storages cannot be granted one by one. (The index lists only
-    /// the ones that have; this keeps a listing that ever included the others honest.)
-    owned_only: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -54,7 +51,6 @@ const SOURCES: [Source; 4] = [
         path: "/api/v1/storages",
         id: Field::Name,
         label: Label::NameAndOwner,
-        owned_only: true,
     },
     Source {
         service: "workbench",
@@ -62,7 +58,6 @@ const SOURCES: [Source; 4] = [
         path: "/api/v1/projects",
         id: Field::Id,
         label: Label::KeyAndName,
-        owned_only: false,
     },
     Source {
         service: "conveyor",
@@ -70,7 +65,6 @@ const SOURCES: [Source; 4] = [
         path: "/api/v1/projects?all=true",
         id: Field::Id,
         label: Label::Name,
-        owned_only: false,
     },
     Source {
         service: "gantry",
@@ -78,7 +72,6 @@ const SOURCES: [Source; 4] = [
         path: "/api/v1/targets",
         id: Field::Name,
         label: Label::Name,
-        owned_only: false,
     },
 ];
 
@@ -114,7 +107,6 @@ fn parse(source: &Source, body: &str) -> Result<Vec<ResourceChoice>, String> {
         .map_err(|err| format!("the {} listing is unreadable: {err}", source.service))?;
     let mut choices: Vec<ResourceChoice> = entries
         .into_iter()
-        .filter(|entry| !source.owned_only || entry.owner.is_some())
         .filter_map(|entry| {
             let id = match source.id {
                 Field::Id => entry.id.clone(),
@@ -128,6 +120,7 @@ fn parse(source: &Source, body: &str) -> Result<Vec<ResourceChoice>, String> {
                     .key
                     .as_deref()
                     .map_or_else(|| name.clone(), |key| format!("{key} · {name}")),
+                // A fixed storage has no owner and is read as its name alone.
                 Label::NameAndOwner => entry
                     .owner
                     .as_deref()

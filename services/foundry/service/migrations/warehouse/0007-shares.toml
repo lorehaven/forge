@@ -1,0 +1,32 @@
+[[migrations]]
+id = "0007-shares"
+author = "warehouse-service"
+since = "0.6.0"
+
+# A link anyone can open without signing in: one file, or one directory with everything below it. The token in the link is
+# the whole credential (256 random bits, never derived from anything), so it lives in its own unique column and a lookup is
+# by token alone. `path` is relative to the storage ('' is the storage itself); `is_dir` decides whether the link serves the
+# file or browses below it. A share does not point at a storage row (a fixed storage has none), so it is removed with its
+# storage by the service, and with its creator by the foreign key: the link of an account that no longer exists is gone.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.shares (
+    id TEXT PRIMARY KEY,
+    token TEXT NOT NULL UNIQUE,
+    storage TEXT NOT NULL,
+    path TEXT NOT NULL,
+    is_dir BOOLEAN NOT NULL,
+    created_by TEXT NOT NULL REFERENCES ${auth_schema}.users(username) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS shares_storage_idx ON ${schema}.shares (storage);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS shares_created_by_idx ON ${schema}.shares (created_by);
+"""

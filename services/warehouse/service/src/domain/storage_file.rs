@@ -311,6 +311,71 @@ pub async fn list_files(
         .collect()
 }
 
+/// One entry directly below a directory of a dynamic storage.
+#[derive(Clone, Debug, quench_serde::Serialize)]
+pub struct Child {
+    pub name: String,
+    /// There are files further down under this name.
+    pub is_dir: bool,
+    /// The file's size; zero for a directory.
+    pub size: i64,
+}
+
+/// The names directly below `dir` (empty is the storage's top): the files there, and the directories that hold files.
+///
+/// A dynamic storage has rows, not directories, so a directory exists as long as a path runs through it. At most `limit`
+/// names come back, directories first.
+pub async fn children(
+    db: &Db,
+    storage_name: &str,
+    dir: &str,
+    limit: i64,
+) -> Result<Vec<Child>, StorageError> {
+    let pool = pool(db)?;
+    let schema = schema();
+    let prefix = if dir.is_empty() {
+        String::new()
+    } else {
+        format!("{}/", dir.trim_end_matches('/'))
+    };
+    // `substr` counts from 1.
+    let from = i32::try_from(prefix.chars().count() + 1).unwrap_or(i32::MAX);
+    let lower_bound = (!prefix.is_empty()).then(|| prefix.clone());
+    let upper_bound = prefix_upper_bound(&prefix);
+    let sql = format!(
+        "SELECT split_part(substr(path, $3), '/', 1) AS name, \
+                bool_or(position('/' in substr(path, $3)) > 0) AS is_dir, \
+                COALESCE(SUM(size) FILTER (WHERE position('/' in substr(path, $3)) = 0), 0)::bigint AS size \
+         FROM {schema}.storage_files \
+         WHERE storage = $1 AND starts_with(path, $2) \
+           AND ($4::text IS NULL OR path COLLATE \"C\" >= $4) \
+           AND ($5::text IS NULL OR path COLLATE \"C\" < $5) \
+         GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT $6"
+    );
+    let rows = pool
+        .query(
+            &sql,
+            &[
+                &storage_name as &dyn quench_pg::ToSql,
+                &prefix,
+                &from,
+                &lower_bound,
+                &upper_bound,
+                &limit,
+            ],
+        )
+        .await?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(Child {
+                name: row.get("name")?,
+                is_dir: row.get("is_dir")?,
+                size: row.get("size")?,
+            })
+        })
+        .collect()
+}
+
 /// A bounded, resumable page of [`list_files`] for storages with tens of thousands of paths.
 /// Ordering/range use the `C` collation to match its index; any other collation forces a full scan.
 pub async fn list_files_page(

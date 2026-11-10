@@ -5,7 +5,7 @@
 use quench_auth::prelude::Claims;
 use quench_core::time::Time;
 use warehouse_service::domain::storage::DynamicStorage;
-use warehouse_service::routers::files::authz::can_on_storage_claims;
+use warehouse_service::routers::files::authz::{can_on_static_claims, can_on_storage_claims};
 
 fn claims_with(sub: &str, scope: &str) -> Claims {
     Claims::for_audiences(
@@ -75,4 +75,52 @@ fn a_wildcard_role_covers_every_storage() {
     let storage = storage_owned_by("alice");
     assert!(can_on_storage_claims(&claims, &storage, "read"));
     assert!(can_on_storage_claims(&claims, &storage, "write"));
+}
+
+// ── Fixed storages (`FILE_STORAGES`): no owner, shared by default ─────────────────────────────────
+
+#[quench_test::test]
+fn the_blanket_grants_apply_to_a_fixed_storage() {
+    let reader = claims_with("ola", "warehouse:read");
+    assert!(can_on_static_claims(&reader, "docs", "read"));
+    assert!(!can_on_static_claims(&reader, "docs", "write"));
+
+    let writer = claims_with("ola", "warehouse:write");
+    assert!(can_on_static_claims(&writer, "docs", "write"));
+    // Whoever may write may read.
+    assert!(can_on_static_claims(&writer, "docs", "read"));
+}
+
+#[quench_test::test]
+fn a_grant_for_one_fixed_storage_covers_that_storage_only() {
+    let claims = claims_with("ola", "warehouse:storage:docs:read");
+    assert!(can_on_static_claims(&claims, "docs", "read"));
+    assert!(!can_on_static_claims(&claims, "docs", "write"));
+    assert!(!can_on_static_claims(&claims, "books", "read"));
+
+    let writer = claims_with("ola", "warehouse:storage:docs:write");
+    assert!(can_on_static_claims(&writer, "docs", "write"));
+    assert!(
+        can_on_static_claims(&writer, "docs", "read"),
+        "write includes read"
+    );
+    assert!(!can_on_static_claims(&writer, "books", "write"));
+}
+
+#[quench_test::test]
+fn a_wildcard_role_and_nothing_at_all() {
+    // Machine clients (lectern, conveyor-publish) hold the `service` role and keep working.
+    let service = claims_with("lectern-warehouse", "service");
+    assert!(can_on_static_claims(&service, "books", "read"));
+    assert!(can_on_static_claims(&service, "artifacts", "write"));
+
+    // Only the audience, no grant: the door is open, the room is not.
+    let nobody = claims_with("ola", "user");
+    assert!(!can_on_static_claims(&nobody, "docs", "read"));
+}
+
+#[quench_test::test]
+fn a_dynamic_storages_grant_does_not_open_a_fixed_one() {
+    let claims = claims_with("ola", "warehouse:storage:backups:read");
+    assert!(!can_on_static_claims(&claims, "docs", "read"));
 }

@@ -3,7 +3,7 @@
 use super::{Session, error, internal, no_content, ok};
 use crate::domain::storage::{self, DynamicStorage, NewStorage as DbNewStorage, StorageUpdate};
 use crate::domain::storage_file;
-use crate::routers::files::authz::can_on_storage_claims;
+use crate::routers::files::authz::{can_on_static_claims, can_on_storage_claims};
 use crate::routers::files::dynamic;
 use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Json, Path, Query, Response, get, http::StatusCode, post};
@@ -200,8 +200,8 @@ pub struct BrowseQuery {
 
 /// Every file of a storage (up to a cap) with its size, and whether the caller may read it.
 ///
-/// A static storage is open to any session; a database storage to its owner, a wildcard role or a
-/// `warehouse:storage:<name>:read` grant.
+/// A fixed storage is open to the blanket `warehouse:read` (or `write`) or a `warehouse:storage:<name>:read` grant; a
+/// database storage to its owner, a wildcard role or a `warehouse:storage:<name>:read` grant.
 #[get("/ui/api/files/browse")]
 pub async fn browse(
     session: Session,
@@ -219,25 +219,31 @@ pub async fn browse(
     } else {
         Vec::new()
     };
-    let answer = |access: &str, files: Vec<BrowseFile>, truncated: bool| Browse {
+    let answer = |access: &str, files: Vec<BrowseFile>, truncated: bool, can_share: bool| Browse {
         storage: name.clone(),
         access: access.to_string(),
         files,
         truncated,
+        can_share,
     };
 
     if let Some(found) = dynamic_storages.iter().find(|s| s.name == name) {
         if !can_on_storage_claims(&claims, found, "read") {
-            return ok(&answer(Browse::DENIED, Vec::new(), false));
+            return ok(&answer(Browse::DENIED, Vec::new(), false, false));
         }
         let (files, truncated) = dynamic_files(&db, &name).await;
-        return ok(&answer(Browse::READABLE, files, truncated));
+        let can_share = can_on_storage_claims(&claims, found, "write");
+        return ok(&answer(Browse::READABLE, files, truncated, can_share));
     }
     if let Some(found) = crate::routers::files::storage(&name) {
+        if !can_on_static_claims(&claims, &found.name, "read") {
+            return ok(&answer(Browse::DENIED, Vec::new(), false, false));
+        }
         let (files, truncated) = static_files(&found.root).await;
-        return ok(&answer(Browse::READABLE, files, truncated));
+        let can_share = can_on_static_claims(&claims, &found.name, "write");
+        return ok(&answer(Browse::READABLE, files, truncated, can_share));
     }
-    ok(&answer(Browse::MISSING, Vec::new(), false))
+    ok(&answer(Browse::MISSING, Vec::new(), false, false))
 }
 
 /// Walks the storage a page at a time up to [`TREE_FILE_CAP`]; one row past the cap signals `truncated`.

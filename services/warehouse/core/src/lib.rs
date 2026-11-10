@@ -9,6 +9,6 @@ pub mod tree;
 pub use draft::{DraftError, EditStorageDraft, NewStorageDraft};
 pub use model::{
     ArtifactEntry, ArtifactRef, Browse, BrowseFile, CrateDep, CrateRef, CrateVersion, DockerTag,
-    DynamicStorage, Features, FileRef, ImageRef, MetaPair, NewStorage, Overview, RivetEntry,
-    RivetRef, StaticStorage, StorageChanges, Storages,
+    DynamicStorage, Features, FileRef, ImageRef, MetaPair, NewShare, NewStorage, Overview,
+    RivetEntry, RivetRef, ShareView, StaticStorage, StorageChanges, Storages,
 };

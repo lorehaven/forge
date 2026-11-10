@@ -5,7 +5,7 @@ grand_parent: Services
 nav_order: 3
 ---
 
-Foundry module `warehouse` (version 0.5.0 in `module.toml`, `default_schema = "warehouse"`, `requires = ["auth@^0.2", "quench-core@^0.1"]`, variable `auth_schema = "auth"`) from `services/foundry/service/migrations/warehouse`. `${schema}` is `warehouse` unless `DB_SCHEMA` differs; users live in the realm schema `${auth_schema}`.
+Foundry module `warehouse` (version 0.6.0 in `module.toml`, `default_schema = "warehouse"`, `requires = ["auth@^0.2", "quench-core@^0.1"]`, variable `auth_schema = "auth"`) from `services/foundry/service/migrations/warehouse`. `${schema}` is `warehouse` unless `DB_SCHEMA` differs; users live in the realm schema `${auth_schema}`.
 
 ## Migrations in order
 
@@ -17,6 +17,7 @@ Foundry module `warehouse` (version 0.5.0 in `module.toml`, `default_schema = "w
 | `0004-artifact-versions` | 0.3.0 | table `artifact_versions`, index `artifact_versions_program_platform_version_idx`; copies `apk_versions` rows as `android`/`apk` rows; drops `apk_versions` |
 | `0005-rivet-packages` | 0.4.0 | table `rivet_packages`, index `rivet_packages_name_idx` |
 | `0006-artifact-format-key` | 0.5.0 | drops the unique constraint `artifact_versions_program_platform_version_code_key`, adds unique index `artifact_versions_program_platform_format_version_key` on `(program, platform, format, version_code)`, rewrites ids to `<program>/<platform>/<format>@<version_code>` |
+| `0007-shares` | 0.6.0 | table `shares` and indexes `shares_storage_idx`, `shares_created_by_idx` |
 
 ## Tables
 
@@ -35,6 +36,10 @@ Content-addressed, shared by all dynamic storages: `sha256` TEXT primary key; `s
 ### `storage_sync_log`
 
 Append-only change feed, written only for storages with `sync_enabled`: `id` BIGSERIAL primary key (the client's cursor); `storage` TEXT not null references `storages(name)` on delete cascade; `path` TEXT not null; `op` TEXT not null; `sha256` TEXT null; `size` BIGINT null; `at` TIMESTAMPTZ not null default `NOW()`. Index `(storage, id)`.
+
+### `shares`
+
+A link anyone can open without signing in: `id` TEXT primary key; `token` TEXT not null **unique** (the credential, 43 URL-safe characters from 256 random bits); `storage` TEXT not null (a name, with **no foreign key**: a fixed storage has no row, and a dynamic storage's links are removed with it by the service); `path` TEXT not null (relative to the storage, empty is the storage itself); `is_dir` BOOLEAN not null; `created_by` TEXT not null references `${auth_schema}.users(username)` on delete cascade; `created_at` TIMESTAMPTZ not null default `NOW()`. Indexes `shares_storage_idx (storage)` and `shares_created_by_idx (created_by)`.
 
 ### `artifact_versions`
 

@@ -108,15 +108,17 @@ pub async fn storages(
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-/// A dynamic storage as the permission editor needs it: whose it is, and nothing about what it holds.
+/// A storage as the permission editor needs it: its name, and whose it is when it has an owner. Nothing about what it holds.
 #[derive(Debug, Serialize)]
 pub struct StorageIndexEntry {
     pub name: String,
-    pub owner: String,
+    /// The owner of a dynamic storage; a fixed one (from `FILE_STORAGES`) has none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
-/// `GET /api/v1/storages`: the name and owner of every dynamic storage, for a caller who holds the blanket
-/// `warehouse:read`.
+/// `GET /api/v1/storages`: the name (and owner) of every storage, the fixed ones and the dynamic ones, for a caller who
+/// holds the blanket `warehouse:read`.
 ///
 /// `GET /api/v1/files` shows a dynamic storage only to its owner, a wildcard role or an explicit
 /// `warehouse:storage:<name>:<action>` grant, so a caller with only the blanket grant cannot see what there is to grant -
@@ -135,15 +137,19 @@ pub async fn storage_index(
     if !authz::has_blanket(claims.as_ref(), &config, "read") {
         return forbidden("listing every storage needs the warehouse:read grant");
     }
+    let mut index: Vec<StorageIndexEntry> = crate::routers::files::storages()
+        .iter()
+        .map(|storage| StorageIndexEntry {
+            name: storage.name.clone(),
+            owner: None,
+        })
+        .collect();
     match crate::domain::storage::list(&db).await {
         Ok(storages) => {
-            let index: Vec<StorageIndexEntry> = storages
-                .into_iter()
-                .map(|storage| StorageIndexEntry {
-                    name: storage.name,
-                    owner: storage.owner,
-                })
-                .collect();
+            index.extend(storages.into_iter().map(|storage| StorageIndexEntry {
+                name: storage.name,
+                owner: Some(storage.owner),
+            }));
             Response::json(StatusCode::OK, &index)
                 .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
         }

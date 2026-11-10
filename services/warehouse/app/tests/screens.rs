@@ -11,10 +11,21 @@ use quench_ui::test_renderer::NodeId;
 use warehouse_app::{Msg, Request, Setup, Warehouse, warehouse};
 use warehouse_core::{
     ArtifactEntry, Browse, BrowseFile, CrateDep, CrateVersion, DockerTag, DynamicStorage, Features,
-    MetaPair, NewStorage, Overview, RivetEntry, StaticStorage, Storages,
+    MetaPair, NewStorage, Overview, RivetEntry, ShareView, StaticStorage, Storages,
 };
 
 type Asked = Rc<RefCell<Vec<Request>>>;
+
+/// A translation key shown as it is means a string that is missing from the locale files.
+fn assert_no_raw_keys(l: &Live) {
+    let text = l.text();
+    for key in text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+        assert!(
+            !(key.starts_with("ui_") || key.starts_with("api_error_")),
+            "an untranslated key on the page: {key}: {text}"
+        );
+    }
+}
 
 fn find(r: &TestRenderer, tag: &str, attr: (&str, &str)) -> NodeId {
     r.document_order()
@@ -820,6 +831,27 @@ fn browse_of(access: &str) -> Browse {
             file("top.txt", 5),
         ],
         truncated: false,
+        can_share: false,
+    }
+}
+
+fn sharing() -> Browse {
+    Browse {
+        can_share: true,
+        ..browse_of("readable")
+    }
+}
+
+fn share_of(id: &str, path: &str, is_dir: bool) -> ShareView {
+    ShareView {
+        id: id.into(),
+        token: format!("tok-{id}"),
+        storage: "backups".into(),
+        path: path.into(),
+        is_dir,
+        created_by: "dev".into(),
+        created: "2026-11-10 12:00 UTC".into(),
+        url: format!("https://files.example.test/warehouse/share/tok-{id}"),
     }
 }
 
@@ -1037,6 +1069,209 @@ fn deleting_a_file_is_confirmed_and_returns_to_its_directory() {
     assert_eq!(
         l.url(),
         "/warehouse/ui/files/browse?storage=backups&path=docs"
+    );
+}
+
+#[quench_test::test]
+fn the_browser_asks_for_the_storages_links_with_its_files() {
+    let l = started("/warehouse/ui/files/browse?storage=backups", false);
+    assert!(l.asked().contains(&Request::Shares("backups".into())));
+    assert!(l.asked().contains(&Request::Browse("backups".into())));
+}
+
+#[quench_test::test]
+fn only_someone_who_may_write_there_is_offered_a_share_button() {
+    let l = started(
+        "/warehouse/ui/files/browse?storage=backups&path=docs",
+        false,
+    );
+    l.send(Msg::Browse(Box::new(browse_of("readable"))));
+    assert!(
+        l.r.document_order()
+            .into_iter()
+            .all(|n| l.r.attr(n, "data-share").is_none()),
+        "read access alone does not offer sharing"
+    );
+
+    let l = started(
+        "/warehouse/ui/files/browse?storage=backups&path=docs",
+        false,
+    );
+    l.send(Msg::Browse(Box::new(sharing())));
+    // A file, and a directory inside the directory shown.
+    find(&l.r, "button", ("data-share", "docs/readme.md"));
+    find(&l.r, "button", ("data-share", "docs/img"));
+}
+
+#[quench_test::test]
+fn sharing_a_file_or_a_directory_asks_for_its_link_and_the_dialog_shows_it() {
+    let l = started("/warehouse/ui/files/browse?storage=backups", false);
+    l.send(Msg::Browse(Box::new(sharing())));
+    let dir = find(&l.r, "button", ("data-share", "docs"));
+    l.r.fire(dir, &Event::Click);
+    assert_eq!(
+        l.last(),
+        Request::CreateShare {
+            storage: "backups".into(),
+            path: "docs".into()
+        }
+    );
+    assert!(
+        !present(&l.r, "share"),
+        "nothing is shown until the link exists"
+    );
+
+    l.send(Msg::ShareReady(share_of("a", "docs", true)));
+    assert!(present(&l.r, "share"));
+    let url = find(&l.r, "input", ("id", "share-url"));
+    assert_eq!(
+        l.r.attr(url, "value").as_deref(),
+        Some("https://files.example.test/warehouse/share/tok-a")
+    );
+    assert_eq!(l.r.attr(url, "readonly").as_deref(), Some("readonly"));
+    let text = l.text();
+    assert!(text.contains("backups/docs"), "{text}");
+    assert!(
+        text.contains("everything in it"),
+        "a folder says so: {text}"
+    );
+    let open = find(&l.r, "a", ("id", "share-open"));
+    assert_eq!(
+        l.r.attr(open, "href").as_deref(),
+        Some("https://files.example.test/warehouse/share/tok-a")
+    );
+    assert_eq!(l.r.attr(open, "rel").as_deref(), Some("noopener"));
+    l.click("button", "share-close");
+    assert!(!present(&l.r, "share"));
+
+    // A file's link says it is the file.
+    l.send(Msg::ShareReady(share_of("b", "top.txt", false)));
+    let text = l.text();
+    assert!(
+        text.contains("download this file") && !text.contains("everything in it"),
+        "{text}"
+    );
+    assert_no_raw_keys(&l);
+}
+
+#[quench_test::test]
+fn withdrawing_from_the_dialog_is_confirmed_first() {
+    let l = started("/warehouse/ui/files/browse?storage=backups", false);
+    l.send(Msg::Browse(Box::new(sharing())));
+    l.send(Msg::ShareReady(share_of("a", "docs", true)));
+    l.click("button", "share-withdraw");
+    assert!(
+        !present(&l.r, "share"),
+        "the link dialog gives way to the question"
+    );
+    assert!(l.text().contains("backups/docs"), "{}", l.text());
+    assert!(
+        !l.asked()
+            .iter()
+            .any(|q| matches!(q, Request::DeleteShare { .. }))
+    );
+    l.click("button", "confirm-delete");
+    assert_eq!(
+        l.last(),
+        Request::DeleteShare {
+            id: "a".into(),
+            storage: "backups".into()
+        }
+    );
+}
+
+#[quench_test::test]
+fn the_links_of_the_storage_are_listed_and_can_be_shown_or_withdrawn() {
+    let l = started("/warehouse/ui/files/browse?storage=backups", false);
+    l.send(Msg::Browse(Box::new(browse_of("readable"))));
+    assert!(!present(&l.r, "shares"), "none yet, nothing shown");
+
+    let mut elsewhere = share_of("z", "x", false);
+    elsewhere.storage = "other".into();
+    l.send(Msg::Shares {
+        storage: "other".into(),
+        list: vec![elsewhere],
+    });
+    assert!(
+        !present(&l.r, "shares"),
+        "another storage's links are not this one's"
+    );
+
+    l.send(Msg::Shares {
+        storage: "backups".into(),
+        list: vec![share_of("a", "docs", true), share_of("b", "", true)],
+    });
+    assert!(present(&l.r, "shares"));
+    let text = l.text();
+    assert!(
+        text.contains("Shared links") && text.contains("backups/docs"),
+        "{text}"
+    );
+    assert!(
+        text.contains("dev") && text.contains("2026-11-10 12:00 UTC"),
+        "{text}"
+    );
+    // The whole storage is named by itself.
+    assert!(text.contains("backups"), "{text}");
+
+    let show = find(&l.r, "button", ("data-share-show", "a"));
+    l.r.fire(show, &Event::Click);
+    assert!(present(&l.r, "share"));
+    assert_eq!(
+        l.r.attr(find(&l.r, "input", ("id", "share-url")), "value")
+            .as_deref(),
+        Some("https://files.example.test/warehouse/share/tok-a")
+    );
+    l.click("button", "share-close");
+
+    let withdraw = find(&l.r, "button", ("data-share-withdraw", "b"));
+    l.r.fire(withdraw, &Event::Click);
+    l.click("button", "confirm-delete");
+    assert_eq!(
+        l.last(),
+        Request::DeleteShare {
+            id: "b".into(),
+            storage: "backups".into()
+        }
+    );
+    // The list comes again, without it.
+    l.send(Msg::Shares {
+        storage: "backups".into(),
+        list: vec![share_of("a", "docs", true)],
+    });
+    assert!(
+        l.r.document_order()
+            .into_iter()
+            .all(|n| l.r.attr(n, "data-share-id").as_deref() != Some("b"))
+    );
+    l.send(Msg::Shares {
+        storage: "backups".into(),
+        list: vec![],
+    });
+    assert!(!present(&l.r, "shares"));
+}
+
+#[quench_test::test]
+fn a_refused_share_is_said_and_the_link_dialog_does_not_outlive_the_page() {
+    let l = started("/warehouse/ui/files/browse?storage=backups", false);
+    l.send(Msg::Browse(Box::new(sharing())));
+    l.send(Msg::Rejected("api_error_forbidden".into()));
+    assert!(
+        l.text().contains("You do not have permission"),
+        "{}",
+        l.text()
+    );
+
+    l.send(Msg::ShareReady(share_of("a", "docs", true)));
+    assert!(present(&l.r, "share"));
+    assert!(
+        !l.text().contains("You do not have permission"),
+        "a new link clears the old refusal"
+    );
+    l.follow(("id", "back"));
+    assert!(
+        !present(&l.r, "share"),
+        "leaving the page closes the dialog"
     );
 }
 

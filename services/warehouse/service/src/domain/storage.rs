@@ -118,10 +118,16 @@ pub async fn update(
     row.as_ref().map(from_row).transpose()
 }
 
-/// Deletes the storage row (cascades to its files/sync-log). Caller must release blob ref-counts first.
+/// Deletes the storage row (cascades to its files/sync-log) and every share link of it. Caller must release blob ref-counts first.
 pub async fn delete(db: &Db, name: &str) -> Result<bool, StorageError> {
     let pool = pool(db)?;
     let schema = schema();
+    // The links first: a new storage of the same name must never inherit them, and if the storage then fails to go the
+    // links are gone, which is the safe way round.
+    let links = format!("DELETE FROM {schema}.shares WHERE storage = $1");
+    pool.execute(&links, &[&name as &dyn quench_pg::ToSql])
+        .await?;
+
     let sql = format!("DELETE FROM {schema}.storages WHERE name = $1");
 
     let result = pool

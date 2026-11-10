@@ -171,7 +171,7 @@ quench_http::submit!(
 
 /// Streams `target` back. `display_path` carries the real name/extension a
 /// dynamic storage's blob-digest `target` no longer has; `inline` renders in place instead of saving.
-async fn stream_file(target: &FsPath, display_path: &str, inline: bool) -> Response {
+pub(crate) async fn stream_file(target: &FsPath, display_path: &str, inline: bool) -> Response {
     let Ok(metadata) = tokio::fs::metadata(target).await else {
         return not_found("no such file");
     };

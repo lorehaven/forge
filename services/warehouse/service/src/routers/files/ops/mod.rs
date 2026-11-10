@@ -61,8 +61,8 @@ pub async fn resolve_storage(db: &Db, name: &str) -> Result<ResolvedStorage, Res
         .ok_or_else(|| not_found(&format!("no file storage named `{name}`")))
 }
 
-/// Static storages: read is open, write needs the blanket `warehouse:write`
-/// grant. Dynamic storages: both gated via `authz::can_on_storage`.
+/// Static storages: `authz::can_on_static` (the blanket grant or one for this storage). Dynamic storages:
+/// `authz::can_on_storage` (owner, wildcard role or a grant for this storage).
 #[must_use]
 pub fn authorize(
     claims: Option<&Claims>,
@@ -71,8 +71,8 @@ pub fn authorize(
     action: &str,
 ) -> bool {
     match resolved {
-        ResolvedStorage::Static(_) => {
-            action != "write" || authz::has_blanket(claims, config, "write")
+        ResolvedStorage::Static(storage) => {
+            authz::can_on_static(claims, config, &storage.name, action)
         }
         ResolvedStorage::Dynamic(storage) => authz::can_on_storage(claims, config, storage, action),
     }

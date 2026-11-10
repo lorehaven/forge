@@ -49,6 +49,7 @@ fn client(
 }
 
 const STORAGE: &str = r#"{"name":"photos","owner":"dev","max_file_bytes":null,"quota_bytes":100,"used_bytes":0,"sync_enabled":true,"created":"2026-10-29 10:00 UTC"}"#;
+const SHARE: &str = r#"{"id":"s1","token":"tok","storage":"photos","path":"a","is_dir":true,"created_by":"dev","created":"2026-11-10 12:00 UTC","url":"https://h.example/warehouse/share/tok"}"#;
 const STORAGES: &str = r#"{"fixed":[{"name":"shared","root":"/srv"}],"dynamic":[]}"#;
 
 fn routes(request: &HttpRequest) -> (u16, String) {
@@ -66,7 +67,8 @@ fn routes(request: &HttpRequest) -> (u16, String) {
             | "/ui/api/artifacts/yank"
             | "/ui/api/artifacts/unyank"
             | "/ui/api/rivets/yank"
-            | "/ui/api/rivets/unyank",
+            | "/ui/api/rivets/unyank"
+            | "/ui/api/files/shares/s1/delete",
         ) => String::new(),
         ("GET", "/ui/api/crates") => r#"["alpha"]"#.to_string(),
         ("GET", "/ui/api/crates/alpha/versions") => r#"[{"vers":"1.0.0","yanked":false,"cksum":"c"}]"#.to_string(),
@@ -82,6 +84,8 @@ fn routes(request: &HttpRequest) -> (u16, String) {
         ("GET", "/ui/api/files/browse?storage=photos") => {
             r#"{"storage":"photos","access":"readable","files":[{"path":"a/b.txt","size":3}],"truncated":false}"#.to_string()
         }
+        ("GET", "/ui/api/files/shares?storage=photos") => format!("[{SHARE}]"),
+        ("POST", "/ui/api/files/shares") => SHARE.to_string(),
         _ => return (404, r#"{"error":"nothing here"}"#.to_string()),
     };
     // The status of a change with no answer.
@@ -334,6 +338,90 @@ fn the_language_is_the_browsers_own_business() {
         [] as [warehouse_app::Msg; 0]
     );
     assert!(seen.borrow().is_empty());
+}
+
+#[quench_test::test]
+fn an_older_browse_answer_without_the_share_flag_still_reads_as_not_shareable() {
+    let (client, _, _) = client(routes);
+    let out = block_on(client.execute(Request::Browse("photos".into())));
+    assert!(
+        matches!(&out[..], [Msg::Browse(b)] if !b.can_share),
+        "{out:?}"
+    );
+}
+
+#[quench_test::test]
+fn a_storages_links_are_asked_for_by_storage() {
+    let (client, seen, _) = client(routes);
+    let out = block_on(client.execute(Request::Shares("photos".into())));
+    assert!(
+        matches!(&out[..], [Msg::Shares { storage, list }] if storage == "photos" && list[0].id == "s1" && list[0].is_dir),
+        "{out:?}"
+    );
+    assert_eq!(paths(&seen), ["GET /ui/api/files/shares?storage=photos"]);
+}
+
+#[quench_test::test]
+fn making_a_link_sends_the_path_and_shows_the_link_over_a_page_that_knows_it() {
+    let (client, seen, bodies) = client(routes);
+    let out = block_on(client.execute(Request::CreateShare {
+        storage: "photos".into(),
+        path: "a".into(),
+    }));
+    // The list first, then the link: the dialog opens over a list that already has it.
+    assert!(
+        matches!(&out[..], [Msg::Shares { .. }, Msg::ShareReady(share)] if share.url == "https://h.example/warehouse/share/tok"),
+        "{out:?}"
+    );
+    assert_eq!(
+        paths(&seen),
+        [
+            "POST /ui/api/files/shares",
+            "GET /ui/api/files/shares?storage=photos"
+        ]
+    );
+    assert_eq!(
+        bodies.borrow()[0].as_deref(),
+        Some(r#"{"storage":"photos","path":"a"}"#)
+    );
+}
+
+#[quench_test::test]
+fn withdrawing_a_link_reads_the_list_again() {
+    let (client, seen, _) = client(routes);
+    let out = block_on(client.execute(Request::DeleteShare {
+        id: "s1".into(),
+        storage: "photos".into(),
+    }));
+    assert!(
+        matches!(&out[..], [Msg::Shares { storage, .. }] if storage == "photos"),
+        "{out:?}"
+    );
+    assert_eq!(
+        paths(&seen),
+        [
+            "POST /ui/api/files/shares/s1/delete",
+            "GET /ui/api/files/shares?storage=photos"
+        ]
+    );
+}
+
+#[quench_test::test]
+fn a_refused_link_is_said_in_the_services_key() {
+    let (refusing, seen, _) = client(|_| (403, r#"{"error":"api_error_forbidden"}"#.into()));
+    let out = block_on(refusing.execute(Request::CreateShare {
+        storage: "photos".into(),
+        path: "a".into(),
+    }));
+    assert_eq!(out, [Msg::Rejected("api_error_forbidden".into())]);
+    assert_eq!(seen.borrow().len(), 1, "no list is read after a refusal");
+
+    let (missing, _, _) = client(|_| (404, r#"{"error":"api_error_share_not_found"}"#.into()));
+    let out = block_on(missing.execute(Request::DeleteShare {
+        id: "gone".into(),
+        storage: "photos".into(),
+    }));
+    assert!(matches!(&out[..], [Msg::Rejected(_)]), "{out:?}");
 }
 
 #[quench_test::test]

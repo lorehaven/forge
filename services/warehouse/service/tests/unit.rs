@@ -118,6 +118,8 @@ mod routers_files_wrap_auth_tests;
 mod routers_mod_tests;
 #[path = "unit/routers_rivets_tests.rs"]
 mod routers_rivets_tests;
+#[path = "unit/routers_share_tests.rs"]
+mod routers_share_tests;
 #[path = "unit/routers_ui_api_tests.rs"]
 mod routers_ui_api_tests;
 #[path = "unit/routers_ui_authz_tests.rs"]
@@ -128,5 +130,8 @@ mod routers_ui_mod_tests;
 mod routers_ui_pages_auth_tests;
 #[path = "unit/utils_sha256_tests.rs"]
 mod utils_sha256_tests;
+
+#[path = "unit/ui_api_shares_tests.rs"]
+mod ui_api_shares_tests;
 
 quench_test::main!();

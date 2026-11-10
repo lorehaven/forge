@@ -12,7 +12,7 @@ use warehouse_core::{
 
 use super::{
     Env, checkbox_field, confirm, empty, form_error, labelled, meta, meta_text, metadata_title,
-    nav, panel_title, split, waiting,
+    nav, panel_title, share_name, split, waiting,
 };
 use crate::live::{Request, State};
 
@@ -377,7 +377,10 @@ pub fn browse(env: &Env, state: &State) -> View {
         create_effect(move || {
             let storage = env.query("storage");
             if !storage.is_empty() {
-                untrack(|| env.ask(Request::Browse(storage)));
+                untrack(|| {
+                    env.ask(Request::Shares(storage.clone()));
+                    env.ask(Request::Browse(storage));
+                });
             }
         });
     }
@@ -437,7 +440,12 @@ pub fn browse(env: &Env, state: &State) -> View {
             div()
                 .class("wh-fm")
                 .child(toolbar(&env, &storage, &here))
-                .child(div().class("wh-fm-body").child(body))
+                .child(
+                    div()
+                        .class("wh-fm-body")
+                        .child(body)
+                        .child(shares_panel(&env, &state, &storage)),
+                )
                 .into_view()
         })
     })
@@ -536,6 +544,10 @@ fn file_url(env: &Env, storage: &str, path: &str, extra: &str) -> String {
 }
 
 /// The directory's entries, directories first: name, type, size, and what can be done to a file.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function builds every row of the listing, each with its actions"
+)]
 fn listing(
     env: &Env,
     state: &State,
@@ -562,6 +574,10 @@ fn listing(
             .child(span().class("wh-fm-num").text(env.t.t("ui_files_col_size")))
             .child(span()),
     );
+    let can_share = state.browse.with(|b| {
+        b.as_ref()
+            .is_some_and(|b| b.storage == storage && b.can_share)
+    });
     for (name, child) in node.sorted_children() {
         let child_path = if path.is_empty() {
             name.clone()
@@ -579,6 +595,9 @@ fn listing(
                     .attr("title", env.t.t("ui_file_download"))
                     .text("⤓"),
             );
+            if can_share {
+                actions = actions.child(share_button(env, storage, &child_path));
+            }
             if manage {
                 let (state, storage, target) =
                     (state.clone(), storage.to_string(), child_path.clone());
@@ -629,7 +648,11 @@ fn listing(
                 )
                 .child(span().class("wh-faint").text("—"))
                 .child(span().class("wh-fm-num"))
-                .child(span());
+                .child(
+                    div()
+                        .class("wh-fm-row-actions")
+                        .child(can_share.then(|| share_button(env, storage, &child_path))),
+                );
         }
         list = list.child(row);
     }
@@ -643,6 +666,100 @@ fn listing(
         );
     }
     out.into_view()
+}
+
+/// Makes (or fetches again) the share link of one file or directory, and opens the dialog that shows it.
+fn share_button(env: &Env, storage: &str, path: &str) -> Element {
+    let (env, storage, target) = (env.clone(), storage.to_string(), path.to_string());
+    let title = env.t.t("ui_share_button");
+    button()
+        .attr("type", "button")
+        .attr("data-share", target.clone())
+        .class("wh-fm-act")
+        .attr("title", title)
+        .on_click(move || {
+            env.ask(Request::CreateShare {
+                storage: storage.clone(),
+                path: target.clone(),
+            });
+        })
+        .text("🔗")
+}
+
+/// The links already made for this storage that the person may see: what each opens, who made it, and the ways to show or
+/// withdraw it. Nothing at all while there are none.
+fn shares_panel(env: &Env, state: &State, storage: &str) -> View {
+    let (env, state, storage) = (env.clone(), state.clone(), storage.to_string());
+    View::dynamic(move || {
+        let list = state.shares.with(|shares| match shares {
+            Some((name, list)) if *name == storage => list.clone(),
+            _ => Vec::new(),
+        });
+        if list.is_empty() {
+            return View::Empty;
+        }
+        let mut rows = div().class("wh-fm-list").attr("id", "shares");
+        for share in list {
+            let name = share_name(&share);
+            let (open, withdraw) = (share.clone(), share.clone());
+            let (shown, ask_state) = (state.share_dialog.clone(), state.clone());
+            rows = rows.child(
+                div()
+                    .class("wh-fm-row")
+                    .attr("data-share-id", share.id.clone())
+                    .child(
+                        span()
+                            .class("wh-faint")
+                            .text(if share.is_dir { "▸" } else { "▫" }),
+                    )
+                    .child(span().class("wh-file-name").text(name.clone()))
+                    .child(
+                        span()
+                            .class("wh-faint")
+                            .text(format!("{} · {}", share.created_by, share.created)),
+                    )
+                    .child(span().class("wh-fm-num"))
+                    .child(
+                        div()
+                            .class("wh-fm-row-actions")
+                            .child(
+                                button()
+                                    .attr("type", "button")
+                                    .attr("data-share-show", share.id.clone())
+                                    .class("wh-fm-act")
+                                    .attr("title", env.t.t("ui_share_link"))
+                                    .on_click(move || shown.set(Some(open.clone())))
+                                    .text("🔗"),
+                            )
+                            .child(
+                                button()
+                                    .attr("type", "button")
+                                    .attr("data-share-withdraw", share.id.clone())
+                                    .class("wh-fm-act wh-fm-del")
+                                    .attr("title", env.t.t("ui_share_withdraw"))
+                                    .on_click(move || {
+                                        confirm(
+                                            &ask_state,
+                                            "ui_share_withdraw_title",
+                                            "ui_share_withdraw_text",
+                                            share_name(&withdraw),
+                                            Request::DeleteShare {
+                                                id: withdraw.id.clone(),
+                                                storage: withdraw.storage.clone(),
+                                            },
+                                        );
+                                    })
+                                    .text("✕"),
+                            ),
+                    ),
+            );
+        }
+        div()
+            .class("wh-shares")
+            .child(panel_title(env.t.t("ui_shares_title")))
+            .child(rows)
+            .into_view()
+    })
 }
 
 fn preview_mode_at(env: &Env, storage: &str, path: &str) -> String {

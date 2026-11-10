@@ -265,3 +265,17 @@ ui_files_col_path = Chemin
 ui_loading = Chargement…
 ui_not_found = Il n'y a rien ici.
 ui_session_ended = Votre session est terminée.
+
+ui_share_button = Partager avec un lien
+ui_share_title = Lien de partage
+ui_share_for_file = Toute personne ayant ce lien peut télécharger ce fichier, sans se connecter.
+ui_share_for_dir = Toute personne ayant ce lien peut ouvrir ce dossier et tout son contenu, y compris les dossiers qu'il contient, sans se connecter.
+ui_share_link = Lien
+ui_share_open = Ouvrir
+ui_share_copy_hint = Sélectionnez le lien et copiez-le. Retirez-le pour arrêter le partage.
+ui_share_withdraw = Retirer le lien
+ui_share_withdraw_title = Retirer le lien
+ui_share_withdraw_text = Le lien ne fonctionne plus pour personne. Ce qu'il ouvrait reste en place.
+ui_shares_title = Liens partagés
+api_error_share_not_found = Ce lien n'existe plus.
+api_error_share_storage_missing = Aucun stockage de ce nom.

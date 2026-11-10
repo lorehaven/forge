@@ -265,3 +265,17 @@ ui_files_col_path = Ścieżka
 ui_loading = Wczytywanie…
 ui_not_found = Nic tu nie ma.
 ui_session_ended = Twoja sesja wygasła.
+
+ui_share_button = Udostępnij linkiem
+ui_share_title = Link do udostępnienia
+ui_share_for_file = Każdy, kto ma ten link, może pobrać ten plik bez logowania.
+ui_share_for_dir = Każdy, kto ma ten link, może otworzyć ten folder i wszystko w nim, także foldery wewnątrz, bez logowania.
+ui_share_link = Link
+ui_share_open = Otwórz
+ui_share_copy_hint = Zaznacz link i skopiuj go. Wycofaj go, aby przestać udostępniać.
+ui_share_withdraw = Wycofaj link
+ui_share_withdraw_title = Wycofaj link
+ui_share_withdraw_text = Link przestanie działać dla wszystkich. To, co otwierał, zostaje na miejscu.
+ui_shares_title = Udostępnione linki
+api_error_share_not_found = Tego linku już nie ma.
+api_error_share_storage_missing = Nie ma takiego magazynu.

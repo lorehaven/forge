@@ -30,7 +30,22 @@ The management API's storage list (`GET /ui/api/files/storages`) is not filtered
 
 `can_on_storage(claims, config, storage, action)`: true when authentication is disabled; false without claims; else true when the token has a wildcard role, or `storage.owner == claims.sub`, or `claims.can("warehouse", "storage:<name>:<action>")` with `action` `read` or `write`. A grant is written `warehouse:storage:<name>:read` in Gatehouse. Note `Claims::can` compares the action string exactly, so there is no implication from `write` to `read`: a writer who should also read needs both entries. The blanket `warehouse:read`/`write` does **not** apply to dynamic storages. Provisioning (`POST/PATCH/DELETE /api/v1/files...`) uses `has_blanket`: `warehouse:write` only.
 
-Static storages: `authorize` returns true for any action other than `write`, and for `write` requires the blanket grant. Reading is still behind `Auth` (a valid token).
+Static storages (`FILE_STORAGES`, no owner), `can_on_static(claims, config, storage, action)`: true when authentication is disabled; false without claims; else true for a wildcard role, the blanket grant for the action (`warehouse:read` reads every fixed storage, `warehouse:write` writes every one), or `warehouse:storage:<name>:<action>` for this storage. Whoever may write may also read (the blanket `write`, or the grant `warehouse:storage:<name>:write`). So a fixed storage is shared by default, as before, and the per-storage grant gives someone access to one fixed storage without the blanket ones; a grant for another storage, or for a dynamic one, opens nothing here. Machine clients (`lectern-warehouse`, `conveyor-publish`) hold the `service` role and are unaffected. Reading is still behind `Auth` (a valid token), and a person with a Warehouse audience but no grant at all can no longer read fixed storages.
+
+## Share links
+
+A share link opens one file, or one directory with everything below it, **without signing in** (`GET /share/{token}`). The token is the whole credential: 256 random bits, kept in the `shares` table and looked up by token alone. Nothing about the link is guessable, and withdrawing it ends it at once.
+
+| Who | May |
+|---|---|
+| Make a link | someone with **write** access to the storage: the owner of a dynamic storage, a holder of `warehouse:storage:<name>:write`, and for a fixed storage the blanket `warehouse:write` or the grant for it. Reading is not publishing. |
+| See links | their own; every link for the blanket `warehouse:write` or a wildcard role |
+| Withdraw a link | its creator; the blanket `warehouse:write` or a wildcard role |
+| Open a link | anyone who has it |
+
+What a link reaches is exactly what it names: a file link serves that file and nothing else; a directory link serves the directory, its files and the directories inside, at any depth, and nothing outside it. `..`, absolute paths and (for a fixed storage) symlinks that lead out of the shared directory are refused, and so is everything for a token nobody made: a missing link, a withdrawn one and a storage that is gone all answer the same plain 404. A link goes with its storage (a dynamic storage deleting removes its links first, so a new storage of the same name never inherits them) and with its creator's account. Files are sent as downloads; the listing page and `inline=1` (images, audio, video, PDF, plain text) are sent with `X-Content-Type-Options: nosniff`, a restrictive `Content-Security-Policy` and `Referrer-Policy: no-referrer`; an HTML or SVG file is never shown in place, so a shared file cannot run script on this origin.
+
+A link stays valid until it is withdrawn: there is no expiry. Whoever holds the link can pass it on, so treat it as a secret. The file browser makes and lists links (the 🔗 buttons and the *Shared links* panel). `PUBLIC_URL` is the address links are handed out with (for example `https://host/warehouse`); without it the service uses the request's `X-Forwarded-Proto`/`X-Forwarded-Host`/`Host`, and the ingress must route `/<BASE_PATH>/share` to the service.
 
 ## Path rules (files API)
 

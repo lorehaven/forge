@@ -22,6 +22,28 @@ The machine-readable description is [openapi.yaml](openapi.yaml) (OpenAPI 3.1.0,
 
 Cargo registry: publish, download, yank, owners, search (JSON API under `/api/v1/crates`).
 
+### GET `/share/{token}`
+
+Open a share link
+
+Opens what a share link names, **without signing in**: the token in the path is the whole credential (256 random bits). A shared **file** is sent as a download. A shared **directory** answers an HTML page that lists it, and `path` names something below it, at any depth: a directory is listed in turn, a file is sent. A token nobody made, a link that was withdrawn, a storage that no longer exists, a `path` that leaves the shared directory (`..`, absolute, or a symlink that leads out) and anything below a shared file all answer the same plain 404. Files are attachments; `inline=1` shows images, audio, video, PDF and plain text in place and never anything that could run script. Every answer carries `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `X-Robots-Tag: noindex`; the listing a strict `Content-Security-Policy`, a file `sandbox`. Answers 404 as well when file storage is not enabled. Made and withdrawn with `/ui/api/files/shares`.
+
+**Authentication:** none.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `token` | path | string | yes | The token of the link. |
+| `path` | query | string | no | Below the shared directory; empty is the share itself. |
+| `inline` | query | string | no | `1` to show a safe kind of file in the browser instead of saving it. |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | The file, or the HTML listing of the directory. | `text/html` string; `application/octet-stream` binary |
+| 404 | No such link, or nothing there. | `text/plain` string |
+| 503 | The database or the blob store could not be reached. |  |
+
 ### PUT `/api/v1/crates/new`
 
 Publish a crate
@@ -1525,9 +1547,9 @@ Named file storages: static (operator-configured directories) and dynamic (datab
 
 ### GET `/api/v1/storages`
 
-Index of the dynamic storages
+Index of the storages
 
-The name and owner of every **dynamic** storage, nothing about what it holds. Needs the blanket `warehouse:read` grant (or auth off). `GET /api/v1/files` shows a dynamic storage only to its owner, a wildcard role or an explicit `warehouse:storage:<name>:<action>` grant, so it cannot tell an administrator what there is to grant; gatehouse's permission editor asks this instead. Names and owners are what every signed-in session already sees on the management page. Answers 404 `file storage is not enabled` unless `FEATURE_FILES_ENABLED`.
+The name of every storage, the fixed ones and the dynamic ones (with their owner), nothing about what it holds. Needs the blanket `warehouse:read` grant (or auth off). `GET /api/v1/files` shows a dynamic storage only to its owner, a wildcard role or an explicit `warehouse:storage:<name>:<action>` grant, so it cannot tell an administrator what there is to grant; gatehouse's permission editor asks this instead. Names and owners are what every signed-in session already sees on the management page. Answers 404 `file storage is not enabled` unless `FEATURE_FILES_ENABLED`.
 
 **Authentication:** `bearerAuth` or `sessionCookie`. **Permission:** `warehouse:read`.
 
@@ -1535,7 +1557,7 @@ The name and owner of every **dynamic** storage, nothing about what it holds. Ne
 
 | Status | Description | Body |
 |---|---|---|
-| 200 | One entry per dynamic storage. | `application/json` array of [StorageIndexEntry](#schema-storageindexentry) |
+| 200 | One entry per storage. | `application/json` array of [StorageIndexEntry](#schema-storageindexentry) |
 | 401 | Missing/invalid token or no session (empty body or the framework's text). |  |
 | 403 | Lacks the blanket `warehouse:read`. | `application/json` [Error](#schema-error) |
 | 404 | Files are not enabled. | `application/json` [Error](#schema-error) |
@@ -1544,6 +1566,9 @@ Example `200` response:
 
 ```json
 [
+  {
+    "name": "media"
+  },
   {
     "name": "phone",
     "owner": "alice"
@@ -1555,7 +1580,7 @@ Example `200` response:
 
 List storages
 
-Auth: `Auth` middleware (any valid realm identity with audience `warehouse`) plus the per-storage check below. **Static** storage: read open to that identity, write needs `warehouse:write`. **Dynamic** storage: owner, wildcard role, or `warehouse:storage:<name>:<action>`; the blanket `warehouse:read`/`write` does not apply. Everything answers 404 `file storage is not enabled` unless `FEATURE_FILES_ENABLED`.
+Auth: `Auth` middleware (any valid realm identity with audience `warehouse`) plus the per-storage check below. **Static** storage: a wildcard role, the blanket `warehouse:read` (reading) or `warehouse:write`, or `warehouse:storage:<name>:<action>`; whoever may write may read. **Dynamic** storage: owner, wildcard role, or `warehouse:storage:<name>:<action>`; the blanket `warehouse:read`/`write` does not apply. Everything answers 404 `file storage is not enabled` unless `FEATURE_FILES_ENABLED`.
 
 **Authentication:** `bearerAuth` or `sessionCookie`.
 
@@ -3988,6 +4013,78 @@ Example `401` response:
 }
 ```
 
+### GET `/ui/api/files/shares`
+
+List share links
+
+Behind the realm session cookie (`401 {"error":"sign in"}` without one). The caller's own links, newest first; every link for a caller with the blanket `warehouse:write` (or a wildcard role). `storage` narrows to one storage.
+
+**Authentication:** `sessionCookie`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `storage` | query | string | no |  |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | The links. | `application/json` array of [ShareView](#schema-shareview) |
+| 401 | No session. | `application/json` [Error](#schema-error) |
+
+### POST `/ui/api/files/shares`
+
+Make a share link
+
+Makes the link of a file or directory of a storage, or returns the one this person already made for it (asking twice gives the same link). Needs **write** access to the storage: an owner of a dynamic storage, a grant `warehouse:storage:<name>:write`, or for a fixed storage the blanket `warehouse:write` or its grant. `path` is relative to the storage and must exist; empty shares the whole storage. `url` is whole when `PUBLIC_URL` is set or the request names its host, otherwise the part after the host.
+
+**Authentication:** `sessionCookie`. **Permission:** `warehouse:write`.
+
+**Request body** (`application/json`, required)
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `storage` | string | yes |  |
+| `path` | string | yes | Relative to the storage; empty is the whole storage. |
+
+```json
+{
+  "storage": "media",
+  "path": "holiday/2026"
+}
+```
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | The link. | `application/json` [ShareView](#schema-shareview) |
+| 400 | The path is not a plain relative path (`api_error_invalid_path`). | `application/json` [Error](#schema-error) |
+| 401 | No session. | `application/json` [Error](#schema-error) |
+| 403 | No write access to the storage (`api_error_forbidden`). | `application/json` [Error](#schema-error) |
+| 404 | Files disabled, no such storage (`api_error_share_storage_missing`) or nothing at that path (`api_error_file_not_found`). | `application/json` [Error](#schema-error) |
+
+### POST `/ui/api/files/shares/{id}/delete`
+
+Withdraw a share link
+
+The link stops working at once. Its creator may withdraw it, and so may a caller with the blanket `warehouse:write` (or a wildcard role); nobody else.
+
+**Authentication:** `sessionCookie`.
+
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | The link's id (not its token). |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 204 | Withdrawn. |  |
+| 401 | No session. | `application/json` [Error](#schema-error) |
+| 403 | Not the creator, and no blanket write (`api_error_forbidden`). | `application/json` [Error](#schema-error) |
+| 404 | No such link (`api_error_share_not_found`). | `application/json` [Error](#schema-error) |
+
 ### POST `/ui/api/files/delete-file`
 
 Delete a file
@@ -4807,16 +4904,42 @@ Always empty lists.
 | `name` | string | yes |  |
 | `tags` | array of string | yes |  |
 
+### Schema NewShare
+
+<a id="schema-newshare"></a>
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `storage` | string | yes |  |
+| `path` | string | yes | Relative to the storage; empty is the whole storage. |
+
+### Schema ShareView
+
+<a id="schema-shareview"></a>
+
+A share link as its creator sees it.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | yes |  |
+| `token` | string | yes | The credential in the link. Anyone who has it can open what it names. |
+| `storage` | string | yes |  |
+| `path` | string | yes | Relative to the storage; empty is the storage itself. |
+| `is_dir` | boolean | yes | A directory with everything below it, rather than one file. |
+| `created_by` | string | yes |  |
+| `created` | string | yes | `2026-11-10 12:00 UTC`. |
+| `url` | string | yes | The link to hand out, whole when the service knows its address (`PUBLIC_URL`, or the request's host). |
+
 ### Schema StorageIndexEntry
 
 <a id="schema-storageindexentry"></a>
 
-A dynamic storage as the permission editor needs it.
+A storage as the permission editor needs it.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | yes |  |
-| `owner` | string | yes |  |
+| `owner` | string | no | The owner of a dynamic storage; a fixed storage (`FILE_STORAGES`) has none and the field is absent. |
 
 ### Schema StorageSummary
 
@@ -5100,3 +5223,4 @@ Only the given fields change.
 | `access` | string (`readable`, `denied`, `missing`) | yes |  |
 | `files` | array of object | yes |  |
 | `truncated` | boolean | yes | More files than the listing cap (50 000 for a static storage; a dynamic one is read in pages of 2000). |
+| `can_share` | boolean | no | The caller may write here, and so may make a share link of something in it. Absent from older answers (false). |

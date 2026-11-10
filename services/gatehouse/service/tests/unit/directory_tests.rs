@@ -1,13 +1,14 @@
 use gatehouse_service::directory::parse_listing;
 
 #[quench_test::test]
-fn warehouse_lists_only_storages_with_an_owner_by_name() {
-    let body = r#"[{"name":"media"},{"name":"photos","owner":"ola","quota_bytes":1},{"name":"backup","owner":"admin"}]"#;
+fn warehouse_lists_the_fixed_storages_and_the_dynamic_ones_with_their_owner() {
+    let body =
+        r#"[{"name":"media"},{"name":"photos","owner":"ola"},{"name":"backup","owner":"admin"}]"#;
     let found = parse_listing("warehouse", body).unwrap();
-    let ids: Vec<&str> = found.iter().map(|c| c.id.as_str()).collect();
-    // The fixed storage has no owner and cannot be granted one by one; the rest are sorted by what is read.
-    assert_eq!(ids, ["backup", "photos"]);
-    assert_eq!(found[1].label, "photos (ola)");
+    let labels: Vec<&str> = found.iter().map(|c| c.label.as_str()).collect();
+    // Sorted by what is read; a fixed storage has no owner to show.
+    assert_eq!(labels, ["backup (admin)", "media", "photos (ola)"]);
+    assert_eq!(found[1].id, "media");
 }
 
 #[quench_test::test]

@@ -18,6 +18,7 @@ pub mod crates;
 pub mod docker;
 pub mod files;
 pub mod rivets;
+pub mod shares;
 
 #[derive(Serialize)]
 struct ErrorBody<'a> {
@@ -114,4 +115,5 @@ pub fn register_routes() {
     docker::register_routes();
     files::register_routes();
     rivets::register_routes();
+    shares::register_routes();
 }

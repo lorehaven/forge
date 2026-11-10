@@ -265,3 +265,17 @@ ui_files_col_path = Pfad
 ui_loading = Lädt …
 ui_not_found = Hier gibt es nichts.
 ui_session_ended = Deine Sitzung ist abgelaufen.
+
+ui_share_button = Mit einem Link teilen
+ui_share_title = Link teilen
+ui_share_for_file = Jeder mit diesem Link kann diese Datei ohne Anmeldung herunterladen.
+ui_share_for_dir = Jeder mit diesem Link kann diesen Ordner und alles darin, auch die Ordner darin, ohne Anmeldung öffnen.
+ui_share_link = Link
+ui_share_open = Öffnen
+ui_share_copy_hint = Link markieren und kopieren. Zurückziehen beendet das Teilen.
+ui_share_withdraw = Link zurückziehen
+ui_share_withdraw_title = Link zurückziehen
+ui_share_withdraw_text = Der Link funktioniert für niemanden mehr. Was er geöffnet hat, bleibt, wo es ist.
+ui_shares_title = Geteilte Links
+api_error_share_not_found = Diesen Link gibt es nicht mehr.
+api_error_share_storage_missing = Kein solcher Speicher.

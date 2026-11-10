@@ -54,6 +54,11 @@ path = "tests/pg_storage.rs"
 harness = false
 
 [[test]]
+name = "pg_shares"
+path = "tests/pg_shares.rs"
+harness = false
+
+[[test]]
 name = "ui_api_pg"
 path = "tests/ui_api_pg.rs"
 harness = false

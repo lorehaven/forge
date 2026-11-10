@@ -4,6 +4,7 @@ pub mod crates;
 pub mod docker;
 pub mod files;
 pub mod rivets;
+pub mod share;
 pub mod ui;
 
 /// Links every route module in - an unreferenced `.rlib` module is dead-code-eliminated
@@ -15,6 +16,7 @@ pub fn register_routes() {
     docker::register_routes();
     files::register_routes();
     rivets::register_routes();
+    share::register_routes();
     ui::register_routes();
 }
 

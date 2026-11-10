@@ -11,7 +11,7 @@ use warehouse_core::fmt::encode;
 use warehouse_core::tree::parent_dir;
 use warehouse_core::{
     ArtifactEntry, ArtifactRef, Browse, CrateRef, CrateVersion, DockerTag, DynamicStorage, FileRef,
-    ImageRef, Overview, RivetEntry, RivetRef, Storages,
+    ImageRef, NewShare, Overview, RivetEntry, RivetRef, ShareView, Storages,
 };
 
 /// A request to send, under the service's prefix.
@@ -231,6 +231,20 @@ impl<T: Transport> Client<T> {
         }
     }
 
+    /// A storage's share links.
+    async fn shares(&self, storage: &str) -> Msg {
+        match self
+            .get::<Vec<ShareView>>(format!("/ui/api/files/shares?storage={}", segment(storage)))
+            .await
+        {
+            Ok(list) => Msg::Shares {
+                storage: storage.to_string(),
+                list,
+            },
+            Err(failure) => failure.read(),
+        }
+    }
+
     /// The storages again, then `after` (a storage was changed).
     async fn storages_then(&self, after: Msg) -> Vec<Msg> {
         match self.storages().await {
@@ -349,6 +363,35 @@ impl<T: Transport> Client<T> {
                 }
             }
             Request::Browse(storage) => vec![self.browse(&storage).await],
+            Request::Shares(storage) => vec![self.shares(&storage).await],
+            Request::CreateShare { storage, path } => {
+                let body = NewShare {
+                    storage: storage.clone(),
+                    path,
+                };
+                let text = self
+                    .call(
+                        "POST",
+                        "/ui/api/files/shares".into(),
+                        Some(json::to_string(&body)),
+                    )
+                    .await;
+                match text.and_then(|text| {
+                    json::from_str::<ShareView>(&text)
+                        .map_err(|e| Failure::Offline(format!("the answer is unreadable: {e}")))
+                }) {
+                    // The list first, so the dialog opens over a page that already knows the link.
+                    Ok(share) => vec![self.shares(&storage).await, Msg::ShareReady(share)],
+                    Err(failure) => vec![failure.write()],
+                }
+            }
+            Request::DeleteShare { id, storage } => {
+                let path = format!("/ui/api/files/shares/{}/delete", segment(&id));
+                match self.call("POST", path, None).await {
+                    Ok(_) => vec![self.shares(&storage).await],
+                    Err(failure) => vec![failure.write()],
+                }
+            }
             Request::DeleteFile { storage, path } => {
                 let parent = parent_dir(&path);
                 let body = FileRef {
