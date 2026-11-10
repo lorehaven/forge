@@ -128,8 +128,10 @@ details>summary.wh-folder{cursor:pointer}
 .wh-fm-row:not(.wh-fm-head):hover{background:var(--fui-surface-hover)}
 .wh-fm-head{position:sticky;top:0;background:var(--wh-surface);font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--wh-text-3)}
 .wh-fm-num{text-align:right;color:var(--wh-text-3)}
-.wh-fm-row-actions{display:flex;justify-content:flex-end;gap:.25rem}
-.wh-fm-act{display:inline-flex;align-items:center;justify-content:center;width:1.75rem;height:1.75rem;border:0;border-radius:.375rem;background:transparent;color:var(--wh-text-3);cursor:pointer;text-decoration:none;font:inherit}
+.wh-fm-row-actions{display:flex;align-items:center;justify-content:flex-end;gap:.25rem}
+/* One box for every row action, whether it is a link (download) or a button (share, delete). The shell gives a bare `button`
+   a minimum height and padding, and a link none (nor the shadow and hover transition); stating the box here makes them the same size and keeps the glyphs level. */
+.wh-fm-act{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;flex:none;width:2rem;height:2.5rem;min-height:0;padding:0;border:0;border-radius:.375rem;background:transparent;color:var(--wh-text-3);cursor:pointer;text-decoration:none;font:inherit;line-height:1;box-shadow:var(--fui-shadow-xs);transition:background-color .15s,border-color .15s}
 .wh-fm-act:hover{background:var(--wh-surface-2);color:var(--wh-text)}
 .wh-fm-del:hover{color:var(--fui-error-soft-text)}
 /* The download is a link, and the shell colours every link; make it look like the buttons beside it. */
