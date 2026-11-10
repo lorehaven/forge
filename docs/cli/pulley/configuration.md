@@ -61,7 +61,7 @@ Transfers to or from a remote host use `ssh -o ConnectTimeout=10 -o ServerAliveI
 
 ## Job logs
 
-The daemon (and only the daemon) appends to `~/.config/pulley/logs/<job id>/<YYYY-MM-DD>.log` (local time), lines `[HH:MM:SS] <message>` with the messages `running job`, `no changes`, `changes detected, syncing`, `sync completed`, `dry-run failed: <e>`, `sync failed: <e>`, and for an absent source `source not available: <why>` and `source is available again`. An absent source is logged **once** when it goes and once when it returns, not at every check, so a host that is off for hours does not fill the log. Log files older than 7 days (by their file name date) are deleted on each append. Failures to write logs are ignored.
+The daemon (and only the daemon) appends to `~/.config/pulley/logs/<job id>/<YYYY-MM-DD>.log` (local time), lines `[HH:MM:SS] <message>` with the messages `running job`, `no changes`, `changes detected (<counts>), syncing` (counts like `6000 new, 12 changed, 3 deleted`), `sync completed in <time>` (`45s`, `4m12s`, `3h05m`), `dry-run failed: <e>`, `sync failed: <e>`, and for an absent source `source not available: <why>` and `source is available again`. An absent source is logged **once** when it goes and once when it returns, not at every check, so a host that is off for hours does not fill the log. Log files older than 7 days (by their file name date) are deleted on each append. Failures to write logs are ignored.
 
 ## Environment
 

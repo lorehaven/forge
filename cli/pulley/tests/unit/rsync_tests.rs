@@ -1,6 +1,7 @@
 use pulley::config::Job;
 use pulley::rsync::{
-    Change, classify_line, dry_run, is_remote, run_command, run_command_async, update,
+    Change, Changes, Output, classify_line, dry_run, is_remote, run_command, run_command_async,
+    run_streaming, scan, update, update_quietly,
 };
 use std::process::Command;
 
@@ -195,4 +196,135 @@ fn is_remote_leaves_local_paths_alone() {
     assert!(!is_remote("relative/dir"));
     assert!(!is_remote("./odd:name/dir"));
     assert!(!is_remote("/a/b:c"));
+}
+
+// ── The quiet way: counts, not a line per file ───────────────────────────────────────────────────────────────────
+
+#[quench_test::test]
+fn changes_are_described_by_kind_and_leave_out_what_is_zero() {
+    assert_eq!(Changes::default().describe(), "no changes");
+    assert_eq!(Changes::default().total(), 0);
+    let some = Changes {
+        created: 12,
+        modified: 0,
+        deleted: 1,
+    };
+    assert_eq!(some.describe(), "12 new, 1 deleted");
+    assert_eq!(some.total(), 13);
+    assert_eq!(
+        Changes {
+            created: 1,
+            modified: 2,
+            deleted: 3
+        }
+        .describe(),
+        "1 new, 2 changed, 3 deleted"
+    );
+}
+
+#[quench_test::test]
+fn a_scan_counts_new_changed_and_deleted_files_by_kind() {
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
+    std::fs::write(src.path().join("same.txt"), "same").unwrap();
+    std::fs::write(src.path().join("changed.txt"), "one").unwrap();
+    std::fs::write(src.path().join("gone.txt"), "going").unwrap();
+    std::fs::create_dir(src.path().join("sub")).unwrap();
+    std::fs::write(src.path().join("sub/inside.txt"), "x").unwrap();
+    let job = job(src.path(), dest.path());
+    update(&job).expect("the first sync");
+
+    std::fs::write(src.path().join("new.txt"), "new").unwrap();
+    std::fs::write(src.path().join("sub/another.txt"), "more").unwrap();
+    std::fs::write(src.path().join("changed.txt"), "a longer text").unwrap();
+    std::fs::remove_file(src.path().join("gone.txt")).unwrap();
+
+    let found = scan(&job, Output::Summary).expect("scan");
+
+    assert_eq!(
+        found,
+        Changes {
+            created: 2,
+            modified: 1,
+            deleted: 1
+        }
+    );
+    // Nothing was copied or deleted by looking.
+    assert!(!dest.path().join("new.txt").exists());
+    assert!(dest.path().join("gone.txt").exists());
+}
+
+#[quench_test::test]
+fn a_scan_of_a_tree_in_sync_finds_nothing_and_shown_or_not_finds_the_same() {
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
+    std::fs::write(src.path().join("a.txt"), "a").unwrap();
+    let job = job(src.path(), dest.path());
+
+    let before = scan(&job, Output::Summary).unwrap();
+    assert_eq!(before, scan(&job, Output::Files).unwrap());
+    assert_eq!(before.created, 1);
+
+    update_quietly(&job).expect("sync");
+    assert_eq!(scan(&job, Output::Summary).unwrap(), Changes::default());
+}
+
+#[quench_test::test]
+fn a_quiet_update_copies_and_deletes_like_the_other() {
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
+    std::fs::write(src.path().join("a.txt"), "hello").unwrap();
+    std::fs::write(dest.path().join("old.txt"), "gone at the source").unwrap();
+    let mut job = job(src.path(), dest.path());
+
+    // Without `delete` the old file stays.
+    update_quietly(&job).expect("sync");
+    assert_eq!(
+        std::fs::read_to_string(dest.path().join("a.txt")).unwrap(),
+        "hello"
+    );
+    assert!(dest.path().join("old.txt").exists());
+
+    job.delete = true;
+    update_quietly(&job).expect("sync");
+    assert!(!dest.path().join("old.txt").exists());
+}
+
+#[quench_test::test]
+fn a_quiet_update_of_a_source_that_cannot_be_read_fails() {
+    let dest = quench_core::tmp::TempDir::new().unwrap();
+    let missing = std::env::temp_dir().join(format!("pulley-quiet-missing-{}", std::process::id()));
+    assert!(update_quietly(&job(&missing, dest.path())).is_err());
+}
+
+#[cfg(unix)]
+#[quench_test::test]
+fn streaming_hands_over_trimmed_lines_without_the_directory_ones() {
+    let mut seen = Vec::new();
+    run_streaming(
+        Command::new("sh").args(["-c", "printf '  a  \\ndir/\\nb\\n'"]),
+        |line| seen.push(line.to_string()),
+    )
+    .unwrap();
+    assert_eq!(seen, ["a", "b"]);
+}
+
+#[cfg(unix)]
+#[quench_test::test]
+fn streaming_keeps_only_the_last_of_the_complaints_for_the_error() {
+    let error = run_streaming(
+        Command::new("sh").args([
+            "-c",
+            "for i in $(seq 1 50); do echo err$i >&2; done; exit 3",
+        ]),
+        |_| {},
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("exited with"), "{error}");
+    assert!(error.ends_with("err50"), "{error}");
+    assert!(
+        error.contains("err31 |") && !error.contains("err30 |"),
+        "{error}"
+    );
 }

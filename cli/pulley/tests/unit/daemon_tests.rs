@@ -1,7 +1,10 @@
 use pulley::config::{Config, Job};
-use pulley::daemon::{Event, Watch, is_due, poll_once, run, run_job};
+use pulley::daemon::{
+    Event, Watch, format_duration, group_by_dest, is_due, poll_once, run, run_job, serve,
+};
 use pulley::source::{self, Availability};
 use std::cell::Cell;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 #[quench_test::test]
@@ -356,6 +359,218 @@ fn a_short_interval_is_not_stretched_to_the_recheck() {
         script.probes.get(),
         2,
         "a ten second job looks every ten seconds"
+    );
+}
+
+// ── A host that goes away in the middle of a sync ────────────────────────────────────────────────────────────────
+
+#[quench_test::test]
+fn a_sync_that_fails_because_the_host_went_away_resumes_as_soon_as_it_is_back() {
+    let job = idle_job();
+    let answers = std::cell::RefCell::new(vec![
+        Availability::Ready, // before the sync
+        down(),              // after it failed
+        Availability::Ready, // the host is back
+    ]);
+    let runs = Cell::new(0);
+    let jobs = vec![(&job, Duration::from_secs(3600))];
+    let mut watch = Watch::default();
+    let t0 = Instant::now();
+    let probe = |_: &Job| {
+        let mut answers = answers.borrow_mut();
+        if answers.len() > 1 {
+            answers.remove(0)
+        } else {
+            answers[0].clone()
+        }
+    };
+    let run_it = |_: &Job| {
+        runs.set(runs.get() + 1);
+        if runs.get() == 1 {
+            Err("rsync exited with exit status: 255: ssh: connection timed out".into())
+        } else {
+            Ok(())
+        }
+    };
+
+    // The sync fails, and the host is not there to ask: that is an absence, said once, and the job stays due.
+    let events = poll_once(&jobs, &mut watch, t0, &probe, &run_it);
+    assert_eq!(
+        events,
+        [Event::Unavailable {
+            job: "lorien".into(),
+            why: down()
+        }]
+    );
+    assert!(
+        watch.last_run.is_empty(),
+        "the work is not done, so it is due again"
+    );
+
+    // Looked at again no sooner than a minute later.
+    assert_eq!(
+        poll_once(
+            &jobs,
+            &mut watch,
+            t0 + Duration::from_secs(30),
+            &probe,
+            &run_it
+        ),
+        []
+    );
+    assert_eq!(runs.get(), 1);
+
+    // Back after a minute and a bit, with an interval of an hour: it resumes now, not an hour after the failure.
+    let back = t0 + Duration::from_secs(61);
+    let events = poll_once(&jobs, &mut watch, back, &probe, &run_it);
+    assert_eq!(
+        events,
+        [Event::Recovered {
+            job: "lorien".into()
+        }]
+    );
+    assert_eq!(runs.get(), 2);
+    assert_eq!(watch.last_run.get("lorien").copied(), Some(back));
+}
+
+#[quench_test::test]
+fn a_sync_that_fails_with_the_host_still_there_is_a_failure() {
+    let job = idle_job();
+    let jobs = vec![(&job, Duration::from_secs(3600))];
+    let mut watch = Watch::default();
+    let now = Instant::now();
+
+    let events = poll_once(&jobs, &mut watch, now, &|_| Availability::Ready, &|_| {
+        Err("rsync exited with exit status: 23: some files could not be read".into())
+    });
+
+    assert!(
+        matches!(&events[..], [Event::Failed { error, .. }] if error.contains("some files")),
+        "{events:?}"
+    );
+    // Counted as an attempt: it is tried again at its interval, not on every tick.
+    assert_eq!(watch.last_run.get("lorien").copied(), Some(now));
+}
+
+// ── Jobs that run at the same time ───────────────────────────────────────────────────────────────────────────────
+
+fn job_to(id: &str, dest: &str) -> (Job, Duration) {
+    (
+        Job {
+            id: id.to_string(),
+            desc: "desc".to_string(),
+            src: "/src".to_string(),
+            dest: dest.to_string(),
+            delete: false,
+            skip: Vec::new(),
+            no_confirm: true,
+            interval: Some(60),
+            marker: None,
+        },
+        Duration::from_secs(60),
+    )
+}
+
+#[quench_test::test]
+fn jobs_that_write_to_the_same_destination_share_a_worker_and_the_rest_do_not() {
+    let jobs = vec![
+        job_to("a", "/backup/x"),
+        job_to("b", "/backup/y"),
+        job_to("c", "/backup/x/"),
+    ];
+
+    let groups = group_by_dest(&jobs);
+
+    let ids: Vec<Vec<&str>> = groups
+        .iter()
+        .map(|group| group.iter().map(|(job, _)| job.id.as_str()).collect())
+        .collect();
+    // In the order given, a trailing slash not making a different destination.
+    assert_eq!(ids, [vec!["a", "c"], vec!["b"]]);
+    assert!(group_by_dest(&[]).is_empty());
+}
+
+#[quench_test::test]
+fn a_job_that_takes_long_does_not_hold_up_the_others() {
+    let slow = job_to("slow", "/backup/slow");
+    let mut fast = job_to("fast", "/backup/fast");
+    fast.1 = Duration::from_millis(20);
+    let groups = group_by_dest(&[slow, fast]);
+
+    let stop = AtomicBool::new(false);
+    let fast_runs = AtomicU32::new(0);
+    let slow_running = AtomicBool::new(false);
+    let fast_ran_meanwhile = AtomicBool::new(false);
+
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            serve(
+                &groups,
+                &stop,
+                Duration::from_millis(5),
+                &|_| Availability::Ready,
+                &|job| {
+                    if job.id == "slow" {
+                        slow_running.store(true, Ordering::SeqCst);
+                        std::thread::sleep(Duration::from_millis(500));
+                        slow_running.store(false, Ordering::SeqCst);
+                    } else {
+                        fast_runs.fetch_add(1, Ordering::SeqCst);
+                        if slow_running.load(Ordering::SeqCst) {
+                            fast_ran_meanwhile.store(true, Ordering::SeqCst);
+                        }
+                    }
+                    Ok(())
+                },
+            )
+            .expect("serve");
+        });
+        std::thread::sleep(Duration::from_millis(300));
+        // Half way through the slow job, the fast one has gone round several times.
+        assert!(slow_running.load(Ordering::SeqCst));
+        assert!(
+            fast_runs.load(Ordering::SeqCst) >= 3,
+            "{}",
+            fast_runs.load(Ordering::SeqCst)
+        );
+        stop.store(true, Ordering::SeqCst);
+    });
+
+    assert!(fast_ran_meanwhile.load(Ordering::SeqCst));
+}
+
+#[quench_test::test]
+fn a_worker_that_dies_takes_the_daemon_down_so_it_can_be_restarted() {
+    let groups = group_by_dest(&[job_to("bad", "/backup/bad"), job_to("fine", "/backup/fine")]);
+    let stop = AtomicBool::new(false);
+
+    let result = serve(
+        &groups,
+        &stop,
+        Duration::from_millis(5),
+        &|_| Availability::Ready,
+        &|job| {
+            assert!(job.id != "bad", "this job panics");
+            Ok(())
+        },
+    );
+
+    // The other worker was stopped too, instead of running on with a job unwatched.
+    assert!(result.is_err());
+    assert!(stop.load(Ordering::SeqCst));
+}
+
+#[quench_test::test]
+fn durations_are_whole_seconds_and_only_the_units_that_matter() {
+    assert_eq!(format_duration(Duration::from_millis(400)), "0s");
+    assert_eq!(format_duration(Duration::from_secs(45)), "45s");
+    assert_eq!(format_duration(Duration::from_secs(60)), "1m00s");
+    assert_eq!(format_duration(Duration::from_secs(4 * 60 + 12)), "4m12s");
+    assert_eq!(format_duration(Duration::from_secs(59 * 60 + 59)), "59m59s");
+    assert_eq!(format_duration(Duration::from_secs(3600)), "1h00m");
+    assert_eq!(
+        format_duration(Duration::from_secs(3 * 3600 + 5 * 60 + 9)),
+        "3h05m"
     );
 }
 

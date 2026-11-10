@@ -50,8 +50,59 @@ fn use_remote_shell(cmd: &mut Command, job: &Job) {
     }
 }
 
-pub fn dry_run(job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
-    println!("Executing dry-run");
+/// How much a person wants to see of a sync.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Output {
+    /// Every file, as it is found and as it is copied, with progress: for someone at a terminal.
+    Files,
+    /// Nothing per file, only the counts: for a daemon whose output goes to a journal. A first sync of a big drive is
+    /// millions of files, and a journal that gets a line for each one drops the lines that matter.
+    Summary,
+}
+
+/// What a dry run found, by kind.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Changes {
+    pub created: usize,
+    pub modified: usize,
+    pub deleted: usize,
+}
+
+impl Changes {
+    #[must_use]
+    pub const fn total(&self) -> usize {
+        self.created + self.modified + self.deleted
+    }
+
+    /// `12 new, 3 changed, 1 deleted`, leaving out what is zero.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        let parts: Vec<String> = [
+            (self.created, "new"),
+            (self.modified, "changed"),
+            (self.deleted, "deleted"),
+        ]
+        .into_iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, what)| format!("{count} {what}"))
+        .collect();
+        if parts.is_empty() {
+            "no changes".to_string()
+        } else {
+            parts.join(", ")
+        }
+    }
+}
+
+/// The dry run: what a sync of `job` would change.
+///
+/// The lines rsync prints are read as they arrive and counted, never kept, so a tree of millions of files costs no memory.
+/// With [`Output::Files`] each change is also shown.
+pub fn scan(job: &Job, output: Output) -> Result<Changes, Box<dyn std::error::Error>> {
+    let files = output == Output::Files;
+    if files {
+        println!("Executing dry-run");
+    }
 
     let mut cmd = Command::new("rsync");
     // Pinned rather than inherited: src and dest are already absolute-or-as-given
@@ -61,7 +112,7 @@ pub fn dry_run(job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
     // never race on it, since each pins to its own source.
     pin_working_dir(&mut cmd, &job.src);
     use_remote_shell(&mut cmd, job);
-    cmd.arg("-avz")
+    cmd.arg(if files { "-avz" } else { "-az" })
         .arg("--dry-run")
         .arg("--itemize-changes")
         .arg("--delete");
@@ -73,35 +124,39 @@ pub fn dry_run(job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
     cmd.arg(format!("{}/", job.src));
     cmd.arg(format!("{}/", job.dest));
 
-    let lines = run_command(&mut cmd)?;
-
-    let mut count = 0;
-
-    for line in lines {
-        match classify_line(&line) {
-            Some(Change::Delete(path)) => {
+    let mut changes = Changes::default();
+    run_streaming(&mut cmd, |line| match classify_line(line) {
+        Some(Change::Delete(path)) => {
+            if files {
                 println!("DELETE  {path}");
-                count += 1;
             }
-            Some(Change::Create(path)) => {
-                if let Some(path) = path {
-                    println!("CREATE {path}");
-                }
-                count += 1;
-            }
-            Some(Change::Modify(path)) => {
-                if let Some(path) = path {
-                    println!("MODIFY {path}");
-                }
-                count += 1;
-            }
-            None => {}
+            changes.deleted += 1;
         }
+        Some(Change::Create(path)) => {
+            if let (true, Some(path)) = (files, path) {
+                println!("CREATE {path}");
+            }
+            changes.created += 1;
+        }
+        Some(Change::Modify(path)) => {
+            if let (true, Some(path)) = (files, path) {
+                println!("MODIFY {path}");
+            }
+            changes.modified += 1;
+        }
+        None => {}
+    })?;
+
+    if files {
+        println!("{}: {} total changes", job.desc, changes.total());
     }
 
-    println!("{}: {} total changes", job.desc, count);
+    Ok(changes)
+}
 
-    Ok(count > 0)
+/// Whether a sync of `job` would change anything, shown file by file (the REPL and `pulley run`).
+pub fn dry_run(job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
+    Ok(scan(job, Output::Files)?.total() > 0)
 }
 
 /// One `--itemize-changes` line's meaning, or `None` for a line dry-run
@@ -135,14 +190,29 @@ pub fn classify_line(line: &str) -> Option<Change> {
     None
 }
 
+/// The sync itself, shown file by file with progress (the REPL and `pulley run`).
 pub fn update(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
     println!("Executing update");
+    run_command_async(&mut update_command(job, Output::Files))
+}
 
+/// The sync itself without a line per file or any progress: what a daemon runs. Fails with the tail of rsync's own complaints.
+pub fn update_quietly(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
+    run_streaming(&mut update_command(job, Output::Summary), |_| {})
+}
+
+fn update_command(job: &Job, output: Output) -> Command {
     let mut cmd = Command::new("rsync");
-    // See the matching comment in `dry_run`.
+    // See the matching comment in `scan`.
     pin_working_dir(&mut cmd, &job.src);
     use_remote_shell(&mut cmd, job);
-    cmd.arg("-avzu").arg("--progress");
+    cmd.arg(match output {
+        Output::Files => "-avzu",
+        Output::Summary => "-azu",
+    });
+    if output == Output::Files {
+        cmd.arg("--progress");
+    }
 
     if job.delete {
         cmd.arg("--delete");
@@ -154,13 +224,23 @@ pub fn update(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
 
     cmd.arg(format!("{}/", job.src));
     cmd.arg(format!("{}/", job.dest));
-
-    run_command_async(&mut cmd)?;
-
-    Ok(())
+    cmd
 }
 
-pub fn run_command(command: &mut Command) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+/// How many of rsync's last lines of complaint an error keeps.
+const STDERR_TAIL: usize = 20;
+
+/// Runs `command`, giving each line it prints to `on_line` as it arrives.
+///
+/// Lines are trimmed and directory lines (which end in `/`) are left out. Nothing is kept: not the lines, and of rsync's
+/// complaints only the last few, for the error.
+///
+/// # Errors
+/// If rsync cannot be started, or exits with a failure: `rsync exited with <status>: <what it complained of>`.
+pub fn run_streaming(
+    command: &mut Command,
+    mut on_line: impl FnMut(&str),
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut process = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -169,31 +249,42 @@ pub fn run_command(command: &mut Command) -> Result<Vec<String>, Box<dyn std::er
     let stdout = process.stdout.take().unwrap();
     let stderr = process.stderr.take().unwrap();
 
-    let stdout_handle = std::thread::spawn(move || {
-        BufReader::new(stdout)
-            .lines()
-            .map_while(Result::ok)
-            .map(|line| line.trim().to_string())
-            .filter(|file_name| !file_name.ends_with('/'))
-            .collect::<Vec<String>>()
-    });
-
     let stderr_handle = std::thread::spawn(move || {
-        BufReader::new(stderr)
-            .lines()
-            .map_while(Result::ok)
-            .collect::<Vec<String>>()
+        let mut tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if tail.len() == STDERR_TAIL {
+                tail.pop_front();
+            }
+            tail.push_back(line);
+        }
+        tail
     });
 
-    let status = process.wait()?;
-    let result = stdout_handle.join().unwrap();
-    let stderr_lines = stderr_handle.join().unwrap();
-
-    if !status.success() {
-        return Err(format!("rsync exited with {status}: {}", stderr_lines.join(" | ")).into());
+    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+        let line = line.trim();
+        if !line.ends_with('/') {
+            on_line(line);
+        }
     }
 
-    Ok(result)
+    let status = process.wait()?;
+    let tail = stderr_handle.join().unwrap();
+
+    if !status.success() {
+        return Err(format!(
+            "rsync exited with {status}: {}",
+            tail.into_iter().collect::<Vec<_>>().join(" | ")
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+pub fn run_command(command: &mut Command) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let mut lines = Vec::new();
+    run_streaming(command, |line| lines.push(line.to_string()))?;
+    Ok(lines)
 }
 
 pub fn run_command_async(command: &mut Command) -> Result<(), Box<dyn std::error::Error>> {

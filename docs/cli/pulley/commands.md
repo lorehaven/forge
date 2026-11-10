@@ -79,7 +79,15 @@ For each job: a dry run (see [Sync behaviour](#sync-behaviour)); if there are ch
 pulley daemon
 ```
 
-Foreground loop. Requires `rsync`. Only jobs with `interval` are watched; with none: `daemon no jobs have interval set; nothing to watch. add interval = <seconds> to a job to include it.` and exit 0. Otherwise prints `daemon watching N job(s)` and `  <id> - every <N>s`, then every 1 s checks which jobs are due (never run, or `interval` seconds since the last start). For each due job it first checks the source (see [Sources that are sometimes absent](configuration.md#sources-that-are-sometimes-absent)): if the source is not there the job is **not run**, a single `daemon job <id>: source not available (<why>)` line is printed and logged, the source is looked at again about a minute later, and when it is back `daemon job <id>: source is available again` is printed and the job runs at once. A source that is there is synced: dry run; if changes, **sync without asking** (`no-confirm` is irrelevant in the daemon); results are appended to the job's log (see [Configuration](configuration.md#job-logs)). A failing job prints `daemon job <id> failed: <error>` and the loop continues. It never exits on its own (stop with Ctrl-C or the service manager). On Windows the console window is hidden first.
+Foreground loop. Requires `rsync`. Only jobs with `interval` are watched; with none: `daemon no jobs have interval set; nothing to watch. add interval = <seconds> to a job to include it.` and exit 0. Otherwise prints `daemon watching N job(s)` and `  <id> - every <N>s`, then runs the jobs as follows. It never exits on its own (stop with Ctrl-C or the service manager); it does exit, with an error, if a worker dies, so a service manager restarts it rather than leaving jobs unwatched. On Windows the console window is hidden first.
+
+**Jobs run at the same time.** Each job has a worker of its own, so a copy that takes hours (the first sync of a big drive) does not hold up the others. Jobs that share a **destination** share a worker and run one after another, in the order of the files, because two rsyncs must not write to one destination at once; the daemon says so when it starts. Give jobs distinct destinations if they should run side by side.
+
+**Each pass** (every 1 s, per worker) finds the jobs that are due (never run, or `interval` seconds since the last start). For each it first checks the source (see [Sources that are sometimes absent](configuration.md#sources-that-are-sometimes-absent)). If the source is not there the job is **not run**; a single `daemon job <id>: source not available (<why>)` line is printed and logged, the source is looked at again about a minute later, and when it is back `daemon job <id>: source is available again` is printed and the job runs at once. A source that is there is synced: dry run; if there are changes, **sync without asking** (`no-confirm` is irrelevant in the daemon).
+
+**Quiet output.** The daemon prints and logs counts, never a line per file, and shows no progress: copying millions of files writes a handful of lines, so a journal does not drop the lines that matter. Per job and run: `daemon running job <id>`, then, if something changed, `daemon job <id>: 6000 new, 12 changed, 3 deleted; synced in 4m12s`. The job's log has the same (see [Configuration](configuration.md#job-logs)). To see every file, run the job with `pulley run <id>`.
+
+**A host that goes away mid-sync.** If a sync fails and the source cannot be reached right after, it is treated as a source that is not there, not as a failed job: it is reported once, stays due, and resumes within a minute of the host coming back, not after its whole `interval`. A sync that fails with the source still there prints `daemon job <id> failed: <error>`, counts as an attempt (tried again at its `interval`), and the loop continues.
 
 ## service
 
@@ -123,8 +131,8 @@ Both the dry run and the update run `rsync` with the job's **source directory as
 
 | Step | rsync arguments |
 |---|---|
-| Dry run | `-avz --dry-run --itemize-changes --delete` plus one `--exclude=<skip>` per `skip` entry |
-| Update | `-avzu --progress` plus `--delete` only if the job sets `delete = true`, plus the excludes |
+| Dry run | `-avz --dry-run --itemize-changes --delete` plus one `--exclude=<skip>` per `skip` entry (`-az` in the daemon, whose lines are counted as they arrive and never kept) |
+| Update | `-avzu --progress` plus `--delete` only if the job sets `delete = true`, plus the excludes (`-azu` without `--progress` in the daemon) |
 
 The dry run **always** includes `--delete`, so it reports deletions even for a job with `delete = false` that will not perform them. The report counts lines starting `*deleting` (printed `DELETE  <path>`), creations (`>f+++++++++`, `<f+++++++++`, `cd+...`: `CREATE <path>`) and file modifications (`>f...`: `MODIFY <path>`); directory-only lines are not shown. The update's output is shown on stderr. `-u` skips files newer on the destination.
 
