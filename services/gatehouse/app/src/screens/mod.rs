@@ -1,5 +1,6 @@
 //! The screens, as functions from the state to a view.
 
+mod access;
 mod account;
 mod admin;
 mod home;

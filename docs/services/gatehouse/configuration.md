@@ -64,6 +64,7 @@ All settings are environment variables read at start (unless noted), plus two TO
 | `CLIENT_SECRET_<ID>` | unset | one variable per client (the name is the client's `secret_env`); unset means the client is skipped |
 | `PERMISSIONS_CONFIG` | `config/permissions.toml` | permission catalog; failure stops the process |
 | `<NAME>_UI_URL`, `<NAME>_URL` | unset | where a dashboard service lives (`NAME` = upper-cased service name); also the base of its OAuth redirect URI |
+| `<NAME>_API_URL`, `DIRECTORY_TLS_VERIFY` | unset, `true` | where the permission editor asks `warehouse`, `workbench`, `conveyor` and `gantry` for their storages, projects and targets (falls back to `<NAME>_URL`); `false` accepts a self-signed certificate there |
 | `FEATURE_<NAME>_ENABLED` | `true` | `1/true/yes/on` or `0/false/no/off` hides a configured service from the dashboard |
 
 ## Links and mail

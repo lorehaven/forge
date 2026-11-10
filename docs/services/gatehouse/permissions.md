@@ -71,7 +71,11 @@ Templates: `viewer` (`read` on sage, warehouse, switchboard, conveyor, workbench
 
 A grant is `service:action`. In tokens it is a `scope` entry; in storage it is `{service: [action, ...]}`. An action is either a plain catalog name or, for a service with `resource_types`, `<resource_type>:<resource_id>:<action>` where the id is not checked and the action must be in the service's `actions` (for example `conveyor:project:7:write`, `warehouse:storage:media:read`, `gantry:target:media:deploy`). How a relying party interprets scoped grants (an ancestor walk for conveyor projects, a flat match for workbench) is up to that service.
 
-The admin form's checkboxes cover only the plain catalog actions (`perm_<service>_<action>`); resource-scoped grants made through the API are preserved when a form is saved.
+The user's page shows **Access** as a row per service with what it holds; **Edit** opens that service's popup. The popup has the whole-service checkboxes (`perm_<service>_<action>`) and, for a service with `resource_types`, one list per type with a box per action for every storage, project or target (`perm_<service>_<type>:<id>:<action>`). The popups live inside the user's form, so one **Save** sends everything.
+
+The lists come from the services themselves. When a person who may change permissions opens a user, gatehouse asks each service for its resources with a token of its own, made for the call: audience the service, grant `<service>:read` only, lifetime the access-token TTL, nothing stored. Warehouse (`GET /api/v1/files`, storages that have an owner; the fixed ones cannot be granted one by one), Workbench and Conveyor (`GET /api/v1/projects`) and Gantry (`GET /api/v1/targets`) are asked, at the same time, with a 3 second limit each. A service that does not answer is reported in its popup (`error`) and does not hold the page back. A scoped grant the user holds for something that is no longer listed is shown as such and stays ticked, so saving never drops it unseen. The form carries the hidden field `scoped_grants`; with it the form is the whole truth about scoped grants, without it (an older form) the grants it has no box for are kept.
+
+Where gatehouse asks: `<NAME>_API_URL` (the address inside the cluster, with the service's path prefix), else `<NAME>_URL`. `DIRECTORY_TLS_VERIFY=false` accepts a self-signed certificate on those calls.
 
 ## Dashboard visibility
 

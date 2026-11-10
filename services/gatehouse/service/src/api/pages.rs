@@ -8,6 +8,7 @@
 
 use crate::api::users::SubjectClaims;
 use crate::catalog::PermissionCatalog;
+use crate::directory;
 use crate::email::{Mail, Sender};
 use crate::email_change::Ticket;
 use crate::notices;
@@ -289,6 +290,7 @@ async fn admin_user(
     Path(username): Path<String>,
     Inject(catalog): Inject<PermissionCatalog>,
     Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
 ) -> Response {
     let actor = match allowed(actor.0, "read-users") {
         Ok(actor) => actor,
@@ -306,8 +308,16 @@ async fn admin_user(
             name: name.to_string(),
             label: catalog.label(name).to_string(),
             actions: catalog.actions_for(name).to_vec(),
+            resource_types: catalog.resource_types_for(name).to_vec(),
         })
         .collect();
+    // Only whoever can change permissions needs the lists, and a wildcard user has nothing to pick.
+    let can_manage_permissions = actor.can("gatehouse", "manage-permissions");
+    let resources = if can_manage_permissions && !user.has_wildcard() {
+        directory::lookup(&config, &catalog).await
+    } else {
+        Vec::new()
+    };
     ok(&AdminUser {
         username: user.username.clone(),
         role: primary_role(&user).as_str().to_string(),
@@ -324,9 +334,10 @@ async fn admin_user(
         viewer_admin: actor.has_role(Role::Admin.as_str()),
         can_edit: actor.can("gatehouse", "edit-user"),
         can_delete: actor.can("gatehouse", "delete-user"),
-        can_manage_permissions: actor.can("gatehouse", "manage-permissions"),
+        can_manage_permissions,
         services,
         templates: catalog.template_names().map(str::to_string).collect(),
+        resources,
     })
 }
 
@@ -370,7 +381,7 @@ pub fn register_routes() {
     let _ = mfa_secret as fn(_) -> _;
     let _ = mfa_enable as fn(_, _, _, _, _) -> _;
     let _ = admin_users as fn(_, _) -> _;
-    let _ = admin_user as fn(_, _, _, _) -> _;
+    let _ = admin_user as fn(_, _, _, _, _) -> _;
     let _ = confirm_email as fn(_, _) -> _;
     let _ = unsubscribe as fn(_, _) -> _;
 }

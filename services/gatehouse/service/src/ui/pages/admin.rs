@@ -470,27 +470,50 @@ pub async fn disable_user_mfa(
     }
 }
 
-/// Reads catalog-declared checkboxes, then folds in whatever `existing` held
-/// with no checkbox (e.g. an API-only resource-scoped grant) so it survives.
+/// The hidden field the permission editor sends: it lists every scoped grant of the user, so the form is the whole truth.
+pub const SCOPED_MARKER: &str = "scoped_grants";
+
+/// Reads the permission checkboxes of the form.
+///
+/// A plain action is `perm_<service>_<action>`; a scoped one carries its resource in the action
+/// (`perm_warehouse_storage:media:read`), and is accepted only if the catalog knows the type and the action. With the
+/// `scoped_grants` marker the form lists every scoped grant the user has (the editor shows the ones whose resource no
+/// longer exists too), so an unticked box removes one. Without the marker (an older form) the grants it cannot show
+/// survive from `existing`, as they always did. A grant on a service the catalog does not know is kept either way.
 pub fn permissions_from_form<S: std::hash::BuildHasher>(
     catalog: &PermissionCatalog,
     form: &HashMap<String, String, S>,
     existing: &Permissions,
 ) -> Permissions {
+    let scoped_form = form.contains_key(SCOPED_MARKER);
     let mut result: Permissions = catalog
         .service_names()
         .filter_map(|service| {
-            let actions: Actions = catalog
+            let mut actions: Actions = catalog
                 .actions_for(service)
                 .iter()
                 .filter(|action| form.contains_key(&format!("perm_{service}_{action}")))
                 .cloned()
                 .collect();
+            if scoped_form {
+                let prefix = format!("perm_{service}_");
+                actions.extend(
+                    form.keys()
+                        .filter_map(|key| key.strip_prefix(&prefix))
+                        .filter(|action| {
+                            action.contains(':') && catalog.is_known_action(service, action)
+                        })
+                        .map(str::to_string),
+                );
+            }
             (!actions.is_empty()).then(|| (service.to_string(), actions))
         })
         .collect();
 
     for (service, actions) in existing {
+        if scoped_form && catalog.is_known_service(service) {
+            continue;
+        }
         let plain: std::collections::HashSet<&str> = catalog
             .actions_for(service)
             .iter()

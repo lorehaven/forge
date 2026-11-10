@@ -141,6 +141,30 @@ pub struct CatalogService {
     pub name: String,
     pub label: String,
     pub actions: Vec<String>,
+    /// What a grant can name instead of the whole service (`storage`, `project`, `target`): the `<type>` of
+    /// `<type>:<id>:<action>`. Empty for a service that has only plain grants.
+    #[serde(default)]
+    pub resource_types: Vec<String>,
+}
+
+/// One thing a scoped grant can name: a storage, a project, a target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResourceChoice {
+    /// What goes into the grant (`storage:<id>:read`).
+    pub id: String,
+    /// What the person reads.
+    pub label: String,
+}
+
+/// The resources of one scoped type, as the service itself lists them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResourceKind {
+    pub service: String,
+    pub resource_type: String,
+    pub items: Vec<ResourceChoice>,
+    /// Why there is no list, when the service could not be asked. The page says so and keeps the grants already held.
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 /// One user as the administrator sees them, with what the viewer may do about it.
@@ -173,6 +197,9 @@ pub struct AdminUser {
     pub can_manage_permissions: bool,
     pub services: Vec<CatalogService>,
     pub templates: Vec<String>,
+    /// What the scoped grants can name, for a viewer who may change permissions; empty otherwise.
+    #[serde(default)]
+    pub resources: Vec<ResourceKind>,
 }
 
 /// The new address a confirmation link would set.

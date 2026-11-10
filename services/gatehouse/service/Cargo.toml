@@ -34,6 +34,7 @@ forge-web = { workspace = true }
 gatehouse-core = { workspace = true }
 gatehouse-web = { workspace = true }
 quench-auth = { workspace = true }
+quench-client = { workspace = true }
 quench-cache = { workspace = true, features = ["redis"] }
 quench-config = { workspace = true }
 quench-db = { workspace = true }

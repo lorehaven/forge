@@ -2080,7 +2080,7 @@ Only for an account with an unconfirmed address (`InviteNeedsEmail` / `AlreadyCo
 
 Save password, role and grants
 
-Form fields: `password` (non-empty changes it), `role` (honoured only for a literal admin) and one checkbox `perm_<service>_<action>` per catalog action; all catalog-listed plain actions are replaced by the checked ones, while grants not representable as a checkbox (resource-scoped ones) are kept.
+Form fields: `password` (non-empty changes it), `role` (honoured only for a literal admin) and one checkbox `perm_<service>_<action>` per catalog action; all catalog-listed plain actions are replaced by the checked ones. A resource-scoped grant is a checkbox too, with the resource in the action (`perm_warehouse_storage:media:read`). With the hidden field `scoped_grants` the form lists every scoped grant, so an unticked one is removed; without it the scoped grants the form has no box for are kept.
 
 **Authentication:** `bearerAuth` or `sessionCookie`. **Permission:** `gatehouse:edit-user`.
 
@@ -2095,6 +2095,7 @@ Form fields: `password` (non-empty changes it), `role` (honoured only for a lite
 | `password` | string | no |  |
 | `role` | string | no |  |
 | `perm_sage_read` | string | no | Checkbox. |
+| `scoped_grants` | string | no | Hidden marker; when present the checked `perm_<service>_<type>:<id>:<action>` boxes are the user's scoped grants. |
 
 ```text
 role=user&perm_sage_read=on&perm_sage_write=on
@@ -2692,6 +2693,29 @@ What the page's session watcher is told. Reads the cookie and its signature only
 | `name` | string | yes |  |
 | `label` | string | yes |  |
 | `actions` | array of string | yes |  |
+| `resource_types` | array of string | no | What a grant can name instead of the whole service (`storage`, `project`, `target`). |
+
+### Schema ResourceChoice
+
+<a id="schema-resourcechoice"></a>
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | string | yes | What goes into the grant (`storage:<id>:read`). |
+| `label` | string | yes |  |
+
+### Schema ResourceKind
+
+<a id="schema-resourcekind"></a>
+
+The resources of one scoped type, as the owning service lists them.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `service` | string | yes |  |
+| `resource_type` | string | yes |  |
+| `items` | array of [ResourceChoice](#schema-resourcechoice) | yes |  |
+| `error` | string or null | no | Why there is no list, when the service could not be asked. |
 
 ### Schema AdminUser
 
@@ -2717,6 +2741,7 @@ What the page's session watcher is told. Reads the cookie and its signature only
 | `can_manage_permissions` | boolean | yes |  |
 | `services` | array of [CatalogService](#schema-catalogservice) | yes |  |
 | `templates` | array of string | yes |  |
+| `resources` | array of [ResourceKind](#schema-resourcekind) | no | What the scoped grants can name; empty unless the viewer may change permissions and the user is not a wildcard. |
 
 ### Schema ConfirmEmail
 

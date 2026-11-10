@@ -2325,8 +2325,9 @@ paths:
       summary: Save password, role and grants
       description: 'Form fields: `password` (non-empty changes it), `role` (honoured only for a literal
         admin) and one checkbox `perm_<service>_<action>` per catalog action; all catalog-listed plain
-        actions are replaced by the checked ones, while grants not representable as a checkbox (resource-scoped
-        ones) are kept.'
+        actions are replaced by the checked ones. A resource-scoped grant is a checkbox too, with the resource in the action
+        (`perm_warehouse_storage:media:read`). With the hidden field `scoped_grants` the form lists every scoped grant, so an
+        unticked one is removed; without it the scoped grants the form has no box for are kept.'
       security:
       - bearerAuth: []
       - sessionCookie: []
@@ -2353,6 +2354,9 @@ paths:
                 perm_sage_read:
                   type: string
                   description: Checkbox.
+                scoped_grants:
+                  type: string
+                  description: Hidden marker; when present the checked `perm_<service>_<type>:<id>:<action>` boxes are the user's scoped grants.
             example: role=user&perm_sage_read=on&perm_sage_write=on
       responses:
         '302':
@@ -3328,10 +3332,47 @@ components:
           type: array
           items:
             type: string
+        resource_types:
+          type: array
+          description: What a grant can name instead of the whole service (`storage`, `project`, `target`).
+          items:
+            type: string
       required:
       - name
       - label
       - actions
+    ResourceChoice:
+      type: object
+      properties:
+        id:
+          type: string
+          description: What goes into the grant (`storage:<id>:read`).
+        label:
+          type: string
+      required:
+      - id
+      - label
+    ResourceKind:
+      type: object
+      description: The resources of one scoped type, as the owning service lists them.
+      properties:
+        service:
+          type: string
+        resource_type:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceChoice'
+        error:
+          type:
+          - string
+          - 'null'
+          description: Why there is no list, when the service could not be asked.
+      required:
+      - service
+      - resource_type
+      - items
     AdminUser:
       type: object
       properties:
@@ -3383,6 +3424,11 @@ components:
           type: array
           items:
             type: string
+        resources:
+          type: array
+          description: What the scoped grants can name; empty unless the viewer may change permissions and the user is not a wildcard.
+          items:
+            $ref: '#/components/schemas/ResourceKind'
       required:
       - username
       - role

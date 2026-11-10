@@ -2,10 +2,11 @@
 //! named bundles, the account's state and what an administrator can do about it). The forms are posted by the browser to
 //! `/ui/admin/users...`, which redirects back here with `?ok=` or `?err=`; the service checks the catalog action each time.
 
-use gatehouse_core::{AdminUser, AdminUserRow, AdminUsers, Grant, notice, segment};
+use gatehouse_core::{AdminUser, AdminUserRow, AdminUsers, notice, segment};
 use quench_ui::prelude::*;
 use quench_ui::router::{RouteContext, link};
 
+use super::access::access;
 use super::{Env, hint, input_named, panel, post_form, query, submit, waiting};
 use crate::live::{Problem, Request, State};
 
@@ -223,14 +224,6 @@ fn editor(env: &Env, user: &AdminUser, flash: Option<gatehouse_core::Notice>) ->
         .child(danger)
 }
 
-fn held(user: &AdminUser, service: &str, action: &str) -> bool {
-    user.wildcard
-        || user
-            .held
-            .iter()
-            .any(|g: &Grant| g.service == service && g.actions.iter().any(|a| a == action))
-}
-
 fn role_row(env: &Env, user: &AdminUser) -> Element {
     let control = if user.viewer_admin {
         role_select(env, "role", &user.role)
@@ -244,50 +237,9 @@ fn role_row(env: &Env, user: &AdminUser) -> Element {
         .child(control)
 }
 
-fn matrix(user: &AdminUser) -> Element {
-    // Disabled, not omitted, for a wildcard target or a read-only viewer.
-    let disabled = user.wildcard || !user.can_edit;
-    let mut matrix = div().class("gh-matrix");
-    for service in &user.services {
-        let mut actions = div().class("gh-matrix-actions");
-        for action in &service.actions {
-            let field = format!("perm_{}_{action}", service.name);
-            let checked = held(user, &service.name, action);
-            let mut checkbox = input()
-                .attr("type", "checkbox")
-                .attr("id", field.clone())
-                .attr("name", field.clone())
-                .attr_bool("checked", move || checked);
-            if disabled {
-                checkbox = checkbox.attr("disabled", "disabled");
-            }
-            actions = actions.child(
-                div()
-                    .class("gh-check")
-                    .child(checkbox)
-                    .child(label().attr("for", field).text(action.clone())),
-            );
-        }
-        matrix = matrix.child(
-            div()
-                .class("gh-matrix-row")
-                .child(span().class("gh-service").text(service.label.clone()))
-                .child(actions),
-        );
-    }
-    matrix
-}
-
 /// The user's panel: an edit form, or the same information with no form for a read-only viewer.
 fn details_panel(env: &Env, user: &AdminUser) -> Element {
-    let body = div()
-        .child(role_row(env, user))
-        .child(
-            div()
-                .class("gh-section-title")
-                .text(env.t.t("ui_admin_permissions")),
-        )
-        .child(matrix(user));
+    let body = div().child(role_row(env, user)).child(access(env, user));
     let body = if user.can_edit {
         let mut form = post_form(env.path(&format!("/admin/users/{}", segment(&user.username))))
             .attr("id", "edit-form")

@@ -11,6 +11,7 @@ pub mod catalog;
 pub mod clients;
 pub mod codes;
 pub mod crypto;
+pub mod directory;
 pub mod email;
 pub mod email_change;
 pub mod invites;

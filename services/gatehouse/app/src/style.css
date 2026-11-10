@@ -75,6 +75,32 @@ a.gh-hint{display:block}
 .gh-matrix-actions{display:flex;flex-wrap:wrap;gap:.5rem 1rem}
 .gh-service{overflow-wrap:anywhere}
 .gh-danger-panel{border-color:var(--fui-error-soft-border)}
+/* access: a row per service, a popup per service */
+.gh-access{display:flex;flex-direction:column;gap:.75rem;margin:1rem 0 .5rem;padding:1.25rem 1.5rem;border:1px solid var(--fui-border);border-radius:var(--fui-radius-xl);box-sizing:border-box}
+.gh-access-title{font-weight:600;font-size:1rem;color:var(--fui-text)}
+.gh-access-list{display:flex;flex-direction:column}
+.gh-access-row{display:grid;grid-template-columns:minmax(7rem,12rem) minmax(0,1fr) auto;align-items:center;gap:.75rem 1rem;padding:.75rem 0;border-top:1px solid var(--fui-border)}
+.gh-access-row:first-child{border-top:0}
+.gh-access-summary{color:var(--fui-text-tertiary);font-size:.9rem;overflow-wrap:anywhere}
+.gh-access-edit{min-height:2rem;padding:.25rem .875rem}
+.gh-modal{display:none;position:fixed;inset:0;z-index:60;align-items:center;justify-content:center;padding:1rem;background:rgba(0,0,0,.45);box-sizing:border-box}
+.gh-modal-open{display:flex}
+.gh-modal-card{display:flex;flex-direction:column;width:100%;max-width:44rem;max-height:calc(100vh - 2rem);background:var(--fui-surface);border:1px solid var(--fui-border);border-radius:var(--fui-radius-xl);box-shadow:0 20px 50px rgba(0,0,0,.35);overflow:hidden}
+.gh-modal-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.5rem;border-bottom:1px solid var(--fui-border)}
+.gh-modal-title{font-size:1.0625rem;font-weight:600;color:var(--fui-text)}
+.gh-modal-close{min-height:2rem;min-width:2rem;padding:0 .5rem;font-size:1.25rem;line-height:1}
+.gh-modal-body{display:flex;flex-direction:column;gap:1.25rem;padding:1.25rem 1.5rem;overflow-y:auto}
+.gh-modal-foot{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:.875rem 1.5rem;border-top:1px solid var(--fui-border)}
+.gh-modal-foot .gh-hint{margin:0}
+.gh-access-block{display:flex;flex-direction:column;gap:.5rem}
+.gh-access-block .gh-section-title{margin-top:0}
+.gh-access-block .gh-hint{margin:0}
+.gh-access-error{color:var(--fui-error-soft-text,var(--fui-text-secondary))}
+.gh-resources{display:flex;flex-direction:column;border:1px solid var(--fui-border);border-radius:var(--fui-radius-md)}
+.gh-resource-row{display:grid;grid-template-columns:minmax(8rem,1fr) auto;align-items:center;gap:.5rem 1rem;padding:.625rem .875rem;border-top:1px solid var(--fui-border)}
+.gh-resource-row:first-child{border-top:0}
+.gh-resource-name{display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
+
 
 @media (max-width:639.98px){
   .gh-main{padding:1rem}
@@ -82,6 +108,12 @@ a.gh-hint{display:block}
   .gh-row>.gh-input,.gh-row>.gh-file{flex:1 1 auto;width:100%}
   .gh-row>input[type=checkbox]{align-self:flex-start}
   .gh-matrix-row{grid-template-columns:1fr;gap:.25rem}
+  .gh-access{padding:1rem}
+  .gh-access-row{grid-template-columns:1fr auto}
+  .gh-access-summary{grid-column:1 / -1;order:3}
+  .gh-resource-row{grid-template-columns:1fr}
+  .gh-modal{padding:.5rem}
+  .gh-modal-head,.gh-modal-body,.gh-modal-foot{padding-left:1rem;padding-right:1rem}
   .gh-edit{margin-left:0}
 }
 .home-card{min-width:0}

@@ -28,10 +28,7 @@ quench-args = { workspace = true }
 quench-cli = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = [
-  "Win32_System_Console",
-  "Win32_UI_WindowsAndMessaging",
-] }
+windows-sys = { workspace = true }
 
 [dev-dependencies]
 quench-test = { workspace = true }

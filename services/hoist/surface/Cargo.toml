@@ -18,7 +18,7 @@ path = "src/main.rs"
 [dependencies]
 hoist-app = { workspace = true }
 hoist-core = { workspace = true }
-hoist-desktop = { path = "../desktop", default-features = false }
+hoist-desktop = { workspace = true }
 quench-android-surface = { workspace = true }
 quench-style = { workspace = true }
 quench-ui = { workspace = true }

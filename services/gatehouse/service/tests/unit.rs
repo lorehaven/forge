@@ -25,6 +25,8 @@ mod clients_tests;
 mod codes_tests;
 #[path = "unit/crypto_tests.rs"]
 mod crypto_tests;
+#[path = "unit/directory_tests.rs"]
+mod directory_tests;
 #[path = "unit/email_change_tests.rs"]
 mod email_change_tests;
 #[path = "unit/email_live_tests.rs"]

@@ -135,6 +135,75 @@ fn a_plain_grant_can_still_be_revoked() {
     );
 }
 
+#[quench_test::test]
+fn a_scoped_form_is_the_whole_truth_about_scoped_grants() {
+    let catalog = catalog();
+    let mut existing = Permissions::new();
+    existing.insert(
+        "conveyor".to_string(),
+        ["read", "project:old:write", "project:keep:read"]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+    );
+    // A grant on a service the catalog no longer has is never this form's to drop.
+    existing.insert(
+        "retired".to_string(),
+        std::iter::once("read".to_string()).collect(),
+    );
+
+    let mut form = HashMap::new();
+    form.insert("scoped_grants".to_string(), "1".to_string());
+    form.insert("perm_conveyor_read".to_string(), "on".to_string());
+    form.insert(
+        "perm_conveyor_project:keep:read".to_string(),
+        "on".to_string(),
+    );
+    form.insert(
+        "perm_conveyor_project:new:write".to_string(),
+        "on".to_string(),
+    );
+    // Not a type the catalog declares, not an action it has, and no resource: all ignored.
+    form.insert("perm_conveyor_folder:x:read".to_string(), "on".to_string());
+    form.insert(
+        "perm_conveyor_project:x:delete".to_string(),
+        "on".to_string(),
+    );
+    form.insert("perm_conveyor_project".to_string(), "on".to_string());
+
+    let result = permissions_from_form(&catalog, &form, &existing);
+    let conveyor = result.get("conveyor").expect("conveyor");
+    let mut held: Vec<&str> = conveyor.iter().map(String::as_str).collect();
+    held.sort_unstable();
+    assert_eq!(held, ["project:keep:read", "project:new:write", "read"]);
+    assert!(
+        result
+            .get("retired")
+            .is_some_and(|actions| actions.contains("read")),
+        "a grant on an unknown service survives"
+    );
+}
+
+#[quench_test::test]
+fn without_the_marker_scoped_checkboxes_are_not_read_and_old_grants_survive() {
+    let catalog = catalog();
+    let mut existing = Permissions::new();
+    existing.insert(
+        "conveyor".to_string(),
+        std::iter::once("project:abc:write".to_string()).collect(),
+    );
+    let mut form = HashMap::new();
+    form.insert(
+        "perm_conveyor_project:other:read".to_string(),
+        "on".to_string(),
+    );
+
+    let result = permissions_from_form(&catalog, &form, &existing);
+    let conveyor = result.get("conveyor").expect("conveyor");
+    assert!(conveyor.contains("project:abc:write"));
+    assert!(!conveyor.contains("project:other:read"));
+}
+
 // -----------------------------------------------------------------
 // parse_role
 // -----------------------------------------------------------------

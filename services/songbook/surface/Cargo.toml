@@ -43,7 +43,7 @@ quench-ui = { workspace = true }
 quench-ui-native = { workspace = true }
 
 [dev-dependencies]
-quench-image = { registry = "ennor", version = "0.1.0" }
-quench-layout = { registry = "ennor", version = "0.1.3" }
-quench-raster = { registry = "ennor", version = "0.1.2" }
+quench-image = { workspace = true }
+quench-layout = { workspace = true }
+quench-raster = { workspace = true }
 quench-test = { workspace = true }

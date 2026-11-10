@@ -7,7 +7,8 @@ use std::rc::Rc;
 use gatehouse_app::{Gatehouse, Msg, Request, Setup, gatehouse};
 use gatehouse_core::{
     Account, AdminUser, AdminUserRow, AdminUsers, CatalogService, ConfirmEmail, Dashboard, Grant,
-    MfaEnrollRequest, MfaEnrollment, ServiceCard, Subscription, UnsubscribeInfo,
+    MfaEnrollRequest, MfaEnrollment, ResourceChoice, ResourceKind, ServiceCard, Subscription,
+    UnsubscribeInfo,
 };
 use quench_ui::Event;
 use quench_ui::prelude::*;
@@ -761,10 +762,20 @@ fn user(name: &str) -> AdminUser {
         username: name.into(),
         role: "user".into(),
         wildcard: false,
-        held: vec![Grant {
-            service: "sage".into(),
-            actions: vec!["read".into()],
-        }],
+        held: vec![
+            Grant {
+                service: "sage".into(),
+                actions: vec!["read".into()],
+            },
+            Grant {
+                service: "warehouse".into(),
+                actions: vec![
+                    "read".into(),
+                    "storage:media:write".into(),
+                    "storage:gone:read".into(),
+                ],
+            },
+        ],
         email: Some("ola@example.test".into()),
         email_verified: false,
         disabled: false,
@@ -782,14 +793,37 @@ fn user(name: &str) -> AdminUser {
                 name: "sage".into(),
                 label: "Sage".into(),
                 actions: vec!["read".into(), "write".into()],
+                resource_types: vec![],
             },
             CatalogService {
                 name: "gantry".into(),
                 label: "Gantry".into(),
                 actions: vec!["read".into()],
+                resource_types: vec![],
+            },
+            CatalogService {
+                name: "warehouse".into(),
+                label: "Warehouse".into(),
+                actions: vec!["read".into(), "write".into()],
+                resource_types: vec!["storage".into()],
             },
         ],
         templates: vec!["viewer".into(), "editor".into()],
+        resources: vec![ResourceKind {
+            service: "warehouse".into(),
+            resource_type: "storage".into(),
+            items: vec![
+                ResourceChoice {
+                    id: "media".into(),
+                    label: "media (ola)".into(),
+                },
+                ResourceChoice {
+                    id: "photos".into(),
+                    label: "photos (admin)".into(),
+                },
+            ],
+            error: None,
+        }],
     }
 }
 
@@ -837,6 +871,125 @@ fn the_editor_has_the_role_the_grants_and_every_action_the_viewer_may_take() {
     );
     assert!(l.text().contains("2026-10-01 10:00 UTC"));
     assert_no_raw_keys(&l);
+}
+
+fn open_editor(user: AdminUser) -> Live {
+    let l = live("/gatehouse/ui/admin/users/ola");
+    l.send(Msg::AdminUser(Box::new(user)));
+    l
+}
+
+fn class_of(l: &Live, id: &str) -> String {
+    let node = find(&l.r, "div", ("id", id));
+    l.r.attr(node, "class").unwrap_or_default()
+}
+
+#[quench_test::test]
+fn access_is_a_row_per_service_and_each_popup_opens_and_closes() {
+    let l = open_editor(user("ola"));
+    // The section has its own title, the summary says what is held, the whole page has no checkbox list in the open.
+    assert!(present(&l.r, "access"));
+    let text = l.text();
+    assert!(
+        text.contains("Access") && text.contains("Warehouse"),
+        "{text}"
+    );
+    assert!(text.contains("read · 2 scoped"), "{text}");
+    for service in ["sage", "gantry", "warehouse"] {
+        assert!(
+            !class_of(&l, &format!("access-{service}")).contains("gh-modal-open"),
+            "{service} starts closed"
+        );
+    }
+    l.click("button", "access-open-warehouse");
+    assert!(class_of(&l, "access-warehouse").contains("gh-modal-open"));
+    assert!(!class_of(&l, "access-sage").contains("gh-modal-open"));
+    l.click("button", "access-done-warehouse");
+    assert!(!class_of(&l, "access-warehouse").contains("gh-modal-open"));
+    l.click("button", "access-open-sage");
+    l.click("button", "access-close-sage");
+    assert!(!class_of(&l, "access-sage").contains("gh-modal-open"));
+    // A closed popup is still in the form: its boxes are posted with the rest.
+    let f = find(&l.r, "form", ("id", "edit-form"));
+    assert!(l.r.outer_html(f).contains("perm_sage_write"));
+    assert_no_raw_keys(&l);
+}
+
+#[quench_test::test]
+fn a_service_with_resources_lists_them_with_a_box_per_action() {
+    let l = open_editor(user("ola"));
+    // Whole-service boxes, as before.
+    let whole = find(&l.r, "input", ("name", "perm_warehouse_read"));
+    assert!(l.r.attr(whole, "checked").is_some());
+    // One row per listed storage, ticked where the grant is held.
+    let held = find(
+        &l.r,
+        "input",
+        ("name", "perm_warehouse_storage:media:write"),
+    );
+    assert!(l.r.attr(held, "checked").is_some());
+    let not_held = find(&l.r, "input", ("name", "perm_warehouse_storage:media:read"));
+    assert!(l.r.attr(not_held, "checked").is_none());
+    let other = find(
+        &l.r,
+        "input",
+        ("name", "perm_warehouse_storage:photos:read"),
+    );
+    assert!(l.r.attr(other, "checked").is_none());
+    let text = l.text();
+    assert!(
+        text.contains("Storages") && text.contains("media (ola)"),
+        "{text}"
+    );
+    // A grant on something no longer listed stays visible, ticked, and says why it is odd.
+    let gone = find(&l.r, "input", ("name", "perm_warehouse_storage:gone:read"));
+    assert!(l.r.attr(gone, "checked").is_some());
+    assert!(text.contains("no longer listed"), "{text}");
+    // The form says it lists every scoped grant.
+    let marker = find(&l.r, "input", ("name", "scoped_grants"));
+    assert_eq!(l.r.attr(marker, "value").as_deref(), Some("1"));
+    // A service with no resource types has only its plain boxes.
+    assert!(!l.html().contains("perm_sage_storage"));
+}
+
+#[quench_test::test]
+fn a_list_that_could_not_be_loaded_says_so_and_keeps_what_is_held() {
+    let mut broken = user("ola");
+    broken.resources = vec![ResourceKind {
+        service: "warehouse".into(),
+        resource_type: "storage".into(),
+        items: vec![],
+        error: Some("warehouse answered 503".into()),
+    }];
+    let l = open_editor(broken);
+    let text = l.text();
+    assert!(
+        text.contains("The list could not be loaded") && text.contains("warehouse answered 503"),
+        "{text}"
+    );
+    // Both held grants are still boxes in the form, so saving cannot drop them unseen.
+    let media = find(
+        &l.r,
+        "input",
+        ("name", "perm_warehouse_storage:media:write"),
+    );
+    assert!(l.r.attr(media, "checked").is_some());
+    find(&l.r, "input", ("name", "perm_warehouse_storage:gone:read"));
+}
+
+#[quench_test::test]
+fn a_viewer_who_cannot_edit_sees_the_boxes_locked_and_a_view_button() {
+    let mut readonly = user("ola");
+    readonly.can_edit = false;
+    let l = open_editor(readonly);
+    let media = find(
+        &l.r,
+        "input",
+        ("name", "perm_warehouse_storage:media:write"),
+    );
+    assert!(l.r.attr(media, "disabled").is_some());
+    let open = find(&l.r, "button", ("id", "access-open-warehouse"));
+    assert_eq!(l.r.text_of(open), "View");
 }
 
 #[quench_test::test]
