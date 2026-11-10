@@ -442,6 +442,7 @@ dependencies = [
  "forge-web",
  "gantry-core",
  "gantry-web",
+ "kube-cluster",
  "quench-auth",
  "quench-client",
  "quench-core",
@@ -713,6 +714,16 @@ dependencies = [
  "quench-style",
  "quench-ui",
  "quench-ui-native",
+]
+
+[[package]]
+name = "kube-cluster"
+version = "0.1.0"
+dependencies = [
+ "quench-core",
+ "quench-k8s",
+ "quench-serde",
+ "tokio",
 ]
 
 [[package]]
@@ -1527,12 +1538,12 @@ version = "0.4.21"
 dependencies = [
  "conveyor-pipeline",
  "gatehouse-auth",
+ "kube-cluster",
  "quench-args",
  "quench-cli",
  "quench-client",
  "quench-core",
  "quench-crypto",
- "quench-k8s",
  "quench-regex",
  "quench-schema",
  "quench-serde",

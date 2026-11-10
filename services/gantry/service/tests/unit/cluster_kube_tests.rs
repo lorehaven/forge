@@ -7,14 +7,11 @@ use gantry_service::domain::cluster::{
 use gantry_service::domain::settings::{ClusterMode, Settings};
 use quench_test::mock::matchers::{method, path};
 use quench_test::mock::{Mock, MockServer, ResponseTemplate};
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::MutexGuard;
 
-/// `KUBECONFIG` is process-global.
+/// `KUBECONFIG` is process-global, and the fake cluster's tests set it too: one lock for both.
 fn env_lock() -> MutexGuard<'static, ()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    crate::fake_cluster::kubeconfig_lock()
 }
 
 fn json(status: u16, body: &quench_serde::Value) -> ResponseTemplate {

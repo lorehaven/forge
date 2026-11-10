@@ -138,7 +138,10 @@ pub const COMMANDS: &[CommandHelp] = &[
                 "Set replicas on a deployment or statefulset; repeatable",
             ),
             ("--except <KIND/NAME>", "Leave a resource out; repeatable"),
-            ("--dry-run", "List what would be applied; nothing reaches the cluster"),
+            (
+                "--dry-run",
+                "List what would be applied; nothing reaches the cluster",
+            ),
             ("--no-wait", "Return once the cluster accepts the manifests"),
             ("--timeout <seconds>", "Per-rollout wait, default 300"),
             ("--scope <scope>", SCOPE_MUTABLE),
@@ -512,7 +515,10 @@ pub const COMMANDS: &[CommandHelp] = &[
                 "--set <KEY=VALUE>",
                 "One variable; repeatable, wins over all",
             ),
-            ("--dry-run", "List what would be applied; nothing reaches the cluster"),
+            (
+                "--dry-run",
+                "List what would be applied; nothing reaches the cluster",
+            ),
             ("--no-wait", "Return once the cluster accepts the manifests"),
             ("--timeout <seconds>", "Per-rollout wait, default 300"),
             ("--scope <scope>", SCOPE_ALL),

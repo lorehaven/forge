@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.5
 #
-# The image a Gantry runner Job runs: `gantry-runner` (executes the plan), `riveter` (pull, install) and
-# `kubectl` (scale, wait, roll back) - and nothing else. Not rust-builder, which has no kubectl and ships a
-# multi-gigabyte Rust SDK for a job that only runs three programs.
+# The image a Gantry runner Job runs: `gantry-runner` (executes the plan, scaling, waiting and rolling back through
+# the API itself) and `riveter` (pull, install) - and nothing else, no `kubectl`. Not rust-builder, which ships a
+# multi-gigabyte Rust SDK for a job that only runs two programs.
 #
 # Built from this workspace, like rust-builder, so the riveter in the runner is always the one the commit
 # was written against: a plan that uses a new riveter flag must not meet an older riveter at run time.
@@ -38,7 +38,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 FROM alpine:3.22
 
-RUN apk add --no-cache ca-certificates kubectl
+RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/riveter /usr/local/bin/riveter
 COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/gantry-runner /usr/local/bin/gantry-runner

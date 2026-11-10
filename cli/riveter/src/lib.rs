@@ -2,9 +2,7 @@
 
 pub mod against;
 pub mod cli;
-pub mod cluster;
 pub mod config;
-pub mod diff;
 pub mod env;
 pub mod help;
 pub mod image_updates;
@@ -21,3 +19,6 @@ pub mod schema_cmd;
 pub mod secrets;
 pub mod secrets_cmd;
 pub mod vault;
+
+/// The cluster, spoken to directly (see [`kube_cluster`]).
+pub use kube_cluster::{cluster, diff};

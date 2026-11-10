@@ -70,6 +70,7 @@ const CORE: &[(&str, &str, bool)] = &[
 ];
 const APPS: &[(&str, &str, bool)] = &[
     ("deployments", "Deployment", true),
+    ("replicasets", "ReplicaSet", true),
     ("statefulsets", "StatefulSet", true),
     ("daemonsets", "DaemonSet", true),
 ];
@@ -242,6 +243,7 @@ struct Request {
     path: String,
     query: Vec<(String, String)>,
     body: Vec<u8>,
+    content_type: String,
 }
 
 fn read_request(stream: &mut TcpStream) -> Option<Request> {
@@ -263,11 +265,16 @@ fn read_request(stream: &mut TcpStream) -> Option<Request> {
     let mut first = lines.next()?.split(' ');
     let method = first.next()?.to_string();
     let target = first.next()?.to_string();
-    let length = lines
-        .filter_map(|l| l.split_once(':'))
-        .find(|(k, _)| k.eq_ignore_ascii_case("content-length"))
-        .and_then(|(_, v)| v.trim().parse::<usize>().ok())
-        .unwrap_or(0);
+    let headers: Vec<(&str, &str)> = lines.filter_map(|l| l.split_once(':')).collect();
+    let header = |name: &str| {
+        headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map_or("", |(_, v)| v.trim())
+            .to_string()
+    };
+    let length = header("content-length").parse::<usize>().unwrap_or(0);
+    let content_type = header("content-type");
     let mut body = data[head_end + 4..].to_vec();
     while body.len() < length {
         let n = stream.read(&mut chunk).ok()?;
@@ -290,6 +297,7 @@ fn read_request(stream: &mut TcpStream) -> Option<Request> {
         path: path.to_string(),
         query,
         body,
+        content_type,
     })
 }
 
@@ -527,6 +535,36 @@ fn handle(request: &Request, state: &mut State, version: &AtomicU64) -> (u16, St
                 Ok(object) => object,
                 Err(_) => return status(400, "BadRequest", "the body is not JSON"),
             };
+            // A merge or JSON patch changes what is there; an apply is the whole object.
+            if request.content_type.contains("merge-patch")
+                || request.content_type.contains("json-patch")
+            {
+                let Some(mut live) = state.objects.get(&key(name)).cloned() else {
+                    return status(404, "NotFound", &format!("{plural} \"{name}\" not found"));
+                };
+                if request.content_type.contains("merge-patch") {
+                    merge(&mut live, &object);
+                } else {
+                    for op in object.as_array().cloned().unwrap_or_default() {
+                        let path = op["path"].as_str().unwrap_or("").to_string();
+                        let mut at = &mut live;
+                        let parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+                        for part in &parts[..parts.len() - 1] {
+                            at = &mut at[*part];
+                        }
+                        if let Some(map) = at.as_object_mut() {
+                            map.insert(parts[parts.len() - 1], op["value"].clone());
+                        }
+                    }
+                }
+                note(state, format!("patch {plural}/{name}"));
+                let next = version.fetch_add(1, Ordering::Relaxed).to_string();
+                if let Some(metadata) = live.get_mut("metadata").and_then(Value::as_object_mut) {
+                    metadata.insert("resourceVersion", Value::String(next));
+                }
+                state.objects.insert(key(name), live.clone());
+                return (200, live.to_string());
+            }
             let kind_name = format!("{}/{name}", kind.to_lowercase());
             if state.refuse_all || state.refuse.as_deref() == Some(kind_name.as_str()) {
                 return status(
@@ -578,6 +616,23 @@ fn handle(request: &Request, state: &mut State, version: &AtomicU64) -> (u16, St
     }
 }
 
+/// RFC 7386: maps merge, anything else is replaced, `null` removes.
+fn merge(into: &mut Value, patch: &Value) {
+    let (Some(target), Some(changes)) = (into.as_object_mut(), patch.as_object()) else {
+        *into = patch.clone();
+        return;
+    };
+    for (key, change) in changes.iter() {
+        if change.is_null() {
+            target.remove(key);
+        } else if let Some(existing) = target.get_mut(key) {
+            merge(existing, change);
+        } else {
+            target.insert(key.clone(), change.clone());
+        }
+    }
+}
+
 /// The object as it is compared for "did applying change anything": without what the server stamps.
 fn strip(mut object: Value) -> Value {
     if let Some(metadata) = object.get_mut("metadata").and_then(Value::as_object_mut) {
@@ -621,6 +676,13 @@ fn add_job_status(job: &mut Value, mode: &JobMode) {
 // ── Reaching it ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 static KUBECONFIG_LOCK: Mutex<()> = Mutex::new(());
+
+/// The lock on `KUBECONFIG`, for tests of other kinds that set it too.
+pub fn kubeconfig_lock() -> std::sync::MutexGuard<'static, ()> {
+    KUBECONFIG_LOCK
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
 
 /// Runs `body` with `KUBECONFIG` naming a kubeconfig of these contexts (the first is the current one). The variable is the
 /// process's, so one body at a time.

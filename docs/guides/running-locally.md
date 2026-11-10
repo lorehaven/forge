@@ -132,7 +132,7 @@ Gantry reads and changes a Kubernetes cluster, so it has two local modes that ne
 | Variable | Values | Effect |
 |---|---|---|
 | `GANTRY_CLUSTER` | `in-cluster` (default in a pod), `kubeconfig`, `none` | How the cluster is read. `none` is an in-memory fake. `GANTRY_KUBE_CONTEXT` pins a context. |
-| `GANTRY_RUNNER` | `job` (default in a pod), `local`, `dry-run`, `simulate` | How operations run. `local` runs a child process with your `kubectl` and `riveter`; `dry-run` prints mutating commands and changes nothing; `simulate` (fake cluster only) applies each step to the in-memory cluster. |
+| `GANTRY_RUNNER` | `job` (default in a pod), `local`, `dry-run`, `simulate` | How operations run. `local` runs a child process with your kubeconfig and `riveter`; `dry-run` prints mutating commands and changes nothing; `simulate` (fake cluster only) applies each step to the in-memory cluster. |
 | `GANTRY_FAKE_CLUSTER` | JSON file | Initial fake cluster: `workloads`, `resources`, `declared`. |
 | `GANTRY_NAMESPACES` | list | Allow-list; empty means any. |
 | `GANTRY_PACKAGES_DIR` | directory | `.rivet` files instead of Warehouse. |

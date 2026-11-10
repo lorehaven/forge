@@ -4,6 +4,7 @@ pub mod commands;
 pub mod db;
 pub mod deployments;
 pub mod executor;
+pub mod kubectl;
 pub mod operation;
 pub mod planner;
 pub mod reconciler;

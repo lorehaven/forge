@@ -333,6 +333,10 @@ pub struct ProcessExec;
 
 impl Exec for ProcessExec {
     fn run(&mut self, command: &Command) -> std::io::Result<i32> {
+        // `kubectl` is not a program here: the cluster is spoken to directly (see `domain::kubectl`).
+        if command.program == "kubectl" {
+            return Ok(crate::domain::kubectl::run(&command.args).0);
+        }
         let status = std::process::Command::new(&command.program)
             .args(&command.args)
             .status()?;
@@ -340,6 +344,9 @@ impl Exec for ProcessExec {
     }
 
     fn capture(&mut self, command: &Command) -> std::io::Result<(i32, String)> {
+        if command.program == "kubectl" {
+            return Ok(crate::domain::kubectl::capture(&command.args));
+        }
         let output = std::process::Command::new(&command.program)
             .args(&command.args)
             .stderr(std::process::Stdio::inherit())

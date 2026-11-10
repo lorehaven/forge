@@ -136,4 +136,4 @@ Workspace lints: `unsafe_code = "forbid"`, `missing_debug_implementations = "den
 
 `[profile.release]` strips debug info. `[profile.wasm]` inherits release with `opt-level = "z"`, `lto`, `codegen-units = 1`, `panic = "abort"`, `strip`; `[profile.wasm-dev]` inherits dev. The renderer-heavy crates (`hoist-app`, `forklift-*`, `daybook-app`, `quench-css`, `quench-layout`, `quench-paint`, `quench-text`, `quench-image`, `quench-raster`, `quench-svg`, `quench-ui`, `quench-ui-native`, `quench-style`, `quench-desktop-native`, `quench-android-surface`) are built with `opt-level = 3` and no debug assertions even in dev builds, because the native renderer lays out and paints on every change.
 
-Prerequisites for working in the repository: a Rust toolchain with edition 2024, `docker` (anvil image builds), `kubectl` (riveter), `rsync` (pulley), `ollama` or `vllm` (welder), the `wasm32-unknown-unknown` target for the browser clients.
+Prerequisites for working in the repository: a Rust toolchain with edition 2024, `docker` (anvil image builds), `rsync` (pulley), `ollama` or `vllm` (welder), the `wasm32-unknown-unknown` target for the browser clients.

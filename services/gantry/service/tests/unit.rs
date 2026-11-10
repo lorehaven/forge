@@ -18,6 +18,10 @@ mod db_tests;
 mod deployments_api_tests;
 #[path = "unit/deployments_tests.rs"]
 mod deployments_tests;
+#[path = "../../../../cli/riveter/tests/support/fake_cluster.rs"]
+mod fake_cluster;
+#[path = "unit/kubectl_tests.rs"]
+mod kubectl_tests;
 #[path = "unit/local_executor_tests.rs"]
 mod local_executor_tests;
 #[path = "unit/operations_api_tests.rs"]

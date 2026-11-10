@@ -8,7 +8,7 @@ nav_order: 8
 The mechanism: a **plan** is data (a closed set of steps), an **operation** is a plan recorded for running, the **reconciler** makes operations real by starting a **runner**, and the runner executes the steps with `riveter` and `kubectl`. Sources: `src/domain/{steps,planner,operation,service,reconciler,executor,runner,commands,cluster}.rs`, `src/bin/gantry_runner.rs`.
 
 ```text
-API / UI --> gantry-service --creates--> runner Job --> riveter | kubectl
+API / UI --> gantry-service --creates--> runner Job --> riveter | cluster API
                 |   ^                         |
                 |   +---- status and log -----+
                 +--> Postgres (operations, plans, inventory, deployment states)
@@ -19,7 +19,9 @@ API / UI --> gantry-service --creates--> runner Job --> riveter | kubectl
 
 A plan is `{steps, title, summary, effects, touches, deployments}`. The service can only ask the runner to do what a step variant says: there is no way to express a free command, and every value that reaches a command line is validated and passed as its own argument, never through a shell. JSON form: `{"step": "<name>", ...}`.
 
-| `step` | Fields (optional in brackets) | Command(s) run by the runner |
+The runner image has no `kubectl`. The commands below are what the log shows and what the planner writes, but the runner does them itself against the cluster API with the Job's service account (`domain/kubectl.rs` reads these few shapes and refuses any other); only `riveter` and `cp` are run as programs. `rollout undo` is for Deployments: it restores the pod template of the newest ReplicaSet older than the current revision.
+
+| `step` | Fields (optional in brackets) | Command(s) the runner carries out |
 |---|---|---|
 | `pull` | `package`, `version` | `riveter pull <package>@<version> --out <packages dir>`; with a source directory (`GANTRY_SOURCE_PACKAGES_DIR`) `cp <dir>/<package>-<version>.rivet <packages dir>` instead |
 | `check` | `package`, `version`, [`values_secret`] | `riveter install <packages dir>/<package>-<version>.rivet --scope all [--env-file <values dir>/<secret>/env] --inventory --dry-run` (riveter's client-side dry run: renders everything, reaches no cluster; never "mutating") |

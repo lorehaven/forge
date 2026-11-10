@@ -36,10 +36,10 @@ quench-cli = { workspace = true }
 rivet-package = { workspace = true }
 quench-regex = { workspace = true }
 quench-client = { workspace = true, features = ["blocking"] }
-quench-k8s = { workspace = true }
-tokio = { workspace = true }
+kube-cluster = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true }
 conveyor-pipeline = { workspace = true }
 quench-test = { workspace = true }
 

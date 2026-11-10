@@ -20,7 +20,7 @@ Combinations that are refused at start (the process panics with `configuration: 
 |---|---|
 | `job` + `none` | needs a cluster to put the Job in |
 | `simulate` + `kubeconfig` or `in-cluster` | simulate changes the fake cluster only; against a real one it would show changes that never happened |
-| `local` + `none` or `in-cluster` | local runs `kubectl` as the developer, so it needs `GANTRY_CLUSTER=kubeconfig`, never the fake cluster |
+| `local` + `none` or `in-cluster` | local runs the runner as the developer, with your kubeconfig, so it needs `GANTRY_CLUSTER=kubeconfig`, never the fake cluster |
 
 Therefore writing to a real cluster from a developer machine has to be said twice: `GANTRY_CLUSTER=kubeconfig` **and** `GANTRY_RUNNER=local`. A pod defaults to `in-cluster` + `job`. With nothing set: `none` + `dry-run`.
 
@@ -31,7 +31,7 @@ Therefore writing to a real cluster from a developer machine has to be said twic
 | `GANTRY_KUBE_CONTEXT` | none | Pins a kubeconfig context (only with `kubeconfig`). |
 | `GANTRY_NAMESPACE` | the pod's namespace file, else `forge` | Where runner Jobs go. |
 | `GANTRY_NAMESPACES` | empty | Comma list. Allow-list: planning or running anything outside it is refused; resources outside it are not listed (cluster-scoped ones are listed). Empty means any. |
-| `GANTRY_RUNNER_IMAGE` | `forge/gantry/runner:latest` | The runner image (`riveter`, `kubectl`, `gantry-runner`; built from `images/gantry-runner`, tagged with Gantry's version). The estate overlay sets it explicitly. |
+| `GANTRY_RUNNER_IMAGE` | `forge/gantry/runner:latest` | The runner image (`riveter`, `gantry-runner`; built from `images/gantry-runner`, tagged with Gantry's version). The estate overlay sets it explicitly. |
 | `GANTRY_RUNNER_SERVICE_ACCOUNT` | `gantry-runner` | The Job pod's service account. |
 | `GANTRY_RUNNER_CREDENTIALS_SECRET` | `gantry-runner-credentials` | Secret whose keys become the runner's environment (`RIVETER_WAREHOUSE_URL`, `RIVETER_GATEHOUSE_URL`, `RIVETER_CLIENT_ID`, `RIVETER_CLIENT_SECRET`). Required (not optional) by the Job. |
 | `GANTRY_AGE_KEY_SECRET` | `gantry-age-key` | Secret with the file `age.key` mounted at `/keys` (optional mount). Not made by the overlay. |

@@ -23,7 +23,7 @@ workspace = true
 name = "gantry-service"
 path = "src/main.rs"
 
-# What a runner Job executes; ships in the runner image next to riveter and kubectl.
+# What a runner Job executes; ships in the runner image next to riveter.
 [[bin]]
 name = "gantry-runner"
 path = "src/bin/gantry_runner.rs"
@@ -42,6 +42,7 @@ quench-starter = { workspace = true }
 gantry-web = { workspace = true }
 rivet-package = { workspace = true }
 quench-k8s = { workspace = true }
+kube-cluster = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]

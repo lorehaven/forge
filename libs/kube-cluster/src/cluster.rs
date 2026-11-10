@@ -14,7 +14,7 @@ use quench_k8s::{
     Api, ApiResource, Client, Config, DeleteParams, Discovery, Error as KubeError, ListParams,
     Patch, PatchParams,
 };
-use quench_serde::Value;
+use quench_serde::{Value, json};
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 use std::future::Future;
@@ -539,6 +539,246 @@ impl Cluster {
             }
         }
         Ok(found)
+    }
+
+    /// The namespace an object without one goes to: the kubeconfig context's, or the pod's own.
+    #[must_use]
+    pub fn default_namespace(&self) -> &str {
+        self.client.default_namespace()
+    }
+
+    // ── Changing what runs ───────────────────────────────────────────────────────────────────────────────────────
+
+    /// The resource a `kind[.group]` names (`deployment`, `clusterrole.rbac.authorization.k8s.io`), as `kubectl` takes it.
+    fn resource_named(&self, spec: &str) -> Option<ApiResource> {
+        let Some((kind, group)) = spec.split_once('.') else {
+            return self.kind_named(spec);
+        };
+        self.kind_named(kind)
+            .filter(|r| r.group == group)
+            .or_else(|| self.kind_named(spec))
+    }
+
+    /// Sets a workload's replica count.
+    ///
+    /// # Errors
+    /// An unknown kind, or the cluster refusing.
+    pub fn scale(&self, kind: &str, name: &str, namespace: &str, replicas: u32) -> Result<()> {
+        let resource = self
+            .resource_named(kind)
+            .ok_or_else(|| err!("the cluster does not serve {kind}"))?;
+        let patch = json!({"spec": {"replicas": replicas}});
+        self.run(self.api(&resource, Some(namespace)).patch(
+            name,
+            &Patch::Merge(patch),
+            &PatchParams::default(),
+        ))
+        .map(|_| ())
+        .map_err(|e| kube(&e))
+    }
+
+    /// Restarts a workload's pods the way `kubectl rollout restart` does: a changed annotation on the pod template, which the
+    /// controller answers with a rolling update.
+    ///
+    /// # Errors
+    /// An unknown kind, or the cluster refusing.
+    pub fn restart(&self, kind: &str, name: &str, namespace: &str) -> Result<()> {
+        let resource = self
+            .resource_named(kind)
+            .ok_or_else(|| err!("the cluster does not serve {kind}"))?;
+        let now = quench_core::time::Time::now().to_rfc3339();
+        let patch = json!({"spec": {"template": {"metadata": {"annotations": {
+            "kubectl.kubernetes.io/restartedAt": now
+        }}}}});
+        self.run(self.api(&resource, Some(namespace)).patch(
+            name,
+            &Patch::Merge(patch),
+            &PatchParams::default(),
+        ))
+        .map(|_| ())
+        .map_err(|e| kube(&e))
+    }
+
+    /// Puts a Deployment back to its previous revision: the pod template of the newest `ReplicaSet` older than the current one.
+    ///
+    /// # Errors
+    /// Not a Deployment, no earlier revision, or the cluster refusing.
+    pub fn undo(&self, kind: &str, name: &str, namespace: &str) -> Result<String> {
+        ensure!(
+            kind.eq_ignore_ascii_case("deployment") || kind.eq_ignore_ascii_case("deployments"),
+            "rolling back is supported for Deployments, not {kind}"
+        );
+        let deployments = self.api(&ApiResource::deployment(), Some(namespace));
+        let deployment = self
+            .run(deployments.get(name))
+            .map_err(|e| err!("could not read deployment/{name}: {}", kube(&e)))?;
+        let revision_of = |object: &Value| {
+            object
+                .get("metadata")
+                .and_then(|m| m.get("annotations"))
+                .and_then(|a| a.get("deployment.kubernetes.io/revision"))
+                .and_then(Value::as_str)
+                .and_then(|r| r.parse::<i64>().ok())
+        };
+        let current = revision_of(&deployment).unwrap_or(0);
+        let uid = text(&deployment, &["metadata", "uid"]).to_string();
+        let sets = self
+            .run(
+                self.api(
+                    &ApiResource::new("apps", "v1", "ReplicaSet", "replicasets", true),
+                    Some(namespace),
+                )
+                .list(&ListParams::default()),
+            )
+            .map_err(|e| err!("could not list the ReplicaSets: {}", kube(&e)))?;
+        let previous = sets
+            .items
+            .iter()
+            .filter(|set| {
+                set.get("metadata")
+                    .and_then(|m| m.get("ownerReferences"))
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .any(|owner| {
+                        text(owner, &["kind"]) == "Deployment"
+                            && (text(owner, &["uid"]) == uid || text(owner, &["name"]) == name)
+                    })
+            })
+            .filter_map(|set| revision_of(set).map(|revision| (revision, set)))
+            .filter(|(revision, _)| *revision < current)
+            .max_by_key(|(revision, _)| *revision);
+        let Some((revision, set)) = previous else {
+            bail!("deployment/{name} has no earlier revision to roll back to");
+        };
+        let mut template = set
+            .get("spec")
+            .and_then(|s| s.get("template"))
+            .cloned()
+            .ok_or_else(|| err!("the ReplicaSet of revision {revision} has no pod template"))?;
+        // The hash label belongs to the ReplicaSet, not to what the Deployment asks for.
+        if let Some(labels) = template
+            .get_mut("metadata")
+            .and_then(|m| m.get_mut("labels"))
+            .and_then(Value::as_object_mut)
+        {
+            labels.remove("pod-template-hash");
+        }
+        let patch = json!([{"op": "replace", "path": "/spec/template", "value": template}]);
+        self.run(deployments.patch(name, &Patch::Json(patch), &PatchParams::default()))
+            .map_err(|e| kube(&e))?;
+        Ok(format!(
+            "deployment/{name} rolled back to revision {revision}"
+        ))
+    }
+
+    /// Deletes one object named as `kind[.group]/name` and waits until it is gone, up to `timeout`. A missing one is an error
+    /// unless `ignore_missing`.
+    ///
+    /// # Errors
+    /// An unknown kind, the cluster refusing, or the object still there at the end of `timeout`.
+    pub fn delete_resource(
+        &self,
+        spec: &str,
+        namespace: Option<&str>,
+        ignore_missing: bool,
+        timeout: Duration,
+    ) -> Result<bool> {
+        let (kind, name) = spec
+            .split_once('/')
+            .ok_or_else(|| err!("`{spec}` is not kind/name"))?;
+        let resource = self
+            .resource_named(kind)
+            .ok_or_else(|| err!("the cluster does not serve {kind}"))?;
+        let namespace = namespace.unwrap_or_else(|| self.client.default_namespace());
+        let api = self.api(&resource, Some(namespace));
+        match self.run(api.delete(name, &DeleteParams::background())) {
+            Ok(_) => {}
+            Err(KubeError::Api(status)) if status.code == 404 && ignore_missing => {
+                return Ok(false);
+            }
+            Err(e) => return Err(kube(&e)),
+        }
+        let deadline = Instant::now() + timeout;
+        loop {
+            match self.run(api.get_opt(name)) {
+                Ok(None) => return Ok(true),
+                Ok(Some(_)) => {}
+                Err(e) => return Err(kube(&e)),
+            }
+            ensure!(
+                Instant::now() < deadline,
+                "timed out waiting for {spec} to be deleted"
+            );
+            std::thread::sleep(POLL.min(Duration::from_millis(500)));
+        }
+    }
+
+    /// The objects of some kinds (`pods`, `deployment`) in a namespace, or in all when `namespace` is `None`, that match a label
+    /// selector (empty for all).
+    ///
+    /// # Errors
+    /// An unknown kind, or the cluster refusing.
+    pub fn objects(
+        &self,
+        kinds: &[&str],
+        selector: &str,
+        namespace: Option<&str>,
+    ) -> Result<Vec<Value>> {
+        let mut out = Vec::new();
+        for kind in kinds {
+            let resource = self
+                .resource_named(kind)
+                .ok_or_else(|| err!("the cluster does not serve {kind}"))?;
+            let mut params = ListParams::default();
+            if !selector.is_empty() {
+                params = params.labels(selector);
+            }
+            let list = self
+                .run(self.api(&resource, namespace).list(&params))
+                .map_err(|e| err!("could not list {}: {}", resource.plural, kube(&e)))?;
+            for mut item in list.items {
+                // A list leaves the kind off its items; a caller that reads them as objects wants it.
+                if let Some(map) = item.as_object_mut()
+                    && !map.contains_key("kind")
+                {
+                    map.insert("kind", Value::String(resource.kind.clone()));
+                }
+                out.push(item);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Deletes the objects of one kind that match a label selector, without waiting; returns how many.
+    ///
+    /// # Errors
+    /// An unknown kind, or the cluster refusing.
+    pub fn delete_matching(
+        &self,
+        kind: &str,
+        selector: &str,
+        namespace: Option<&str>,
+    ) -> Result<usize> {
+        let resource = self
+            .resource_named(kind)
+            .ok_or_else(|| err!("the cluster does not serve {kind}"))?;
+        let found = self.objects(&[kind], selector, namespace)?;
+        for object in &found {
+            let name = text(object, &["metadata", "name"]).to_string();
+            let each = text(object, &["metadata", "namespace"]);
+            let each = if each.is_empty() {
+                namespace
+            } else {
+                Some(each)
+            };
+            self.run(
+                self.api(&resource, each)
+                    .delete(&name, &DeleteParams::background()),
+            )
+            .map_err(|e| err!("could not delete {kind}/{name}: {}", kube(&e)))?;
+        }
+        Ok(found.len())
     }
 
     // ── Waiting ──────────────────────────────────────────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ info:
   description: |
     The deploy manager of the estate. It lists the packages (`.rivet` files) a registry publishes beside what the cluster
     runs of them, lists every resource of every package with its state (synced, edited, missing, extra, hidden), and
-    changes the cluster by recording an operation that a short-lived runner executes with `riveter` and `kubectl`.
+    changes the cluster by recording an operation that a short-lived runner executes with `riveter` and its own cluster client.
     Everything under `/api/v1` needs a verified identity (`Auth` wraps the whole prefix). Access is per package:
     `gantry:<action>` is the blanket grant and `gantry:target:<package>:<action>` a grant on one package; actions are
     `read`, `deploy`, `scale`, `activate` and `rollback`. Error bodies are `{"error": "<text>"}`. Times are RFC 3339.

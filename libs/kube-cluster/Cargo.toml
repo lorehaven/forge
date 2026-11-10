@@ -1,0 +1,26 @@
+[package]
+name = "kube-cluster"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "A Kubernetes cluster spoken to directly: server-side apply, diff, delete, scale, restart, roll back, and waiting for rollouts and Jobs - no kubectl needed"
+keywords = ["kubernetes", "deploy"]
+categories = ["development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = "README.md"
+autotests = false
+
+[lib]
+name = "kube_cluster"
+path = "src/lib.rs"
+
+[dependencies]
+quench-core = { workspace = true }
+quench-k8s = { workspace = true }
+quench-serde = { workspace = true, features = ["yaml"] }
+tokio = { workspace = true }
+
+[lints]
+workspace = true
