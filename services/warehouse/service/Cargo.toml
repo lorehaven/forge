@@ -1,6 +1,6 @@
 [package]
 name = "warehouse"
-version = "0.8.18"
+version = "0.8.19"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Warehouse - storage service"

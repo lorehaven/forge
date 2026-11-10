@@ -1,6 +1,6 @@
 [package]
 name = "foundry"
-version = "0.2.41"
+version = "0.2.42"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Foundry - database initialization from the Forge migration catalog, run as a Kubernetes Job"
