@@ -1,4 +1,4 @@
-use conveyor_core::{DraftError, LaunchDraft, RepoDraft};
+use conveyor_core::{DraftError, LaunchDraft, RepoDraft, SecretDraft};
 
 fn filled() -> RepoDraft {
     RepoDraft {
@@ -78,4 +78,40 @@ fn a_bare_branch_becomes_a_full_ref() {
     let body = draft.to_trigger().unwrap();
     assert_eq!(body.git_ref.as_deref(), Some("refs/tags/v1"));
     assert_eq!(body.stages, Some(vec!["check".to_string()]));
+}
+
+#[quench_test::test]
+fn a_secret_form_needs_a_name_and_a_value_and_drops_the_pasted_line_break() {
+    let draft = SecretDraft {
+        name: "  MY_SECRET ".into(),
+        value: "abc def\n".into(),
+    };
+    assert_eq!(draft.name(), "MY_SECRET");
+    // Inner and leading spaces are the secret's own; only the trailing line break goes.
+    assert_eq!(draft.to_set().unwrap().value, "abc def");
+
+    let spaced = SecretDraft {
+        name: "A".into(),
+        value: "  x ".into(),
+    };
+    assert_eq!(spaced.to_set().unwrap().value, "  x ");
+
+    let nameless = SecretDraft {
+        name: " ".into(),
+        value: "abcd".into(),
+    };
+    assert_eq!(nameless.to_set(), Err(DraftError::SecretNameEmpty));
+    let valueless = SecretDraft {
+        name: "A".into(),
+        value: "\r\n".into(),
+    };
+    assert_eq!(valueless.to_set(), Err(DraftError::SecretValueEmpty));
+    assert_eq!(
+        DraftError::SecretNameEmpty.key(),
+        "ui_secrets_err_name_empty"
+    );
+    assert_eq!(
+        DraftError::SecretValueEmpty.key(),
+        "ui_secrets_err_value_empty"
+    );
 }

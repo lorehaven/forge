@@ -8,7 +8,7 @@ use conveyor_app::{Conveyor, Follow, Msg, Request, Setup, conveyor};
 use conveyor_core::{
     Access, Artifact, ArtifactView, CheckChip, CheckDetail, Credential, Finding, Job, KnownStage,
     Project, Provider, Repo, RepoChecks, Run, RunView, RunsPage, ScanFinding, ScanFindings,
-    ScanReport, Status, Subscription, Trigger,
+    ScanReport, SecretRef, Status, Subscription, Trigger,
 };
 use quench_core::time::Time;
 use quench_ui::Event;
@@ -188,6 +188,7 @@ fn access(write: &[&str]) -> Access {
         username: "ola".into(),
         read: vec!["p-forge".into(), "p-quench".into()],
         write: write.iter().map(ToString::to_string).collect(),
+        ..Access::default()
     }
 }
 
@@ -892,6 +893,176 @@ fn the_scanner_findings_show_every_level_until_a_filter_is_applied() {
     assert!(text.contains("1 / 2"), "{text}");
 }
 
+// ── Secrets ──────────────────────────────────────────────────────────────────
+
+fn secret(id: &str, repo: Option<&str>, name: &str) -> SecretRef {
+    SecretRef {
+        id: id.into(),
+        repo_id: repo.map(Into::into),
+        name: name.into(),
+        created_by: "admin".into(),
+        created_at: at("2026-10-29T11:00:00Z"),
+        updated_at: at("2026-10-29T11:00:00Z"),
+    }
+}
+
+fn open_secrets(access: Access) -> Live {
+    let l = live("/conveyor/ui/secrets");
+    l.send(Msg::Access(access));
+    l.send(Msg::Projects(projects()));
+    l.send(Msg::Repos(repos()));
+    l.send(Msg::Secrets(vec![
+        secret("s1", None, "ANVIL_APP_TOKEN"),
+        secret("s2", Some("r1"), "RELEASE_GIT_TOKEN"),
+    ]));
+    l
+}
+
+fn writer() -> Access {
+    Access {
+        global_read: true,
+        global_write: true,
+        ..access(&["p-forge"])
+    }
+}
+
+#[quench_test::test]
+fn the_secrets_page_asks_for_its_data_and_lists_names_by_scope_never_a_value() {
+    let l = open_secrets(writer());
+    assert_eq!(l.asked()[0], Request::Secrets);
+    let text = l.text();
+    assert!(
+        text.contains("Estate-wide") && text.contains("ANVIL_APP_TOKEN"),
+        "{text}"
+    );
+    assert!(
+        text.contains("lorehaven/conveyor") && text.contains("RELEASE_GIT_TOKEN"),
+        "{text}"
+    );
+    assert!(text.contains("admin") && text.contains("60m ago"), "{text}");
+    // The hint tells that a rename is remove + add.
+    assert!(text.contains("remove it and add a new one"), "{text}");
+    let empty = live("/conveyor/ui/secrets");
+    empty.send(Msg::Secrets(vec![]));
+    assert!(empty.text().contains("No secrets visible to you"));
+}
+
+#[quench_test::test]
+fn a_reader_sees_the_names_and_no_controls() {
+    // Read access to everything, write access to nothing.
+    let l = open_secrets(Access {
+        global_read: true,
+        ..access(&[])
+    });
+    assert!(l.text().contains("ANVIL_APP_TOKEN"));
+    assert!(present(&l.r, "view-only"));
+    assert!(!present(&l.r, "replace-btn-s1") && !present(&l.r, "remove-s1"));
+    assert!(!present(&l.r, "add-secret"));
+}
+
+#[quench_test::test]
+fn write_access_is_per_scope_a_project_writer_changes_only_that_repositorys_secrets() {
+    let l = open_secrets(access(&["p-forge"]));
+    // The estate-wide one is read-only (no blanket write), the repository's is not.
+    assert!(!present(&l.r, "replace-btn-s1") && !present(&l.r, "remove-s1"));
+    assert!(present(&l.r, "replace-btn-s2") && present(&l.r, "remove-s2"));
+    // The add form offers only the repositories this person may write to.
+    let form = l.text();
+    assert!(!form.contains("lorehaven/retired"), "{form}");
+}
+
+#[quench_test::test]
+fn replace_overwrites_the_value_of_the_same_name() {
+    let l = open_secrets(writer());
+    // Nothing typed: nothing sent.
+    l.click("button", "replace-btn-s2");
+    assert!(
+        !l.asked()
+            .iter()
+            .any(|q| matches!(q, Request::SetSecret { .. }))
+    );
+    assert!(l.text().contains("Give the secret a value"));
+
+    l.type_into("input", "replace-s2", "n3w-value");
+    l.click("button", "replace-btn-s2");
+    assert_eq!(
+        l.asked().last(),
+        Some(&Request::SetSecret {
+            repo: Some("r1".into()),
+            name: "RELEASE_GIT_TOKEN".into(),
+            value: "n3w-value".into(),
+        })
+    );
+    // An estate-wide secret is replaced with no repository.
+    l.type_into("input", "replace-s1", "other-value");
+    l.click("button", "replace-btn-s1");
+    assert_eq!(
+        l.asked().last(),
+        Some(&Request::SetSecret {
+            repo: None,
+            name: "ANVIL_APP_TOKEN".into(),
+            value: "other-value".into(),
+        })
+    );
+}
+
+#[quench_test::test]
+fn remove_asks_twice_before_it_sends() {
+    let l = open_secrets(writer());
+    l.click("button", "remove-s2");
+    assert!(
+        !l.asked()
+            .iter()
+            .any(|q| matches!(q, Request::DeleteSecret { .. }))
+    );
+    assert!(l.text().contains("Confirm remove"));
+    l.click("button", "remove-s2");
+    assert_eq!(
+        l.asked().last(),
+        Some(&Request::DeleteSecret {
+            repo: Some("r1".into()),
+            name: "RELEASE_GIT_TOKEN".into(),
+        })
+    );
+}
+
+#[quench_test::test]
+fn the_add_form_checks_then_sends_and_empties_once_saved() {
+    let l = open_secrets(writer());
+    l.submit("new-secret");
+    assert!(l.text().contains("Give the secret a name"));
+    assert!(
+        !l.asked()
+            .iter()
+            .any(|q| matches!(q, Request::SetSecret { .. }))
+    );
+
+    l.type_into("input", "new-secret-name", "NEW_ONE");
+    l.submit("new-secret");
+    assert!(l.text().contains("Give the secret a value"));
+
+    l.type_into("input", "new-secret-value", "s3cret-value");
+    l.submit("new-secret");
+    // The first scope offered is the estate-wide one.
+    assert_eq!(
+        l.asked().last(),
+        Some(&Request::SetSecret {
+            repo: None,
+            name: "NEW_ONE".into(),
+            value: "s3cret-value".into(),
+        })
+    );
+    l.send(Msg::Done("ui_secrets_ok_set".into()));
+    assert!(l.text().contains("Secret saved"));
+    let value = find(&l.r, "input", ("id", "new-secret-value"));
+    assert_eq!(l.r.attr(value, "type").as_deref(), Some("password"));
+    // The form is empty again: submitting it says the name is missing, and asks nothing.
+    let before = l.asked().len();
+    l.send(Msg::Done("ui_secrets_ok_set".into()));
+    l.submit("new-secret");
+    assert_eq!(l.asked().len(), before);
+}
+
 // ── Credentials and the shell ────────────────────────────────────────────────
 
 #[quench_test::test]
@@ -943,6 +1114,8 @@ fn the_sidebar_navigates_and_a_lost_session_offers_sign_in() {
     let l = open_home();
     l.click("a", "nav-credentials");
     assert_eq!(l.path(), "/conveyor/ui/credentials");
+    l.click("a", "nav-secrets");
+    assert_eq!(l.path(), "/conveyor/ui/secrets");
     l.send(Msg::SignedOut);
     let link = find(&l.r, "a", ("id", "sign-in"));
     assert_eq!(

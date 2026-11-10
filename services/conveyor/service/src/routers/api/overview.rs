@@ -9,7 +9,7 @@
 use crate::config::ConveyorConfig;
 use crate::credentials::store as credential_store;
 use crate::domain::{Project, Repo, Run};
-use crate::routers::api::authz::{can_on_project, granted_project_ids};
+use crate::routers::api::authz::{can_on_project, can_unscoped, granted_project_ids};
 use crate::routers::api::{Actor, ApiError, OptionalClaims, json_error};
 use crate::scan::{self, CheckKind, CheckResult, ScanSummary};
 use crate::scheduler::{projects, queue, repos};
@@ -118,6 +118,7 @@ pub async fn access(
     Actor(username): Actor,
     OptionalClaims(claims): OptionalClaims,
     Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
 ) -> Response {
     let all = match projects::list_all(&db).await {
         Ok(all) => all,
@@ -141,6 +142,9 @@ pub async fn access(
         username,
         read,
         write,
+        // Estate-wide secrets have no project to scope by: only the blanket grant reaches them.
+        global_read: can_unscoped(claims.as_ref(), &config, "read"),
+        global_write: can_unscoped(claims.as_ref(), &config, "write"),
     })
 }
 
@@ -484,7 +488,7 @@ pub async fn credentials(
 }
 
 pub fn register_routes() {
-    let _ = access as fn(_, _, _) -> _;
+    let _ = access as fn(_, _, _, _) -> _;
     let _ = recent_runs as fn(_, _, _, _) -> _;
     let _ = history as fn(_, _, _, _) -> _;
     let _ = chips as fn(_, _) -> _;

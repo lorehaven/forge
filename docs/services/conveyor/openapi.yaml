@@ -1537,6 +1537,8 @@ components:
         username: {type: string}
         read: {type: array, items: {type: string}}
         write: {type: array, items: {type: string}}
+        global_read: {type: boolean, description: The caller holds the blanket conveyor:read grant (estate-wide secrets' names).}
+        global_write: {type: boolean, description: The caller holds the blanket conveyor:write grant (estate-wide secrets).}
     CheckChip:
       type: object
       required: [kind, passed, findings]

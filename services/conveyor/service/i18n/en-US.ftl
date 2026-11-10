@@ -9,6 +9,7 @@ theme_label = Theme
 ui_header_home = Conveyor
 ui_home_button = Home
 ui_nav_credentials = Credentials
+ui_nav_secrets = Secrets
 ui_logout = Log out
 ui_profile_edit = Edit profile
 ui_user_menu = User menu
@@ -138,6 +139,24 @@ ui_repos_err_write_failed = That could not be saved. It may already exist.
 
 ui_credentials_title = Credentials
 ui_credentials_empty = No credentials visible to you.
+ui_secrets_title = Secrets
+ui_secrets_empty = No secrets visible to you.
+ui_secrets_hint = Values are write-only: they are sealed when saved and never shown again. Replace overwrites a value. To rename a secret, remove it and add a new one.
+ui_secrets_view_only = You can see these secrets' names but not change them.
+ui_secrets_global = Estate-wide
+ui_secrets_value_placeholder = New value
+ui_secrets_replace = Replace
+ui_secrets_remove = Remove
+ui_secrets_confirm_remove = Confirm remove
+ui_secrets_add_title = Add a secret
+ui_secrets_scope = Scope
+ui_secrets_name = Name
+ui_secrets_value = Value
+ui_secrets_add = Add secret
+ui_secrets_ok_set = Secret saved.
+ui_secrets_ok_removed = Secret removed.
+ui_secrets_err_name_empty = Give the secret a name.
+ui_secrets_err_value_empty = Give the secret a value.
 
 # Following a repository or project's run results
 ui_follow_start = Follow

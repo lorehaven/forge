@@ -8,7 +8,7 @@ use conveyor_app::{Follow, Msg, Request};
 use conveyor_core::format::segment;
 use conveyor_core::{
     Access, Credential, KnownStage, Project, Repo, RepoChecks, Run, RunDetail, RunView, RunsPage,
-    ScanFindings, ScanReport, Subscription,
+    ScanFindings, ScanReport, SecretRef, SetSecret, Subscription,
 };
 use quench_serde::json;
 use quench_serde::{Deserialize, Serialize};
@@ -90,6 +90,14 @@ struct ApiError {
 /// The `error` of the API's `{"error": "..."}`.
 fn error_text(body: &str) -> Option<String> {
     json::from_str::<ApiError>(body).ok().map(|e| e.error)
+}
+
+/// `/api/v1/secrets/{name}` or, for a repository's, `/api/v1/repos/{id}/secrets/{name}`.
+fn secret_path(repo: Option<&str>, name: &str) -> String {
+    repo.map_or_else(
+        || format!("/api/v1/secrets/{}", segment(name)),
+        |id| format!("/api/v1/repos/{}/secrets/{}", segment(id), segment(name)),
+    )
 }
 
 /// `?project=..&page=..` for the runs reads.
@@ -235,6 +243,76 @@ impl<T: Transport> Client<T> {
             Ok(Some(list)) => out.push(Msg::Subscriptions(list)),
             Ok(None) => {}
             Err(failure) => return vec![failure.read()],
+        }
+        out
+    }
+
+    /// The names of the secrets the caller may see: the estate-wide ones when the blanket grant allows, then each
+    /// readable repository's. What the caller may not read is left out, not refused.
+    async fn secret_names(
+        &self,
+        access: Option<&Access>,
+        repos: &[Repo],
+    ) -> Result<Vec<SecretRef>, Failure> {
+        let mut all = Vec::new();
+        // Without the answer of `/access` nothing is known: try, and leave out what is refused.
+        if access.is_none_or(|a| a.global_read) {
+            match self.get::<Vec<SecretRef>>("/api/v1/secrets".into()).await {
+                Ok(list) => all.extend(list),
+                Err(Failure::SignedOut) => return Err(Failure::SignedOut),
+                Err(_) => {}
+            }
+        }
+        for repo in repos {
+            if access.is_some_and(|a| !a.can_read(&repo.project_id)) {
+                continue;
+            }
+            let path = format!("/api/v1/repos/{}/secrets", segment(&repo.id));
+            match self.get::<Vec<SecretRef>>(path).await {
+                Ok(list) => all.extend(list),
+                Err(Failure::SignedOut) => return Err(Failure::SignedOut),
+                Err(_) => {}
+            }
+        }
+        Ok(all)
+    }
+
+    /// What the secrets page shows.
+    async fn secrets_page(&self) -> Vec<Msg> {
+        let mut out = Vec::new();
+        let access = match self.optional::<Access>("/api/v1/access".into()).await {
+            Ok(Some(access)) => {
+                out.push(Msg::Access(access.clone()));
+                Some(access)
+            }
+            Ok(None) => None,
+            Err(failure) => return vec![failure.read()],
+        };
+        match self.projects().await {
+            Ok(list) => out.push(Msg::Projects(list)),
+            Err(failure) => return vec![failure.read()],
+        }
+        let repos = match self.repos().await {
+            Ok(list) => list,
+            Err(failure) => return vec![failure.read()],
+        };
+        let names = self.secret_names(access.as_ref(), &repos).await;
+        out.push(Msg::Repos(repos));
+        match names {
+            Ok(list) => out.push(Msg::Secrets(list)),
+            Err(failure) => return vec![failure.read()],
+        }
+        out
+    }
+
+    /// The secrets again after a change, then what to say.
+    async fn secrets_after(&self, key: &str) -> Vec<Msg> {
+        let mut out = self.secrets_page().await;
+        if !out
+            .iter()
+            .any(|m| matches!(m, Msg::Failed(_) | Msg::SignedOut))
+        {
+            out.push(Msg::Done(key.into()));
         }
         out
     }
@@ -441,6 +519,26 @@ impl<T: Transport> Client<T> {
             }
             Request::Scan { owner, name } => self.scan(&owner, &name, None).await,
             Request::Check { owner, name, kind } => self.scan(&owner, &name, Some(&kind)).await,
+            Request::Secrets => self.secrets_page().await,
+            Request::SetSecret { repo, name, value } => {
+                let path = secret_path(repo.as_deref(), &name);
+                match self
+                    .send::<_, SecretRef>("PUT", path, &SetSecret { value })
+                    .await
+                {
+                    Ok(_) => self.secrets_after("ui_secrets_ok_set").await,
+                    Err(failure) => vec![failure.write()],
+                }
+            }
+            Request::DeleteSecret { repo, name } => {
+                match self
+                    .call("DELETE", secret_path(repo.as_deref(), &name), None)
+                    .await
+                {
+                    Ok(_) => self.secrets_after("ui_secrets_ok_removed").await,
+                    Err(failure) => vec![failure.write()],
+                }
+            }
             Request::Credentials => {
                 let mut out = Vec::new();
                 match self.projects().await {

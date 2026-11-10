@@ -42,13 +42,14 @@ async fn get(
 }
 
 /// Every page the client has, as an address.
-const PAGES: [&str; 11] = [
+const PAGES: [&str; 12] = [
     "/ui/home",
     "/ui/home/",
     "/ui/projects/p1",
     "/ui/runs",
     "/ui/runs/r1",
     "/ui/credentials",
+    "/ui/secrets",
     "/ui/repos",
     "/ui/repos/lorehaven/forge/edit",
     "/ui/repos/lorehaven/forge/run",

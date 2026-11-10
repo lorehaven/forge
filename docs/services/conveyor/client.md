@@ -24,6 +24,7 @@ The app owns these paths (the service serves the same page for all of them; the 
 | `{base}/ui/runs` (query `project`, `page`) | All pipelines: paged history, optionally limited to a project | `Request::History` (re-asked when the query changes) | `Request::History` every 5 s |
 | `{base}/ui/runs/{id}` | One run: header, meta, reason, restart, job graph, logs, artifacts | `Request::Run(id)` | `Request::Run(id)` every 2 s **until the run is terminal**, then stops |
 | `{base}/ui/credentials` | Credentials visible to the caller | `Request::Credentials` | none |
+| `{base}/ui/secrets` | Secrets: names, who set them and when (never a value), grouped estate-wide / per repository. With write access: add a secret, **Replace** (overwrites the value of the same name), **Remove** (asks twice). A rename is a remove and a new secret | `Request::Secrets` | none |
 | `{base}/ui/repos` | Manage repositories: list, follow projects, add form | `Request::Repos` | `Request::Repos` every 5 s |
 | `{base}/ui/repos/{owner}/{name}/edit` | Edit or delete a repository | `Request::Repos` | none |
 | `{base}/ui/repos/{owner}/{name}/run` | Run with parameters | `Request::Launch` | none |
@@ -74,6 +75,9 @@ Pages are rebuilt when only a parameter changes (`/runs/a` to `/runs/b`). Polls 
 | `Scan{owner,name}` | `GET /api/v1/repos`, `GET /api/v1/repos/{id}/scan` | `Repos`, `Scan` |
 | `Check{owner,name,kind}` | as `Scan`, plus for `security` `GET /api/v1/repos/{id}/scan/findings` (`404` gives `Findings{found: None}`) | `Scan`, `Findings` |
 | `Credentials` | `GET /api/v1/projects?all=true`, `GET /api/v1/repos`, `GET /api/v1/credentials` | `Projects`, `Repos`, `Credentials` |
+| `Secrets` | `GET /api/v1/access` (optional), `.../projects?all=true`, `.../repos`, `GET /api/v1/secrets` (only when `global_read`; a refusal leaves it out), `GET /api/v1/repos/{id}/secrets` per readable repository (a refusal leaves that repository out) | `Access`, `Projects`, `Repos`, `Secrets` |
+| `SetSecret{repo,name,value}` | `PUT /api/v1/secrets/{name}` or `PUT /api/v1/repos/{id}/secrets/{name}` with `{"value": ...}`, then the reads of `Secrets` | `Secrets`, `Done("ui_secrets_ok_set")`, or `Rejected` with the service's words |
+| `DeleteSecret{repo,name}` | `DELETE` on the same path, then the reads of `Secrets` | `Secrets`, `Done("ui_secrets_ok_removed")` |
 | `Language(code)` | `localStorage.language = code`; no call | |
 
 The repository for `{owner}/{name}` is found by matching `owner` and `name` in `GET /api/v1/repos`, so the page only knows repositories the caller may read.

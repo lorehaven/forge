@@ -1,6 +1,6 @@
 //! A form's text, checked into the body the API wants.
 
-use crate::model::{RegisterRepo, TriggerRun, UpdateRepo};
+use crate::model::{RegisterRepo, SetSecret, TriggerRun, UpdateRepo};
 
 /// Why a form is not ready to send; `key` is the i18n key of the message (the ones the old pages used).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9,6 +9,8 @@ pub enum DraftError {
     ProjectRequired,
     BadCloneUrl,
     NoStage,
+    SecretNameEmpty,
+    SecretValueEmpty,
 }
 
 impl DraftError {
@@ -19,6 +21,8 @@ impl DraftError {
             Self::ProjectRequired => "ui_repos_err_project_required",
             Self::BadCloneUrl => "ui_repos_err_bad_clone_url",
             Self::NoStage => "ui_launch_err_none",
+            Self::SecretNameEmpty => "ui_secrets_err_name_empty",
+            Self::SecretValueEmpty => "ui_secrets_err_value_empty",
         }
     }
 }
@@ -145,6 +149,40 @@ impl LaunchDraft {
             git_ref: self.full_ref(),
             sha: None,
             stages: Some(stages),
+        })
+    }
+}
+
+/// The secret form: a name and a value. The service checks the name's shape and the value's length; this only catches
+/// what is plainly missing, so the form does not send an empty request.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SecretDraft {
+    pub name: String,
+    pub value: String,
+}
+
+impl SecretDraft {
+    /// The name as it is sent: without the spaces around it.
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.name.trim().to_string()
+    }
+
+    /// The body for `PUT .../secrets/{name}`. The value is sent as typed, except for the line break a paste brings
+    /// along (the CLI strips those too): a secret rarely ends in one on purpose.
+    ///
+    /// # Errors
+    /// [`DraftError::SecretNameEmpty`] or [`DraftError::SecretValueEmpty`].
+    pub fn to_set(&self) -> Result<SetSecret, DraftError> {
+        if self.name().is_empty() {
+            return Err(DraftError::SecretNameEmpty);
+        }
+        let value = self.value.trim_end_matches(['\n', '\r']);
+        if value.is_empty() {
+            return Err(DraftError::SecretValueEmpty);
+        }
+        Ok(SetSecret {
+            value: value.to_string(),
         })
     }
 }

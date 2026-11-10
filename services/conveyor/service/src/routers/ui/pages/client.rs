@@ -46,6 +46,11 @@ pub(super) async fn credentials(who: ActorOrRedirect) -> Response {
     page(who)
 }
 
+#[get("/ui/secrets")]
+pub(super) async fn secrets(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
 #[get("/ui/repos")]
 pub(super) async fn repos(who: ActorOrRedirect) -> Response {
     page(who)
@@ -116,6 +121,7 @@ pub(super) fn register_routes() {
     let _ = runs as fn(_) -> _;
     let _ = run as fn(_, _) -> _;
     let _ = credentials as fn(_) -> _;
+    let _ = secrets as fn(_) -> _;
     let _ = repos as fn(_) -> _;
     let _ = repo_edit as fn(_, _) -> _;
     let _ = repo_launch as fn(_, _) -> _;

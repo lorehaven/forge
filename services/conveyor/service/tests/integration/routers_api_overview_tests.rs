@@ -111,6 +111,9 @@ async fn access_lists_every_project_when_auth_is_off() {
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["username"], "admin");
+    // With auth off the blanket grant is held: estate-wide secrets can be read and changed.
+    assert_eq!(body["global_read"], true);
+    assert_eq!(body["global_write"], true);
     for key in ["read", "write"] {
         let ids: Vec<&str> = body[key]
             .as_array()

@@ -9,6 +9,7 @@ theme_label = Thème
 ui_header_home = Conveyor
 ui_home_button = Accueil
 ui_nav_credentials = Identifiants
+ui_nav_secrets = Secrets
 ui_logout = Se déconnecter
 ui_profile_edit = Modifier le profil
 ui_user_menu = Menu utilisateur
@@ -138,6 +139,24 @@ ui_repos_err_write_failed = Impossible d'enregistrer. Il existe peut-être déj�
 
 ui_credentials_title = Identifiants
 ui_credentials_empty = Aucun identifiant visible pour vous.
+ui_secrets_title = Secrets
+ui_secrets_empty = Aucun secret visible pour vous.
+ui_secrets_hint = Les valeurs sont en écriture seule : elles sont scellées à l'enregistrement et jamais réaffichées. Remplacer écrase une valeur. Pour renommer un secret, supprimez-le et créez-en un nouveau.
+ui_secrets_view_only = Vous voyez les noms de ces secrets mais ne pouvez pas les modifier.
+ui_secrets_global = Toute l'installation
+ui_secrets_value_placeholder = Nouvelle valeur
+ui_secrets_replace = Remplacer
+ui_secrets_remove = Supprimer
+ui_secrets_confirm_remove = Confirmer la suppression
+ui_secrets_add_title = Ajouter un secret
+ui_secrets_scope = Portée
+ui_secrets_name = Nom
+ui_secrets_value = Valeur
+ui_secrets_add = Ajouter le secret
+ui_secrets_ok_set = Secret enregistré.
+ui_secrets_ok_removed = Secret supprimé.
+ui_secrets_err_name_empty = Donnez un nom au secret.
+ui_secrets_err_value_empty = Donnez une valeur au secret.
 
 # Following a repository or project's run results
 ui_follow_start = Suivre

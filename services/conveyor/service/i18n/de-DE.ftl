@@ -9,6 +9,7 @@ theme_label = Design
 ui_header_home = Conveyor
 ui_home_button = Startseite
 ui_nav_credentials = Anmeldedaten
+ui_nav_secrets = Geheimnisse
 ui_logout = Abmelden
 ui_profile_edit = Profil bearbeiten
 ui_user_menu = Benutzermen체
@@ -138,6 +139,24 @@ ui_repos_err_write_failed = Das konnte nicht gespeichert werden. Es existiert m�
 
 ui_credentials_title = Anmeldedaten
 ui_credentials_empty = Keine Anmeldedaten f체r dich sichtbar.
+ui_secrets_title = Geheimnisse
+ui_secrets_empty = Keine Geheimnisse f체r dich sichtbar.
+ui_secrets_hint = Werte sind nur schreibbar: Sie werden beim Speichern versiegelt und nie wieder angezeigt. Ersetzen 체berschreibt einen Wert. Zum Umbenennen entferne das Geheimnis und lege ein neues an.
+ui_secrets_view_only = Du siehst die Namen dieser Geheimnisse, kannst sie aber nicht 채ndern.
+ui_secrets_global = Gesamte Installation
+ui_secrets_value_placeholder = Neuer Wert
+ui_secrets_replace = Ersetzen
+ui_secrets_remove = Entfernen
+ui_secrets_confirm_remove = Entfernen best채tigen
+ui_secrets_add_title = Geheimnis hinzuf체gen
+ui_secrets_scope = Geltungsbereich
+ui_secrets_name = Name
+ui_secrets_value = Wert
+ui_secrets_add = Geheimnis hinzuf체gen
+ui_secrets_ok_set = Geheimnis gespeichert.
+ui_secrets_ok_removed = Geheimnis entfernt.
+ui_secrets_err_name_empty = Gib dem Geheimnis einen Namen.
+ui_secrets_err_value_empty = Gib dem Geheimnis einen Wert.
 
 # Following a repository or project's run results
 ui_follow_start = Folgen

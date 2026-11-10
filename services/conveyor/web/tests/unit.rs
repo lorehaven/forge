@@ -66,6 +66,13 @@ fn run_json(id: &str, status: &str) -> String {
     )
 }
 
+fn secret_json(id: &str, repo: Option<&str>, name: &str) -> String {
+    let repo = repo.map_or_else(|| "null".to_string(), |r| format!("\"{r}\""));
+    format!(
+        r#"{{"id":"{id}","repo_id":{repo},"name":"{name}","created_by":"admin","created_at":"{T}","updated_at":"{T}"}}"#
+    )
+}
+
 fn routes(request: &HttpRequest) -> (u16, String) {
     let body = match (request.method, request.path.as_str()) {
         ("GET", "/api/v1/access") => r#"{"username":"ola","read":["p1"],"write":["p1"]}"#.to_string(),
@@ -95,6 +102,20 @@ fn routes(request: &HttpRequest) -> (u16, String) {
         ("GET", "/api/v1/repos/r1/scan") => format!(r#"{{"run":{},"checks":[]}}"#, run_json("run-1", "success")),
         ("GET", "/api/v1/repos/r1/scan/findings") => return (404, r#"{"error":"no scanner findings"}"#.into()),
         ("GET", "/api/v1/credentials") => "[]".to_string(),
+        ("GET", "/api/v1/secrets") => format!("[{}]", secret_json("s1", None, "ANVIL_APP_TOKEN")),
+        ("GET", "/api/v1/repos/r1/secrets") => {
+            format!("[{}]", secret_json("s2", Some("r1"), "RELEASE_GIT_TOKEN"))
+        }
+        ("GET", "/api/v1/repos/r2/secrets") => {
+            return (403, r#"{"error":"no read access to this repository's secrets"}"#.into());
+        }
+        ("PUT", "/api/v1/secrets/NEW_ONE") => secret_json("s3", None, "NEW_ONE"),
+        ("PUT", "/api/v1/repos/r1/secrets/RELEASE_GIT_TOKEN") => {
+            secret_json("s2", Some("r1"), "RELEASE_GIT_TOKEN")
+        }
+        ("DELETE", "/api/v1/secrets/NEW_ONE" | "/api/v1/repos/r1/secrets/RELEASE_GIT_TOKEN") => {
+            String::new()
+        }
         _ => return (404, r#"{"error":"nothing here"}"#.to_string()),
     };
     (200, body)
@@ -341,3 +362,126 @@ fn the_browsers_own_requests_are_not_the_clients() {
 }
 
 quench_test::main!();
+
+fn with_global(request: &HttpRequest) -> (u16, String) {
+    if request.method == "GET" && request.path == "/api/v1/access" {
+        return (
+            200,
+            r#"{"username":"ola","read":["p1"],"write":["p1"],"global_read":true,"global_write":true}"#
+                .to_string(),
+        );
+    }
+    routes(request)
+}
+
+#[quench_test::test]
+fn the_secrets_page_reads_the_estate_wide_names_and_each_readable_repository() {
+    let (client, seen, _) = client(with_global);
+    let msgs = block_on(client.execute(Request::Secrets));
+    assert!(matches!(msgs[0], Msg::Access(_)));
+    assert!(matches!(msgs[1], Msg::Projects(_)));
+    assert!(matches!(msgs[2], Msg::Repos(_)));
+    let Msg::Secrets(list) = &msgs[3] else {
+        panic!("{msgs:?}")
+    };
+    // r2 refused its list: it is left out, the page is not an error.
+    let names: Vec<_> = list.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["ANVIL_APP_TOKEN", "RELEASE_GIT_TOKEN"]);
+    assert_eq!(list[0].repo_id, None);
+    assert_eq!(list[1].repo_id.as_deref(), Some("r1"));
+    assert!(
+        seen.borrow()
+            .iter()
+            .any(|(_, path)| path == "/api/v1/secrets")
+    );
+}
+
+#[quench_test::test]
+fn without_the_blanket_grant_the_estate_wide_secrets_are_not_asked_for() {
+    // `routes` answers `/access` without the flags: both are false.
+    let (client, seen, _) = client(routes);
+    let msgs = block_on(client.execute(Request::Secrets));
+    let Msg::Secrets(list) = msgs.last().unwrap() else {
+        panic!("{msgs:?}")
+    };
+    assert_eq!(list.len(), 1);
+    assert!(
+        !seen
+            .borrow()
+            .iter()
+            .any(|(_, path)| path == "/api/v1/secrets")
+    );
+}
+
+#[quench_test::test]
+fn setting_and_removing_a_secret_send_the_value_once_and_read_the_names_again() {
+    let (client, seen, bodies) = client(with_global);
+    let msgs = block_on(client.execute(Request::SetSecret {
+        repo: None,
+        name: "NEW_ONE".into(),
+        value: "s3cret-value".into(),
+    }));
+    assert_eq!(msgs.last(), Some(&Msg::Done("ui_secrets_ok_set".into())));
+    assert!(msgs.iter().any(|m| matches!(m, Msg::Secrets(_))));
+    {
+        let seen = seen.borrow();
+        assert_eq!(
+            seen[0],
+            ("PUT".to_string(), "/api/v1/secrets/NEW_ONE".to_string())
+        );
+        assert!(
+            seen.iter()
+                .any(|(m, p)| m == "GET" && p == "/api/v1/secrets")
+        );
+    }
+    assert_eq!(
+        bodies.borrow()[0].as_deref(),
+        Some(r#"{"value":"s3cret-value"}"#)
+    );
+
+    let msgs = block_on(client.execute(Request::SetSecret {
+        repo: Some("r1".into()),
+        name: "RELEASE_GIT_TOKEN".into(),
+        value: "another".into(),
+    }));
+    assert_eq!(msgs.last(), Some(&Msg::Done("ui_secrets_ok_set".into())));
+    assert!(seen.borrow().contains(&(
+        "PUT".to_string(),
+        "/api/v1/repos/r1/secrets/RELEASE_GIT_TOKEN".to_string()
+    )));
+
+    let msgs = block_on(client.execute(Request::DeleteSecret {
+        repo: None,
+        name: "NEW_ONE".into(),
+    }));
+    assert_eq!(
+        msgs.last(),
+        Some(&Msg::Done("ui_secrets_ok_removed".into()))
+    );
+}
+
+#[quench_test::test]
+fn a_refused_secret_change_says_why_and_does_not_read_again() {
+    let (client, seen, _) = client(|r| {
+        if r.method == "PUT" {
+            (
+                403,
+                r#"{"error":"no write access to estate-wide secrets"}"#.into(),
+            )
+        } else {
+            with_global(r)
+        }
+    });
+    let msgs = block_on(client.execute(Request::SetSecret {
+        repo: None,
+        name: "NEW_ONE".into(),
+        value: "abcd".into(),
+    }));
+    assert_eq!(
+        msgs,
+        vec![Msg::Rejected(
+            "no write access to estate-wide secrets".into()
+        )]
+    );
+    assert_eq!(seen.borrow().len(), 1);
+}

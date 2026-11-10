@@ -30,6 +30,7 @@ fn access_answers_per_project() {
         username: "ola".into(),
         read: vec!["a".into(), "b".into()],
         write: vec!["a".into()],
+        ..Access::default()
     };
     assert!(access.can_read("b") && !access.can_read("c"));
     assert!(access.can_write("a") && !access.can_write("b"));
@@ -42,4 +43,10 @@ fn statuses_know_their_state() {
     assert!(Status::Skipped.is_terminal() && !Status::Running.is_terminal());
     let r = run("r", "x", Status::Success);
     assert_eq!(r.queued_at, at("2026-10-29T10:00:00Z"));
+}
+
+#[quench_test::test]
+fn an_older_access_answer_without_the_estate_flags_still_reads() {
+    let access: Access = json::from_str(r#"{"username":"ola","read":["a"],"write":[]}"#).unwrap();
+    assert!(!access.global_read && !access.global_write);
 }

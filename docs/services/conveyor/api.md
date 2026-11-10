@@ -169,7 +169,7 @@ Query `format=text|html` (default `text`). `200 text/event-stream`. Frames: `id:
 
 ### GET /api/v1/access
 
-`200` `{"username": "<sub or dev>", "read": [project ids], "write": [project ids]}`. A project is listed when the caller may act on it directly or through an ancestor; with the blanket grant (or auth off) every project is listed.
+`200` `{"username": "<sub or dev>", "read": [project ids], "write": [project ids], "global_read": bool, "global_write": bool}`. A project is listed when the caller may act on it directly or through an ancestor; with the blanket grant (or auth off) every project is listed. `global_read` and `global_write` say whether the caller holds the blanket `conveyor:read` / `conveyor:write` grant (true with auth off): that is what estate-wide secrets are gated by, and the browser client uses them to decide what to offer.
 
 ### GET /api/v1/overview/runs
 
@@ -274,4 +274,4 @@ Generic payload (`GenericEvent`):
 
 ## auth and ui
 
-The six SSO routes and the page and asset routes of the browser client. The SSO routes behave as described in [Common service runtime](../common-runtime.md); conveyor's `GET /ui/status` is its own handler with the same output. The page routes (`/ui/home`, `/ui/home/`, `/ui/projects/{id}`, `/ui/runs`, `/ui/runs/{id}`, `/ui/credentials`, `/ui/repos`, `/ui/repos/{owner}/{name}/edit`, `.../run`, `.../scan`, `.../scan/{category}`) all return the same HTML page for a valid session and `302` to the sign-in without one; `GET /ui` and `GET /ui/` redirect to `{BASE_PATH}/ui/home`. The five asset routes (`/ui/assets/quench.js`, `app.css`, `shell.js`, `favicon.png`, `app.wasm`) are public; see [The browser-client pattern](../../guides/browser-client.md).
+The six SSO routes and the page and asset routes of the browser client. The SSO routes behave as described in [Common service runtime](../common-runtime.md); conveyor's `GET /ui/status` is its own handler with the same output. The page routes (`/ui/home`, `/ui/home/`, `/ui/projects/{id}`, `/ui/runs`, `/ui/runs/{id}`, `/ui/credentials`, `/ui/secrets`, `/ui/repos`, `/ui/repos/{owner}/{name}/edit`, `.../run`, `.../scan`, `.../scan/{category}`) all return the same HTML page for a valid session and `302` to the sign-in without one; `GET /ui` and `GET /ui/` redirect to `{BASE_PATH}/ui/home`. The five asset routes (`/ui/assets/quench.js`, `app.css`, `shell.js`, `favicon.png`, `app.wasm`) are public; see [The browser-client pattern](../../guides/browser-client.md).

@@ -10,9 +10,9 @@ pub mod scan;
 pub mod tree;
 
 pub use domain::{Artifact, Job, Project, Provider, Repo, Run, Status, Trigger};
-pub use draft::{DraftError, LaunchDraft, RepoDraft};
+pub use draft::{DraftError, LaunchDraft, RepoDraft, SecretDraft};
 pub use model::{
     Access, ArtifactView, CheckChip, CheckDetail, Credential, Finding, KnownStage, RegisterRepo,
-    RepoChecks, RunDetail, RunView, RunsPage, ScanFinding, ScanFindings, ScanReport, Subscription,
-    TriggerRun, UpdateRepo,
+    RepoChecks, RunDetail, RunView, RunsPage, ScanFinding, ScanFindings, ScanReport, SecretRef,
+    SetSecret, Subscription, TriggerRun, UpdateRepo,
 };

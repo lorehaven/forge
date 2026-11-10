@@ -2,7 +2,7 @@
 //!
 //! The host does the talking to the service; the app owns the routes (`{base}/ui/home`, `/ui/projects/{id}`,
 //! `/ui/runs`, `/ui/runs/{id}`, `/ui/repos`, `/ui/repos/{owner}/{name}/{edit,run,scan,scan/{check}}`,
-//! `/ui/credentials`), the sidebar, the polling and the language.
+//! `/ui/credentials`, `/ui/secrets`), the sidebar, the polling and the language.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use conveyor_core::{
     Access, Credential, KnownStage, Project, RegisterRepo, Repo, RepoChecks, Run, RunView,
-    RunsPage, ScanFindings, ScanReport, Subscription, TriggerRun, UpdateRepo,
+    RunsPage, ScanFindings, ScanReport, SecretRef, Subscription, TriggerRun, UpdateRepo,
 };
 use quench_core::time::Time;
 use quench_ui::i18n::I18n;
@@ -86,6 +86,18 @@ pub enum Request {
         kind: String,
     },
     Credentials,
+    /// What the secrets page shows: access, projects, repositories and the names of the secrets the caller may read.
+    Secrets,
+    /// Set (or overwrite) a secret's value; `repo` is none for an estate-wide one.
+    SetSecret {
+        repo: Option<String>,
+        name: String,
+        value: String,
+    },
+    DeleteSecret {
+        repo: Option<String>,
+        name: String,
+    },
     /// The person chose a language (the host keeps it for next time).
     Language(String),
 }
@@ -105,6 +117,8 @@ pub enum Msg {
     Chips(Vec<RepoChecks>),
     Run(Box<RunView>),
     Credentials(Vec<Credential>),
+    /// Every secret the caller may see, estate-wide and per repository (never a value).
+    Secrets(Vec<SecretRef>),
     Stages {
         repo: String,
         stages: Vec<KnownStage>,
@@ -259,6 +273,7 @@ pub(crate) struct State {
     pub opened: Signal<HashSet<String>>,
     pub logs: Signal<HashMap<String, JobLog>>,
     pub creds: Signal<Option<Vec<Credential>>>,
+    pub secrets: Signal<Option<Vec<SecretRef>>>,
     pub stages: Signal<Option<(String, Vec<KnownStage>)>>,
     pub scan: Signal<Option<(String, ScanReport)>>,
     pub findings: Signal<Option<(String, Option<ScanFindings>)>>,
@@ -281,6 +296,7 @@ impl State {
             opened: create_signal(HashSet::new()),
             logs: create_signal(HashMap::new()),
             creds: create_signal(None),
+            secrets: create_signal(None),
             stages: create_signal(None),
             scan: create_signal(None),
             findings: create_signal(None),
@@ -334,6 +350,7 @@ fn receive(state: &State, router: &Router, base: &str, m: Msg) {
             state.run.set(Some(*view));
         }
         Msg::Credentials(list) => state.creds.set(Some(list)),
+        Msg::Secrets(list) => state.secrets.set(Some(list)),
         Msg::Stages { repo, stages } => state.stages.set(Some((repo, stages))),
         Msg::Scan { repo, report } => {
             state.problem.set(None);
@@ -557,6 +574,16 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             View::dynamic(move || screens::credentials(&env, &state))
         }
     };
+    let secrets = {
+        let (env, state) = (env.clone(), state.clone());
+        move |_: &RouteContext| -> View {
+            state.enter();
+            state.secrets.set(None);
+            (env.ask)(Request::Secrets);
+            let (env, state) = (env.clone(), state.clone());
+            View::dynamic(move || screens::secrets(&env, &state))
+        }
+    };
     let repos = {
         let (env, state) = (env.clone(), state.clone());
         move |_: &RouteContext| -> View {
@@ -662,6 +689,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         .route(&format!("{base}/ui/runs"), runs)
         .route(&format!("{base}/ui/runs/:id"), again(run))
         .route(&format!("{base}/ui/credentials"), credentials)
+        .route(&format!("{base}/ui/secrets"), secrets)
         .route(&format!("{base}/ui/repos"), repos)
         .route(&format!("{base}/ui/repos/:owner/:name/edit"), again(edit))
         .route(&format!("{base}/ui/repos/:owner/:name/run"), again(launch))
@@ -708,7 +736,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     .attr("id", id.to_string())
                     .class("fui-nav-item")
                     .child(forge_shell::icon(match id {
-                        "nav-credentials" => "key",
+                        "nav-credentials" | "nav-secrets" => "key",
                         _ => "activity",
                     }))
                     .child(span().text(env.t.t(key)));
@@ -724,6 +752,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     "ui_nav_credentials",
                     "nav-credentials",
                 ))
+                .child(item("/secrets", "ui_nav_secrets", "nav-secrets"))
                 .into_view()
         })
     };

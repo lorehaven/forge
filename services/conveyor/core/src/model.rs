@@ -12,6 +12,12 @@ pub struct Access {
     pub read: Vec<String>,
     /// Ids of the projects the caller may write to.
     pub write: Vec<String>,
+    /// Whether the caller may see the estate-wide secrets' names (the blanket `conveyor:read` grant).
+    #[serde(default)]
+    pub global_read: bool,
+    /// Whether the caller may set and remove estate-wide secrets (the blanket `conveyor:write` grant).
+    #[serde(default)]
+    pub global_write: bool,
 }
 
 impl Access {
@@ -152,6 +158,24 @@ pub struct Credential {
     pub created_by: String,
     pub created_at: Time,
     pub updated_at: Time,
+}
+
+/// A secret, without its value: the service never returns one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecretRef {
+    pub id: String,
+    /// The repository it belongs to; none for an estate-wide secret.
+    pub repo_id: Option<String>,
+    pub name: String,
+    pub created_by: String,
+    pub created_at: Time,
+    pub updated_at: Time,
+}
+
+/// `PUT /api/v1/secrets/{name}` and `PUT /api/v1/repos/{id}/secrets/{name}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetSecret {
+    pub value: String,
 }
 
 /// A follow of a repository or a project.

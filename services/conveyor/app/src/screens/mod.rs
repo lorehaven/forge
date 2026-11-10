@@ -16,12 +16,14 @@ mod home;
 mod repos;
 mod runs;
 mod scan;
+mod secrets;
 
 pub(crate) use credentials::credentials;
 pub(crate) use home::home;
 pub(crate) use repos::{edit, launch, repos};
 pub(crate) use runs::{history, run};
 pub(crate) use scan::{check, scan};
+pub(crate) use secrets::secrets;
 
 /// What every screen needs of the app.
 #[derive(Clone)]
