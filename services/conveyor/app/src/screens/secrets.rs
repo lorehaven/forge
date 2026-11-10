@@ -103,7 +103,8 @@ fn list_panel(env: &Env, state: &State) -> View {
                             .text(project_path(&repo.project_id, &projects)),
                     );
                 }
-                group = group.child(heading);
+                // A `cv-row` carries the padding; the heading is not a row of its own kind, so it borrows one.
+                group = group.child(div().class("cv-row cv-secret-head").child(heading));
                 for secret in found.iter().filter(|s| s.repo_id == scope) {
                     group = group.child(row(&env, &state, secret, writable));
                 }

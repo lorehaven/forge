@@ -148,6 +148,9 @@ h3{margin:0;font-size:1rem}
 .cv-repo-name{font-weight:600;overflow-wrap:anywhere}
 .cv-project-path{color:var(--cv-text-3);font-size:.8125rem;overflow-wrap:anywhere}
 .cv-edit{margin-left:auto}
+.cv-secret-head{background:var(--cv-hover);border-top:1px solid var(--cv-border)}
+.cv-secret-group:first-child .cv-secret-head{border-top:0}
+.cv-row .cv-input{flex:1 1 10rem;width:auto;max-width:18rem;min-width:8rem}
 @media (max-width:639.98px){.cv-table th,.cv-table td{padding-left:.75rem;padding-right:.75rem}.cv-row{padding:.75rem 1rem}.cv-edit{margin-left:0}.cv-form{padding:1rem}.cv-main{padding:1rem}}
 .cv-scan-card:hover{box-shadow:var(--fui-shadow-md)}
 /* text people copy */
