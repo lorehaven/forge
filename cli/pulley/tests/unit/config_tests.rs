@@ -16,6 +16,7 @@ fn job(id: &str) -> Job {
         skip: Vec::new(),
         no_confirm: false,
         interval: None,
+        marker: None,
     }
 }
 

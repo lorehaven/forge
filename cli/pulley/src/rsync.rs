@@ -22,6 +22,34 @@ fn pin_working_dir(cmd: &mut Command, src: &str) {
     }
 }
 
+/// The remote shell to give rsync (`-e`), or `None` to leave it to rsync and the environment.
+///
+/// None where the user chose one (`RSYNC_RSH`), and on Windows, whose rsync may bring an `ssh` of its own. Elsewhere `ssh`
+/// with a connect timeout, so a host that is off costs seconds and not the system's two minutes, and keepalives so a host that
+/// goes off mid-transfer ends the transfer instead of hanging it. `probe` adds `BatchMode`: a check must never wait for a
+/// password.
+#[must_use]
+pub fn remote_shell(probe: bool) -> Option<String> {
+    if cfg!(windows) || std::env::var_os("RSYNC_RSH").is_some_and(|value| !value.is_empty()) {
+        return None;
+    }
+    Some(if probe {
+        "ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=2"
+            .to_string()
+    } else {
+        "ssh -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4".to_string()
+    })
+}
+
+/// Gives a command that talks to a remote end the shell of [`remote_shell`].
+fn use_remote_shell(cmd: &mut Command, job: &Job) {
+    if (is_remote(&job.src) || is_remote(&job.dest))
+        && let Some(shell) = remote_shell(false)
+    {
+        cmd.arg("-e").arg(shell);
+    }
+}
+
 pub fn dry_run(job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
     println!("Executing dry-run");
 
@@ -32,6 +60,7 @@ pub fn dry_run(job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
     // working directory happens to be at the moment it is spawned. Two jobs
     // never race on it, since each pins to its own source.
     pin_working_dir(&mut cmd, &job.src);
+    use_remote_shell(&mut cmd, job);
     cmd.arg("-avz")
         .arg("--dry-run")
         .arg("--itemize-changes")
@@ -112,6 +141,7 @@ pub fn update(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::new("rsync");
     // See the matching comment in `dry_run`.
     pin_working_dir(&mut cmd, &job.src);
+    use_remote_shell(&mut cmd, job);
     cmd.arg("-avzu").arg("--progress");
 
     if job.delete {

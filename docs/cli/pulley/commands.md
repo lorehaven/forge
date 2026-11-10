@@ -71,7 +71,7 @@ Continue? (y/n):
 
 *Unverified:* sample from the source (`rsync.rs`, `repl.rs`).
 
-For each job: a dry run (see [Sync behaviour](#sync-behaviour)); if there are changes, then unless the job has `no-confirm = true` it asks `Continue? (y/n): ` and proceeds only on `y`/`Y` (anything else prints `Skipped`); `no-confirm = true` proceeds directly; no changes prints `**Nothing to do**`. Finally `Done job: <desc>`. An rsync failure aborts the whole run with `Error: rsync exited with <status>: <stderr>` (exit 1), skipping later jobs. `run` reads confirmations from standard input, so a job without `no-confirm` blocks in a non-interactive script.
+For each job: a dry run (see [Sync behaviour](#sync-behaviour)); if there are changes, then unless the job has `no-confirm = true` it asks `Continue? (y/n): ` and proceeds only on `y`/`Y` (anything else prints `Skipped`); `no-confirm = true` proceeds directly; no changes prints `**Nothing to do**`. Before each job the source is checked (see [Sources that are sometimes absent](configuration.md#sources-that-are-sometimes-absent)): a job whose source is not there prints `skipped: job <id>: source not available (<why>)` and nothing is synced or deleted for it; the other jobs still run, and at the end the command fails (exit 1) naming the skipped jobs. Finally `Done job: <desc>`. An rsync failure aborts the whole run with `Error: rsync exited with <status>: <stderr>` (exit 1), skipping later jobs. `run` reads confirmations from standard input, so a job without `no-confirm` blocks in a non-interactive script.
 
 ## daemon
 
@@ -79,7 +79,7 @@ For each job: a dry run (see [Sync behaviour](#sync-behaviour)); if there are ch
 pulley daemon
 ```
 
-Foreground loop. Requires `rsync`. Only jobs with `interval` are watched; with none: `daemon no jobs have interval set; nothing to watch. add interval = <seconds> to a job to include it.` and exit 0. Otherwise prints `daemon watching N job(s)` and `  <id> - every <N>s`, then every 1 s checks which jobs are due (never run, or `interval` seconds since the last start) and runs each: dry run; if changes, **sync without asking** (`no-confirm` is irrelevant in the daemon); results are appended to the job's log (see [Configuration](configuration.md#job-logs)). A failing job prints `daemon job <id> failed: <error>` and the loop continues. It never exits on its own (stop with Ctrl-C or the service manager). On Windows the console window is hidden first.
+Foreground loop. Requires `rsync`. Only jobs with `interval` are watched; with none: `daemon no jobs have interval set; nothing to watch. add interval = <seconds> to a job to include it.` and exit 0. Otherwise prints `daemon watching N job(s)` and `  <id> - every <N>s`, then every 1 s checks which jobs are due (never run, or `interval` seconds since the last start). For each due job it first checks the source (see [Sources that are sometimes absent](configuration.md#sources-that-are-sometimes-absent)): if the source is not there the job is **not run**, a single `daemon job <id>: source not available (<why>)` line is printed and logged, the source is looked at again about a minute later, and when it is back `daemon job <id>: source is available again` is printed and the job runs at once. A source that is there is synced: dry run; if changes, **sync without asking** (`no-confirm` is irrelevant in the daemon); results are appended to the job's log (see [Configuration](configuration.md#job-logs)). A failing job prints `daemon job <id> failed: <error>` and the loop continues. It never exits on its own (stop with Ctrl-C or the service manager). On Windows the console window is hidden first.
 
 ## service
 
@@ -128,11 +128,4 @@ Both the dry run and the update run `rsync` with the job's **source directory as
 
 The dry run **always** includes `--delete`, so it reports deletions even for a job with `delete = false` that will not perform them. The report counts lines starting `*deleting` (printed `DELETE  <path>`), creations (`>f+++++++++`, `<f+++++++++`, `cd+...`: `CREATE <path>`) and file modifications (`>f...`: `MODIFY <path>`); directory-only lines are not shown. The update's output is shown on stderr. `-u` skips files newer on the destination.
 
-Because the working directory is set to `src`, a remote source such as `user@host:/path` (the `remote-photos` job of the example config) cannot be used. Verified: `pulley run remote-photos` fails before rsync starts with
-
-```text
-Executing dry-run
-Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }
-```
-
-and exit code 1 (see `docs/_reports/cli.md` in the repository). A remote *destination* is not affected.
+For a local source the working directory is set to `src`; a remote source (`user@host:/path`, `host:/path`, `rsync://host/module`) has no directory to enter, so none is set. Transfers that involve a remote host get an `ssh` with timeouts and keepalives (see [Configuration](configuration.md#sources-that-are-sometimes-absent)).

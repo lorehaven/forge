@@ -31,6 +31,11 @@ pub struct Job {
     /// REPL-only and invisible to the daemon.
     #[serde(default)]
     pub interval: Option<u64>,
+    /// Optional: a path relative to `src` that is always present while the source's data is (an existing file or directory;
+    /// nothing has to be created). A job with a marker syncs only when the source answers and the marker is in it. Without
+    /// one, a job that deletes still needs a source that exists and is not empty; see [`crate::source`].
+    #[serde(default)]
+    pub marker: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

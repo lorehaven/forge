@@ -1,5 +1,6 @@
 use crate::config::{Config, Job};
 use crate::rsync;
+use crate::source;
 use quench_cli::prelude::{
     ReplControl, Tone, print_box_banner, print_status, repl_prompt, repl_run,
 };
@@ -96,6 +97,9 @@ impl Repl {
             if !job.skip.is_empty() {
                 println!("    skip: {}", job.skip.join(", "));
             }
+            if let Some(marker) = &job.marker {
+                println!("    marker: {marker}");
+            }
             if job.no_confirm {
                 println!("    no-confirm: true");
             }
@@ -126,8 +130,25 @@ impl Repl {
             .join(", ");
         println!("Jobs to be run: {job_ids}\n");
 
+        // A source that is not there is left alone, for every job in turn, and said at the end: nothing is synced from it, and
+        // nothing is deleted at the destination because of it.
+        let mut skipped = Vec::new();
         for job in jobs {
             println!("Starting job: `{}`", job.desc);
+            let found = source::check(&job);
+            if !found.is_ready() {
+                print_status(
+                    Tone::Warn,
+                    "skipped",
+                    &format!(
+                        "job `{}`: source not available ({})",
+                        job.id,
+                        found.reason()
+                    ),
+                );
+                skipped.push(job.id.clone());
+                continue;
+            }
             if rsync::dry_run(&job)? {
                 if job.no_confirm {
                     rsync::update(&job)?;
@@ -148,7 +169,15 @@ impl Repl {
             println!("Done job: `{}`\n", job.desc);
         }
 
-        Ok(())
+        if skipped.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "source not available, nothing was synced for: {}",
+                skipped.join(", ")
+            )
+            .into())
+        }
     }
 
     fn reload_config(&mut self) -> Result<(), Box<dyn std::error::Error>> {

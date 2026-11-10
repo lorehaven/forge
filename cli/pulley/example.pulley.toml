@@ -36,3 +36,16 @@ dest = "/mnt/backup/projects"
 delete = true
 skip = ["target", "node_modules", ".git"]
 no-confirm = false
+
+# A source that is switched off part of the day, with deletions propagated. Nothing extra is needed on the source: a job that
+# deletes runs only when the source answers, exists and is not empty (an unmounted drive's mount point is empty), so a host
+# that is off, or up with its drive not mounted yet, is skipped quietly (one log line when it goes, one when it returns) and
+# the backup keeps what it has. `marker = "projects"` would additionally require that existing path to be present.
+[[jobs]]
+id = "lorien"
+desc = "Backup from lorien"
+src = "me@lorien:/mnt/data/projects"
+dest = "/srv/backup/lorien/projects"
+delete = true
+no-confirm = true
+interval = 900

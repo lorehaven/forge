@@ -24,5 +24,7 @@ mod service_unix_runit_tests;
 #[cfg(unix)]
 #[path = "unit/service_unix_systemd_tests.rs"]
 mod service_unix_systemd_tests;
+#[path = "unit/source_tests.rs"]
+mod source_tests;
 
 quench_test::main!();

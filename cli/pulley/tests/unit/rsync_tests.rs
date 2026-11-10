@@ -14,6 +14,7 @@ fn job(src: &std::path::Path, dest: &std::path::Path) -> Job {
         skip: vec![],
         no_confirm: true,
         interval: None,
+        marker: None,
     }
 }
 

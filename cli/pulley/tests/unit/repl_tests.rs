@@ -12,6 +12,7 @@ fn job(id: &str) -> Job {
         skip: Vec::new(),
         no_confirm: false,
         interval: None,
+        marker: None,
     }
 }
 
@@ -25,6 +26,7 @@ fn job_with_dirs(id: &str, src: &std::path::Path, dest: &std::path::Path) -> Job
         skip: Vec::new(),
         no_confirm: true,
         interval: None,
+        marker: None,
     }
 }
 
@@ -144,6 +146,40 @@ fn run_jobs_with_no_confirm_syncs_without_prompting() {
     repl.run_jobs(&["sync-me"]).expect("run_jobs");
     assert_eq!(
         std::fs::read_to_string(dest.path().join("a.txt")).unwrap(),
+        "hello"
+    );
+}
+
+#[quench_test::test]
+fn run_jobs_leaves_a_source_that_is_not_there_alone_and_says_so_at_the_end() {
+    // Up, but empty: the drive is not mounted. The destination must keep what it has.
+    let missing_data = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
+    std::fs::write(dest.path().join("backup.txt"), "keep").unwrap();
+    let guarded = Job {
+        delete: true,
+        ..job_with_dirs("guarded", missing_data.path(), dest.path())
+    };
+
+    // And a job after it that is fine: it still runs.
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest2 = quench_core::tmp::TempDir::new().unwrap();
+    std::fs::write(src.path().join("a.txt"), "hello").unwrap();
+    let fine = job_with_dirs("fine", src.path(), dest2.path());
+
+    let repl = repl_with(vec![guarded, fine]);
+    let error = repl.run_jobs(&["all"]).unwrap_err().to_string();
+
+    assert!(
+        error.contains("guarded") && !error.contains("fine"),
+        "{error}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dest.path().join("backup.txt")).unwrap(),
+        "keep"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dest2.path().join("a.txt")).unwrap(),
         "hello"
     );
 }
