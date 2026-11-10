@@ -9,6 +9,7 @@ packages = [
     "foreman",
     "forge-toolbox",
     "gatehouse-auth",
+    "kube-cluster",
     "loupe",
     "pulley",
     "rivet-package",
