@@ -11,8 +11,8 @@ use warehouse_core::{
 };
 
 use super::{
-    Env, checkbox_field, confirm, empty, form_error, labelled, meta, meta_text, metadata_title,
-    nav, panel_title, share_name, split, waiting,
+    Env, checkbox_field, confirm, empty, form_error, icon, labelled, meta, meta_text,
+    metadata_title, nav, panel_title, share_name, split, waiting,
 };
 use crate::live::{Request, State};
 
@@ -593,7 +593,8 @@ fn listing(
                     .attr("href", file_url(env, storage, &child_path, ""))
                     .attr("download", name.clone())
                     .attr("title", env.t.t("ui_file_download"))
-                    .text("⤓"),
+                    .attr("aria-label", env.t.t("ui_file_download"))
+                    .child(icon("download")),
             );
             if can_share {
                 actions = actions.child(share_button(env, storage, &child_path));
@@ -607,6 +608,7 @@ fn listing(
                         .attr("data-delete", target.clone())
                         .class("wh-fm-act wh-fm-del")
                         .attr("title", env.t.t("ui_file_delete"))
+                        .attr("aria-label", env.t.t("ui_file_delete"))
                         .on_click(move || {
                             confirm(
                                 &state,
@@ -619,7 +621,7 @@ fn listing(
                                 },
                             );
                         })
-                        .text("✕"),
+                        .child(icon("remove")),
                 );
             }
             row = row
@@ -676,14 +678,15 @@ fn share_button(env: &Env, storage: &str, path: &str) -> Element {
         .attr("type", "button")
         .attr("data-share", target.clone())
         .class("wh-fm-act")
-        .attr("title", title)
+        .attr("title", title.clone())
+        .attr("aria-label", title)
         .on_click(move || {
             env.ask(Request::CreateShare {
                 storage: storage.clone(),
                 path: target.clone(),
             });
         })
-        .text("🔗")
+        .child(icon("link"))
 }
 
 /// The links already made for this storage that the person may see: what each opens, who made it, and the ways to show or
@@ -728,8 +731,9 @@ fn shares_panel(env: &Env, state: &State, storage: &str) -> View {
                                     .attr("data-share-show", share.id.clone())
                                     .class("wh-fm-act")
                                     .attr("title", env.t.t("ui_share_link"))
+                                    .attr("aria-label", env.t.t("ui_share_link"))
                                     .on_click(move || shown.set(Some(open.clone())))
-                                    .text("🔗"),
+                                    .child(icon("link")),
                             )
                             .child(
                                 button()
@@ -737,6 +741,7 @@ fn shares_panel(env: &Env, state: &State, storage: &str) -> View {
                                     .attr("data-share-withdraw", share.id.clone())
                                     .class("wh-fm-act wh-fm-del")
                                     .attr("title", env.t.t("ui_share_withdraw"))
+                                    .attr("aria-label", env.t.t("ui_share_withdraw"))
                                     .on_click(move || {
                                         confirm(
                                             &ask_state,
@@ -749,7 +754,7 @@ fn shares_panel(env: &Env, state: &State, storage: &str) -> View {
                                             },
                                         );
                                     })
-                                    .text("✕"),
+                                    .child(icon("remove")),
                             ),
                     ),
             );

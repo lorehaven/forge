@@ -551,6 +551,14 @@ pub(crate) fn share_dialog(env: &Env, state: &State) -> View {
     })
 }
 
+/// A row-action icon (`download`, `link`, `remove`): a one-colour line icon that takes the colour of the control it is in.
+/// Hidden from assistive technology; the control carries the label.
+pub(crate) fn icon(name: &str) -> Element {
+    span()
+        .class(format!("wh-ico wh-ico-{name}"))
+        .attr("aria-hidden", "true")
+}
+
 /// What a link opens, as a person reads it: `storage/path`, or the storage alone.
 pub(crate) fn share_name(share: &warehouse_core::ShareView) -> String {
     if share.path.is_empty() {

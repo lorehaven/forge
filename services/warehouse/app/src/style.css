@@ -124,7 +124,7 @@ details>summary.wh-folder{cursor:pointer}
 .wh-fm-actions{display:flex;align-items:center;gap:.5rem}
 .wh-fm-body{flex:1 1 auto;min-height:0;overflow:auto}
 .wh-fm-list{display:flex;flex-direction:column}
-.wh-fm-row{display:grid;grid-template-columns:1.25rem minmax(0,1fr) 12rem 6rem 4.5rem;align-items:center;gap:.75rem;padding:.375rem 1rem;min-height:2.5rem;border-bottom:1px solid var(--wh-border)}
+.wh-fm-row{display:grid;grid-template-columns:1.25rem minmax(0,1fr) 12rem 6rem 6.75rem;align-items:center;gap:.75rem;padding:.375rem 1rem;min-height:2.5rem;border-bottom:1px solid var(--wh-border)}
 .wh-fm-row:not(.wh-fm-head):hover{background:var(--fui-surface-hover)}
 .wh-fm-head{position:sticky;top:0;background:var(--wh-surface);font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--wh-text-3)}
 .wh-fm-num{text-align:right;color:var(--wh-text-3)}
@@ -138,6 +138,12 @@ details>summary.wh-folder{cursor:pointer}
 .fui-app a.wh-fm-act{color:var(--wh-text-3)}
 .fui-app a.wh-fm-act:hover{color:var(--wh-text);background:var(--wh-surface-2)}
 .fui-app a.wh-fm-act:focus-visible,.wh-fm-act:focus-visible{outline:2px solid var(--fui-brand-400);outline-offset:-2px}
+/* Row-action icons: one-colour line icons (after Feather, MIT). A mask over `currentColor`, so they take the colour and the
+   hover of the button they sit in, like text does. */
+.wh-ico{display:inline-block;flex:none;width:1.125rem;height:1.125rem;background-color:currentColor;-webkit-mask:var(--ico) center/contain no-repeat;mask:var(--ico) center/contain no-repeat;pointer-events:none}
+.wh-ico-download{--ico:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4%22/%3E%3Cpolyline points=%227 10 12 15 17 10%22/%3E%3Cline x1=%2212%22 y1=%2215%22 x2=%2212%22 y2=%223%22/%3E%3C/svg%3E")}
+.wh-ico-link{--ico:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71%22/%3E%3Cpath d=%22M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71%22/%3E%3C/svg%3E")}
+.wh-ico-remove{--ico:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cline x1=%2218%22 y1=%226%22 x2=%226%22 y2=%2218%22/%3E%3Cline x1=%226%22 y1=%226%22 x2=%2218%22 y2=%2218%22/%3E%3C/svg%3E")}
 .wh-fm-body .fui-empty{padding:1.5rem}
 .wh-fm-stage{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;padding:1rem;overflow:auto;background:var(--wh-surface-2)}
 .wh-fm-stage .wh-preview{margin:0;padding:0;border:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
@@ -146,7 +152,7 @@ details>summary.wh-folder{cursor:pointer}
 .wh-bare .wh-content{height:100%}
 .wh-fm-stage .wh-preview-media{max-height:100%}
 .wh-fm-stage .wh-preview-frame{height:100%}
-@media (max-width:47.99rem){.wh-fm-row{grid-template-columns:1.25rem minmax(0,1fr) 5rem 4.5rem}.wh-fm-row>:nth-child(3){display:none}}
+@media (max-width:47.99rem){.wh-fm-row{grid-template-columns:1.25rem minmax(0,1fr) 5rem 6.75rem}.wh-fm-row>:nth-child(3){display:none}}
 
 /* preview mode: the file tree on the left, the file on the right, zoomed */
 .wh-fm-split{display:grid;grid-template-columns:minmax(12rem,20rem) minmax(0,1fr);flex:1 1 auto;min-height:0}
