@@ -1170,6 +1170,15 @@ paths:
       responses:
         '200': {description: 'The page.'}
         '302': {description: 'No session.'}
+  /ui/secrets:
+    get:
+      tags: [ui]
+      operationId: uiSecrets
+      summary: Secrets (names; set, replace and remove with write access)
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
   /ui/repos:
     get:
       tags: [ui]
