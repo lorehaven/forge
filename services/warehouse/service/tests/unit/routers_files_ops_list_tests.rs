@@ -26,6 +26,23 @@ async fn storages_reports_not_found_when_file_storage_is_disabled() {
 }
 
 #[quench_test::test]
+async fn the_storage_index_reports_not_found_when_file_storage_is_disabled() {
+    files::register_routes();
+    let container = support::container_builder()
+        .provide(JwtConfig::for_tests())
+        .provide(Db::InMemory(InMemoryDb::new()))
+        .build()
+        .await
+        .unwrap();
+    let (app, container) = support::app(container);
+
+    let resp = app
+        .call(support::req(Method::GET, "/api/v1/storages", &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[quench_test::test]
 async fn entries_reports_not_found_when_file_storage_is_disabled() {
     files::register_routes();
     let container = support::container_builder()

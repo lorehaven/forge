@@ -1523,6 +1523,34 @@ Example `200` response:
 
 Named file storages: static (operator-configured directories) and dynamic (database-backed, owned, quota-limited).
 
+### GET `/api/v1/storages`
+
+Index of the dynamic storages
+
+The name and owner of every **dynamic** storage, nothing about what it holds. Needs the blanket `warehouse:read` grant (or auth off). `GET /api/v1/files` shows a dynamic storage only to its owner, a wildcard role or an explicit `warehouse:storage:<name>:<action>` grant, so it cannot tell an administrator what there is to grant; gatehouse's permission editor asks this instead. Names and owners are what every signed-in session already sees on the management page. Answers 404 `file storage is not enabled` unless `FEATURE_FILES_ENABLED`.
+
+**Authentication:** `bearerAuth` or `sessionCookie`. **Permission:** `warehouse:read`.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | One entry per dynamic storage. | `application/json` array of [StorageIndexEntry](#schema-storageindexentry) |
+| 401 | Missing/invalid token or no session (empty body or the framework's text). |  |
+| 403 | Lacks the blanket `warehouse:read`. | `application/json` [Error](#schema-error) |
+| 404 | Files are not enabled. | `application/json` [Error](#schema-error) |
+
+Example `200` response:
+
+```json
+[
+  {
+    "name": "phone",
+    "owner": "alice"
+  }
+]
+```
+
 ### GET `/api/v1/files`
 
 List storages
@@ -4778,6 +4806,17 @@ Always empty lists.
 |---|---|---|---|
 | `name` | string | yes |  |
 | `tags` | array of string | yes |  |
+
+### Schema StorageIndexEntry
+
+<a id="schema-storageindexentry"></a>
+
+A dynamic storage as the permission editor needs it.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | yes |  |
+| `owner` | string | yes |  |
 
 ### Schema StorageSummary
 

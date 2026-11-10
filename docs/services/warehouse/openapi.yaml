@@ -1541,6 +1541,49 @@ paths:
           description: '`service` mismatch (empty body).'
         '401':
           description: 'Bad or missing credentials; `WWW-Authenticate: Basic realm="registry"`.'
+  /api/v1/storages:
+    get:
+      tags:
+      - files
+      summary: Index of the dynamic storages
+      description: 'The name and owner of every **dynamic** storage, nothing about what it holds. Needs the
+        blanket `warehouse:read` grant (or auth off). `GET /api/v1/files` shows a dynamic storage only to
+        its owner, a wildcard role or an explicit `warehouse:storage:<name>:<action>` grant, so it cannot
+        tell an administrator what there is to grant; gatehouse''s permission editor asks this instead.
+        Names and owners are what every signed-in session already sees on the management page. Answers
+        404 `file storage is not enabled` unless `FEATURE_FILES_ENABLED`.'
+      security:
+      - bearerAuth: []
+      - sessionCookie: []
+      x-permission: warehouse:read
+      responses:
+        '200':
+          description: One entry per dynamic storage.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StorageIndexEntry'
+              example:
+              - name: phone
+                owner: alice
+        '401':
+          description: Missing/invalid token or no session (empty body or the framework's text).
+        '403':
+          description: Lacks the blanket `warehouse:read`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Files are not enabled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: file storage is not enabled
   /api/v1/files:
     get:
       tags:
@@ -5545,6 +5588,17 @@ components:
       required:
       - name
       - tags
+    StorageIndexEntry:
+      type: object
+      description: A dynamic storage as the permission editor needs it.
+      properties:
+        name:
+          type: string
+        owner:
+          type: string
+      required:
+      - name
+      - owner
     StorageSummary:
       type: object
       description: Static storages carry only `name`; the other fields are present for dynamic ones.

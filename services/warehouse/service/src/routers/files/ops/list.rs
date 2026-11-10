@@ -3,6 +3,7 @@
 
 use super::{ResolvedStorage, authorize, error, forbidden, not_found, resolve_storage};
 use crate::domain::storage_file;
+use crate::routers::files::authz;
 use crate::routers::files::pagination::{next_link, page_size, paginate, resume_after};
 use crate::routers::files::{ListQuery, OptionalClaims, PathError, confined, relative};
 use quench_auth::domain::jwt::JwtConfig;
@@ -105,6 +106,55 @@ pub async fn storages(
 
     Response::json(StatusCode::OK, &summaries)
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+/// A dynamic storage as the permission editor needs it: whose it is, and nothing about what it holds.
+#[derive(Debug, Serialize)]
+pub struct StorageIndexEntry {
+    pub name: String,
+    pub owner: String,
+}
+
+/// `GET /api/v1/storages`: the name and owner of every dynamic storage, for a caller who holds the blanket
+/// `warehouse:read`.
+///
+/// `GET /api/v1/files` shows a dynamic storage only to its owner, a wildcard role or an explicit
+/// `warehouse:storage:<name>:<action>` grant, so a caller with only the blanket grant cannot see what there is to grant -
+/// which is exactly what gatehouse's permission editor needs to offer. Names and owners are what every signed-in session
+/// already sees in the management page; what a storage holds is still behind its own check.
+#[get("/api/v1/storages")]
+#[quench_log::instrument(skip(claims, config, db))]
+pub async fn storage_index(
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if !crate::routers::files_enabled() {
+        return not_found("file storage is not enabled");
+    }
+    if !authz::has_blanket(claims.as_ref(), &config, "read") {
+        return forbidden("listing every storage needs the warehouse:read grant");
+    }
+    match crate::domain::storage::list(&db).await {
+        Ok(storages) => {
+            let index: Vec<StorageIndexEntry> = storages
+                .into_iter()
+                .map(|storage| StorageIndexEntry {
+                    name: storage.name,
+                    owner: storage.owner,
+                })
+                .collect();
+            Response::json(StatusCode::OK, &index)
+                .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+        }
+        Err(err) => {
+            quench_log::error!("could not list the storages: {err}");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not list the storages",
+            )
+        }
+    }
 }
 
 #[get("/api/v1/files/{storage}")]
@@ -326,5 +376,6 @@ async fn static_entries(
 
 pub fn register_routes() {
     let _ = storages as fn(_, _, _) -> _;
+    let _ = storage_index as fn(_, _, _) -> _;
     let _ = entries as fn(_, _, _, _, _) -> _;
 }

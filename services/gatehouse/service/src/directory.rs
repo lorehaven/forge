@@ -26,7 +26,8 @@ struct Source {
     path: &'static str,
     id: Field,
     label: Label,
-    /// Only entries that have an owner: a warehouse's fixed storages cannot be granted one by one.
+    /// Only entries that have an owner: a warehouse's fixed storages cannot be granted one by one. (The index lists only
+    /// the ones that have; this keeps a listing that ever included the others honest.)
     owned_only: bool,
 }
 
@@ -50,7 +51,7 @@ const SOURCES: [Source; 4] = [
     Source {
         service: "warehouse",
         resource_type: "storage",
-        path: "/api/v1/files",
+        path: "/api/v1/storages",
         id: Field::Name,
         label: Label::NameAndOwner,
         owned_only: true,
