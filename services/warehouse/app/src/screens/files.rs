@@ -668,6 +668,10 @@ fn listing(
     out.into_view()
 }
 
+/// The share button's glyph. Plain text like the download (⤓) and delete (✕) beside it, so it takes the button's colour and
+/// size; the selector keeps a platform from drawing it as a colour emoji.
+const SHARE_GLYPH: &str = "\u{2197}\u{FE0E}";
+
 /// Makes (or fetches again) the share link of one file or directory, and opens the dialog that shows it.
 fn share_button(env: &Env, storage: &str, path: &str) -> Element {
     let (env, storage, target) = (env.clone(), storage.to_string(), path.to_string());
@@ -683,7 +687,7 @@ fn share_button(env: &Env, storage: &str, path: &str) -> Element {
                 path: target.clone(),
             });
         })
-        .text("🔗")
+        .text(SHARE_GLYPH)
 }
 
 /// The links already made for this storage that the person may see: what each opens, who made it, and the ways to show or
@@ -729,7 +733,7 @@ fn shares_panel(env: &Env, state: &State, storage: &str) -> View {
                                     .class("wh-fm-act")
                                     .attr("title", env.t.t("ui_share_link"))
                                     .on_click(move || shown.set(Some(open.clone())))
-                                    .text("🔗"),
+                                    .text(SHARE_GLYPH),
                             )
                             .child(
                                 button()
