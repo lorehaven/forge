@@ -73,6 +73,26 @@ Continue? (y/n):
 
 For each job: a dry run (see [Sync behaviour](#sync-behaviour)); if there are changes, then unless the job has `no-confirm = true` it asks `Continue? (y/n): ` and proceeds only on `y`/`Y` (anything else prints `Skipped`); `no-confirm = true` proceeds directly; no changes prints `**Nothing to do**`. Before each job the source is checked (see [Sources that are sometimes absent](configuration.md#sources-that-are-sometimes-absent)): a job whose source is not there prints `skipped: job <id>: source not available (<why>)` and nothing is synced or deleted for it; the other jobs still run, and at the end the command fails (exit 1) naming the skipped jobs. Finally `Done job: <desc>`. An rsync failure aborts the whole run with `Error: rsync exited with <status>: <stderr>` (exit 1), skipping later jobs. `run` reads confirmations from standard input, so a job without `no-confirm` blocks in a non-interactive script.
 
+## status
+
+```text
+pulley status [JOB_ID...] [--json]
+```
+
+What each job is doing now and how its last runs went, read from what the daemon recorded (see [Run state](configuration.md#run-state)); it needs no `rsync` and touches no source or destination. With job ids, only those jobs; otherwise every configured job.
+
+```text
+lorien  Backup lorien
+  running for 1h10m: copying for 1h08m
+  copied 94.0 GB so far: 23.5 MB/s on average, 18.0 MB/s right now, 62% of what rsync has found yet
+  last run 14:58 (3h20m ago): copied 1.2 GB in 2m00s at 10.0 MB/s; scan 30s; 4 new, 1 changed, 0 deleted
+  typical copy speed 13.8 MB/s over the last 10 copies (slowest 10.0 MB/s, fastest 60.0 MB/s)
+```
+
+Per job: the run in progress (its phase, how long, bytes copied so far with the average and the current rate), the last run (when, scan time, copy time, bytes, speed, what the dry run found, or why it failed), the typical copy speed over the last ten copies, and when the next run is due (`next run: in 30m00s`, or `due now`; a job without `interval` has none). A run whose process is gone prints `interrupted: pulley stopped while copying`. Reading the two times is how a slow job is told apart: a long scan is a tree with many files, a slow copy is the link or the disks.
+
+`--json` prints the same as a JSON array (`id`, `desc`, `interval`, `state` of `running`, `interrupted` or `idle`, `live`, and the last runs oldest first) with nothing else on standard output, for another tool to read. Only `pulley daemon` records runs; a job run by hand with `pulley run` shows no history.
+
 ## daemon
 
 ```text

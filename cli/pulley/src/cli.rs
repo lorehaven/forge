@@ -27,6 +27,18 @@ pub enum Command {
         jobs: Vec<String>,
     },
 
+    /// Show what each job is doing now and how its last runs went: the run in progress with its
+    /// progress and speed, the last run's scan and copy times, bytes and speed, and when the next
+    /// is due. Fed by the daemon; with job ids, only those jobs.
+    Status {
+        /// Job id(s) to show; every job when left out
+        #[arg(value_name = "JOB_ID")]
+        jobs: Vec<String>,
+        /// Print the state as JSON, for other tools
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Run continuous sync in the foreground, polling every job's `interval`
     Daemon,
 

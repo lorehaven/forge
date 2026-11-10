@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Repl::new(config).list_jobs();
             return Ok(());
         }
+        Some(Command::Status { jobs, json }) => return pulley::status::command(&jobs, json),
         Some(Command::Run { jobs }) => {
             require_binary("rsync", RSYNC_HINT)?;
             let config = load_config_or_exit();

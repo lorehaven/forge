@@ -2,6 +2,7 @@ use crate::config::{Config, Job};
 use crate::job_log;
 use crate::rsync::{self, Output};
 use crate::source::{self, Availability};
+use crate::state::{Outcome, Recording};
 use quench_cli::prelude::{Tone, print_status};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -281,30 +282,50 @@ pub fn is_due(last_run: Option<Instant>, now: Instant, interval: Duration) -> bo
 pub fn run_job(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
     print_status(Tone::Info, "daemon", &format!("running job `{}`", job.id));
     job_log::append(&job.id, "running job");
+    let mut recording = Recording::begin(&job.id);
 
     let changes = match rsync::scan(job, Output::Summary) {
         Ok(changes) => changes,
         Err(e) => {
             job_log::append(&job.id, &format!("dry-run failed: {e}"));
+            recording.finish(Outcome::Failed, 0, 0, &e.to_string());
             return Err(e);
         }
     };
+    recording.scanned(
+        changes.created as u64,
+        changes.modified as u64,
+        changes.deleted as u64,
+    );
 
     if changes.total() == 0 {
         job_log::append(&job.id, "no changes");
+        recording.finish(Outcome::NoChanges, 0, 0, "");
         return Ok(());
     }
 
     let what = changes.describe();
     job_log::append(&job.id, &format!("changes detected ({what}), syncing"));
     let started = Instant::now();
-    if let Err(e) = rsync::update_quietly(job) {
-        job_log::append(&job.id, &format!("sync failed: {e}"));
-        return Err(e);
-    }
+    let stats =
+        match rsync::update_measured(job, |p| recording.progress(p.bytes, p.percent, p.rate)) {
+            Ok(stats) => stats,
+            Err(e) => {
+                job_log::append(&job.id, &format!("sync failed: {e}"));
+                recording.finish(Outcome::Failed, 0, 0, &e.to_string());
+                return Err(e);
+            }
+        };
 
     let took = format_duration(started.elapsed());
-    job_log::append(&job.id, &format!("sync completed in {took}"));
+    job_log::append(
+        &job.id,
+        &format!(
+            "sync completed in {took}: {} file(s), {} bytes",
+            stats.files, stats.bytes
+        ),
+    );
+    recording.finish(Outcome::Synced, stats.files, stats.bytes, "");
     print_status(
         Tone::Success,
         "daemon",

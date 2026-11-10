@@ -118,6 +118,16 @@ impl Config {
     }
 
     pub fn load_merged() -> Result<Self, ConfigError> {
+        Self::load(true)
+    }
+
+    /// [`Config::load_merged`] without saying which files were read, and with its complaints on standard error: for a command
+    /// whose standard output is the answer (`pulley status --json`).
+    pub fn load_merged_quietly() -> Result<Self, ConfigError> {
+        Self::load(false)
+    }
+
+    fn load(verbose: bool) -> Result<Self, ConfigError> {
         let mut merged_jobs = Vec::new();
         let mut loaded_files = Vec::new();
 
@@ -132,11 +142,12 @@ impl Config {
                     loaded_files.push(config_path.display().to_string());
                 }
                 Err(e) => {
-                    print_status(
-                        Tone::Warn,
-                        "pulley",
-                        &format!("failed to load {}: {}", config_path.display(), e),
-                    );
+                    let message = format!("failed to load {}: {}", config_path.display(), e);
+                    if verbose {
+                        print_status(Tone::Warn, "pulley", &message);
+                    } else {
+                        eprintln!("pulley {message}");
+                    }
                 }
             }
         }
@@ -152,11 +163,12 @@ impl Config {
                     loaded_files.push(config_path.display().to_string());
                 }
                 Err(e) => {
-                    print_status(
-                        Tone::Warn,
-                        "pulley",
-                        &format!("failed to load {}: {}", config_path.display(), e),
-                    );
+                    let message = format!("failed to load {}: {}", config_path.display(), e);
+                    if verbose {
+                        print_status(Tone::Warn, "pulley", &message);
+                    } else {
+                        eprintln!("pulley {message}");
+                    }
                 }
             }
         }
@@ -172,7 +184,7 @@ impl Config {
             return Err(ConfigError::NotFound(search_info));
         }
 
-        if !loaded_files.is_empty() {
+        if verbose && !loaded_files.is_empty() {
             print_status(Tone::Info, "pulley", "loaded configuration from:");
             for file in &loaded_files {
                 println!("  - {file}");

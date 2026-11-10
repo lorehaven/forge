@@ -8,6 +8,7 @@ Backup and sync jobs powered by rsync.
 - Keep folders backed up to another machine or disk.
 - Run a named job once (`pulley run <job>`).
 - Install the daemon as a user service (`pulley service install`).
+- See what each job is doing and how fast it copies (`pulley status`).
 
 ## Example
 ```sh

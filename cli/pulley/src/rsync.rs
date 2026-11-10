@@ -227,6 +227,25 @@ fn update_command(job: &Job, output: Output) -> Command {
     cmd
 }
 
+/// Gives each record of `reader` - the text between `\n`s and `\r`s, which are not empty - to `on_record`.
+fn for_each_record(reader: impl Read, mut on_record: impl FnMut(&str)) {
+    let mut record: Vec<u8> = Vec::new();
+    for byte in BufReader::new(reader).bytes() {
+        let Ok(byte) = byte else { break };
+        if byte == b'\n' || byte == b'\r' {
+            if !record.is_empty() {
+                on_record(&String::from_utf8_lossy(&record));
+                record.clear();
+            }
+        } else {
+            record.push(byte);
+        }
+    }
+    if !record.is_empty() {
+        on_record(&String::from_utf8_lossy(&record));
+    }
+}
+
 /// How many of rsync's last lines of complaint an error keeps.
 const STDERR_TAIL: usize = 20;
 
@@ -260,12 +279,13 @@ pub fn run_streaming(
         tail
     });
 
-    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+    // Split at `\r` as well as `\n`: rsync's progress rewrites one line in place.
+    for_each_record(stdout, |line| {
         let line = line.trim();
         if !line.ends_with('/') {
             on_line(line);
         }
-    }
+    });
 
     let status = process.wait()?;
     let tail = stderr_handle.join().unwrap();
@@ -340,4 +360,100 @@ pub fn run_command_async(command: &mut Command) -> Result<(), Box<dyn std::error
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------- measuring a sync
+
+/// How far a copy has got, as rsync's `--info=progress2` line says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Progress {
+    pub bytes: u64,
+    pub percent: u8,
+    /// Bytes per second, as rsync measures it over its last moments.
+    pub rate: u64,
+}
+
+/// What a copy transferred, from the `--stats` rsync prints at the end.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Stats {
+    pub files: u64,
+    pub bytes: u64,
+}
+
+/// `1234567  12%   22.00MB/s    0:01:23 (xfr#12, to-chk=3/20)` as a [`Progress`].
+#[must_use]
+pub fn parse_progress(line: &str) -> Option<Progress> {
+    let mut words = line.split_whitespace();
+    let bytes = words.next()?.replace(',', "").parse::<u64>().ok()?;
+    let percent = words.next()?.strip_suffix('%')?.parse::<u8>().ok()?;
+    let rate = parse_rate(words.next()?)?;
+    Some(Progress {
+        bytes,
+        percent,
+        rate,
+    })
+}
+
+/// `22.00MB/s` as bytes per second (rsync counts in 1024s).
+fn parse_rate(text: &str) -> Option<u64> {
+    let text = text.strip_suffix("/s")?;
+    let at = text.find(|c: char| c.is_ascii_alphabetic())?;
+    let (number, unit) = text.split_at(at);
+    let number: f64 = number.parse().ok()?;
+    let scale = match unit {
+        "B" => 1.0,
+        "kB" => 1024.0,
+        "MB" => 1024.0 * 1024.0,
+        "GB" => 1024.0 * 1024.0 * 1024.0,
+        "TB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a rate in bytes per second, rounded"
+    )]
+    Some((number * scale) as u64)
+}
+
+/// Reads one line of rsync's final statistics into `stats`.
+pub fn parse_stat(line: &str, stats: &mut Stats) {
+    let number = |rest: &str| {
+        rest.split_whitespace()
+            .next()
+            .map(|n| n.replace(',', ""))
+            .and_then(|n| n.parse::<u64>().ok())
+    };
+    if let Some(rest) = line
+        .strip_prefix("Number of regular files transferred:")
+        .or_else(|| line.strip_prefix("Number of files transferred:"))
+        && let Some(files) = number(rest)
+    {
+        stats.files = files;
+    } else if let Some(rest) = line.strip_prefix("Total transferred file size:")
+        && let Some(bytes) = number(rest)
+    {
+        stats.bytes = bytes;
+    }
+}
+
+/// The sync a daemon runs, measured: no line per file, but `on_progress` as the copy goes and the totals at the end.
+///
+/// # Errors
+/// As [`update_quietly`].
+pub fn update_measured(
+    job: &Job,
+    mut on_progress: impl FnMut(&Progress),
+) -> Result<Stats, Box<dyn std::error::Error>> {
+    let mut command = update_command(job, Output::Summary);
+    command.args(["--no-human-readable", "--stats", "--info=progress2"]);
+    let mut stats = Stats::default();
+    run_streaming(&mut command, |line| {
+        if let Some(progress) = parse_progress(line) {
+            on_progress(&progress);
+        } else {
+            parse_stat(line, &mut stats);
+        }
+    })?;
+    Ok(stats)
 }

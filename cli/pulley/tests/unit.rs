@@ -26,5 +26,7 @@ mod service_unix_runit_tests;
 mod service_unix_systemd_tests;
 #[path = "unit/source_tests.rs"]
 mod source_tests;
+#[path = "unit/status_tests.rs"]
+mod status_tests;
 
 quench_test::main!();
