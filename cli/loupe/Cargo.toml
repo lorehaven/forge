@@ -1,6 +1,6 @@
 [package]
 name = "loupe"
-version = "0.1.2"
+version = "0.1.3"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Loupe - Markdown files and documentation books in the terminal: a pager with links, search, table of contents, book navigation and typeset formulas"
