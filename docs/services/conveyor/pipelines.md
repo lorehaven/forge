@@ -77,7 +77,7 @@ The job's own checkout cannot be released from (shallow, one commit, no tags, no
 | `RELEASE_GIT_TOKEN` | a token that may push to the repository (and the repository must be registered with an https clone url) |
 | `ANVIL_APP_TOKEN`, `ANVIL_GATEHOUSE_URL` | the application that may publish to the registry (and `warehouse:write` for the artifacts); `anvil release` reads them when there is no secret file |
 | `QUENCH_KEYSTORE_PASSWORD`, `QUENCH_KEY_PASSWORD` | signing the APKs (forge artifacts) |
-| `HOIST_KEYSTORE_B64`, `DAYBOOK_KEYSTORE_B64`, `FORKLIFT_KEYSTORE_B64` | the release keystores (they are not in git), `base64 -w0 release.keystore`; `scripts/ci-restore-keystores.sh` writes them to `services/<name>/release.keystore` |
+| `HOIST_KEYSTORE_B64`, `DAYBOOK_KEYSTORE_B64`, `FORKLIFT_KEYSTORE_B64`, `SONGBOOK_KEYSTORE_B64` | the release keystores (they are not in git), `base64 -w0 release.keystore`; `scripts/ci-restore-keystores.sh` writes them to `services/<name>/release.keystore` |
 
 **Images.** The jobs run `anvil`, so the `rust-builder` image must have the anvil that knows `release --yes` and `--no-docker`, and the Docker CLI it now installs (rebuild it after releasing anvil). `release-artifacts` needs `images/rust-android-builder` (JDK 21, the Android SDK and NDK, the Rust targets, `quench`), which has to be built and pushed to the registry first.
 
