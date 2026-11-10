@@ -132,6 +132,10 @@ details>summary.wh-folder{cursor:pointer}
 .wh-fm-act{display:inline-flex;align-items:center;justify-content:center;width:1.75rem;height:1.75rem;border:0;border-radius:.375rem;background:transparent;color:var(--wh-text-3);cursor:pointer;text-decoration:none;font:inherit}
 .wh-fm-act:hover{background:var(--wh-surface-2);color:var(--wh-text)}
 .wh-fm-del:hover{color:var(--fui-error-soft-text)}
+/* The download is a link, and the shell colours every link; make it look like the buttons beside it. */
+.fui-app a.wh-fm-act{color:var(--wh-text-3)}
+.fui-app a.wh-fm-act:hover{color:var(--wh-text);background:var(--wh-surface-2)}
+.fui-app a.wh-fm-act:focus-visible,.wh-fm-act:focus-visible{outline:2px solid var(--fui-brand-400);outline-offset:-2px}
 .wh-fm-body .fui-empty{padding:1.5rem}
 .wh-fm-stage{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;padding:1rem;overflow:auto;background:var(--wh-surface-2)}
 .wh-fm-stage .wh-preview{margin:0;padding:0;border:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
