@@ -1,0 +1,40 @@
+[package]
+name = "klaxon-surface"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+autotests = false
+
+[lib]
+name = "klaxon_surface"
+path = "src/lib.rs"
+
+# The program the Android host starts to draw the screen (`quench android build-native` copies it into the app as
+# libquench_surface.so). It reads touches and keys from stdin and writes frames to stdout. The same program, started
+# with `--next` or `--fired`, is how the Kotlin side asks what rings next.
+[[bin]]
+name = "klaxon_surface"
+path = "src/main.rs"
+
+[[test]]
+name = "headless"
+path = "tests/headless.rs"
+harness = false
+
+[dependencies]
+klaxon-app = { workspace = true }
+klaxon-core = { workspace = true }
+quench-android-surface = { workspace = true }
+quench-style = { workspace = true }
+quench-ui = { workspace = true }
+quench-ui-native = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+
+[lints]
+workspace = true

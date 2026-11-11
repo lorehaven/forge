@@ -1,0 +1,7 @@
+# Read by the `quench` command. Packages are klaxon-app, klaxon-core and so on.
+name = "klaxon"
+template = "web"
+[android]
+keystore = "release.keystore"
+key_alias = "release"
+package = "dev.lorehaven.klaxon"

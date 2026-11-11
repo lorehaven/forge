@@ -717,6 +717,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "klaxon-app"
+version = "0.1.0"
+dependencies = [
+ "klaxon-core",
+ "quench-test",
+ "quench-ui",
+]
+
+[[package]]
+name = "klaxon-core"
+version = "0.1.0"
+dependencies = [
+ "quench-test",
+]
+
+[[package]]
+name = "klaxon-surface"
+version = "0.1.0"
+dependencies = [
+ "klaxon-app",
+ "klaxon-core",
+ "quench-android-surface",
+ "quench-style",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-native",
+]
+
+[[package]]
 name = "kube-cluster"
 version = "0.1.0"
 dependencies = [

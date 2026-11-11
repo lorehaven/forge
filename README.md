@@ -68,6 +68,7 @@ Every member has a README in its directory. Services also hold `core`, `app` and
 | [`lectern`](./services/lectern/service/) | Public documentation viewer | [📖](./docs/services/lectern/index.md) |
 | [`daybook`](./services/daybook/) | Tasks and lists: service, Android, desktop and browser | [📖](./docs/services/daybook/index.md) |
 | [`forklift`](./services/forklift/) | Photo, video and folder backup to Warehouse | [📖](./docs/services/forklift/index.md) |
+| [`klaxon`](./services/klaxon/) | Alarm clock for Android | [📖](./docs/services/klaxon/index.md) |
 | [`hoist` (app)](./services/hoist/) | App installer and updater | [📖](./docs/services/hoist/index.md) |
 | [`hoist` (catalogue service)](./services/hoist/service/) | Hoist's public app catalogue | [📖](./docs/services/hoist/index.md) |
 

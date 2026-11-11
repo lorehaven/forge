@@ -39,6 +39,9 @@ members = [
   "services/hoist/net",
   "services/hoist/service",
   "services/hoist/surface",
+  "services/klaxon/app",
+  "services/klaxon/core",
+  "services/klaxon/surface",
   "services/lectern/service",
   "services/songbook/app",
   "services/songbook/core",
@@ -171,6 +174,8 @@ forklift-app = { path = "services/forklift/app" }
 forklift-core = { path = "services/forklift/core" }
 forklift-host = { path = "services/forklift/host" }
 forklift-net = { path = "services/forklift/net" }
+klaxon-app = { path = "services/klaxon/app" }
+klaxon-core = { path = "services/klaxon/core" }
 hoist-app = { path = "services/hoist/app" }
 hoist-core = { path = "services/hoist/core" }
 # Without its window: the Android surface needs the screens, not a desktop window (`window` is the default).
@@ -210,6 +215,10 @@ fn_params_excessive_bools = "allow"
 # and nothing else in the workspace uses them. The assertions and overflow checks of a debug build cost them a good part
 # of their speed again, so they are off.
 [profile.dev.package.hoist-app]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+[profile.dev.package.klaxon-app]
 opt-level = 3
 debug-assertions = false
 overflow-checks = false

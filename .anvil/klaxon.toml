@@ -1,0 +1,11 @@
+# Android only: the version is the surface crate's (there is no desktop app to take it from).
+[artifacts.programs.klaxon]
+program = "dev.lorehaven.klaxon"
+dir = "services/klaxon"
+version_file = "surface/Cargo.toml"
+
+[[artifacts.programs.klaxon.targets]]
+platform = "android"
+format = "apk"
+build = ["quench", "build", "apk", "--release"]
+file = "dist/klaxon-${version_name}-${version_code}.apk"
