@@ -47,6 +47,8 @@ object Backup {
     private const val PERIODIC = 4200
     private const val OBSERVER = 4201
     private const val ONCE = 4202
+    private const val EXPEDITED = 4203
+    private const val HEARTBEAT = 4204
     private const val CHANNEL = "backup"
     private const val ONGOING = 1
 
@@ -89,6 +91,7 @@ object Backup {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         if (!enabled(context)) {
             manager.cancel(STATUS)
+            cancelHeartbeat(context)
             return
         }
         if (!canNotify(context)) return
@@ -168,9 +171,71 @@ object Backup {
         }
     }
 
+    /**
+     * The heartbeat: an alarm every ~15 minutes that works even in Doze ([AlarmManager.setAndAllowWhileIdle], inexact, so
+     * it needs no permission). It does not run the backup itself (a background app may not start a service); it starts an
+     * expedited job ([beat]). The periodic job stays as it was, but the system holds ALL ordinary jobs back while it
+     * reports thermal throttling (seen on a phone whose status stayed at MODERATE for hours on a stale reading), and
+     * expedited jobs are the kind it lets through. Armed again by every beat, by the window, and after a restart.
+     */
+    fun armHeartbeat(context: Context) {
+        try {
+            if (!enabled(context)) {
+                cancelHeartbeat(context)
+                return
+            }
+            val alarms = context.getSystemService(android.app.AlarmManager::class.java) ?: return
+            alarms.setAndAllowWhileIdle(
+                android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                android.os.SystemClock.elapsedRealtime() + EVERY,
+                heartbeatIntent(context),
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "could not set the heartbeat: ${e.message}")
+        }
+    }
+
+    fun cancelHeartbeat(context: Context) {
+        try {
+            context.getSystemService(android.app.AlarmManager::class.java)?.cancel(heartbeatIntent(context))
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun heartbeatIntent(context: Context) = PendingIntent.getBroadcast(
+        context, HEARTBEAT,
+        Intent(context, BackupReceiver::class.java).setAction(BackupReceiver.HEARTBEAT),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
+    /** The heartbeat came: arms the next one and asks for an expedited run (an ordinary one before Android 11). */
+    fun beat(context: Context) {
+        armHeartbeat(context)
+        if (foreground || !enabled(context)) {
+            logJob(context, "beat: nothing to do (foreground=$foreground)")
+            return
+        }
+        try {
+            val scheduler = context.getSystemService(JobScheduler::class.java) ?: return
+            if (scheduler.getPendingJob(EXPEDITED) != null) {
+                logJob(context, "beat: a run is already waiting")
+                return
+            }
+            val job = JobInfo.Builder(EXPEDITED, ComponentName(context, BackupJobService::class.java))
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .apply { if (Build.VERSION.SDK_INT >= 30) setExpedited(true) }
+                .build()
+            val result = scheduler.schedule(job)
+            logJob(context, "beat: scheduled the expedited run (result=$result)")
+        } catch (e: Exception) {
+            Log.w(TAG, "could not schedule the expedited run: ${e.message}")
+        }
+    }
+
     /** Schedules the periodic catch-up (once) and the wait for the next new photo or video. */
     fun schedule(context: Context) {
         updateStatus(context)
+        armHeartbeat(context)
         try {
             val scheduler = context.getSystemService(JobScheduler::class.java) ?: return
             if (scheduler.getPendingJob(PERIODIC) == null) {

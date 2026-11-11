@@ -14,6 +14,7 @@ class BackupReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             STATUS_DISMISSED -> Backup.updateStatus(context)
+            HEARTBEAT -> Backup.beat(context)
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
                 // The jobs are kept across a restart; the notification and the wait for new photos are not.
                 Backup.schedule(context)
@@ -22,6 +23,7 @@ class BackupReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        const val HEARTBEAT = "dev.lorehaven.forklift.HEARTBEAT"
         const val STATUS_DISMISSED = "dev.lorehaven.forklift.STATUS_DISMISSED"
     }
 }
