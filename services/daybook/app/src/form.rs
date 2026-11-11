@@ -124,9 +124,40 @@ fn form(ctx: &Context, target: &Target, close: &Signal<bool>) -> View {
             }
         });
     }
+    // A date written in the title ("... tomorrow 5pm") becomes the due date as it is typed, so the reminder can be set
+    // at once; a date picked by hand is never overridden, and erasing the words puts back what was there.
+    let picked = create_signal(false);
+    {
+        let (title, draft, picked, zone, clock) = (
+            title.clone(),
+            draft.clone(),
+            picked.clone(),
+            ctx.zone.clone(),
+            Rc::clone(&ctx.clock),
+        );
+        let (before, auto) = (draft.get_untracked().due(), create_signal(false));
+        create_effect(move || {
+            let text = title.live_value();
+            if picked.get_untracked() {
+                return;
+            }
+            if let Some(found) = parse_due(&text, clock(), &zone) {
+                auto.set(true);
+                if draft.get_untracked().due() != Some(found.due) {
+                    draft.update(|d| d.set_due(found.due));
+                }
+            } else if auto.get_untracked() {
+                auto.set(false);
+                draft.update(|d| match before {
+                    Some(due) => d.set_due(due),
+                    None => d.clear_due(),
+                });
+            }
+        });
+    }
     let (ctx, close) = (ctx.clone(), close.clone());
     let body = move || {
-        let (ctx, close, draft, step, title, notes, id, original, waiting) = (
+        let (ctx, close, draft, step, title, notes, id, original, waiting, picked) = (
             ctx.clone(),
             close.clone(),
             draft.clone(),
@@ -136,6 +167,7 @@ fn form(ctx: &Context, target: &Target, close: &Signal<bool>) -> View {
             id.clone(),
             original.clone(),
             awaiting_label.clone(),
+            picked.clone(),
         );
         View::dynamic(move || match step.get() {
             Step::Form => main_form(
@@ -147,8 +179,9 @@ fn form(ctx: &Context, target: &Target, close: &Signal<bool>) -> View {
                 &notes,
                 id.as_deref(),
                 original.as_ref(),
+                &picked,
             ),
-            other => sub_step(&ctx, &draft, &step, &waiting, other),
+            other => sub_step(&ctx, &draft, &step, &waiting, &picked, other),
         })
     };
     div().attr("id", "task-form").child(body()).into_view()
@@ -198,6 +231,7 @@ fn main_form(
     notes: &Field,
     id: Option<&str>,
     original: Option<&Task>,
+    picked: &Signal<bool>,
 ) -> View {
     let (zone, clock) = (ctx.zone.clone(), Rc::clone(&ctx.clock));
     let go = |to: Step| {
@@ -217,8 +251,11 @@ fn main_form(
         }
     };
     let due_clear: Rc<dyn Fn()> = {
-        let draft = draft.clone();
-        Rc::new(move || draft.update(Draft::clear_due))
+        let (draft, picked) = (draft.clone(), picked.clone());
+        Rc::new(move || {
+            picked.set(true);
+            draft.update(Draft::clear_due);
+        })
     };
     let due_row = {
         let (draft, step, zone, clock) =
@@ -395,6 +432,7 @@ fn main_form(
         ctx.saving.clone(),
         ctx.error.clone(),
     );
+    let save_picked = picked.clone();
     let save = move || {
         let (save_zone, save_clock) = (save_ctx.zone.clone(), Rc::clone(&save_ctx.clock));
         save_draft.update(|d| {
@@ -403,7 +441,9 @@ fn main_form(
             // A date written in the title ("... nov 6 5pm") becomes the due date and leaves the title.
             if let Some(found) = parse_due(&d.content, save_clock(), &save_zone) {
                 d.content = found.content;
-                d.set_due(found.due);
+                if !save_picked.get_untracked() {
+                    d.set_due(found.due);
+                }
             }
         });
         let d = save_draft.get_untracked();
@@ -441,7 +481,7 @@ fn main_form(
             .class("dbk-hint")
             .text_fn(move || {
                 let now = clock();
-                parse_due(&title.value(), now, &zone).map_or_else(String::new, |found| {
+                parse_due(&title.live_value(), now, &zone).map_or_else(String::new, |found| {
                     let at = found.due.instant(&zone).unwrap_or_default();
                     format!("Due {}", format_due(at, found.due.all_day(), now, &zone))
                 })
@@ -539,6 +579,7 @@ fn sub_step(
     draft: &Signal<Draft>,
     step: &Signal<Step>,
     waiting: &Signal<bool>,
+    picked: &Signal<bool>,
     which: Step,
 ) -> View {
     let (zone, clock) = (ctx.zone.clone(), Rc::clone(&ctx.clock));
@@ -565,8 +606,9 @@ fn sub_step(
             )
         }
         Step::DueKind(date) => {
-            let (d1, s1) = (draft.clone(), step.clone());
+            let (d1, s1, p1) = (draft.clone(), step.clone(), picked.clone());
             let all_day: Rc<dyn Fn()> = Rc::new(move || {
+                p1.set(true);
                 d1.update(|d| d.set_due(Due { date, clock: None }));
                 s1.set(Step::Form);
             });
@@ -589,10 +631,11 @@ fn sub_step(
                 .due()
                 .and_then(|d| d.clock)
                 .unwrap_or((9, 0));
-            let (d1, s1) = (draft.clone(), step.clone());
+            let (d1, s1, p1) = (draft.clone(), step.clone(), picked.clone());
             time_picker(
                 initial,
                 Rc::new(move |(h, m)| {
+                    p1.set(true);
                     d1.update(|d| {
                         d.set_due(Due {
                             date,

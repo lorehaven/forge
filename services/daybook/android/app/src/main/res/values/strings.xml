@@ -6,4 +6,15 @@
     <string name="widget_empty_signed_out">Open Daybook to sign in</string>
     <string name="widget_fallback">Tap to open Daybook</string>
     <string name="widget_mark_done">Mark as done</string>
+    <string name="quick_add_hint">New task</string>
+    <string name="quick_add_add">Add</string>
+    <string name="quick_add_date">Date</string>
+    <string name="quick_add_time">Time</string>
+    <string name="quick_add_remind">Reminder</string>
+    <string name="quick_add_no_reminder">No reminder</string>
+    <string name="quick_add_inbox">Inbox</string>
+    <string name="quick_add_clear">No date</string>
+    <string name="quick_add_all_day">All day</string>
+    <string name="quick_add_need_title">Enter a title</string>
+    <string name="quick_add_adding">Adding…</string>
 </resources>

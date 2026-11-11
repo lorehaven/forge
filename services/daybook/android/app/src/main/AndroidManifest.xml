@@ -45,6 +45,8 @@
         <!-- A tap on a widget row (open the task, or mark it done): no screen of its own. -->
         <activity android:name=".WidgetActionActivity" android:exported="false" android:excludeFromRecents="true" android:taskAffinity="" android:theme="@style/WidgetPickerTheme" />
         <service android:name=".DaybookWidgetService" android:exported="false" android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <!-- The widget's +: make a task in a small dialog, without opening the app. -->
+        <activity android:name=".QuickAddActivity" android:exported="false" android:excludeFromRecents="true" android:taskAffinity="" android:windowSoftInputMode="stateVisible|adjustResize" android:theme="@style/WidgetPickerTheme" />
         <activity android:name=".ListPickerActivity" android:excludeFromRecents="true" android:exported="false" android:taskAffinity="" android:theme="@style/WidgetPickerTheme" />
         <service android:name=".WidgetRefreshJobService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
         <!-- quench:components -->

@@ -203,4 +203,64 @@ fn a_refused_login_signs_out_and_a_task_that_is_gone_is_not_an_error() {
     assert!(store.token().is_some());
 }
 
+fn services_create(
+    answer: Result<Reply, NetError>,
+    sent: std::rc::Rc<std::cell::RefCell<Vec<quench_serde::Value>>>,
+) -> impl FnMut(Op) -> Result<Reply, NetError> {
+    let mut answer = Some(answer);
+    move |op| match op {
+        Op::Load => Ok(Reply::Loaded(Box::new(data()))),
+        Op::CreateTask(body) => {
+            sent.borrow_mut().push(body);
+            answer.take().expect("one task")
+        }
+        _ => panic!("nothing else is asked"),
+    }
+}
+
+#[quench_test::test]
+fn a_task_from_the_widget_is_made_with_its_date_and_a_reminder_for_the_alarm_clock() {
+    use daybook_surface::add::{Outcome, add_with, parse_args};
+    let store = store("add");
+    let args: Vec<String> = [
+        "--title", "Call mum tomorrow", "--due", "2030-03-04T09:30", "--remind", "10m",
+    ]
+    .map(String::from)
+    .to_vec();
+    let new = parse_args(&args);
+    let zone = quench_tz::Zone::utc();
+    let now = Time::from_unix(1_800_000_000);
+    let mut made = task("n", "Call mum");
+    made.due_at = Some(Time::from_unix(1_900_000_000));
+    made.remind_at = Some(Time::from_unix(1_899_999_400));
+    let sent = Default::default();
+    let outcome = add_with(&store, &new, now, &zone, services_create(Ok(Reply::Task(Box::new(made))), std::rc::Rc::clone(&sent)));
+    let Outcome::Added(Some(reminder)) = outcome else {
+        panic!("{outcome:?}")
+    };
+    assert!(reminder.contains("\"task_id\":\"n\""), "{reminder}");
+    let body = quench_serde::json::to_string(&sent.borrow()[0]);
+    // The explicit due date wins over the words in the title, which still leave it.
+    assert!(body.contains("\"content\":\"Call mum\""), "{body}");
+    assert!(shown_by(&store).contains("Call mum"));
+}
+
+#[quench_test::test]
+fn out_of_reach_a_new_task_waits_in_the_outbox() {
+    use daybook_surface::add::{NewTask, Outcome, add_with};
+    let store = store("add-queued");
+    let new = NewTask {
+        title: "Buy milk".into(),
+        list: daybook_core::ListRef::Inbox,
+        due: None,
+        remind: None,
+    };
+    let sent = Default::default();
+    let outcome = add_with(&store, &new, Time::from_unix(1_800_000_000), &quench_tz::Zone::utc(), services_create(Err(NetError::Network("no network".into())), sent));
+    assert_eq!(outcome, Outcome::Queued);
+    assert!(store.outbox().contains("create_task"), "{}", store.outbox());
+    let blank = NewTask { title: "  ".into(), ..new };
+    assert!(matches!(add_with(&store, &blank, Time::from_unix(1_800_000_000), &quench_tz::Zone::utc(), services_create(Ok(Reply::Done), Default::default())), Outcome::Failed(_)));
+}
+
 quench_test::main!();

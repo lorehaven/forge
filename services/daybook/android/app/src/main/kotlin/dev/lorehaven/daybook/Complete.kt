@@ -44,10 +44,13 @@ object Complete {
         Handler(Looper.getMainLooper()).post { Toast.makeText(context, text, Toast.LENGTH_LONG).show() }
     }
 
-    private fun run(context: Context, taskId: String): String {
+    private fun run(context: Context, taskId: String): String = exec(context, "--complete", taskId).lastOrNull().orEmpty()
+
+    /** Runs the app's program with [args] and gives the lines it printed (none when it could not run). */
+    fun exec(context: Context, vararg args: String): List<String> {
         val program = File(context.applicationInfo.nativeLibraryDir, "libquench_surface.so")
-        if (!program.exists()) return "failed"
-        val started = ProcessBuilder(program.absolutePath, "--complete", taskId)
+        if (!program.exists()) return emptyList()
+        val started = ProcessBuilder(program.absolutePath, *args)
             .directory(context.filesDir)
             .redirectErrorStream(false)
             .apply {
@@ -60,8 +63,8 @@ object Complete {
         val output = started.inputStream.bufferedReader().readText().trim()
         if (!started.waitFor(40, TimeUnit.SECONDS)) started.destroy()
         errors.join(1000)
-        Log.i(TAG, "complete $taskId: $output")
-        return output.lineSequence().lastOrNull().orEmpty()
+        Log.i(TAG, "${args.first()}: ${output.lineSequence().firstOrNull().orEmpty()}")
+        return output.lines().filter { it.isNotBlank() }
     }
 }
 

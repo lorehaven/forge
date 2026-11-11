@@ -60,6 +60,21 @@ fn main() -> std::io::Result<()> {
             return Ok(());
         }
     }
+    // `--add --title <text> ...`: the widget's quick-add dialog.
+    let all: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(at) = all.iter().position(|a| a == "--add") {
+        let outcome = daybook_surface::add::add(
+            &Store::standard(),
+            &daybook_surface::add::parse_args(&all[at + 1..]),
+        );
+        println!("{}", outcome.word());
+        match &outcome {
+            daybook_surface::add::Outcome::Added(Some(reminder)) => println!("{reminder}"),
+            daybook_surface::add::Outcome::Failed(why) => eprintln!("{why}"),
+            _ => {}
+        }
+        return Ok(());
+    }
     if std::env::args().any(|a| a == "--widget") {
         let outcome = daybook_surface::widget::refresh(&Store::standard());
         println!("{outcome:?}");

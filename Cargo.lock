@@ -856,9 +856,9 @@ dependencies = [
 
 [[package]]
 name = "quench-android-surface"
-version = "0.1.10"
+version = "0.1.11"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "40ba1b2ca11d53bec16f8697864ac93b18259456b4df10f208973bea78d672a2"
+checksum = "d7967270b7ffec30f3149e9f8f0205e5287593074f4f8e582c3fb7a67aa41cef"
 dependencies = [
  "quench-raster",
  "quench-serde",
@@ -1024,9 +1024,9 @@ dependencies = [
 
 [[package]]
 name = "quench-desktop-native"
-version = "0.1.12"
+version = "0.1.13"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "937f6238b98ded6476667f1500521ae998153abd4a95f5f35adbd17ca33b2366"
+checksum = "fcd970eeca478a646b5b42ee0969888a348555bafcfa335017dc28eed7cb5cba"
 dependencies = [
  "quench-desktop-atspi",
  "quench-desktop-wayland",
@@ -1046,9 +1046,9 @@ dependencies = [
 
 [[package]]
 name = "quench-fullstack"
-version = "0.1.12"
+version = "0.1.13"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "05079da4c4d133864b8fe0b821a4b6603897a6e7b4f912d36c8460e9a7827f3f"
+checksum = "ca2ccfabcc0328e7b3d8b19cd9eaeb0baeb2c3b4b73fe0698bf2e84c7b2b8ce1"
 dependencies = [
  "quench-archive",
  "quench-auth",
@@ -1431,15 +1431,15 @@ dependencies = [
 
 [[package]]
 name = "quench-ui"
-version = "0.1.6"
+version = "0.1.7"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "dad0ed1abfd5d637327fd06d2545e71ccbcf74a1acf8da2b4ef40e94cb8e256d"
+checksum = "14c6508b0cee9ef2386a230548b90075eac17c8eb0fe83d2e4dd80d350431865"
 
 [[package]]
 name = "quench-ui-native"
-version = "0.1.10"
+version = "0.1.11"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "797bd440dac0478b432923cdb8a220d6739ff50ed495797fa84add5c9e310d41"
+checksum = "9fd013efcd015ef38f1f3875049890d8861c0698d99d4002ce31f811df5c0628"
 dependencies = [
  "quench-core",
  "quench-css",
@@ -1453,9 +1453,9 @@ dependencies = [
 
 [[package]]
 name = "quench-ui-web"
-version = "0.1.10"
+version = "0.1.11"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "493b7f4eb6e08743dc5ca4f2c973ff63d6da097c284330a2fb00cdf4b49bd0bb"
+checksum = "9ad06fb40d4c9839cc35ca2a6cba3af73d627eda03a43e75e09a53d8b57b421e"
 dependencies = [
  "quench-serde",
  "quench-ui",

@@ -95,9 +95,15 @@ class DaybookWidgetProvider : AppWidgetProvider() {
                 PendingIntent.getActivity(context, widgetId, picker, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE),
             )
 
-            // Plus: the add-task form, on this widget's list. Logo: just open the app there.
+            // Plus: a small dialog to make a task in this widget's list, without the app opening (signed out, it opens the app
+            // to sign in). Logo: just open the app there.
             val list = Uri.encode(selected)
-            views.setOnClickPendingIntent(R.id.widget_add, launch(context, widgetId * 2, "daybook://add?list=$list"))
+            val quick = Intent(context, QuickAddActivity::class.java).putExtra(QuickAddActivity.EXTRA_LIST, selected)
+            quick.data = Uri.parse("daybook-widget://add/$widgetId")
+            views.setOnClickPendingIntent(
+                R.id.widget_add,
+                PendingIntent.getActivity(context, widgetId * 2, quick, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE),
+            )
             views.setOnClickPendingIntent(R.id.widget_logo, launch(context, widgetId * 2 + 1, "daybook://open?list=$list"))
 
             // A task: its text opens the app on it, its check mark marks it done. The row supplies the URI; this is the shared template.

@@ -44,6 +44,29 @@ impl Preset {
         matches!(self, Self::OnTheDay | Self::DayBefore | Self::TwoDaysBefore) == all_day
     }
 
+    /// The word a command line uses for it.
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::AtDue => "at_due",
+            Self::TenMinutes => "10m",
+            Self::OneHour => "1h",
+            Self::OneDay => "1d",
+            Self::OnTheDay => "on_the_day",
+            Self::DayBefore => "day_before",
+            Self::TwoDaysBefore => "2d_before",
+        }
+    }
+
+    /// The preset a command line's word names.
+    #[must_use]
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::TIMED
+            .into_iter()
+            .chain(Self::ALL_DAY)
+            .find(|p| p.key() == key)
+    }
+
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {

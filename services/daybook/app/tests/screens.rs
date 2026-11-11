@@ -313,6 +313,27 @@ fn a_date_written_in_the_title_becomes_the_due_date() {
 }
 
 #[quench_test::test]
+fn a_date_in_the_title_can_be_given_a_reminder_before_saving() {
+    let (r, asked, _deliver, _m) = signed_in(vec![]);
+    click(&r, "add-task");
+    tick(300.0);
+    type_into(&r, "task-title", "Pay rent nov 6 5pm");
+    assert!(r.text().contains("Fri 6 Nov"), "{}", r.text());
+    click(&r, "reminder");
+    click(&r, "remind-0");
+    assert!(r.text().contains("At due time"), "{}", r.text());
+    type_into(&r, "task-title", "Pay rent");
+    assert!(!r.text().contains("At due time"), "the date went with its words");
+    type_into(&r, "task-title", "Pay rent nov 6 5pm");
+    click(&r, "save-task");
+    let sent = asked.borrow().clone();
+    let [Request::Save { id: None, draft }] = sent.as_slice() else {
+        panic!("{sent:?}")
+    };
+    assert_eq!(draft.due().unwrap().clock, Some((17, 0)));
+}
+
+#[quench_test::test]
 fn a_long_list_is_shown_a_page_at_a_time() {
     let tasks: Vec<Task> = (0..60)
         .map(|i| task(&format!("t{i}"), &format!("Task {i}")))

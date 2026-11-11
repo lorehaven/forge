@@ -107,17 +107,17 @@ pub fn complete_with(
     }
 }
 
-fn cached(store: &Store) -> Option<Data> {
+pub(crate) fn cached(store: &Store) -> Option<Data> {
     let value = json::from_str::<Value>(&store.cache()?).ok()?;
     Some(Data::from_value(&value))
 }
 
-fn write_snapshot(store: &Store, data: &Data) {
+pub(crate) fn write_snapshot(store: &Store, data: &Data) {
     store.set_widget_snapshot(&snapshot(data, Time::now(), &Zone::local()));
 }
 
 /// Adds the change to the outbox, as the window does for one it could not send.
-fn queue(store: &Store, op: &Op) {
+pub(crate) fn queue(store: &Store, op: &Op) {
     let Some(line) = op.to_value().map(|v| json::to_string(&v)) else {
         return;
     };
