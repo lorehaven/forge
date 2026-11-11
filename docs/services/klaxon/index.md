@@ -1,7 +1,7 @@
 ---
 title: Klaxon
 parent: Services
-nav_order: 12
+nav_order: 15
 has_children: true
 ---
 
