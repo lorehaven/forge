@@ -130,6 +130,44 @@ object Backup {
         )
     }
 
+    /**
+     * A line in `jobs.log` (the last 200 are kept): when the system started or stopped a job, and why. A status that
+     * says "last checked" hours ago is then answered by the file, not by a guess about the system's battery rules.
+     */
+    fun logJob(context: Context, line: String) {
+        try {
+            val file = File(dataDir(context), "jobs.log")
+            file.parentFile?.mkdirs()
+            val stamp = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+            val lines = if (file.exists()) file.readLines().takeLast(199) else emptyList()
+            file.writeText((lines + "$stamp $line").joinToString("\n") + "\n")
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Whether the system leaves the app out of Doze and the standby limits (so the 15-minute job really runs). */
+    fun unrestricted(context: Context): Boolean =
+        context.getSystemService(android.os.PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
+
+    /**
+     * With automatic backup on, asks (once) that the system leave the app out of battery optimisation: otherwise Doze
+     * and the app-standby buckets hold the periodic job back for hours, and the backup only happens when the window is
+     * open. The system's own dialog; the answer is the person's.
+     */
+    fun askToStayAwake(activity: android.app.Activity) {
+        if (!enabled(activity) || unrestricted(activity)) return
+        val prefs = activity.getSharedPreferences("backup", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("asked_unrestricted", false)) return
+        prefs.edit().putBoolean("asked_unrestricted", true).apply()
+        try {
+            activity.startActivity(
+                Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${activity.packageName}")),
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "could not ask to leave battery optimisation: ${e.message}")
+        }
+    }
+
     /** Schedules the periodic catch-up (once) and the wait for the next new photo or video. */
     fun schedule(context: Context) {
         updateStatus(context)

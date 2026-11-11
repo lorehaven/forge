@@ -16,6 +16,7 @@ class BackupJobService : JobService() {
     private var worker: Thread? = null
 
     override fun onStartJob(params: JobParameters): Boolean {
+        Backup.logJob(applicationContext, "start job ${params.jobId} foreground=${Backup.foreground} unrestricted=${Backup.unrestricted(applicationContext)}")
         // The window has the backup while it is open; it hands over when it closes.
         if (Backup.foreground || !Backup.enabled(applicationContext)) {
             // Signed out or switched off: the status notification goes too.
@@ -31,12 +32,14 @@ class BackupJobService : JobService() {
             }
             // The content trigger is one-shot: look out for the next new photo.
             Backup.arm(applicationContext)
+            Backup.logJob(applicationContext, "end job ${params.jobId}")
             jobFinished(params, false)
         }
         return true
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
+        Backup.logJob(applicationContext, "stopped job ${params.jobId} reason=${if (android.os.Build.VERSION.SDK_INT >= 31) params.stopReason else -1}")
         Backup.requestStop()
         return true
     }

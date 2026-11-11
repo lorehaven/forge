@@ -69,6 +69,8 @@ class SurfaceActivity : Activity() {
         // The app is open: a "you are signed out" notice has done its work (a later sign-out is said again).
         SignedOutNotice.clear(this)
         surface.setVisible(true)
+        // Signed in with automatic backup on: ask once to be left out of battery optimisation.
+        Backup.askToStayAwake(this)
     }
 
     override fun onPause() {
