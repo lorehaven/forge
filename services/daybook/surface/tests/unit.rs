@@ -223,7 +223,12 @@ fn a_task_from_the_widget_is_made_with_its_date_and_a_reminder_for_the_alarm_clo
     use daybook_surface::add::{Outcome, add_with, parse_args};
     let store = store("add");
     let args: Vec<String> = [
-        "--title", "Call mum tomorrow", "--due", "2030-03-04T09:30", "--remind", "10m",
+        "--title",
+        "Call mum tomorrow",
+        "--due",
+        "2030-03-04T09:30",
+        "--remind",
+        "10m",
     ]
     .map(String::from)
     .to_vec();
@@ -233,8 +238,14 @@ fn a_task_from_the_widget_is_made_with_its_date_and_a_reminder_for_the_alarm_clo
     let mut made = task("n", "Call mum");
     made.due_at = Some(Time::from_unix(1_900_000_000));
     made.remind_at = Some(Time::from_unix(1_899_999_400));
-    let sent = Default::default();
-    let outcome = add_with(&store, &new, now, &zone, services_create(Ok(Reply::Task(Box::new(made))), std::rc::Rc::clone(&sent)));
+    let sent = std::rc::Rc::default();
+    let outcome = add_with(
+        &store,
+        &new,
+        now,
+        &zone,
+        services_create(Ok(Reply::Task(Box::new(made))), std::rc::Rc::clone(&sent)),
+    );
     let Outcome::Added(Some(reminder)) = outcome else {
         panic!("{outcome:?}")
     };
@@ -255,12 +266,30 @@ fn out_of_reach_a_new_task_waits_in_the_outbox() {
         due: None,
         remind: None,
     };
-    let sent = Default::default();
-    let outcome = add_with(&store, &new, Time::from_unix(1_800_000_000), &quench_tz::Zone::utc(), services_create(Err(NetError::Network("no network".into())), sent));
+    let sent = std::rc::Rc::default();
+    let outcome = add_with(
+        &store,
+        &new,
+        Time::from_unix(1_800_000_000),
+        &quench_tz::Zone::utc(),
+        services_create(Err(NetError::Network("no network".into())), sent),
+    );
     assert_eq!(outcome, Outcome::Queued);
     assert!(store.outbox().contains("create_task"), "{}", store.outbox());
-    let blank = NewTask { title: "  ".into(), ..new };
-    assert!(matches!(add_with(&store, &blank, Time::from_unix(1_800_000_000), &quench_tz::Zone::utc(), services_create(Ok(Reply::Done), Default::default())), Outcome::Failed(_)));
+    let blank = NewTask {
+        title: "  ".into(),
+        ..new
+    };
+    assert!(matches!(
+        add_with(
+            &store,
+            &blank,
+            Time::from_unix(1_800_000_000),
+            &quench_tz::Zone::utc(),
+            services_create(Ok(Reply::Done), std::rc::Rc::default())
+        ),
+        Outcome::Failed(_)
+    ));
 }
 
 quench_test::main!();

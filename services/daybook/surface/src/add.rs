@@ -61,7 +61,11 @@ pub fn parse_due_arg(text: &str) -> Option<Due> {
     };
     let mut parts = day.split('-').map(str::parse::<u32>);
     let year = parts.next()?.ok()?;
-    let date = Date::from_ymd(i32::try_from(year).ok()?, parts.next()?.ok()?, parts.next()?.ok()?)?;
+    let date = Date::from_ymd(
+        i32::try_from(year).ok()?,
+        parts.next()?.ok()?,
+        parts.next()?.ok()?,
+    )?;
     let clock = match clock {
         None => None,
         Some(c) => {

@@ -323,7 +323,10 @@ fn a_date_in_the_title_can_be_given_a_reminder_before_saving() {
     click(&r, "remind-0");
     assert!(r.text().contains("At due time"), "{}", r.text());
     type_into(&r, "task-title", "Pay rent");
-    assert!(!r.text().contains("At due time"), "the date went with its words");
+    assert!(
+        !r.text().contains("At due time"),
+        "the date went with its words"
+    );
     type_into(&r, "task-title", "Pay rent nov 6 5pm");
     click(&r, "save-task");
     let sent = asked.borrow().clone();

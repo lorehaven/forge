@@ -44,6 +44,7 @@ fn watch_launches(store: Store, deliver: Rc<dyn Fn(daybook_core::Msg)>) {
     });
 }
 
+#[allow(clippy::too_many_lines)]
 fn main() -> std::io::Result<()> {
     // `--complete <task id>`: the reminder's *Done* button and the widget's check mark.
     let mut args = std::env::args().skip(1);
