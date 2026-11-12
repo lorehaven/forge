@@ -71,6 +71,7 @@ All services run with `workdir = services/<name>/service` (their `.env`, `i18n`,
 | daybook | `daybook-service` | 12443 | 12080 | `/daybook` | gatehouse |
 | gauge | `gauge-service` | 13443 | 13080 | `/gauge` | gatehouse |
 | songbook | `songbook-service` | 16443 | 16080 | `/songbook` | gatehouse |
+| genevia | `genevia-service` | 17443 | 17080 | `/genevia` | gatehouse |
 | hoist | `hoist-service` | 14443 | 14080 | `/hoist` | gatehouse |
 | lectern | `lectern-service` | 15443 | 15080 | `/lectern` | gatehouse, warehouse |
 

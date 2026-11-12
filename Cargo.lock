@@ -620,6 +620,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "genevia"
+version = "0.1.0"
+dependencies = [
+ "forge-web",
+ "genevia-core",
+ "genevia-web",
+ "quench-auth",
+ "quench-core",
+ "quench-db",
+ "quench-http",
+ "quench-log",
+ "quench-pg",
+ "quench-serde",
+ "quench-starter",
+ "quench-test",
+ "tokio",
+]
+
+[[package]]
+name = "genevia-app"
+version = "0.1.0"
+dependencies = [
+ "forge-shell",
+ "genevia-core",
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+]
+
+[[package]]
+name = "genevia-core"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "genevia-web"
+version = "0.1.0"
+dependencies = [
+ "genevia-app",
+ "quench-test",
+ "quench-ui",
+ "quench-ui-web",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"

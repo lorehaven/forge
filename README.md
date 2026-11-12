@@ -64,6 +64,7 @@ Every member has a README in its directory. Services also hold `core`, `app` and
 | [`switchboard`](./services/switchboard/service/) | Models registry and vLLM instances | [📖](./docs/services/switchboard/index.md) |
 | [`workbench`](./services/workbench/service/) | Projects, boards and issues | [📖](./docs/services/workbench/index.md) |
 | [`gauge`](./services/gauge/service/) | Host metrics dashboard | [📖](./docs/services/gauge/index.md) |
+| [`genevia`](./services/genevia/service/) | Family trees: GEDCOM import, list, pedigree and fan views | [📖](./docs/services/genevia/index.md) |
 | [`songbook`](./services/songbook/) | Music library: index, Deezer sync, YouTube links, downloads | [📖](./docs/services/songbook/index.md) |
 | [`lectern`](./services/lectern/service/) | Public documentation viewer | [📖](./docs/services/lectern/index.md) |
 | [`daybook`](./services/daybook/) | Tasks and lists: service, Android, desktop and browser | [📖](./docs/services/daybook/index.md) |

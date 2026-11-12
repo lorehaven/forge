@@ -87,6 +87,12 @@ redirect_path = "/ui/auth/callback"
 allowed_scopes = ["songbook"]
 secret_env = "CLIENT_SECRET_SONGBOOK"
 
+[[client]]
+client_id = "genevia"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["genevia"]
+secret_env = "CLIENT_SECRET_GENEVIA"
+
 # Gantry's machine identity toward warehouse - what it asks Warehouse is published, and what its runner Jobs
 # fetch packages with. client_credentials only. `allowed_scopes` is the audience, warehouse alone: a token
 # minted for this client cannot be presented to any other service.

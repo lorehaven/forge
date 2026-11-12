@@ -15,6 +15,7 @@ packages = [
     "gantry",
     "daybook",
     "gauge",
+    "genevia",
     "songbook",
     "hoist",
     "lectern",
@@ -75,6 +76,13 @@ image_name = "gauge"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # The browser client: the image builds `gauge-web` and ships it in `web/` (the service serves it at /ui).
 build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "gauge-web" }
+
+[docker.modules.docker.genevia]
+module_name = "genevia"
+image_name = "genevia"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+# The browser client: the image builds `genevia-web` and ships it in `web/` (the service serves it at /ui).
+build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "genevia-web" }
 
 [docker.modules.docker.songbook]
 module_name = "songbook"

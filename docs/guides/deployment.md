@@ -45,7 +45,7 @@ cargo_registry = "ennor"
 [docker.modules.docker]
 dockerfile = "images/Dockerfile.alpine"
 packages = [ "warehouse-service", "switchboard-service", "sage-service", "foundry-service", "gatehouse-service",
-             "conveyor-service", "workbench-service", "gantry-service", "daybook-service", "gauge-service", "songbook-service", "hoist-service" ]
+             "conveyor-service", "workbench-service", "gantry-service", "daybook-service", "gauge-service", "songbook-service", "genevia-service", "hoist-service" ]
 ```
 
 Every service has `[docker.modules.docker.<package>]` with `module_name`, `image_name`, `registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]` and `build_args`:
@@ -60,6 +60,7 @@ Every service has `[docker.modules.docker.<package>]` with `module_name`, `image
 | warehouse-service | `warehouse/warehouse` | `RESOURCE_DIR=web`, `WASM_PACKAGE=warehouse-web` |
 | gantry-service | `gantry/gantry` | `RESOURCE_DIR=web`, `WASM_PACKAGE=gantry-web` |
 | gauge-service | `gauge/gauge` | `RESOURCE_DIR=web`, `WASM_PACKAGE=gauge-web` |
+| genevia-service | `genevia/genevia` | `RESOURCE_DIR=web`, `WASM_PACKAGE=genevia-web` |
 | songbook-service | `songbook/songbook` | `RESOURCE_DIR=web`, `WASM_PACKAGE=songbook-web`, `RUNTIME_PACKAGES=ffmpeg yt-dlp nodejs` |
 | daybook-service | `daybook/daybook` | `RESOURCE_DIR=web`, `WASM_PACKAGE=daybook-web` |
 | hoist-service | `hoist/hoist` | `RESOURCE_DIR=config` |

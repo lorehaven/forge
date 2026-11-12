@@ -1,0 +1,105 @@
+[[migrations]]
+id = "0001-trees"
+author = "genevia-service"
+since = "0.1.0"
+
+# genevia has no auth module (yet), so nothing requires `quench-core`: the schema is made here.
+[[migrations.changes]]
+createSchema = { name = "${schema}" }
+
+# One imported GEDCOM file. `id` is the slug the address uses (`/t/<id>/...`); importing a file with
+# the same name again replaces the tree.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.trees (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+# Dates stay as GEDCOM wrote them (`3 SEP 1993`, `ABT 1765`): the application parses them, and
+# nothing is lost on the way in. `ahn` is the Ahnentafel number the file carries (`_AHN`), if any.
+# `pos` keeps the order of the file, which decides who is "the first person".
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.people (
+    tree_id TEXT NOT NULL REFERENCES ${schema}.trees(id) ON DELETE CASCADE,
+    xref TEXT NOT NULL,
+    pos INTEGER NOT NULL,
+    given TEXT NOT NULL DEFAULT '',
+    surname TEXT NOT NULL DEFAULT '',
+    sex TEXT NOT NULL DEFAULT '',
+    ahn INTEGER,
+    birth_date TEXT,
+    birth_place TEXT,
+    death_date TEXT,
+    death_place TEXT,
+    PRIMARY KEY (tree_id, xref)
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS people_tree_pos_idx ON ${schema}.people (tree_id, pos);
+"""
+
+# Other names of a person (`NAME` with `TYPE aka`).
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.person_akas (
+    tree_id TEXT NOT NULL,
+    xref TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (tree_id, xref, seq),
+    FOREIGN KEY (tree_id, xref) REFERENCES ${schema}.people(tree_id, xref) ON DELETE CASCADE
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.families (
+    tree_id TEXT NOT NULL REFERENCES ${schema}.trees(id) ON DELETE CASCADE,
+    xref TEXT NOT NULL,
+    pos INTEGER NOT NULL,
+    husband TEXT,
+    wife TEXT,
+    marriage_date TEXT,
+    marriage_place TEXT,
+    PRIMARY KEY (tree_id, xref)
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.family_children (
+    tree_id TEXT NOT NULL,
+    family_xref TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    child_xref TEXT NOT NULL,
+    PRIMARY KEY (tree_id, family_xref, seq),
+    FOREIGN KEY (tree_id, family_xref) REFERENCES ${schema}.families(tree_id, xref) ON DELETE CASCADE
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS family_children_child_idx ON ${schema}.family_children (tree_id, child_xref);
+"""
+
+# Free-text notes. `owner` is a person's or a family's xref; `kind` says what the note is about:
+# person, birth, death, family or marriage.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.notes (
+    tree_id TEXT NOT NULL REFERENCES ${schema}.trees(id) ON DELETE CASCADE,
+    owner TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    PRIMARY KEY (tree_id, owner, kind, seq)
+);
+"""

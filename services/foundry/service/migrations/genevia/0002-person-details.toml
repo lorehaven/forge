@@ -1,0 +1,65 @@
+[[migrations]]
+id = "0002-person-details"
+author = "genevia-service"
+since = "0.2.0"
+
+# The name beyond given name and surname, as MyHeritage keeps it: nickname, prefix and suffix
+# (Dr, Jr) and the surname a woman was born with. `death_cause` is `CAUS` under `DEAT`.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.people
+    ADD COLUMN IF NOT EXISTS nickname TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS prefix TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS suffix TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS maiden_name TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS death_cause TEXT;
+"""
+
+# Everything else a person has had happen or been: christening, burial, occupation, education,
+# residence, religion, nationality, titles, emigration, other events. `kind` is the GEDCOM tag
+# (CHR, BURI, OCCU, EDUC, RESI, RELI, NATI, TITL, IMMI, EMIG, EVEN, ...), `value` the text on its
+# line (the occupation, the religion), `seq` its place among the person's facts.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.events (
+    tree_id TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    value TEXT NOT NULL DEFAULT '',
+    date TEXT,
+    place TEXT,
+    cause TEXT,
+    note TEXT,
+    PRIMARY KEY (tree_id, owner, seq),
+    FOREIGN KEY (tree_id, owner) REFERENCES ${schema}.people(tree_id, xref) ON DELETE CASCADE
+);
+"""
+
+# Where things were found out. `kind` names what the citation is for: `person`, `BIRT`, `DEAT`,
+# `MARR` (a family), or `fact:<seq>` for one of the person's facts.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.citations (
+    tree_id TEXT NOT NULL REFERENCES ${schema}.trees(id) ON DELETE CASCADE,
+    owner TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (tree_id, owner, kind, seq)
+);
+"""
+
+# Godparents at a baptism, witnesses at a wedding: `kind` is `BIRT`, `DEAT` or `MARR`.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.witnesses (
+    tree_id TEXT NOT NULL REFERENCES ${schema}.trees(id) ON DELETE CASCADE,
+    owner TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (tree_id, owner, kind, seq)
+);
+"""

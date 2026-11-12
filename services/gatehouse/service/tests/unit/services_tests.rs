@@ -192,6 +192,7 @@ fn the_shipped_catalog_offers_every_estate_service_but_not_gatehouse() {
             "daybook",
             "gantry",
             "gauge",
+            "genevia",
             "lectern",
             "sage",
             "songbook",

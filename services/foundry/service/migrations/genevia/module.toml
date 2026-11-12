@@ -1,0 +1,4 @@
+name = "genevia"
+version = "0.2.0"
+description = "Genevia - family trees imported from GEDCOM"
+default_schema = "genevia"

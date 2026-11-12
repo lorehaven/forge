@@ -33,6 +33,10 @@ members = [
   "services/gauge/core",
   "services/gauge/service",
   "services/gauge/web",
+  "services/genevia/app",
+  "services/genevia/core",
+  "services/genevia/service",
+  "services/genevia/web",
   "services/hoist/app",
   "services/hoist/core",
   "services/hoist/desktop",
@@ -176,6 +180,9 @@ forklift-host = { path = "services/forklift/host" }
 forklift-net = { path = "services/forklift/net" }
 klaxon-app = { path = "services/klaxon/app" }
 klaxon-core = { path = "services/klaxon/core" }
+genevia-app = { path = "services/genevia/app" }
+genevia-core = { path = "services/genevia/core" }
+genevia-web = { path = "services/genevia/web" }
 hoist-app = { path = "services/hoist/app" }
 hoist-core = { path = "services/hoist/core" }
 # Without its window: the Android surface needs the screens, not a desktop window (`window` is the default).

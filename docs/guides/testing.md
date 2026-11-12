@@ -41,6 +41,7 @@ The service integration tests skip themselves (print `skipping ...: <VAR> is not
 | `FOUNDRY_TEST_DATABASE_URL` | foundry |
 | `GANTRY_TEST_DATABASE_URL` | gantry |
 | `GATEHOUSE_TEST_DATABASE_URL` | gatehouse |
+| `GENEVIA_TEST_DATABASE_URL` | genevia |
 | `GAUGE_TEST_DATABASE_URL` | gauge |
 | `HOIST_TEST_DATABASE_URL` | hoist |
 | `SAGE_TEST_DATABASE_URL` | sage |

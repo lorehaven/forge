@@ -105,6 +105,16 @@ home = true
 description = "Music library: the player, and (write) the index, Deezer sync, YouTube links, downloads."
 actions = ["read", "write"]
 
+# Family trees: `read` opens them, `write` imports GEDCOM files and edits people and families. A grant can name one tree
+# (`genevia:tree:<id>:read|write`, the id being the file name of the import), so someone sees their branch and no other.
+# `write` also lets the holder read. Trees hold names and dates of living people: in no template but `editor`.
+[services.genevia]
+label = "Genevia"
+home = true
+description = "Family trees: GEDCOM import, list, pedigree and fan views, and editing."
+actions = ["read", "write"]
+resource_types = ["tree"]
+
 # No page of its own: the app (on a phone or a desktop) reads the public app catalogue. A service that is not
 # listed here is in no token's audience, so it answers every request 401.
 [services.hoist]
@@ -147,6 +157,7 @@ switchboard = ["read", "launch", "stop"]
 conveyor = ["read", "write"]
 workbench = ["read", "write"]
 daybook = ["read", "write"]
+genevia = ["read", "write"]
 # Reading only: what Gantry can do to the cluster is granted deliberately, never by a template.
 gantry = ["read"]
 gauge = ["read"]

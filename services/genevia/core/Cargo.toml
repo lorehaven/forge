@@ -1,0 +1,30 @@
+[package]
+name = "genevia-core"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+authors = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+autotests = false
+
+# What Genevia knows: the GEDCOM parser, the family-tree model, the ancestor and fan geometry, and the wire types the API
+# and the browser client share. No I/O, and it builds for the browser.
+[lib]
+name = "genevia_core"
+path = "src/lib.rs"
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false
+
+[dependencies]
+quench-serde = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+
+[lints]
+workspace = true

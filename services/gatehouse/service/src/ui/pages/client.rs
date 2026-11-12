@@ -54,6 +54,7 @@ pub(super) async fn service_icon(Path(name): Path<String>) -> Response {
         // The realm's own card, the user list.
         "id-card" => include_bytes!("../../../../id-card.png"),
         "gauge" => include_bytes!("../../../../../gauge/icon.png"),
+        "genevia" => include_bytes!("../../../../../genevia/icon.png"),
         "hoist" => include_bytes!("../../../../../hoist/icon.png"),
         "lectern" => include_bytes!("../../../../../lectern/icon.png"),
         "sage" => include_bytes!("../../../../../sage/icon.png"),
