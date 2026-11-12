@@ -423,7 +423,7 @@ dependencies = [
 
 [[package]]
 name = "foundry"
-version = "0.2.43"
+version = "0.2.44"
 dependencies = [
  "quench-args",
  "quench-cli",
@@ -491,7 +491,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse"
-version = "0.4.19"
+version = "0.4.20"
 dependencies = [
  "forge-web",
  "gatehouse-core",
