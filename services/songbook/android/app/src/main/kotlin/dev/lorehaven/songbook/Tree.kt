@@ -1,6 +1,7 @@
 package dev.lorehaven.songbook
 
 import android.net.Uri
+import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import org.json.JSONObject
@@ -43,6 +44,14 @@ class Tree(private val session: Session, private val brain: Brain, private val o
         } else {
             metadata.setSubtitle(o.optString("subtitle").takeIf { it.isNotEmpty() })
         }
+        // How Android Auto lays it out: the heading of the section it is in, and a card in a grid or a row in a list.
+        val group = o.optString("group")
+        if (group.isNotEmpty() || o.optBoolean("grid")) {
+            val extras = Bundle()
+            if (group.isNotEmpty()) extras.putString(GROUP_TITLE_HINT, group)
+            extras.putInt(SINGLE_ITEM_HINT, if (o.optBoolean("grid")) STYLE_GRID else STYLE_LIST)
+            metadata.setExtras(extras)
+        }
         return MediaItem.Builder()
             .setMediaId(o.getString("id"))
             .apply { o.optString("uri").takeIf { it.isNotEmpty() }?.let { setUri(it) } }
@@ -83,26 +92,33 @@ class Tree(private val session: Session, private val brain: Brain, private val o
     fun recentRoot(): MediaItem = folder(RECENT_ROOT, "Recent")
     fun suggestedRoot(): MediaItem = folder(SUGGESTED_ROOT, "Suggested")
 
+    /** "Play all" and "Shuffle" at the top of the list of kept songs, as the program's lists have. */
+    private fun keptEntries(): List<MediaItem> = listOf("play" to "Play all", "shuffle" to "Shuffle").map { (mode, title) ->
+        item(JSONObject().put("id", "$mode/kept").put("title", title).put("playable", true).put("kind", "play"))
+    }
+
     fun children(parent: String): List<MediaItem> = when (parent) {
-        "kept" -> offline.kept().map { songItem("kept", it) }
-        ROOT -> (if (offline.kept().isNotEmpty()) listOf(folder("kept", "On this device")) else emptyList()) +
-            items(brain.call("children", "parent" to parent).optJSONArray("items"))
+        "kept" -> keptEntries() + offline.kept().map { songItem("kept", it) }
+        // The tabs of the car: Home, Artists, Playlists, and last the songs kept on the device.
+        ROOT -> items(brain.call("children", "parent" to parent).optJSONArray("items")) +
+            (if (offline.kept().isNotEmpty()) listOf(folder("kept", "On this device")) else emptyList())
         else -> items(brain.call("children", "parent" to parent).optJSONArray("items"))
     }
 
     /** A folder or a song by its id; null for one that is not there. */
     fun item(id: String): MediaItem? = when {
         id == ROOT -> root()
+        id == "play/kept" || id == "shuffle/kept" -> keptEntries().firstOrNull { it.mediaId == id }
         id.startsWith("s:kept:") -> offline.kept().firstOrNull { "s:kept:${it.id}" == id }?.let { songItem("kept", it) }
         else -> brain.call("item", "target" to id).optJSONObject("item")?.let { item(it) }
     }
 
     /** The queue for a chosen song: its place's songs, started at it. Null when the id is not a song of this tree. */
     fun queue(id: String): Queue? {
-        if (id.startsWith("s:kept:")) {
+        if (id.startsWith("s:kept:") || id == "play/kept" || id == "shuffle/kept") {
             val songs = offline.kept()
             val at = songs.indexOfFirst { "s:kept:${it.id}" == id }
-            return if (songs.isEmpty()) null else Queue(songs.map { songItem("kept", it) }, at.coerceAtLeast(0), false)
+            return if (songs.isEmpty()) null else Queue(songs.map { songItem("kept", it) }, at.coerceAtLeast(0), id == "shuffle/kept")
         }
         val q = brain.call("queue", "target" to id).optJSONObject("queue") ?: return null
         return Queue(items(q.optJSONArray("items")), q.optInt("start"), q.optBoolean("shuffled"))
@@ -142,6 +158,22 @@ class Tree(private val session: Session, private val brain: Brain, private val o
         const val ROOT = "root"
         const val RECENT_ROOT = "recent-root"
         const val SUGGESTED_ROOT = "suggested-root"
+
+        /** Android Auto's content style extras (`androidx.media.utils.MediaConstants`, written out so as not to need the library). */
+        const val CONTENT_STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED"
+        const val BROWSABLE_HINT = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT"
+        const val PLAYABLE_HINT = "android.media.browse.CONTENT_STYLE_PLAYABLE_HINT"
+        const val SINGLE_ITEM_HINT = "android.media.browse.CONTENT_STYLE_SINGLE_ITEM_HINT"
+        const val GROUP_TITLE_HINT = "android.media.browse.CONTENT_STYLE_GROUP_TITLE_HINT"
+        const val STYLE_LIST = 1
+        const val STYLE_GRID = 2
+
+        /** What the car is told about the root: it may use grid and list layouts; rows unless an item says it is a card. */
+        fun rootStyle(): Bundle = Bundle().apply {
+            putBoolean(CONTENT_STYLE_SUPPORTED, true)
+            putInt(BROWSABLE_HINT, STYLE_LIST)
+            putInt(PLAYABLE_HINT, STYLE_LIST)
+        }
 
         /** The song a list or queue item stands for (`s:<place>:<id>`), as far as its metadata says. */
         fun songOf(item: MediaItem): Song? {

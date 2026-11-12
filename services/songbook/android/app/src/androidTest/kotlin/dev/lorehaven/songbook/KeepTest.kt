@@ -68,8 +68,8 @@ class KeepTest {
         Http.call("GET", "$server/__down")
         val before = stats()
         val root = onMain { browser.getChildren(Tree.ROOT, 0, 50, null) }.get(30, TimeUnit.SECONDS).value!!
-        assertEquals("On this device", root[0].mediaMetadata.title.toString())
-        val kept = onMain { browser.getChildren("kept", 0, 50, null) }.get(30, TimeUnit.SECONDS).value!!
+        assertEquals("On this device", root.last().mediaMetadata.title.toString())
+        val kept = onMain { browser.getChildren("kept", 0, 50, null) }.get(30, TimeUnit.SECONDS).value!!.filter { it.mediaId.startsWith("s:") }
         assertEquals(2, kept.size)
 
         onMain { browser.setMediaItem(kept[1]); browser.prepare(); browser.play() }

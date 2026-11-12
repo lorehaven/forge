@@ -75,7 +75,7 @@ class CarControlsTest {
 
     @Test
     fun whatIsPlayedGoesToTheServiceAndComesBackAsRecentlyPlayed() {
-        val songs = children("popular")
+        val songs = children("popular").filter { it.mediaId.startsWith("s:") }
         val chosen = songs[3]
         onMain { browser.setMediaItem(chosen); browser.prepare(); browser.play() }
         waitFor("playing") { onMain { browser.isPlaying && browser.currentPosition > 500 } }
@@ -83,13 +83,13 @@ class CarControlsTest {
         // Told to the service (the same list on the other devices of this person) ...
         waitFor("the service has it (wanted $id; has ${Lib.recent(context).take(5)})") { Lib.recent(context).take(5).contains(id) }
         // ... and the car's "Recently played" has it near the top.
-        val recent = children("recent").take(5).map { it.mediaMetadata.title.toString() }
+        val recent = children("recent").filter { it.mediaId.startsWith("s:") }.take(5).map { it.mediaMetadata.title.toString() }
         assertTrue("$recent", chosen.mediaMetadata.title.toString() in recent)
     }
 
     @Test
     fun theCarContinuesWhereTheMusicWasLeft() {
-        val songs = children("popular")
+        val songs = children("popular").filter { it.mediaId.startsWith("s:") }
         onMain { browser.setMediaItem(songs[2]); browser.prepare(); browser.play() }
         waitFor("playing") { onMain { browser.isPlaying && browser.currentPosition > 500 } }
         onMain { browser.seekTo(20_000) }

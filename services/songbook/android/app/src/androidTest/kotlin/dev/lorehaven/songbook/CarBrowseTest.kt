@@ -58,18 +58,59 @@ class CarBrowseTest {
 
     private fun titles(items: List<MediaItem>) = items.map { it.mediaMetadata.title.toString() }
 
+    /** The songs of a list: what follows its "Play all" and "Shuffle". */
+    private fun songsOf(parent: String) = children(parent).filter { it.mediaId.startsWith("s:") }
+
     @Test
     fun theRootOffersWhatTheCarShows() {
         val root = onMain { browser.getLibraryRoot(null) }.get(30, TimeUnit.SECONDS)
         assertEquals(LibraryResult.RESULT_SUCCESS, root.resultCode)
+        // The tabs of the web player, and the car is told it may draw cards and sections.
         val names = titles(children(Tree.ROOT))
-        assertTrue(names.toString(), names.containsAll(listOf("Mixes", "Popular", "Artists", "Categories", "Playlists")))
+        assertEquals(names.toString(), listOf("Home", "Artists", "Playlists"), names.take(3))
         assertTrue(children(Tree.ROOT).all { it.mediaMetadata.isBrowsable == true })
+        assertTrue(root.params?.extras?.getBoolean(Tree.CONTENT_STYLE_SUPPORTED) == true)
+    }
+
+    @Test
+    fun theHomeTabHasTheWebPlayersSectionsWithCardsForArtistsAndAlbums() {
+        val home = children("home")
+        val sections = home.mapNotNull { it.mediaMetadata.extras?.getString(Tree.GROUP_TITLE_HINT) }.distinct()
+        assertTrue(sections.toString(), sections.containsAll(listOf("Made for you", "Popular in your library", "Artists to explore")))
+        val artist = home.first { it.mediaId.startsWith("artist/") }
+        assertEquals(Tree.STYLE_GRID, artist.mediaMetadata.extras?.getInt(Tree.SINGLE_ITEM_HINT))
+        val song = home.first { it.mediaId.startsWith("s:popular:") }
+        assertEquals(Tree.STYLE_LIST, song.mediaMetadata.extras?.getInt(Tree.SINGLE_ITEM_HINT))
+    }
+
+    @Test
+    fun everyListOpensWithPlayAllAndShuffleThatPlayTheWholeList() {
+        val album = children("popular")
+        assertEquals(listOf("Play all", "Shuffle"), titles(album.take(2)))
+        val songs = songsOf("popular")
+        onMain {
+            browser.setMediaItem(album[0])
+            browser.prepare()
+            browser.play()
+        }
+        waitFor("the whole list") { onMain { browser.mediaItemCount } >= songs.size }
+        assertEquals(songs[0].mediaId, onMain { browser.currentMediaItem?.mediaId })
+        assertTrue("in order", !onMain { browser.shuffleModeEnabled })
+        onMain { browser.pause() }
+
+        onMain {
+            browser.setMediaItem(album[1])
+            browser.prepare()
+            browser.play()
+        }
+        waitFor("shuffled") { onMain { browser.shuffleModeEnabled } }
+        waitFor("the list again") { onMain { browser.mediaItemCount } >= songs.size }
+        onMain { browser.pause() }
     }
 
     @Test
     fun songsAreListedWithWhatTheCarDraws() {
-        val songs = children("popular")
+        val songs = songsOf("popular")
         assertTrue("some songs: ${songs.size}", songs.size >= 5)
         songs.forEach {
             assertTrue(it.mediaMetadata.isPlayable == true)
@@ -89,15 +130,16 @@ class CarBrowseTest {
         assertTrue(categories.isNotEmpty())
         assertTrue(children(categories[0].mediaId).isNotEmpty())
 
-        val letters = children("artists")
-        assertTrue("letters: ${titles(letters)}", letters.size >= 5)
-        // An artist who is only credited on others' songs has just "All songs"; one with albums has them too.
-        val artists = letters.flatMap { children(it.mediaId) }
+        // Few artists are listed as cards; many, by letter.
+        val first = children("artists")
+        assertTrue(first.isNotEmpty())
+        val artists = if (first.all { it.mediaId.startsWith("artist/") }) first else first.flatMap { children(it.mediaId) }
         assertTrue(artists.isNotEmpty())
-        val withAlbums = artists.map { children(it.mediaId) }.first { it.size > 1 }
-        assertEquals("All songs", withAlbums[0].mediaMetadata.title.toString())
-        assertTrue(children(withAlbums[0].mediaId).isNotEmpty())
-        val album = withAlbums.drop(1).firstOrNull { children(it.mediaId).isNotEmpty() }
+        // An artist who is only credited on others' songs has just "All songs"; one with albums has them too.
+        val withAlbums = artists.map { children(it.mediaId) }.first { it.size > 3 }
+        assertEquals(listOf("Play all", "Shuffle", "All songs"), titles(withAlbums.take(3)))
+        assertTrue(songsOf(withAlbums[2].mediaId).isNotEmpty())
+        val album = withAlbums.drop(3).firstOrNull { songsOf(it.mediaId).isNotEmpty() }
         assertTrue("an album with songs", album != null)
     }
 
@@ -112,7 +154,7 @@ class CarBrowseTest {
 
     @Test
     fun choosingASongPlaysItsListFromThere() {
-        val songs = children("popular")
+        val songs = songsOf("popular")
         val chosen = songs[2]
         onMain {
             browser.setMediaItem(chosen)
@@ -140,7 +182,7 @@ class CarBrowseTest {
     fun aMixIsPlayedShuffled() {
         val mixes = children("mixes")
         val mix = mixes.first { it.mediaMetadata.subtitle.toString().startsWith("Shuffled") }
-        val songs = children(mix.mediaId)
+        val songs = songsOf(mix.mediaId)
         onMain {
             browser.setMediaItem(songs[0])
             browser.prepare()

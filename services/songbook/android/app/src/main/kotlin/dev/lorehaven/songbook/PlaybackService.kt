@@ -204,7 +204,9 @@ class PlaybackService : MediaLibraryService() {
             // Always answered, signed in or not: a media app whose root is refused is left out of Android Auto's list of apps (and
             // is not offered as a shortcut), and it is not asked again when the person signs in. Signed out, the root holds one
             // line that says what to do (see `Tree.children`).
-            else com.google.common.util.concurrent.Futures.immediateFuture(LibraryResult.ofItem(tree.root(), params))
+            else com.google.common.util.concurrent.Futures.immediateFuture(
+                LibraryResult.ofItem(tree.root(), LibraryParams.Builder().setExtras(Tree.rootStyle()).build()),
+            )
 
         override fun onGetChildren(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, parentId: String, page: Int, pageSize: Int, params: LibraryParams?): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
             if (parentId == Tree.ROOT && !this.session.signedIn) com.google.common.util.concurrent.Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.of(tree.signInNotice()), params))
@@ -237,7 +239,8 @@ class PlaybackService : MediaLibraryService() {
                 val words = first?.requestMetadata?.searchQuery
                 val queue = when {
                     first == null -> null
-                    first.mediaId.startsWith("s:") -> tree.queue(first.mediaId)
+                    // A song, or "Play all" / "Shuffle" at the top of a list: the list plays from there.
+                    first.mediaId.startsWith("s:") || first.mediaId.startsWith("play/") || first.mediaId.startsWith("shuffle/") -> tree.queue(first.mediaId)
                     !words.isNullOrBlank() -> tree.search(words).takeIf { it.isNotEmpty() }?.let { Queue(it, 0, false) }
                     else -> null
                 }

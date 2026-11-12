@@ -10,7 +10,7 @@ use songbook_core::{
 };
 use songbook_native::api::{Api, Result};
 use songbook_native::store::{Last, Store};
-use songbook_native::tree::Tree;
+use songbook_native::tree::{Item, Tree};
 use songbook_native::{Auth, Brain};
 
 fn song(id: i64, title: &str, artist: &str) -> SongInfo {
@@ -29,6 +29,8 @@ struct Fake {
     played: Mutex<Vec<i64>>,
     down: bool,
     resume: Mutex<Option<Resume>>,
+    /// A library with many artists (they are listed by letter).
+    many: bool,
 }
 
 impl Api for Fake {
@@ -52,34 +54,62 @@ impl Api for Fake {
                     songs: 5,
                 },
             ],
+            artists: vec![ArtistInfo {
+                name: "Ann".into(),
+                songs: 3,
+                albums: 1,
+            }],
+            albums: vec![AlbumInfo {
+                id: 7,
+                title: "Best of Ann".into(),
+                artist: "Ann".into(),
+                year: "2001-05-01".into(),
+                kind: "album".into(),
+                songs: 2,
+            }],
             ..Home::default()
         })
     }
     fn overview(&self) -> Result<Overview> {
+        let crowd: Vec<ArtistInfo> = if self.many {
+            (0..70)
+                .map(|i| ArtistInfo {
+                    name: format!("Band {i:02}"),
+                    songs: 1,
+                    albums: 1,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         Ok(Overview {
             admin: false,
-            artists: vec![
-                ArtistInfo {
-                    name: "Ann".into(),
-                    songs: 3,
-                    albums: 1,
-                },
-                ArtistInfo {
-                    name: "Nate Dogg".into(),
-                    songs: 4,
-                    albums: 1,
-                },
-                ArtistInfo {
-                    name: "Adam".into(),
-                    songs: 1,
-                    albums: 1,
-                },
-                ArtistInfo {
-                    name: "50 Cent".into(),
-                    songs: 1,
-                    albums: 1,
-                },
-            ],
+            artists: [
+                crowd,
+                vec![
+                    ArtistInfo {
+                        name: "Ann".into(),
+                        songs: 3,
+                        albums: 1,
+                    },
+                    ArtistInfo {
+                        name: "Nate Dogg".into(),
+                        songs: 4,
+                        albums: 1,
+                    },
+                    ArtistInfo {
+                        name: "Adam".into(),
+                        songs: 1,
+                        albums: 1,
+                    },
+                    ArtistInfo {
+                        name: "50 Cent".into(),
+                        songs: 1,
+                        albums: 1,
+                    },
+                ],
+            ]
+            .concat(),
             categories: vec![CategoryInfo {
                 name: "Rap & Soul".into(),
                 songs: 9,
@@ -161,6 +191,7 @@ fn tree(name: &str, down: bool) -> (Tree, Store, Arc<Fake>) {
         played: Mutex::new(vec![]),
         down,
         resume: Mutex::default(),
+        many: name == "crowd",
     });
     (Tree::new(api.clone(), store.clone()), store, api)
 }
@@ -174,41 +205,119 @@ fn the_root_lists_what_the_shell_does_not() {
         .into_iter()
         .map(|i| i.id)
         .collect();
-    assert_eq!(
-        ids,
-        [
-            "recent",
-            "mixes",
-            "popular",
-            "artists",
-            "categories",
-            "playlists"
-        ]
-    );
+    assert_eq!(ids, ["home", "artists", "playlists"], "the tabs of the car");
 }
 
 #[quench_test::test]
-fn artists_are_listed_by_letter_and_then_by_name_with_albums() {
-    let (t, ..) = tree("artists", false);
-    let letters: Vec<String> = t
+fn the_home_tab_has_the_web_players_sections_with_cards_for_artists_and_albums() {
+    let (t, ..) = tree("home", false);
+    let home = t.children("home").unwrap();
+    let sections: Vec<&str> =
+        home.iter()
+            .map(|i| i.group.as_str())
+            .fold(Vec::new(), |mut seen, g| {
+                if seen.last() != Some(&g) {
+                    seen.push(g);
+                }
+                seen
+            });
+    assert_eq!(
+        sections,
+        [
+            "",
+            "Made for you",
+            "Popular in your library",
+            "Artists to explore",
+            "New in your library",
+            "Browse by category"
+        ]
+    );
+    let of = |group: &str| -> Vec<&Item> { home.iter().filter(|i| i.group == group).collect() };
+    assert_eq!(of("Made for you")[0].id, "mix/0");
+    assert!(
+        of("Popular in your library")
+            .iter()
+            .all(|i| i.playable && !i.grid)
+    );
+    let artists = of("Artists to explore");
+    assert_eq!(
+        (artists[0].id.as_str(), artists[0].grid),
+        ("artist/Ann", true)
+    );
+    let albums = of("New in your library");
+    assert_eq!((albums[0].id.as_str(), albums[0].grid), ("album/7", true));
+    assert_eq!(of("Browse by category")[0].id, "category/Rap%20%26%20Soul");
+    assert_eq!(home[0].id, "recent", "and the way back to what was playing");
+}
+
+#[quench_test::test]
+fn a_list_of_songs_opens_with_play_all_and_shuffle_that_play_the_whole_list() {
+    let (t, ..) = tree("play", false);
+    for place in [
+        "album/7",
+        "mix/0",
+        "playlist/3",
+        "category/Rap",
+        "popular",
+        "recent",
+    ] {
+        let kids = t.children(place).unwrap();
+        assert_eq!(
+            (kids[0].id.clone(), kids[1].id.clone()),
+            (format!("play/{place}"), format!("shuffle/{place}")),
+            "{place}"
+        );
+        assert!(kids[0].playable && !kids[0].browsable, "{place}");
+    }
+    let artist = t.children("artist/Nate%20Dogg").unwrap();
+    assert_eq!(artist[0].id, "play/artist/Nate%20Dogg");
+    assert_eq!(artist[1].id, "shuffle/artist/Nate%20Dogg");
+    assert_eq!(artist[2].id, "artistsongs/Nate%20Dogg");
+    assert_eq!((artist[3].grid, artist[3].group.as_str()), (true, "Albums"));
+
+    let all = t.queue("play/album/7").unwrap().unwrap();
+    assert_eq!((all.items.len(), all.start, all.shuffled), (3, 0, false));
+    assert!(t.queue("shuffle/album/7").unwrap().unwrap().shuffled);
+    assert!(
+        t.queue("play/mix/0").unwrap().unwrap().shuffled,
+        "a mix is shuffled either way"
+    );
+    assert!(!t.queue("play/mix/1").unwrap().unwrap().shuffled);
+    assert!(t.queue("play/nowhere").unwrap().is_none());
+    assert_eq!(t.item("play/album/7").unwrap().unwrap().title, "Play all");
+}
+
+#[quench_test::test]
+fn many_artists_are_listed_by_letter_and_few_as_cards() {
+    let (few, ..) = tree("few", false);
+    let direct = few.children("artists").unwrap();
+    assert_eq!(direct[0].id, "artist/Ann");
+    assert!(direct.iter().all(|i| i.grid));
+    let (many, ..) = tree("crowd", false);
+    let letters: Vec<String> = many
         .children("artists")
         .unwrap()
         .into_iter()
         .map(|i| i.title)
         .collect();
-    assert_eq!(letters, ["#", "A", "N"]);
+    assert_eq!(letters, ["#", "A", "B", "N"]);
+}
+
+#[quench_test::test]
+fn artists_are_listed_by_letter_and_then_by_name_with_albums() {
+    let (t, ..) = tree("artists", false);
     let n = t.children("letter/N").unwrap();
     assert_eq!(
         (n[0].id.as_str(), n[0].subtitle.as_str()),
         ("artist/Nate%20Dogg", "4 songs")
     );
     let inside = t.children("artist/Nate%20Dogg").unwrap();
-    assert_eq!(inside[0].id, "artistsongs/Nate%20Dogg");
-    assert_eq!(inside[1].id, "album/7");
-    assert_eq!(inside[1].subtitle, "2001 · Nate Dogg");
+    assert_eq!(inside[2].id, "artistsongs/Nate%20Dogg");
+    assert_eq!(inside[3].id, "album/7");
+    assert_eq!(inside[3].subtitle, "2001 · Nate Dogg");
     let all = t.children("artistsongs/Nate%20Dogg").unwrap();
-    assert_eq!(all[0].artist, "Nate Dogg");
-    assert_eq!(all[0].id, "s:artist/Nate%20Dogg:20");
+    assert_eq!(all[2].artist, "Nate Dogg", "after Play all and Shuffle");
+    assert_eq!(all[2].id, "s:artist/Nate%20Dogg:20");
 }
 
 #[quench_test::test]
@@ -259,6 +368,7 @@ fn recently_played_joins_the_servers_list_with_this_phones_and_survives_the_serv
         .children("recent")
         .unwrap()
         .iter()
+        .filter(|i| i.kind == "song")
         .map(|i| i.id.rsplit(':').next().unwrap().parse().unwrap())
         .collect();
     assert_eq!(ids, [50, 60]);
@@ -267,6 +377,7 @@ fn recently_played_joins_the_servers_list_with_this_phones_and_survives_the_serv
             played: Mutex::new(vec![]),
             down: true,
             resume: Mutex::default(),
+            many: false,
         });
         (Tree::new(api, store), ())
     };
@@ -274,6 +385,7 @@ fn recently_played_joins_the_servers_list_with_this_phones_and_survives_the_serv
         .children("recent")
         .unwrap()
         .into_iter()
+        .filter(|i| i.kind == "song")
         .map(|i| i.title)
         .collect();
     assert_eq!(ids, ["Local"]);
@@ -493,6 +605,7 @@ fn the_shell_asks_in_lines_and_is_answered_in_lines() {
         played: Mutex::new(vec![]),
         down: false,
         resume: Mutex::default(),
+        many: false,
     });
     let brain = Brain::with(store.clone(), Arc::new(Auth::new(store)), api);
     // Not signed in: the library is refused, with the code the shell acts on.
@@ -523,6 +636,7 @@ fn where_the_person_stopped_goes_to_the_service_and_comes_back() {
         played: Mutex::new(vec![]),
         down: false,
         resume: Mutex::default(),
+        many: false,
     });
     let brain = Brain::with(store.clone(), Arc::new(Auth::new(store)), api);
     let nothing = brain.handle(r#"{"id":1,"op":"resume_get"}"#);

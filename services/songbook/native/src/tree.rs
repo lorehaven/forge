@@ -39,8 +39,12 @@ pub struct Item {
     pub duration_ms: i64,
     pub playable: bool,
     pub browsable: bool,
-    /// `folder`, `album`, `artist`, `playlist`, `artists`, `playlists` or `song`.
+    /// `folder`, `album`, `artist`, `playlist`, `artists`, `playlists`, `song` or `play` (the "Play all" / "Shuffle" entries).
     pub kind: String,
+    /// The heading of the section of the list it is in (empty for none): Android Auto groups neighbours with one heading.
+    pub group: String,
+    /// Shown as a picture card in a grid rather than a row.
+    pub grid: bool,
 }
 
 /// The queue to play when a song is chosen in a list.
@@ -146,8 +150,48 @@ fn folder(id: &str, title: &str, subtitle: &str, art: &str, kind: &str) -> Item 
         playable: false,
         browsable: true,
         kind: kind.into(),
+        group: String::new(),
+        grid: false,
     }
 }
+
+/// Puts `items` in the section called `group`; `grid` shows them as picture cards.
+fn section(items: Vec<Item>, group: &str, grid: bool) -> Vec<Item> {
+    items
+        .into_iter()
+        .map(|mut i| {
+            i.group = group.into();
+            i.grid = grid;
+            i
+        })
+        .collect()
+}
+
+/// The two entries that open a list of songs: play it from the top, or shuffled. A folder that is both browsable and playable
+/// may play when it is tapped instead of opening in a car, so playing a whole list is a plain playable entry of its own.
+fn play_entries(place: &str) -> Vec<Item> {
+    [("play", "Play all"), ("shuffle", "Shuffle")]
+        .iter()
+        .map(|(mode, title)| Item {
+            id: format!("{mode}/{place}"),
+            title: (*title).into(),
+            subtitle: String::new(),
+            artist: String::new(),
+            album: String::new(),
+            art: String::new(),
+            uri: String::new(),
+            duration_ms: 0,
+            playable: true,
+            browsable: false,
+            kind: "play".into(),
+            group: String::new(),
+            grid: false,
+        })
+        .collect()
+}
+
+/// More artists than this are listed by letter.
+const LETTERS_FROM: usize = 60;
 
 impl Tree {
     #[must_use]
@@ -205,6 +249,8 @@ impl Tree {
             playable: true,
             browsable: false,
             kind: "song".into(),
+            group: String::new(),
+            grid: false,
         }
     }
 
@@ -244,12 +290,11 @@ impl Tree {
 
     #[must_use]
     pub fn root_children() -> Vec<Item> {
+        // Android Auto shows up to four of these as tabs, as the web player does: Home, Artists, Playlists (and the shell adds
+        // "On this device").
         vec![
-            folder("recent", "Recently played", "", "", "folder"),
-            folder("mixes", "Mixes", "", "", "folder"),
-            folder("popular", "Popular", "", "", "folder"),
+            folder("home", "Home", "", "", "folder"),
             folder("artists", "Artists", "", "", "artists"),
-            folder("categories", "Categories", "", "", "folder"),
             folder("playlists", "Playlists", "", "", "playlists"),
         ]
     }
@@ -262,7 +307,12 @@ impl Tree {
         let (kind, key) = parent.split_once('/').unwrap_or((parent, ""));
         Ok(match parent {
             ROOT => Self::root_children(),
-            "recent" => self.song_items("recent", &self.recent_songs()),
+            "home" => self.home_items()?,
+            "recent" => [
+                play_entries("recent"),
+                self.song_items("recent", &self.recent_songs()),
+            ]
+            .concat(),
             // What Android Auto asks for to offer "continue": the song that was playing, and a few to start with.
             RECENT_ROOT => match self.store.last() {
                 Some(last) => vec![self.song_item("recent", &last.song)],
@@ -275,49 +325,22 @@ impl Tree {
                 "popular",
                 &self.home()?.popular.into_iter().take(5).collect::<Vec<_>>(),
             ),
-            "popular" => self.song_items("popular", &self.home()?.popular),
-            "mixes" => self
-                .home()?
-                .mixes
-                .iter()
-                .enumerate()
-                .map(|(i, m)| {
-                    let sub = if m.shuffled() {
-                        format!("Shuffled · {} songs", m.songs)
-                    } else {
-                        format!("Top {}", m.songs)
-                    };
-                    folder(&format!("mix/{i}"), &m.name, &sub, "", "folder")
-                })
-                .collect(),
-            "artists" => {
-                let mut letters: Vec<String> = self
-                    .overview()?
-                    .artists
-                    .iter()
-                    .map(|a| letter(&a.name))
-                    .collect();
-                letters.sort();
-                letters.dedup();
-                letters
-                    .iter()
-                    .map(|l| folder(&format!("letter/{l}"), l, "", "", "folder"))
-                    .collect()
+            "popular" => [
+                play_entries("popular"),
+                self.song_items("popular", &self.home()?.popular),
+            ]
+            .concat(),
+            "mixes" => self.mix_folders()?,
+            "artists" if self.overview()?.artists.len() <= LETTERS_FROM => {
+                let artists = self.overview()?.artists;
+                section(
+                    artists.iter().map(|a| self.artist_folder(a)).collect(),
+                    "",
+                    true,
+                )
             }
-            "categories" => self
-                .overview()?
-                .categories
-                .iter()
-                .map(|c| {
-                    folder(
-                        &format!("category/{}", encode(&c.name)),
-                        &c.name,
-                        &format!("{} songs", c.songs),
-                        "",
-                        "folder",
-                    )
-                })
-                .collect(),
+            "artists" => self.letter_folders()?,
+            "categories" => self.category_folders()?,
             "playlists" => self
                 .api
                 .playlists()?
@@ -341,14 +364,23 @@ impl Tree {
                 .collect(),
             _ if kind == "artist" => {
                 let name = decode(key);
-                let mut items = vec![folder(
+                let mut items = play_entries(&format!("artist/{key}"));
+                items.push(folder(
                     &format!("artistsongs/{}", encode(&name)),
                     "All songs",
                     "",
                     "",
                     "folder",
-                )];
-                items.extend(self.api.albums(&name)?.iter().map(|a| self.album_folder(a)));
+                ));
+                items.extend(section(
+                    self.api
+                        .albums(&name)?
+                        .iter()
+                        .map(|a| self.album_folder(a))
+                        .collect(),
+                    "Albums",
+                    true,
+                ));
                 items
             }
             _ => {
@@ -358,9 +390,93 @@ impl Tree {
                 } else {
                     parent.to_string()
                 };
-                self.song_items(&place, &self.songs_of(&place)?.0)
+                [
+                    play_entries(&place),
+                    self.song_items(&place, &self.songs_of(&place)?.0),
+                ]
+                .concat()
             }
         })
+    }
+
+    /// The first letters of the artists' names, as folders (`letter/N`).
+    fn letter_folders(&self) -> Result<Vec<Item>> {
+        let mut letters: Vec<String> = self
+            .overview()?
+            .artists
+            .iter()
+            .map(|a| letter(&a.name))
+            .collect();
+        letters.sort();
+        letters.dedup();
+        Ok(letters
+            .iter()
+            .map(|l| folder(&format!("letter/{l}"), l, "", "", "folder"))
+            .collect())
+    }
+
+    /// The mixes of the home page, as folders of songs.
+    fn mix_folders(&self) -> Result<Vec<Item>> {
+        Ok(self
+            .home()?
+            .mixes
+            .iter()
+            .enumerate()
+            .map(|(i, m)| {
+                let sub = if m.shuffled() {
+                    format!("Shuffled · {} songs", m.songs)
+                } else {
+                    format!("Top {}", m.songs)
+                };
+                folder(&format!("mix/{i}"), &m.name, &sub, "", "folder")
+            })
+            .collect())
+    }
+
+    fn category_folders(&self) -> Result<Vec<Item>> {
+        Ok(self
+            .overview()?
+            .categories
+            .iter()
+            .map(|c| {
+                folder(
+                    &format!("category/{}", encode(&c.name)),
+                    &c.name,
+                    &format!("{} songs", c.songs),
+                    "",
+                    "folder",
+                )
+            })
+            .collect())
+    }
+
+    /// The Home tab: the web player's home page as sections (made for you, popular, artists to explore, new albums, categories).
+    fn home_items(&self) -> Result<Vec<Item>> {
+        let home = self.home()?;
+        let mut out = vec![folder("recent", "Recently played", "", "", "folder")];
+        let mixes = self.mix_folders()?;
+        out.extend(section(mixes, "Made for you", false));
+        out.extend(section(
+            self.song_items(
+                "popular",
+                &home.popular.iter().take(5).cloned().collect::<Vec<_>>(),
+            ),
+            "Popular in your library",
+            false,
+        ));
+        out.extend(section(
+            home.artists.iter().map(|a| self.artist_folder(a)).collect(),
+            "Artists to explore",
+            true,
+        ));
+        out.extend(section(
+            home.albums.iter().map(|a| self.album_folder(a)).collect(),
+            "New in your library",
+            true,
+        ));
+        let categories = self.category_folders()?;
+        out.extend(section(categories, "Browse by category", false));
+        Ok(out)
     }
 
     /// The songs of a place, and whether it is played shuffled (a mix).
@@ -423,6 +539,11 @@ impl Tree {
         if id == ROOT {
             return Ok(Some(folder(ROOT, "Songbook", "", "", "folder")));
         }
+        if let Some((mode, place)) = id.split_once('/')
+            && matches!(mode, "play" | "shuffle")
+        {
+            return Ok(play_entries(place).into_iter().find(|i| i.id == id));
+        }
         let Some((place, song)) = parse_song(id) else {
             return Ok(None);
         };
@@ -439,6 +560,20 @@ impl Tree {
     /// # Errors
     /// The service could not be asked.
     pub fn queue(&self, id: &str) -> Result<Option<Queue>> {
+        // "Play all" and "Shuffle" at the top of a list: the whole place, from the top.
+        if let Some((mode, place)) = id.split_once('/')
+            && matches!(mode, "play" | "shuffle")
+        {
+            let (songs, shuffled) = self.songs_of(place)?;
+            if songs.is_empty() {
+                return Ok(None);
+            }
+            return Ok(Some(Queue {
+                items: self.song_items(place, &songs),
+                start: 0,
+                shuffled: shuffled || mode == "shuffle",
+            }));
+        }
         let Some((place, song)) = parse_song(id) else {
             return Ok(None);
         };

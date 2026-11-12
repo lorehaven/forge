@@ -8,6 +8,12 @@ media session (the car, the phone's own screens, the lock screen, the notificati
 * **Keep on this device**: songs (a row, a list, the player) are downloaded and never evicted; they are listed under *On this
   device*, also in the car, and play with no network. What was merely played is cached too (1 GiB, oldest out first), and so are
   the pictures that were seen.
+* **The car's layout follows the web player**: the tabs are *Home*, *Artists*, *Playlists* and (when songs are kept) *On this device*.
+  *Home* has the web home page's sections (*Made for you*, *Popular in your library*, *Artists to explore* and *New in your library* as
+  picture cards, *Browse by category*), with *Recently played* on top. Every list of songs (an artist, an album, a mix, a playlist, a
+  category, popular, recent, the kept songs) opens with **Play all** and **Shuffle**: plain playable entries, because a folder that is
+  both browsable and playable may play on a tap instead of opening. Choosing one queues the whole list. (`native/src/tree.rs` makes the
+  tree; `Tree.kt` adds the content-style extras Android Auto reads.)
 * **In the car**: a *Crossfade* button on the player (steps through off/3/6/9/12 s, and follows the phone's setting), *continue*
   (Android Auto's recent root and playback resumption put back the same list, song and place), and a suggested root.
 * **Recently played is the same everywhere**: each song started is told to the service (`POST /history`), and the list comes
