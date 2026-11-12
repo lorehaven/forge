@@ -228,6 +228,12 @@ ui_purge_preview = Vorschau
 ui_purge_preview_title = Dateien auflisten, die gelöscht würden; löscht nichts
 ui_purge_delete = Gesperrte Dateien löschen
 ui_purge_delete_title = Die Dateien aus der Vorschau endgültig löschen
+ui_fixlinks_title = Falsche Links korrigieren
+ui_fixlinks_text = Findet Titel, deren YouTube-Link nicht passt (der Videotitel enthält den Titel nicht), legt ihre Audiodateien in .mismatch-old beiseite und sucht neu: neuer Link, Download und Konvertierung. Nicht Teil der Pipeline. Erst die Vorschau: sie listet die Titel auf und ändert nichts. Das Limit von „Links finden“ gilt.
+ui_fixlinks_preview = Vorschau
+ui_fixlinks_preview_title = Titel mit nicht passendem Link auflisten; ändert nichts
+ui_fixlinks_run = Links korrigieren
+ui_fixlinks_run_title = Links und Dateien der Titel aus der Vorschau ersetzen
 
 # Die Sperrliste und das Ersetzen eines Titels
 ui_nav_blacklist = Sperrliste

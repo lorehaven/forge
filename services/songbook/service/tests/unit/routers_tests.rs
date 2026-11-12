@@ -72,6 +72,7 @@ fn every_job_the_pages_start_is_known_to_the_service() {
         "convert",
         "images",
         "purge",
+        "fix-links",
         "pipeline",
         "scheduled",
     ] {

@@ -1,6 +1,6 @@
 [package]
 name = "songbook"
-version = "0.1.23"
+version = "0.2.0"
 edition.workspace = true
 authors.workspace = true
 description = "Songbook - the library of every song: admin module (index, Deezer sync, YouTube links, download, convert)"
@@ -36,6 +36,7 @@ quench-crypto = { workspace = true }
 quench-http = { workspace = true }
 quench-log = { workspace = true }
 quench-serde = { workspace = true }
+quench-pg = { workspace = true }
 quench-sqlite = { workspace = true }
 quench-starter = { workspace = true }
 quench-tz = { workspace = true }

@@ -72,31 +72,31 @@ pub async fn run(app: &App, retry_missing: bool, log: &Log) -> Result<(), String
             "asking again for {cleared} pictures Deezer had none for"
         ));
     }
-    let (albums, artists) = app
-        .index
-        .run(|db| {
-            let albums: Vec<(i64, String)> = db
+    let (albums, artists) =
+        app.index
+            .run(async |db| {
+                let albums: Vec<(i64, String)> = db
                 .query(
                     "SELECT deezer_id, title FROM albums WHERE deezer_id IS NOT NULL ORDER BY id",
                     &[],
-                )?
+                ).await?
                 .rows
                 .iter()
                 .map(|r| (int_at(r, 0), str_at(r, 1)))
                 .collect();
-            let artists: Vec<(i64, String)> = db
+                let artists: Vec<(i64, String)> = db
                 .query(
                     "SELECT deezer_id, name FROM artists WHERE deezer_id IS NOT NULL ORDER BY id",
                     &[],
-                )?
+                ).await?
                 .rows
                 .iter()
                 .map(|r| (int_at(r, 0), str_at(r, 1)))
                 .collect();
-            Ok((albums, artists))
-        })
-        .await
-        .map_err(|e| e.to_string())?;
+                Ok((albums, artists))
+            })
+            .await
+            .map_err(|e| e.to_string())?;
     log.line(format!(
         "{} albums and singles, {} artists",
         albums.len(),

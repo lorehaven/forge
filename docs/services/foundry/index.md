@@ -27,7 +27,7 @@ Foundry installs the Forge database schemas. It has no HTTP server and no UI: `f
 
 ## What is in the catalog
 
-`services/foundry/service/migrations/` holds 13 modules (checked with `foundry-service validate`, "13 module(s)"):
+`services/foundry/service/migrations/` holds 14 modules (checked with `foundry-service validate`, "14 module(s)"):
 
 | Module | Version | Scope | Default schema | Requires |
 |---|---|---|---|---|
@@ -39,6 +39,7 @@ Foundry installs the Forge database schemas. It has no HTTP server and no UI: `f
 | `switchboard` | 0.2.0 | schema | `switchboard` | `auth@^0.2`, `quench-core@^0.1` |
 | `workbench` | 0.1.0 | schema | `workbench` | `auth@^0.2`, `quench-core@^0.1` |
 | `gauge` | 0.4.0 | schema | `gauge` | `quench-core@^0.1` |
+| `songbook` | 0.1.0 | schema | `songbook` | `quench-core@^0.1` (the library tables and the listeners' playlists, plays and resume points) |
 | `warehouse`, `conveyor`, `daybook`, `gantry`, `hoist` | see their own pages | | | |
 
 `gatehouse` has no migration files: it exists so that `gatehouse` is a nameable install target whose state is the `auth` module.

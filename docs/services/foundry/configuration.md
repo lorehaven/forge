@@ -43,7 +43,7 @@ embedding_dim = "1024"
 
 Each `[[install]]` has `module` (required), `version`, `schema`, `variables`. Specs from `--install` or `FOUNDRY_INSTALL` replace the entire list; they cannot carry variables.
 
-The shipped file installs `conveyor`, `daybook`, `gantry`, `gatehouse`, `hoist`, `sage`, `switchboard`, `warehouse`, `workbench`. `gauge` is not listed, so an unmodified Job does not create the `gauge` schema (gauge runs without a database but loses history; see the gauge pages). `foreman` passes `--install <service>` for each selected service, and CI passes explicit installs.
+The shipped file installs `conveyor`, `daybook`, `gantry`, `gatehouse`, `hoist`, `sage`, `songbook`, `switchboard`, `warehouse`, `workbench`. `gauge` is not listed, so an unmodified Job does not create the `gauge` schema (gauge runs without a database but loses history; see the gauge pages). `foreman` passes `--install <service>` for each selected service, and CI passes explicit installs.
 
 ## Build and image
 

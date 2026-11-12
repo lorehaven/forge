@@ -94,28 +94,28 @@ pub async fn run(
     log: &Log,
 ) -> Result<(), String> {
     let name = artist.to_string();
-    let mut rows = app
-        .index
-        .run(move |db| {
-            let rows = db
+    let mut rows =
+        app.index
+            .run(async move |db| {
+                let rows = db
                 .query(
                     "SELECT id, title, filename, yt_url FROM songs WHERE yt_url != '' ORDER BY id",
                     &[],
-                )?
+                ).await?
                 .rows;
-            let mine = if name.is_empty() {
-                None
-            } else {
-                Some(browse::songs_of(db, &name)?)
-            };
-            Ok(rows
-                .into_iter()
-                .filter(|r| mine.as_ref().is_none_or(|s| s.contains(&int_at(r, 0))))
-                .map(|r| (str_at(&r, 2), str_at(&r, 3)))
-                .collect::<Vec<_>>())
-        })
-        .await
-        .map_err(|e| e.to_string())?;
+                let mine = if name.is_empty() {
+                    None
+                } else {
+                    Some(browse::songs_of(db, &name).await?)
+                };
+                Ok(rows
+                    .into_iter()
+                    .filter(|r| mine.as_ref().is_none_or(|s| s.contains(&int_at(r, 0))))
+                    .map(|r| (str_at(&r, 2), str_at(&r, 3)))
+                    .collect::<Vec<_>>())
+            })
+            .await
+            .map_err(|e| e.to_string())?;
     if let Some(n) = limit.filter(|n| *n > 0) {
         rows.truncate(n as usize);
     }

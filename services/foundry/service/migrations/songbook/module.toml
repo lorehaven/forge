@@ -1,0 +1,5 @@
+name = "songbook"
+version = "0.1.0"
+description = "Songbook - the music library: artists, albums, songs, YouTube links, follows, suggestions, and each listener's playlists, plays and resume point"
+default_schema = "songbook"
+requires = ["quench-core@^0.1"]

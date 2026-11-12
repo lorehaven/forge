@@ -37,11 +37,11 @@ pub async fn run(
 ) -> Result<(), String> {
     let (follows, categories, cmap) = app
         .index
-        .run(|db| {
+        .run(async |db| {
             Ok((
-                follow::follows(db)?,
-                follow::categories(db)?,
-                follow::category_map(db)?,
+                follow::follows(db).await?,
+                follow::categories(db).await?,
+                follow::category_map(db).await?,
             ))
         })
         .await
@@ -144,7 +144,7 @@ pub async fn run(
     }
     let n = list.len();
     app.index
-        .run(move |db| follow::set_suggestions(db, &list))
+        .run(async move |db| follow::set_suggestions(db, &list).await)
         .await
         .map_err(|e| e.to_string())?;
     log.line(format!("{n} suggestions saved"));

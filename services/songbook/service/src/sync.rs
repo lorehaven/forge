@@ -144,12 +144,12 @@ pub async fn run_with(
     };
     let follows = app
         .index
-        .run(follow::follows)
+        .run(async |db| follow::follows(db).await)
         .await
         .map_err(|e| e.to_string())?;
     let banned = app
         .index
-        .run(follow::blacklist)
+        .run(async |db| follow::blacklist(db).await)
         .await
         .map_err(|e| e.to_string())?;
     let mut matches: Vec<(String, String, String, String, String)> = Vec::new();
@@ -177,7 +177,7 @@ pub async fn run_with(
         let (name, hit_name, hit_id) = (f.name.clone(), hit.name.clone(), hit.id);
         let owner = app
             .index
-            .run(move |db| songs::upsert_artist(db, hit_id, &hit_name, Some(&name)))
+            .run(async move |db| songs::upsert_artist(db, hit_id, &hit_name, Some(&name)).await)
             .await
             .map_err(|e| e.to_string())?;
         resolved.insert(owner);
@@ -249,11 +249,11 @@ pub async fn run_with(
     let names: HashSet<String> = follows.iter().map(|f| f.name.clone()).collect();
     let (gone_songs, gone_artists, songs_total, entries) = app
         .index
-        .run(move |db| {
-            db.transaction(|db| {
+        .run(async move |db| {
+            db.transaction(async |db| {
                 // The vocabulary for splitting combined credits: every plain artist in the fetched data and every followed one.
                 let mut known: HashMap<String, (i64, String)> = db
-                    .query("SELECT deezer_id, name FROM artists WHERE listed_as IS NOT NULL AND deezer_id IS NOT NULL", &[])?
+                    .query("SELECT deezer_id, name FROM artists WHERE listed_as IS NOT NULL AND deezer_id IS NOT NULL", &[]).await?
                     .rows
                     .iter()
                     .map(|r| (norm(&crate::index::str_at(r, 1)), (crate::index::int_at(r, 0), crate::index::str_at(r, 1))))
@@ -268,8 +268,8 @@ pub async fn run_with(
                     }
                 }
                 for s in &staged {
-                    let album_id = songs::upsert_album(db, &s.album.info, s.owner)?;
-                    db.execute("DELETE FROM song_album WHERE album_id = ?", &[crate::index::int(album_id)])?;
+                    let album_id = songs::upsert_album(db, &s.album.info, s.owner).await?;
+                    db.execute("DELETE FROM song_album WHERE album_id = ?", &[crate::index::int(album_id)]).await?;
                     for (i, (t, det, people)) in s.tracks.iter().enumerate() {
                         let people = split_combined(people, &known);
                         if people.is_empty() {
@@ -277,45 +277,46 @@ pub async fn run_with(
                         }
                         let title = det.as_ref().map(|d| d.title.clone()).filter(|t| !t.is_empty()).unwrap_or_else(|| t.title.clone());
                         let duration = det.as_ref().and_then(|d| d.duration).or(t.duration);
-                        let song = songs::upsert_song(db, &people, &title, duration, t.id)?;
-                        songs::link_album(db, song, album_id, i as i64 + 1)?;
+                        let song = songs::upsert_song(db, &people, &title, duration, t.id).await?;
+                        songs::link_album(db, song, album_id, i as i64 + 1).await?;
                         if let Some(rank) = det.as_ref().and_then(|d| d.rank).filter(|r| *r > 0) {
                             // A song on several releases keeps the best rank of its tracks.
                             db.execute(
                                 "UPDATE songs SET rank = ? WHERE id = ? AND (rank IS NULL OR rank < ?)",
                                 &[crate::index::int(rank), crate::index::int(song), crate::index::int(rank)],
-                            )?;
+                            ).await?;
                         }
                     }
                 }
                 // Artists removed from the follow list: forget their albums. Artists with no match keep what they had.
-                for r in db.query("SELECT id, listed_as FROM artists WHERE listed_as IS NOT NULL", &[])?.rows {
+                for r in db.query("SELECT id, listed_as FROM artists WHERE listed_as IS NOT NULL", &[]).await?.rows {
                     let (id, listed) = (crate::index::int_at(&r, 0), crate::index::str_at(&r, 1));
                     if !names.contains(&listed) {
-                        for al in db.query("SELECT id FROM albums WHERE owner_id = ?", &[crate::index::int(id)])?.rows {
-                            songs::drop_album(db, crate::index::int_at(&al, 0))?;
+                        for al in db.query("SELECT id FROM albums WHERE owner_id = ?", &[crate::index::int(id)]).await?.rows {
+                            songs::drop_album(db, crate::index::int_at(&al, 0)).await?;
                         }
-                        db.execute("UPDATE artists SET listed_as = NULL WHERE id = ?", &[crate::index::int(id)])?;
+                        db.execute("UPDATE artists SET listed_as = NULL WHERE id = ?", &[crate::index::int(id)]).await?;
                     }
                 }
                 // Albums of a resolved artist that did not turn up this time (blacklisted, merged editions, withdrawn).
                 for owner in &resolved {
-                    for al in db.query("SELECT id, deezer_id FROM albums WHERE owner_id = ?", &[crate::index::int(*owner)])?.rows {
+                    for al in db.query("SELECT id, deezer_id FROM albums WHERE owner_id = ?", &[crate::index::int(*owner)]).await?.rows {
                         if !touched.contains(&crate::index::int_at(&al, 1)) {
-                            songs::drop_album(db, crate::index::int_at(&al, 0))?;
+                            songs::drop_album(db, crate::index::int_at(&al, 0)).await?;
                         }
                     }
                 }
-                let (gone_songs, gone_artists) = songs::prune(db)?;
-                let cmap = follow::category_map(db)?;
-                songs::retag(db, &cmap)?;
+                let (gone_songs, gone_artists) = songs::prune(db).await?;
+                let cmap = follow::category_map(db).await?;
+                songs::retag(db, &cmap).await?;
                 for (name, deezer_name, id, fans, note) in &matches {
-                    follow::set_match(db, name, deezer_name, id, fans, note)?;
+                    follow::set_match(db, name, deezer_name, id, fans, note).await?;
                 }
-                let total = crate::index::int_at(&db.query("SELECT COUNT(*) FROM songs", &[])?.rows[0], 0);
-                let entries = crate::index::int_at(&db.query("SELECT COUNT(*) FROM song_album", &[])?.rows[0], 0);
+                let total = crate::index::int_at(&db.query("SELECT COUNT(*) FROM songs", &[]).await?.rows[0], 0);
+                let entries = crate::index::int_at(&db.query("SELECT COUNT(*) FROM song_album", &[]).await?.rows[0], 0);
                 Ok((gone_songs, gone_artists, total, entries))
             })
+            .await
         })
         .await
         .map_err(|e| e.to_string())?;
@@ -329,9 +330,10 @@ pub async fn run_with(
 pub async fn tags(app: &App, log: &Log) -> Result<(), String> {
     let n = app
         .index
-        .run(|db| {
-            let cmap = follow::category_map(db)?;
-            db.transaction(|db| songs::retag(db, &cmap))
+        .run(async |db| {
+            let cmap = follow::category_map(db).await?;
+            db.transaction(async |db| songs::retag(db, &cmap).await)
+                .await
         })
         .await
         .map_err(|e| e.to_string())?;

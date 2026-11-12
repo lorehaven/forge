@@ -1,8 +1,7 @@
 //! What the user manages: followed artists, categories, the album blacklist, and the last suggestions.
 
 use super::songs::UNCATEGORIZED;
-use super::{Result, Value, int, int_at, opt_str_at, str_at, text};
-use quench_sqlite::Connection;
+use super::{Db, Result, Value, int, int_at, opt_str_at, str_at, text};
 use songbook_core::naming::{album_key, norm};
 use songbook_core::{ArtistRow, Suggestion, TopTrack};
 use std::collections::{HashMap, HashSet};
@@ -52,16 +51,20 @@ fn follow_from(row: &[Value]) -> Follow {
 
 const FOLLOW_COLUMNS: &str = "name, pin, category, deezer_name, deezer_id, fans, note, genres";
 
-pub fn follows(db: &mut Connection) -> Result<Vec<Follow>> {
-    let rows = db.query(
-        &format!("SELECT {FOLLOW_COLUMNS} FROM follows ORDER BY position, id"),
-        &[],
-    )?;
+pub async fn follows(db: &mut Db) -> Result<Vec<Follow>> {
+    let rows = db
+        .query(
+            &format!("SELECT {FOLLOW_COLUMNS} FROM follows ORDER BY position, id"),
+            &[],
+        )
+        .await?;
     Ok(rows.rows.iter().map(|r| follow_from(r)).collect())
 }
 
-pub fn categories(db: &mut Connection) -> Result<Vec<String>> {
-    let rows = db.query("SELECT name FROM categories ORDER BY position, id", &[])?;
+pub async fn categories(db: &mut Db) -> Result<Vec<String>> {
+    let rows = db
+        .query("SELECT name FROM categories ORDER BY position, id", &[])
+        .await?;
     Ok(rows.rows.iter().map(|r| str_at(r, 0)).collect())
 }
 
@@ -82,15 +85,15 @@ pub fn clean(value: &str) -> String {
 }
 
 /// A category that exists, or empty for none. `Err` names an unknown one.
-pub fn known_category(
-    db: &mut Connection,
+pub async fn known_category(
+    db: &mut Db,
     category: &str,
 ) -> Result<std::result::Result<String, Refused>> {
     let category = clean(category);
     if category.is_empty() || norm(&category) == norm(UNCATEGORIZED) {
         return Ok(Ok(String::new()));
     }
-    let known = categories(db)?;
+    let known = categories(db).await?;
     Ok(known
         .into_iter()
         .find(|c| norm(c) == norm(&category))
@@ -98,10 +101,14 @@ pub fn known_category(
 }
 
 /// Followed artist name to its category; artists with none (or an unknown one) map to `Uncategorized`.
-pub fn category_map(db: &mut Connection) -> Result<HashMap<String, String>> {
-    let known: HashMap<String, String> =
-        categories(db)?.into_iter().map(|c| (norm(&c), c)).collect();
-    Ok(follows(db)?
+pub async fn category_map(db: &mut Db) -> Result<HashMap<String, String>> {
+    let known: HashMap<String, String> = categories(db)
+        .await?
+        .into_iter()
+        .map(|c| (norm(&c), c))
+        .collect();
+    Ok(follows(db)
+        .await?
         .into_iter()
         .map(|f| {
             let category = known
@@ -114,8 +121,8 @@ pub fn category_map(db: &mut Connection) -> Result<HashMap<String, String>> {
 }
 
 /// Follows a new artist. `Ok(false)` when an artist of that name is already followed.
-pub fn add_follow(
-    db: &mut Connection,
+pub async fn add_follow(
+    db: &mut Db,
     name: &str,
     pin: &str,
     category: &str,
@@ -124,47 +131,55 @@ pub fn add_follow(
     if name.is_empty() {
         return Ok(Err(Refused::Input("empty name".into())));
     }
-    let category = match known_category(db, category)? {
+    let category = match known_category(db, category).await? {
         Ok(c) => c,
         Err(e) => return Ok(Err(e)),
     };
-    if follows(db)?.iter().any(|f| norm(&f.name) == norm(&name)) {
+    if follows(db)
+        .await?
+        .iter()
+        .any(|f| norm(&f.name) == norm(&name))
+    {
         return Ok(Ok(false));
     }
     let pin: String = pin.chars().filter(char::is_ascii_digit).collect();
     let position = db
-        .query("SELECT COALESCE(MAX(position), 0) + 1 FROM follows", &[])?
+        .query("SELECT COALESCE(MAX(position), 0) + 1 FROM follows", &[])
+        .await?
         .rows
         .first()
         .map_or(1, |r| int_at(r, 0));
     db.execute(
         "INSERT INTO follows(name, pin, category, position) VALUES (?,?,?,?)",
         &[text(&name), text(&pin), text(&category), int(position)],
-    )?;
+    )
+    .await?;
     Ok(Ok(true))
 }
 
 /// Stops following. The artist's albums leave the index at the next sync.
-pub fn remove_follow(db: &mut Connection, name: &str) -> Result<()> {
-    for f in follows(db)? {
+pub async fn remove_follow(db: &mut Db, name: &str) -> Result<()> {
+    for f in follows(db).await? {
         if norm(&f.name) == norm(name) {
-            db.execute("DELETE FROM follows WHERE name = ?", &[text(&f.name)])?;
+            db.execute("DELETE FROM follows WHERE name = ?", &[text(&f.name)])
+                .await?;
         }
     }
     Ok(())
 }
 
 /// Sets a followed artist's category (empty for none). `Err` for an unknown artist or category.
-pub fn set_category(
-    db: &mut Connection,
+pub async fn set_category(
+    db: &mut Db,
     name: &str,
     category: &str,
 ) -> Result<std::result::Result<(), Refused>> {
-    let category = match known_category(db, category)? {
+    let category = match known_category(db, category).await? {
         Ok(c) => c,
         Err(e) => return Ok(Err(e)),
     };
-    let Some(f) = follows(db)?
+    let Some(f) = follows(db)
+        .await?
         .into_iter()
         .find(|f| norm(&f.name) == norm(name))
     else {
@@ -173,7 +188,8 @@ pub fn set_category(
     db.execute(
         "UPDATE follows SET category = ? WHERE name = ?",
         &[text(&category), text(&f.name)],
-    )?;
+    )
+    .await?;
     Ok(Ok(()))
 }
 
@@ -188,12 +204,13 @@ pub fn genre_list(genres: &str) -> Vec<String> {
 }
 
 /// Sets the genres an artist's albums must have to be kept (empty: any). The next sync applies it.
-pub fn set_genres(
-    db: &mut Connection,
+pub async fn set_genres(
+    db: &mut Db,
     name: &str,
     genres: &str,
 ) -> Result<std::result::Result<(), Refused>> {
-    let Some(f) = follows(db)?
+    let Some(f) = follows(db)
+        .await?
         .into_iter()
         .find(|f| norm(&f.name) == norm(name))
     else {
@@ -202,34 +219,36 @@ pub fn set_genres(
     db.execute(
         "UPDATE follows SET genres = ? WHERE name = ?",
         &[text(&genre_list(genres).join("; ")), text(&f.name)],
-    )?;
+    )
+    .await?;
     Ok(Ok(()))
 }
 
 /// Adds a category. `Ok(false)` when it exists.
-pub fn add_category(db: &mut Connection, name: &str) -> Result<std::result::Result<bool, Refused>> {
+pub async fn add_category(db: &mut Db, name: &str) -> Result<std::result::Result<bool, Refused>> {
     let name = clean(name);
     if name.is_empty() || norm(&name) == norm(UNCATEGORIZED) {
         return Ok(Err(Refused::Input("invalid category name".into())));
     }
-    let known = categories(db)?;
+    let known = categories(db).await?;
     if known.iter().any(|c| norm(c) == norm(&name)) {
         return Ok(Ok(false));
     }
     db.execute(
         "INSERT INTO categories(name, position) VALUES (?, ?)",
         &[text(&name), int(known.len() as i64 + 1)],
-    )?;
+    )
+    .await?;
     Ok(Ok(true))
 }
 
 /// Renames a category; the artists in it keep their place. Only a case change may land on a name that is taken (by itself).
-pub fn rename_category(
-    db: &mut Connection,
+pub async fn rename_category(
+    db: &mut Db,
     name: &str,
     new_name: &str,
 ) -> Result<std::result::Result<(), Refused>> {
-    let old = match known_category(db, name)? {
+    let old = match known_category(db, name).await? {
         Ok(c) if !c.is_empty() => c,
         Ok(_) => {
             return Ok(Err(Refused::Input(
@@ -242,23 +261,27 @@ pub fn rename_category(
     if new.is_empty() || norm(&new) == norm(UNCATEGORIZED) {
         return Ok(Err(Refused::Input("invalid category name".into())));
     }
-    if norm(&new) != norm(&old) && categories(db)?.iter().any(|c| norm(c) == norm(&new)) {
+    if norm(&new) != norm(&old) && categories(db).await?.iter().any(|c| norm(c) == norm(&new)) {
         return Ok(Err(Refused::Input(format!("category exists: {new}"))));
     }
     db.execute(
         "UPDATE categories SET name = ? WHERE name = ?",
         &[text(&new), text(&old)],
-    )?;
+    )
+    .await?;
     db.execute(
         "UPDATE follows SET category = ? WHERE category = ?",
         &[text(&new), text(&old)],
-    )?;
+    )
+    .await?;
     Ok(Ok(()))
 }
 
 /// Blacklisted `(normalised artist, album key)` pairs.
-pub fn blacklist(db: &mut Connection) -> Result<HashSet<(String, String)>> {
-    let rows = db.query("SELECT artist, album_key FROM blacklist", &[])?;
+pub async fn blacklist(db: &mut Db) -> Result<HashSet<(String, String)>> {
+    let rows = db
+        .query("SELECT artist, album_key FROM blacklist", &[])
+        .await?;
     Ok(rows
         .rows
         .iter()
@@ -267,23 +290,26 @@ pub fn blacklist(db: &mut Connection) -> Result<HashSet<(String, String)>> {
 }
 
 /// Blacklists every edition of an album of this artist.
-pub fn blacklist_add(db: &mut Connection, artist: &str, title: &str) -> Result<()> {
+pub async fn blacklist_add(db: &mut Db, artist: &str, title: &str) -> Result<()> {
     let key = album_key(title);
-    if !blacklist(db)?.contains(&(norm(artist), key.clone())) {
+    if !blacklist(db).await?.contains(&(norm(artist), key.clone())) {
         db.execute(
-            "INSERT OR IGNORE INTO blacklist(artist, album_key, title) VALUES (?,?,?)",
+            "INSERT INTO blacklist(artist, album_key, title) VALUES (?,?,?) ON CONFLICT DO NOTHING",
             &[text(&clean(artist)), text(&key), text(&clean(title))],
-        )?;
+        )
+        .await?;
     }
     Ok(())
 }
 
 /// Every blacklisted album, by artist and title.
-pub fn blacklist_entries(db: &mut Connection) -> Result<Vec<(i64, String, String)>> {
-    let rows = db.query(
-        "SELECT id, artist, title FROM blacklist ORDER BY lower(artist), lower(title), id",
-        &[],
-    )?;
+pub async fn blacklist_entries(db: &mut Db) -> Result<Vec<(i64, String, String)>> {
+    let rows = db
+        .query(
+            "SELECT id, artist, title FROM blacklist ORDER BY lower(artist) COLLATE \"C\", lower(title) COLLATE \"C\", id",
+            &[],
+        )
+        .await?;
     Ok(rows
         .rows
         .iter()
@@ -292,17 +318,19 @@ pub fn blacklist_entries(db: &mut Connection) -> Result<Vec<(i64, String, String
 }
 
 /// Lets an album back in: the entry goes. `false` when there is no such entry.
-pub fn blacklist_remove(db: &mut Connection, id: i64) -> Result<bool> {
+pub async fn blacklist_remove(db: &mut Db, id: i64) -> Result<bool> {
     let had = !db
-        .query("SELECT 1 FROM blacklist WHERE id = ?", &[int(id)])?
+        .query("SELECT 1 FROM blacklist WHERE id = ?", &[int(id)])
+        .await?
         .rows
         .is_empty();
-    db.execute("DELETE FROM blacklist WHERE id = ?", &[int(id)])?;
+    db.execute("DELETE FROM blacklist WHERE id = ?", &[int(id)])
+        .await?;
     Ok(had)
 }
 
 /// The sidebar rows: followed artists with their match and song count.
-pub fn artist_rows(db: &mut Connection) -> Result<Vec<ArtistRow>> {
+pub async fn artist_rows(db: &mut Db) -> Result<Vec<ArtistRow>> {
     let counts: HashMap<String, i64> = db
         .query(
             // The songs of the artist's own discography (the albums found under them), each once: the number the
@@ -310,13 +338,14 @@ pub fn artist_rows(db: &mut Connection) -> Result<Vec<ArtistRow>> {
             "SELECT o.listed_as, COUNT(DISTINCT sl.song_id) FROM albums al JOIN artists o ON o.id = al.owner_id \
              JOIN song_album sl ON sl.album_id = al.id WHERE o.listed_as IS NOT NULL GROUP BY o.id",
             &[],
-        )?
+        ).await?
         .rows
         .iter()
         .map(|r| (str_at(r, 0), int_at(r, 1)))
         .collect();
-    let cmap = category_map(db)?;
-    Ok(follows(db)?
+    let cmap = category_map(db).await?;
+    Ok(follows(db)
+        .await?
         .into_iter()
         .map(|f| ArtistRow {
             pinned: !f.pin.is_empty(),
@@ -335,11 +364,11 @@ pub fn artist_rows(db: &mut Connection) -> Result<Vec<ArtistRow>> {
         .collect())
 }
 
-pub fn suggestions(db: &mut Connection) -> Result<Vec<Suggestion>> {
-    let rows = db.query("SELECT artist, deezer_id, fans, related_to_count, related_to, scope FROM suggestions ORDER BY position, id", &[])?;
+pub async fn suggestions(db: &mut Db) -> Result<Vec<Suggestion>> {
+    let rows = db.query("SELECT artist, deezer_id, fans, related_to_count, related_to, scope FROM suggestions ORDER BY position, id", &[]).await?;
     let mut best: HashMap<String, Vec<TopTrack>> = HashMap::new();
     for r in db
-        .query("SELECT deezer_id, title, album, score FROM suggestion_tracks ORDER BY deezer_id, position", &[])?
+        .query("SELECT deezer_id, title, album, score FROM suggestion_tracks ORDER BY deezer_id COLLATE \"C\", position", &[]).await?
         .rows
     {
         best.entry(str_at(&r, 0)).or_default().push(TopTrack {
@@ -364,27 +393,27 @@ pub fn suggestions(db: &mut Connection) -> Result<Vec<Suggestion>> {
 }
 
 /// Replaces the suggestions. Run it inside a transaction when the caller wants all or nothing.
-pub fn set_suggestions(db: &mut Connection, list: &[Suggestion]) -> Result<()> {
-    db.execute("DELETE FROM suggestions", &[])?;
-    db.execute("DELETE FROM suggestion_tracks", &[])?;
+pub async fn set_suggestions(db: &mut Db, list: &[Suggestion]) -> Result<()> {
+    db.execute("DELETE FROM suggestions", &[]).await?;
+    db.execute("DELETE FROM suggestion_tracks", &[]).await?;
     for (i, s) in list.iter().enumerate() {
         db.execute(
             "INSERT INTO suggestions(artist, deezer_id, fans, related_to_count, related_to, scope, position) VALUES (?,?,?,?,?,?,?)",
             &[text(&s.artist), text(&s.deezer_id), text(&s.fans), int(i64::from(s.related_to_count)), text(&s.related_to), text(&s.scope), int(i as i64)],
-        )?;
+        ).await?;
         for (n, t) in s.best.iter().enumerate() {
             db.execute(
-                "INSERT OR REPLACE INTO suggestion_tracks(deezer_id, position, title, album, score) VALUES (?,?,?,?,?)",
+                "INSERT INTO suggestion_tracks(deezer_id, position, title, album, score) VALUES (?,?,?,?,?) ON CONFLICT (deezer_id, position) DO UPDATE SET title = EXCLUDED.title, album = EXCLUDED.album, score = EXCLUDED.score",
                 &[text(&s.deezer_id), int(n as i64), text(&t.title), text(&t.album), int(i64::from(t.score))],
-            )?;
+            ).await?;
         }
     }
     Ok(())
 }
 
 /// Records what a sync found for a followed artist (`note` empty when matched, `NO MATCH` otherwise).
-pub fn set_match(
-    db: &mut Connection,
+pub async fn set_match(
+    db: &mut Db,
     name: &str,
     deezer_name: &str,
     deezer_id: &str,
@@ -400,6 +429,7 @@ pub fn set_match(
             text(note),
             text(name),
         ],
-    )?;
+    )
+    .await?;
     Ok(())
 }

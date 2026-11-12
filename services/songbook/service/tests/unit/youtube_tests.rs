@@ -70,15 +70,17 @@ fn the_artists_topic_channel_with_the_right_length_beats_an_unofficial_upload() 
 }
 
 #[quench_test::test]
-fn songs_to_look_up_skip_links_manual_links_and_misses_unless_asked() {
+async fn songs_to_look_up_skip_links_manual_links_and_misses_unless_asked() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let index = index_in(&dir);
+    let index = index_in(&dir).await;
     index
-        .with(|db| {
-            let ids: Vec<i64> = ["One", "Two", "Three", "Four"]
-                .iter()
-                .enumerate()
-                .map(|(i, t)| {
+        .run(async |db| {
+            let mut ids: Vec<i64> = Vec::new();
+            for (i, t) in ["One", "Two", "Three", "Four"].iter().enumerate() {
+                ids.push(
                     upsert_song(
                         db,
                         &[(1, "Nas".to_string())],
@@ -86,40 +88,48 @@ fn songs_to_look_up_skip_links_manual_links_and_misses_unless_asked() {
                         None,
                         i64::try_from(i).unwrap() + 1,
                     )
-                    .unwrap()
-                })
-                .collect();
-            let other = upsert_song(db, &[(2, "AZ".to_string())], "Five", None, 9)?;
+                    .await?,
+                );
+            }
+            let other = upsert_song(db, &[(2, "AZ".to_string())], "Five", None, 9).await?;
             db.execute(
                 "UPDATE songs SET yt_status = 'ok', yt_url = 'u' WHERE id = ?",
                 &[songbook_service::index::int(ids[0])],
-            )?;
+            )
+            .await?;
             db.execute(
                 "UPDATE songs SET yt_status = 'miss' WHERE id = ?",
                 &[songbook_service::index::int(ids[1])],
-            )?;
+            )
+            .await?;
             db.execute(
                 "UPDATE songs SET yt_manual = 1, yt_status = 'ok' WHERE id = ?",
                 &[songbook_service::index::int(ids[2])],
-            )?;
+            )
+            .await?;
             let titles = |v: Vec<songbook_service::youtube::Wanted>| {
                 v.into_iter().map(|w| w.title).collect::<Vec<_>>()
             };
             assert_eq!(
-                titles(songs_to_look_up(db, "", false)?),
+                titles(songs_to_look_up(db, "", false).await?),
                 vec!["Four", "Five"]
             );
             assert_eq!(
-                titles(songs_to_look_up(db, "", true)?),
+                titles(songs_to_look_up(db, "", true).await?),
                 vec!["Two", "Four", "Five"]
             );
             db.execute(
                 "UPDATE artists SET listed_as = 'AZ' WHERE deezer_id = 2",
                 &[],
-            )?;
-            assert_eq!(titles(songs_to_look_up(db, "AZ", false)?), vec!["Five"]);
+            )
+            .await?;
+            assert_eq!(
+                titles(songs_to_look_up(db, "AZ", false).await?),
+                vec!["Five"]
+            );
             let _ = other;
             Ok(())
         })
+        .await
         .unwrap();
 }

@@ -468,15 +468,14 @@ needs = ["gatehouse"]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_gauge}"
 SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:13080"
 
-# Songbook: the music library's admin module. No database: the index is a SQLite file (meta/library.db under MUSIC_HOME), so
-# there is nothing of its own in the schema catalogue. Jobs need yt-dlp and ffmpeg on the PATH. State lives in .run/songbook.
+# Songbook: the music library's admin module. The index is the `songbook` schema in Postgres (Foundry module `songbook`); the
+# audio, the cookies and the cached pictures live in MUSIC_HOME (.run/songbook). Jobs need yt-dlp and ffmpeg on the PATH.
 [[services]]
 name = "songbook"
 package = "songbook"
 port = 16443
 base_path = "/songbook"
 needs = ["gatehouse"]
-schema = false
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_songbook}"

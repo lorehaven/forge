@@ -17,6 +17,17 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    // `songbook-service migrate-sqlite ...` moves a 0.1 library into Postgres and exits; it is not the server.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("migrate-sqlite") {
+        return match songbook_service::migrate::command(&args[1..]).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        };
+    }
     quench_starter::logging::init();
     quench_log::info!("Songbook starting");
 
@@ -24,15 +35,18 @@ async fn main() -> std::io::Result<()> {
     quench_log::info!("Server initialized with BASE_PATH: {base_path}");
 
     let config = Config::from_env();
-    quench_log::info!(
-        "index {}, audio {}",
-        config.db().display(),
-        config.data.display()
+    assert!(
+        !config.database_url.trim().is_empty(),
+        "no database configured: set DATABASE_URL (or POSTGRES_URL); the tables are installed by Foundry"
     );
-    let index = Index::open(&config.db(), &config.meta())
-        .unwrap_or_else(|e| panic!("index {}: {e}", config.db().display()));
-    let playlists = Playlists::open(&config.user_db())
-        .unwrap_or_else(|e| panic!("playlists {}: {e}", config.user_db().display()));
+    quench_log::info!("schema {}, audio {}", config.schema, config.data.display());
+    let pool = songbook_service::index::db::connect(&config.database_url, &config.schema)
+        .await
+        .unwrap_or_else(|e| panic!("database: {e}"));
+    let index = Index::open(pool.clone())
+        .await
+        .unwrap_or_else(|e| panic!("index: {e}"));
+    let playlists = Playlists::new(pool);
     let deezer = Deezer::live(config.cache());
     let app = App {
         config: Arc::new(config),

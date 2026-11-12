@@ -1,6 +1,6 @@
--- The Songbook index (meta/library.db). One source of truth for the tables: the service runs it on start
--- (include_str!) and scripts/convert-index.sh runs it with the sqlite3 CLI. quench-sqlite refuses foreign keys,
--- so none are declared: the service deletes dependants itself.
+-- The Songbook 0.1 index (SQLite, meta/library.db), kept to build the files the migration tests read.
+-- The 0.2 tables are Foundry's (services/foundry/service/migrations/songbook).
+-- quench-sqlite refuses foreign keys, so none are declared.
 CREATE TABLE IF NOT EXISTS artists(
   id INTEGER PRIMARY KEY, deezer_id INTEGER UNIQUE, name TEXT NOT NULL, listed_as TEXT UNIQUE);
 CREATE TABLE IF NOT EXISTS albums(

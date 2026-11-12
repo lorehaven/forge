@@ -24,7 +24,7 @@ Exit status 0 means the database matches the plan; non-zero fails the Job.
 
 ## Pipeline
 
-`.conveyor.toml` coverage job: a Postgres sidecar, then `cargo run -q -p foundry -- apply --catalog services/foundry/service/migrations --database-url postgres://...@127.0.0.1:5432/postgres --install conveyor --install daybook --install gantry --install gatehouse --install sage --install switchboard --install warehouse --install workbench`. `gauge` and `hoist` are not in that list.
+`.conveyor.toml` coverage job: a Postgres sidecar, then `cargo run -q -p foundry -- apply --catalog services/foundry/service/migrations --database-url postgres://...@127.0.0.1:5432/postgres --install conveyor --install daybook --install gantry --install gatehouse --install sage --install songbook --install switchboard --install warehouse --install workbench`. `gauge` and `hoist` are not in that list.
 
 ## Logging
 

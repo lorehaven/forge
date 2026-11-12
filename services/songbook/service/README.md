@@ -6,9 +6,10 @@ lookup, download and conversion that give every song a file, and the web interfa
 
 ## How the library is kept
 
-* **One index, one writer.** `meta/library.db` (SQLite, read and written through `quench-sqlite`) is the single source of
-  truth; this service is the only thing that writes it. Followed artists, categories, the album blacklist and the last
-  suggestions live in it too (no text files).
+* **One index, one writer.** The tables of the `songbook` schema in Postgres (`DATABASE_URL`, `DB_SCHEMA`; the tables are
+  Foundry's, module `songbook`) are the single source of truth; this service is the only thing that writes them. Followed
+  artists, categories, the album blacklist and the last suggestions live in them too (no text files). Up to 0.1 the index was a
+  SQLite file; [moving a 0.1 library over](#moving-a-01-library-over-from-sqlite) is one command.
 * **One row per song.** A song is identified by its artists (compared without case and punctuation) and its title with
   `(feat. X)` and remaster tags removed (`songbook_core::naming::song_key`). The same track on an album, a deluxe edition, a
   compilation or a collaborator's discography is one row. `Song (Sped Up)`, `(Live)` and `(Remix)` stay separate songs.
@@ -38,8 +39,12 @@ suggestions  artist, deezer_id, fans, related_to_count, related_to, scope, posit
 meta         key, value                                (schema, key_scheme)
 ```
 
-`service/src/schema.sql` is the one definition; the service runs it on start. `quench-sqlite` refuses foreign keys, so none are
-declared and the service removes dependants itself. `yt_status` is `NULL` (not searched), `ok` or `miss`.
+The tables are made by Foundry (`services/foundry/service/migrations/songbook`, `0001-library` and `0002-listeners`); the service
+creates nothing and only needs the schema to exist. No foreign keys are declared, as before: the service removes dependants
+itself. Ids are identity columns, `BIGINT` throughout (Deezer's ids do not fit 32 bits). `yt_status` is `NULL` (not searched),
+`ok` or `miss`. The listeners' tables are `playlists`, `playlist_songs`, `plays`, `contexts` and `resume`, kept apart from the
+library so that writing one never drops the cached copy of the library. Text is sorted bytewise (`COLLATE "C"`) wherever the
+page shows an order, so the order does not depend on the locale of the database.
 
 ## The listener API
 
@@ -54,7 +59,7 @@ Under `/api/v1` (not `/admin`), for any grant of `songbook`. Only songs that hav
 | `GET /library/ids` | the same | the ids only, in play order (up to 20,000): a queue |
 | `GET /library/search?q=` | | a few songs, albums and artists |
 | `GET /library/recent` | `limit` | what this person played last, newest first, each song once (the same on every device) |
-| `POST /history` | `{song_id}` | remembers that the person started a song (the player and the Android app tell it; the last 500 are kept in `meta/user.db`) |
+| `POST /history` | `{song_id}` | remembers that the person started a song (the player and the Android app tell it; the last 500 are kept in the `plays` table) |
 | `GET /history/contexts` | `limit` | what this person chose to start playing (a mix, an artist, an album, a playlist, a category or one song), newest first, each once: the home page's "Recently played" |
 | `POST /history/context` | a `RecentItem` (`kind`, `name`, `sub`, `art_kind`, `art_key`, `query`, `shuffle`) | remembers that the person chose to start it; the same thing again moves to the front (the last 60 are kept) |
 | `GET /resume` | | where this person stopped listening on any device: `{song_id, position_ms, queue, index, device, at}` (`song_id` 0: nowhere yet) |
@@ -68,7 +73,7 @@ Under `/api/v1` (not `/admin`), for any grant of `songbook`. Only songs that hav
 A song's picture is its album's cover (a single's own cover), else its artist's. The pictures are what the **images** job saved in `meta/images` (`album-<deezer id>.jpg`, `artist-<deezer id>.jpg`; an empty `<name>.none` marks what Deezer has none of, `retry_missing` clears them); smaller copies are made with ffmpeg on first request. The job is a Pipeline step, the last stage of "run everything" and a stage of the nightly run. The player keeps pictures, its files, its last page and the library answers on the device with a service worker (`/sw.js`), so it opens without the network.
 
 The catalog is built from the index and a look at the audio folder, kept for 30 s and rebuilt when the index changes.
-Playlists live in `meta/user.db`, apart from the index, so writing one does not drop the index's cached copy.
+Playlists and the listeners' plays and resume points are in tables of their own, apart from the index, so writing one does not drop the index's cached copy.
 
 ## The admin API
 
@@ -119,6 +124,12 @@ One job at a time, in the background, with its log kept in memory (the last 4 MB
 * **download** fetches each linked song that has no file into the audio folder (audio only, `-f bestaudio/best`).
 * **convert** turns every media file in the audio folder into mp3 (VBR quality 0) in place and removes the source; a leftover
   source whose mp3 exists is removed too when both last the same within 2 s. A download with no audio stream is reported and left.
+* **fix-links** (`POST /jobs {name: "fix-links", dry_run, artist, limit}`) repairs links that do not match their song. It is not a step of
+  the pipeline or the nightly run; the Pipeline page has its own card with a *Preview* and a *Fix links* button. A song whose automatic
+  link (not one set by hand) points at a video whose title does not contain the song's title (case and punctuation ignored, `(feat. X)`
+  and remaster tags dropped) is a suspect. The preview lists them. Fixing moves each suspect's audio file to `<audio>/.mismatch-old/`
+  (nothing is deleted), clears its link, then runs find links, download and convert. Find links looks at every song without a link,
+  not only the cleared ones. A suspect for which no new match is found keeps no file; its old one is in `.mismatch-old/`.
 * **purge** deletes the audio files of blacklisted albums. Blacklisting only takes an album out of the index, so its files stay and
   the index no longer knows their names; purge asks Deezer for each blacklisted album's tracklist again, rebuilds the file names as
   sync does and deletes the files of those names (every extension) that are in the audio folder. A name that a song in the index
@@ -143,7 +154,9 @@ only recorded when a link is found, so a song that already has a link keeps Deez
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MUSIC_HOME` | working directory | holds `meta/` (`library.db`, `cookies.txt`) and `.deezer_cache/` |
+| `DATABASE_URL` (or `POSTGRES_URL`) | none, **required** | the Postgres holding the `songbook` schema; the service refuses to start without it |
+| `DB_SCHEMA` | `songbook` | the schema Foundry installed the module in (the connections are opened with it on the `search_path`) |
+| `MUSIC_HOME` | working directory | holds `meta/` (`cookies.txt`, `images/`, `youtube_misses.csv`) and `.deezer_cache/` |
 | `MUSIC_DATA` | `$MUSIC_HOME/data` | the audio folder |
 | `COOKIES_FILE` | `$MUSIC_HOME/meta/cookies.txt` | YouTube cookies (Netscape format) for yt-dlp; checked once per job against a public video and dropped, with a warning in the log, when YouTube rejects them |
 | `COOKIES_BROWSER` | empty | a browser whose cookies yt-dlp reads when there is no cookies file |
@@ -177,7 +190,7 @@ The service needs `yt-dlp` (with a JavaScript runtime such as node, for YouTube'
 
 ```sh
 foreman start songbook     # builds, then serves https://localhost:16443/songbook/ behind the local Gatehouse
-cargo test -p songbook     # unit tests (the convert test needs ffmpeg and skips itself without)
+cargo test -p songbook     # unit tests; the ones that need the database skip themselves without SONGBOOK_TEST_DATABASE_URL (see below)
 ```
 
 For a quick look without Gatehouse, run the binary from this directory with `GATEHOUSE_URL=http://127.0.0.1:9`,
@@ -185,15 +198,29 @@ For a quick look without Gatehouse, run the binary from this directory with `GAT
 anyone (`/health/ready` stays 503 because Gatehouse is not there). The browser client is the `songbook-web` crate:
 `scripts/web.sh` at the root of the workspace builds it to `service/web/app.wasm`.
 
-## Moving an existing library over from the Python helper
+## Moving a 0.1 library over from SQLite
 
-1. Convert the index (the old file is only read; needs the `sqlite3` tool):
-   `services/songbook/scripts/convert-index.sh <old>/meta/library.db <new home>/meta/library.db`
-2. Copy `artists.txt`, `categories.txt`, `blacklist.txt`, `artist_matches.csv` and `suggestions.csv` next to it. On the first start
-   with an empty `follows` table the service imports them once and never reads them again.
-3. Start the service on that home. It recomputes every song key with the Unicode-aware rule (`meta.key_scheme`), once, so
-   the titles in Polish or other non-ASCII scripts no longer collide, and keeps the old file names (`songs.filename` is not
-   recomputed). Copy the audio folder to `MUSIC_DATA` as it is.
+Songbook 0.2 keeps the library in Postgres. A 0.1 library (`meta/library.db` and `meta/user.db` under `MUSIC_HOME`) moves with
+one command that is part of the service binary, and one wrapper script around it:
+
+1. Stop the 0.1 service (it holds the SQLite files).
+2. Install the tables: `foundry apply --catalog services/foundry/service/migrations --database-url "$DATABASE_URL" --install songbook`
+   (the Foundry Job of a deployment does it when `songbook` is in its install list).
+3. Run `services/songbook/scripts/migrate-to-postgres.sh` with `MUSIC_HOME`, `DATABASE_URL` and `SONGBOOK_BIN` (the 0.2
+   `songbook-service`) or `SONGBOOK_IMAGE` (a 0.2 image, run with `docker run --network host`) set. It copies the two files to
+   `meta/sqlite-backup-<time>/`, does a dry run (every table copied and checked, then rolled back), asks, and copies for real.
+   `--yes` skips the question, `--dry-run` stops after the dry run, `--replace` empties the songbook tables first (without it a
+   target that already holds rows is refused).
+4. Start the 0.2 service with `DATABASE_URL`. Keep the SQLite files until you have looked at the library.
+
+The command itself is `songbook-service migrate-sqlite [--home DIR] [--library FILE] [--user FILE] [--database-url URL] [--schema NAME]
+[--replace] [--dry-run]` (`--help` lists them). Every row keeps its id, so playlists, plays and the apps' links keep working, and
+the identity counters are moved past the largest id. It is one transaction: either every table is copied and its row count equals
+the file's, or nothing changes. A file from the first release, without the later columns, moves too (the defaults fill them). The
+audio folder is not touched.
+
+The import of the Python helper's text files (`artists.txt`, ...) that 0.1 did on a first start is gone: a library that still comes
+from the Python helper goes through Songbook 0.1 first.
 
 ## Docker
 

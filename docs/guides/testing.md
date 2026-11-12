@@ -44,6 +44,7 @@ The service integration tests skip themselves (print `skipping ...: <VAR> is not
 | `GAUGE_TEST_DATABASE_URL` | gauge |
 | `HOIST_TEST_DATABASE_URL` | hoist |
 | `SAGE_TEST_DATABASE_URL` | sage |
+| `SONGBOOK_TEST_DATABASE_URL` | songbook (its `tests/unit.rs` makes a schema of its own for each test from the `songbook` migration files, so the module need not be installed) |
 | `WAREHOUSE_TEST_DATABASE_URL` | warehouse |
 | `WORKBENCH_TEST_DATABASE_URL` | workbench |
 

@@ -99,7 +99,7 @@ FOUNDRY_INSTALL="sage@0.2.0,switchboard:switchboard_staging" foundry-service app
 Sample `validate` output for `--install 'sage@0.2.0:sage_test'` (colours removed):
 
 ```text
-catalog 13 module(s) from migrations
+catalog 14 module(s) from migrations
 module 1. auth 0.2.3 -> schema auth (required by sage)
 module 2. pgvector 0.1.0 -> schema public (required by sage)
 module 3. quench-core 0.1.0 -> schema sage_test (required by sage)

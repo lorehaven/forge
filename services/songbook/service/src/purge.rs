@@ -17,12 +17,13 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 pub async fn run(app: &App, dry_run: bool, log: &Log) -> Result<(), String> {
     let (blacklisted, follows, kept) = app
         .index
-        .run(|db| {
+        .run(async |db| {
             let rows: Vec<(String, String, String)> = db
                 .query(
-                    "SELECT artist, album_key, title FROM blacklist ORDER BY artist, title",
+                    "SELECT artist, album_key, title FROM blacklist ORDER BY artist COLLATE \"C\", title COLLATE \"C\"",
                     &[],
-                )?
+                )
+                .await?
                 .rows
                 .iter()
                 .map(|r| {
@@ -34,12 +35,13 @@ pub async fn run(app: &App, dry_run: bool, log: &Log) -> Result<(), String> {
                 })
                 .collect();
             let kept: HashSet<String> = db
-                .query("SELECT filename FROM songs", &[])?
+                .query("SELECT filename FROM songs", &[])
+                .await?
                 .rows
                 .iter()
                 .map(|r| crate::index::str_at(r, 0))
                 .collect();
-            Ok((rows, crate::index::follow::follows(db)?, kept))
+            Ok((rows, crate::index::follow::follows(db).await?, kept))
         })
         .await
         .map_err(|e| e.to_string())?;

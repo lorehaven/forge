@@ -105,7 +105,7 @@ pub async fn albums(Inject(app): Inject<App>, Query(q): Query<AlbumQuery>) -> Re
 #[get("/api/v1/library/songs")]
 pub async fn songs(Inject(app): Inject<App>, Me(me): Me, Query(q): Query<SongQuery>) -> Response {
     let catalog = catalog!(app);
-    ok(&catalog.songs(&with_playlist(&app, &me, q)))
+    ok(&catalog.songs(&with_playlist(&app, &me, q).await))
 }
 
 /// What this person played last (each song once, newest first): the same on every device they use.
@@ -121,7 +121,7 @@ pub async fn recent(
     } else {
         (q.limit as usize).min(200)
     };
-    let ids = match app.playlists.recent(&me, limit * 2) {
+    let ids = match app.playlists.recent(&me, limit * 2).await {
         Ok(ids) => ids,
         Err(e) => return server_error(e),
     };
@@ -146,7 +146,7 @@ pub async fn played(
     Json(body): Json<PlayedBody>,
 ) -> Response {
     let now = quench_core::time::Time::now().timestamp();
-    match app.playlists.played(&me, body.song_id, now) {
+    match app.playlists.played(&me, body.song_id, now).await {
         Ok(()) => ok(&quench_serde::json!({})),
         Err(e) => server_error(e),
     }
@@ -164,7 +164,7 @@ pub async fn contexts(
     } else {
         (q.limit as usize).min(60)
     };
-    match app.playlists.contexts(&me, limit) {
+    match app.playlists.contexts(&me, limit).await {
         Ok(items) => ok(&items),
         Err(e) => server_error(e),
     }
@@ -185,7 +185,7 @@ pub async fn started(
         *field = field.chars().take(200).collect();
     }
     let now = quench_core::time::Time::now().timestamp();
-    match app.playlists.started(&me, &item, now) {
+    match app.playlists.started(&me, &item, now).await {
         Ok(()) => ok(&quench_serde::json!({})),
         Err(e) => server_error(e),
     }
@@ -197,7 +197,7 @@ const RESUME_QUEUE: usize = 2000;
 /// Where this person stopped listening, on any of their devices (`song_id` 0: nowhere yet).
 #[get("/api/v1/resume")]
 pub async fn resume(Inject(app): Inject<App>, Me(me): Me) -> Response {
-    match app.playlists.resume(&me) {
+    match app.playlists.resume(&me).await {
         Ok(found) => ok(&found.unwrap_or_default()),
         Err(e) => server_error(e),
     }
@@ -223,7 +223,7 @@ pub async fn set_resume(
     }
     body.device.truncate(64);
     body.at = quench_core::time::Time::now().timestamp();
-    match app.playlists.set_resume(&me, &body, body.at) {
+    match app.playlists.set_resume(&me, &body, body.at).await {
         Ok(()) => ok(&body),
         Err(e) => server_error(e),
     }
@@ -232,13 +232,13 @@ pub async fn set_resume(
 #[get("/api/v1/library/ids")]
 pub async fn ids(Inject(app): Inject<App>, Me(me): Me, Query(q): Query<SongQuery>) -> Response {
     let catalog = catalog!(app);
-    ok(&catalog.ids(&with_playlist(&app, &me, q)))
+    ok(&catalog.ids(&with_playlist(&app, &me, q).await))
 }
 
 /// A query for a playlist becomes one for its songs, in its order (what is not playable is left out by the catalog).
-fn with_playlist(app: &App, me: &str, mut q: SongQuery) -> SongQuery {
+async fn with_playlist(app: &App, me: &str, mut q: SongQuery) -> SongQuery {
     if q.playlist != 0 && q.ids.is_empty() {
-        let ids = app.playlists.songs(me, q.playlist).ok().flatten();
+        let ids = app.playlists.songs(me, q.playlist).await.ok().flatten();
         // An unknown playlist is an empty list, not the whole library.
         q.ids = ids.map_or_else(|| "0".to_string(), |ids| join(&ids));
         q.playlist = 0;
@@ -355,7 +355,7 @@ fn refused(r: &Refused) -> Response {
 
 #[get("/api/v1/playlists")]
 pub async fn playlists(Inject(app): Inject<App>, Me(me): Me) -> Response {
-    match app.playlists.list(&me) {
+    match app.playlists.list(&me).await {
         Ok(list) => ok(&list),
         Err(e) => server_error(e),
     }
@@ -368,7 +368,7 @@ pub async fn create_playlist(
     Json(body): Json<PlaylistBody>,
 ) -> Response {
     let now = quench_core::time::Time::now().timestamp();
-    match app.playlists.create(&me, &body.name, now) {
+    match app.playlists.create(&me, &body.name, now).await {
         Ok(Ok(info)) => ok(&info),
         Ok(Err(r)) => refused(&r),
         Err(e) => server_error(e),
@@ -382,7 +382,7 @@ pub async fn rename_playlist(
     Path(id): Path<i64>,
     Json(body): Json<PlaylistBody>,
 ) -> Response {
-    match app.playlists.rename(&me, id, &body.name) {
+    match app.playlists.rename(&me, id, &body.name).await {
         Ok(Ok(info)) => ok(&info),
         Ok(Err(r)) => refused(&r),
         Err(e) => server_error(e),
@@ -395,7 +395,7 @@ pub async fn delete_playlist(
     Me(me): Me,
     Path(id): Path<i64>,
 ) -> Response {
-    match app.playlists.delete(&me, id) {
+    match app.playlists.delete(&me, id).await {
         Ok(true) => ok(&quench_serde::json!({})),
         Ok(false) => refused(&Refused::Unknown),
         Err(e) => server_error(e),
@@ -409,7 +409,7 @@ pub async fn add_to_playlist(
     Path(id): Path<i64>,
     Json(body): Json<SongIdsBody>,
 ) -> Response {
-    match app.playlists.add(&me, id, &body.song_ids) {
+    match app.playlists.add(&me, id, &body.song_ids).await {
         Ok(Ok(info)) => ok(&info),
         Ok(Err(r)) => refused(&r),
         Err(e) => server_error(e),
@@ -423,7 +423,7 @@ pub async fn set_playlist(
     Path(id): Path<i64>,
     Json(body): Json<SongIdsBody>,
 ) -> Response {
-    match app.playlists.set(&me, id, &body.song_ids) {
+    match app.playlists.set(&me, id, &body.song_ids).await {
         Ok(Ok(info)) => ok(&info),
         Ok(Err(r)) => refused(&r),
         Err(e) => server_error(e),

@@ -848,17 +848,17 @@ fn start(env: &Env, name: &str) {
     // The whole pipeline takes both limits: `limit` is the one of find links, `limit_download` the one of download.
     let everything = name == "pipeline";
     // "purge-preview" is the purge job that only lists.
-    let (name, dry_run) = if name == "purge-preview" {
-        ("purge", true)
-    } else {
-        (name, false)
+    let (name, dry_run) = match name {
+        "purge-preview" => ("purge", true),
+        "fix-links-preview" => ("fix-links", true),
+        _ => (name, false),
     };
     (env.ask)(Request::StartJob(JobStart {
         name: name.to_string(),
         dry_run,
         singles: m.singles.get_untracked(),
         artist: m.filter.get_untracked().artist,
-        limit: if name == "youtube" || everything {
+        limit: if name == "youtube" || name == "fix-links" || everything {
             limit(&m.limit_links)
         } else if name == "download" {
             limit(&m.limit_download)
@@ -1097,6 +1097,30 @@ pub(crate) fn pipeline(env: &Env) -> View {
                                         &m.retry_images,
                                     )),
                             ),
+                    ),
+            )
+            .child(
+                article()
+                    .attr("id", "fix-links")
+                    .class("sb-card sb-step")
+                    .child(h3().text(t.t("ui_fixlinks_title")))
+                    .child(p().text(t.t("ui_fixlinks_text")))
+                    .child(
+                        toolbar()
+                            .child(job_button(
+                                &env,
+                                "fix-links-preview",
+                                &t.t("ui_fixlinks_preview"),
+                                "fui-btn-secondary",
+                                Some(t.t("ui_fixlinks_preview_title")),
+                            ))
+                            .child(job_button(
+                                &env,
+                                "fix-links",
+                                &t.t("ui_fixlinks_run"),
+                                "fui-btn-danger",
+                                Some(t.t("ui_fixlinks_run_title")),
+                            )),
                     ),
             )
             .child(

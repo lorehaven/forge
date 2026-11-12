@@ -2,8 +2,7 @@
 
 use super::follow::{self, Refused};
 use super::songs;
-use super::{Result, Value, int, int_at, opt_int_at, placeholders, str_at, text};
-use quench_sqlite::Connection;
+use super::{Db, Result, Value, int, int_at, opt_int_at, placeholders, str_at, text};
 use songbook_core::naming::album_key;
 use songbook_core::{Album, Browse, Filter, State, Stats, Track, popularity};
 use std::collections::{HashMap, HashSet};
@@ -14,33 +13,35 @@ pub const LIMIT: usize = 300;
 /// How many songs of an artist the "top artists" order lists.
 pub const BEST_PER_ARTIST: usize = 10;
 
-pub fn state(db: &mut Connection) -> Result<State> {
+pub async fn state(db: &mut Db) -> Result<State> {
     let genres = db
         .query(
-            "SELECT name FROM tags WHERE kind = 'genre' ORDER BY name",
+            "SELECT name FROM tags WHERE kind = 'genre' ORDER BY name COLLATE \"C\"",
             &[],
-        )?
+        )
+        .await?
         .rows
         .iter()
         .map(|r| str_at(r, 0))
         .collect();
     Ok(State {
-        artists: follow::artist_rows(db)?,
-        categories: follow::categories(db)?,
+        artists: follow::artist_rows(db).await?,
+        categories: follow::categories(db).await?,
         uncategorized: songs::UNCATEGORIZED.to_string(),
         genres,
-        suggestions: follow::suggestions(db)?,
+        suggestions: follow::suggestions(db).await?,
     })
 }
 
 /// Artist names per song id, main artist first, for the given songs (all songs when `only` is `None`).
-fn people(db: &mut Connection, only: Option<&[i64]>) -> Result<HashMap<i64, Vec<String>>> {
+async fn people(db: &mut Db, only: Option<&[i64]>) -> Result<HashMap<i64, Vec<String>>> {
     let mut out: HashMap<i64, Vec<String>> = HashMap::new();
     let base =
         "SELECT sa.song_id, a.name FROM song_artist sa JOIN artists a ON a.id = sa.artist_id";
     let rows = match only {
         None => {
-            db.query(&format!("{base} ORDER BY sa.song_id, sa.position"), &[])?
+            db.query(&format!("{base} ORDER BY sa.song_id, sa.position"), &[])
+                .await?
                 .rows
         }
         Some(ids) => {
@@ -54,7 +55,8 @@ fn people(db: &mut Connection, only: Option<&[i64]>) -> Result<HashMap<i64, Vec<
                             placeholders(chunk.len())
                         ),
                         &params,
-                    )?
+                    )
+                    .await?
                     .rows,
                 );
             }
@@ -110,22 +112,22 @@ pub struct Snapshot {
 
 impl Snapshot {
     /// Reads the whole library: the joined, ordered tracklists, who is on each song and its tags.
-    pub fn load(db: &mut Connection) -> Result<Self> {
+    pub async fn load(db: &mut Db) -> Result<Self> {
         let rows = db
             .query(
                 "SELECT s.id, s.title, s.yt_url, s.yt_official, s.yt_manual, al.deezer_id, al.title, al.year, al.type, al.genre, o.listed_as, s.filename, s.rank, s.yt_views \
                  FROM song_album sl JOIN songs s ON s.id = sl.song_id JOIN albums al ON al.id = sl.album_id JOIN artists o ON o.id = al.owner_id \
-                 ORDER BY o.listed_as, al.year, al.title, sl.track_no",
+                 ORDER BY o.listed_as COLLATE \"C\", al.year, al.title COLLATE \"C\", sl.track_no",
                 &[],
-            )?
+            ).await?
             .rows;
-        let who = people(db, None)?;
+        let who = people(db, None).await?;
         let mut tags: HashMap<i64, (HashSet<String>, HashSet<String>)> = HashMap::new();
         for row in db
             .query(
                 "SELECT st.song_id, t.kind, t.name FROM song_tag st JOIN tags t ON t.id = st.tag_id",
                 &[],
-            )?
+            ).await?
             .rows
         {
             let entry = tags.entry(int_at(&row, 0)).or_default();
@@ -164,26 +166,28 @@ impl Snapshot {
                 }
             })
             .collect();
-        let count = |db: &mut Connection, table: &str| -> Result<u32> {
+        let count = async |db: &mut Db, table: &str| -> Result<u32> {
             Ok(db
-                .query(&format!("SELECT COUNT(*) FROM {table}"), &[])?
+                .query(&format!("SELECT COUNT(*) FROM {table}"), &[])
+                .await?
                 .rows
                 .first()
                 .map_or(0, |r| int_at(r, 0)) as u32)
         };
         let files = db
-            .query("SELECT filename, yt_url FROM songs", &[])?
+            .query("SELECT filename, yt_url FROM songs", &[])
+            .await?
             .rows
             .iter()
             .map(|r| (str_at(r, 0), !str_at(r, 1).is_empty()))
             .collect();
         Ok(Self {
             rows,
-            state: state(db)?,
+            state: state(db).await?,
             files,
-            followed: count(db, "follows")?,
-            credited: count(db, "artists")?,
-            albums: count(db, "albums")?,
+            followed: count(db, "follows").await?,
+            credited: count(db, "artists").await?,
+            albums: count(db, "albums").await?,
         })
     }
 
@@ -365,8 +369,8 @@ impl Snapshot {
 }
 
 /// Albums of the followed artists with their tracklists, read straight from the tables (the service uses a [`Snapshot`]).
-pub fn browse(db: &mut Connection, filter: &Filter) -> Result<Browse> {
-    Ok(Snapshot::load(db)?.browse(filter))
+pub async fn browse(db: &mut Db, filter: &Filter) -> Result<Browse> {
+    Ok(Snapshot::load(db).await?.browse(filter))
 }
 
 /// Is this a link a browser can open (`http(s)://host...`)?
@@ -378,8 +382,8 @@ pub fn is_link(url: &str) -> bool {
 }
 
 /// Sets the YouTube link of a song, or clears it with an empty `url` (the next lookup will try again).
-pub fn set_link(
-    db: &mut Connection,
+pub async fn set_link(
+    db: &mut Db,
     song: i64,
     url: &str,
 ) -> Result<std::result::Result<u32, Refused>> {
@@ -390,7 +394,8 @@ pub fn set_link(
         )));
     }
     if db
-        .query("SELECT 1 FROM songs WHERE id = ?", &[int(song)])?
+        .query("SELECT 1 FROM songs WHERE id = ?", &[int(song)])
+        .await?
         .rows
         .is_empty()
     {
@@ -400,59 +405,59 @@ pub fn set_link(
         db.execute(
             "UPDATE songs SET yt_url = '', yt_channel = '', yt_title = '', yt_official = 0, yt_score = NULL, yt_views = NULL, yt_manual = 0, yt_status = NULL, yt_candidate = '' WHERE id = ?",
             &[int(song)],
-        )?;
+        ).await?;
     } else {
         db.execute(
             "UPDATE songs SET yt_url = ?, yt_channel = 'manual', yt_title = '', yt_official = 0, yt_score = NULL, yt_views = NULL, yt_manual = 1, yt_status = 'ok', yt_candidate = '' WHERE id = ?",
             &[text(url), int(song)],
-        )?;
+        ).await?;
     }
     Ok(Ok(1))
 }
 
 /// Blacklists the album (and its other editions) of an artist and drops it, and the songs only it held, from the index.
 /// Returns how many tracks left the albums.
-pub fn blacklist_album(
-    db: &mut Connection,
+pub async fn blacklist_album(
+    db: &mut Db,
     artist: &str,
     album_id: i64,
 ) -> Result<std::result::Result<u32, Refused>> {
-    db.transaction(|db| {
+    db.transaction(async |db| -> Result<std::result::Result<u32, Refused>> {
         let found = db.query(
             "SELECT al.title FROM albums al JOIN artists o ON o.id = al.owner_id WHERE o.listed_as = ? AND al.deezer_id = ?",
             &[text(artist), int(album_id)],
-        )?;
+        ).await?;
         let Some(row) = found.rows.first() else {
             return Ok(Err(Refused::Input("unknown album".into())));
         };
         let title = str_at(row, 0);
-        Ok(Ok(keep_out(db, artist, &title)?))
-    })
+        Ok(Ok(keep_out(db, artist, &title).await?))
+    }).await
 }
 
 /// Blacklists `title` of `artist` and drops its editions, and the songs only they held, from the index; how many tracks left.
-fn keep_out(db: &mut Connection, artist: &str, title: &str) -> Result<u32> {
+async fn keep_out(db: &mut Db, artist: &str, title: &str) -> Result<u32> {
     let key = album_key(title);
-    follow::blacklist_add(db, artist, title)?;
-    let owned = db.query("SELECT al.id, al.title FROM albums al JOIN artists o ON o.id = al.owner_id WHERE o.listed_as = ?", &[text(artist)])?;
+    follow::blacklist_add(db, artist, title).await?;
+    let owned = db.query("SELECT al.id, al.title FROM albums al JOIN artists o ON o.id = al.owner_id WHERE o.listed_as = ?", &[text(artist)]).await?;
     let mut removed = 0;
     for al in owned
         .rows
         .iter()
         .filter(|r| album_key(&str_at(r, 1)) == key)
     {
-        removed += songs::drop_album(db, int_at(al, 0))?;
+        removed += songs::drop_album(db, int_at(al, 0)).await?;
     }
-    songs::prune(db)?;
-    let cmap = follow::category_map(db)?;
-    songs::retag(db, &cmap)?;
+    songs::prune(db).await?;
+    let cmap = follow::category_map(db).await?;
+    songs::retag(db, &cmap).await?;
     Ok(removed)
 }
 
 /// Adds an album to the blacklist by name (`id` 0), or changes an entry (`id`): the entry takes the new artist and title and
 /// what they name leaves the index now. Returns how many tracks left. An entry that is already there is refused.
-pub fn blacklist_save(
-    db: &mut Connection,
+pub async fn blacklist_save(
+    db: &mut Db,
     id: i64,
     artist: &str,
     title: &str,
@@ -463,24 +468,25 @@ pub fn blacklist_save(
             "an artist and an album are needed".into(),
         )));
     }
-    db.transaction(|db| {
-        if id != 0 && !follow::blacklist_remove(db, id)? {
+    db.transaction(async |db| -> Result<std::result::Result<u32, Refused>> {
+        if id != 0 && !follow::blacklist_remove(db, id).await? {
             return Ok(Err(Refused::Input("unknown entry".into())));
         }
-        let before = follow::blacklist(db)?.len();
-        let removed = keep_out(db, artist, title)?;
-        if id == 0 && follow::blacklist(db)?.len() == before {
+        let before = follow::blacklist(db).await?.len();
+        let removed = keep_out(db, artist, title).await?;
+        if id == 0 && follow::blacklist(db).await?.len() == before {
             return Ok(Err(Refused::Input("it is on the blacklist already".into())));
         }
         Ok(Ok(removed))
     })
+    .await
 }
 
 /// Songs by a followed artist (the name as followed or as Deezer spells it), as song ids.
-pub fn songs_of(db: &mut Connection, artist: &str) -> Result<HashSet<i64>> {
+pub async fn songs_of(db: &mut Db, artist: &str) -> Result<HashSet<i64>> {
     let rows = db.query(
         "SELECT sa.song_id FROM song_artist sa JOIN artists a ON a.id = sa.artist_id WHERE a.name = ? OR a.listed_as = ?",
         &[text(artist), text(artist)],
-    )?;
+    ).await?;
     Ok(rows.rows.iter().map(|r| int_at(r, 0)).collect())
 }

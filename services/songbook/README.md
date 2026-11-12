@@ -2,8 +2,8 @@
 
 The library of every song: a personal replacement for a streaming service. Its first module is **admin**: the index of songs,
 artists, albums and tags, the Deezer sync that fills it, the YouTube lookup, download and conversion that give every song a
-file, and the web interface that drives them. A Quench service in the shape of Gauge and Workbench; one SQLite file is the
-index and one flat folder holds the audio (`Artist A, Artist B - Title.mp3`).
+file, and the web interface that drives them. A Quench service in the shape of Gauge and Workbench; the index is a
+schema in Postgres (Foundry's `songbook` module) and one flat folder holds the audio (`Artist A, Artist B - Title.mp3`).
 
 | Crate | Path | Role |
 |---|---|---|

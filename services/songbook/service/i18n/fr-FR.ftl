@@ -228,6 +228,12 @@ ui_purge_preview = Aperçu
 ui_purge_preview_title = Lister les fichiers qui seraient supprimés ; ne supprime rien
 ui_purge_delete = Supprimer les fichiers de la liste noire
 ui_purge_delete_title = Supprimer définitivement les fichiers de l'aperçu
+ui_fixlinks_title = Corriger les liens erronés
+ui_fixlinks_text = Trouve les titres dont le lien YouTube ne correspond pas (le titre de la vidéo ne contient pas celui du titre), met leurs fichiers audio de côté dans .mismatch-old, puis cherche un nouveau lien, télécharge et convertit. Ne fait pas partie du pipeline. D'abord l'aperçu : il liste les titres et ne change rien. La limite de la recherche de liens s'applique.
+ui_fixlinks_preview = Aperçu
+ui_fixlinks_preview_title = Lister les titres dont le lien ne correspond pas ; ne change rien
+ui_fixlinks_run = Corriger les liens
+ui_fixlinks_run_title = Remplacer les liens et les fichiers des titres de l'aperçu
 
 # La liste noire et le remplacement d'un morceau
 ui_nav_blacklist = Liste noire

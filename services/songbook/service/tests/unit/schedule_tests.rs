@@ -113,8 +113,11 @@ fn a_schedule_must_be_valid() {
 
 #[quench_test::test]
 async fn a_saved_schedule_is_kept_and_a_passed_time_waits_for_tomorrow() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let app = app_with(&dir, &[]);
+    let app = app_with(&dir, &[]).await;
     let first = load(&app).await.unwrap();
     assert!(!first.enabled);
     assert_eq!(first.next_run, "");

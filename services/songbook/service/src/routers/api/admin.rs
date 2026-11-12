@@ -80,7 +80,7 @@ pub async fn link(Inject(app): Inject<App>, Json(body): Json<LinkBody>) -> Respo
     }
     match app
         .index
-        .run(move |db| browse::set_link(db, body.track_id, &body.url))
+        .run(async move |db| browse::set_link(db, body.track_id, &body.url).await)
         .await
     {
         Ok(Ok(updated)) => ok(&Updated { updated }),
@@ -108,7 +108,11 @@ pub async fn replace(Inject(app): Inject<App>, Json(body): Json<LinkBody>) -> Re
 /// Every album kept out of the syncs.
 #[get("/api/v1/admin/blacklist")]
 pub async fn blacklist_list(Inject(app): Inject<App>) -> Response {
-    match app.index.run(follow::blacklist_entries).await {
+    match app
+        .index
+        .run(async |db| follow::blacklist_entries(db).await)
+        .await
+    {
         Ok(rows) => ok(&rows
             .into_iter()
             .map(|(id, artist, title)| BlacklistEntry { id, artist, title })
@@ -125,7 +129,7 @@ pub async fn blacklist_save(Inject(app): Inject<App>, Json(body): Json<Blacklist
     }
     match app
         .index
-        .run(move |db| browse::blacklist_save(db, body.id, &body.artist, &body.title))
+        .run(async move |db| browse::blacklist_save(db, body.id, &body.artist, &body.title).await)
         .await
     {
         Ok(Ok(removed)) => ok(&Removed { removed }),
@@ -142,7 +146,7 @@ pub async fn blacklist_remove(
 ) -> Response {
     match app
         .index
-        .run(move |db| follow::blacklist_remove(db, body.id))
+        .run(async move |db| follow::blacklist_remove(db, body.id).await)
         .await
     {
         Ok(true) => ok(&Removed { removed: 1 }),
@@ -158,7 +162,7 @@ pub async fn blacklist(Inject(app): Inject<App>, Json(body): Json<BlacklistBody>
     }
     match app
         .index
-        .run(move |db| browse::blacklist_album(db, &body.artist, body.album_id))
+        .run(async move |db| browse::blacklist_album(db, &body.artist, body.album_id).await)
         .await
     {
         Ok(Ok(removed)) => ok(&Removed { removed }),
@@ -171,18 +175,23 @@ pub async fn blacklist(Inject(app): Inject<App>, Json(body): Json<BlacklistBody>
 pub async fn add_artists(Inject(app): Inject<App>, Json(body): Json<AddArtists>) -> Response {
     let result = app
         .index
-        .run(move |db| {
-            db.transaction(|db| {
-                let mut added = Vec::new();
-                for item in &body.items {
-                    match follow::add_follow(db, &item.name, &item.id, &item.category)? {
-                        Ok(true) => added.push(item.name.clone()),
-                        Ok(false) => {}
-                        Err(e) => return Ok(Err(e)),
+        .run(async move |db| {
+            db.transaction(
+                async |db| -> crate::index::Result<
+                    std::result::Result<Vec<String>, follow::Refused>,
+                > {
+                    let mut added = Vec::new();
+                    for item in &body.items {
+                        match follow::add_follow(db, &item.name, &item.id, &item.category).await? {
+                            Ok(true) => added.push(item.name.clone()),
+                            Ok(false) => {}
+                            Err(e) => return Ok(Err(e)),
+                        }
                     }
-                }
-                Ok(Ok(added))
-            })
+                    Ok(Ok(added))
+                },
+            )
+            .await
         })
         .await;
     match result {
@@ -196,7 +205,7 @@ pub async fn add_artists(Inject(app): Inject<App>, Json(body): Json<AddArtists>)
 pub async fn remove_artist(Inject(app): Inject<App>, Json(body): Json<RemoveArtist>) -> Response {
     match app
         .index
-        .run(move |db| follow::remove_follow(db, &body.name))
+        .run(async move |db| follow::remove_follow(db, &body.name).await)
         .await
     {
         Ok(()) => ok(&quench_serde::Map::new()),
@@ -211,14 +220,17 @@ pub async fn set_category(Inject(app): Inject<App>, Json(body): Json<CategoryBod
     }
     let result = app
         .index
-        .run(move |db| {
-            db.transaction(|db| {
-                if let Err(e) = follow::set_category(db, &body.name, &body.category)? {
-                    return Ok(Err(e));
-                }
-                let cmap = follow::category_map(db)?;
-                Ok(Ok(songs::retag(db, &cmap)?))
-            })
+        .run(async move |db| {
+            db.transaction(
+                async |db| -> crate::index::Result<std::result::Result<u32, follow::Refused>> {
+                    if let Err(e) = follow::set_category(db, &body.name, &body.category).await? {
+                        return Ok(Err(e));
+                    }
+                    let cmap = follow::category_map(db).await?;
+                    Ok(Ok(songs::retag(db, &cmap).await?))
+                },
+            )
+            .await
         })
         .await;
     match result {
@@ -232,7 +244,7 @@ pub async fn set_category(Inject(app): Inject<App>, Json(body): Json<CategoryBod
 pub async fn set_genres(Inject(app): Inject<App>, Json(body): Json<GenresBody>) -> Response {
     match app
         .index
-        .run(move |db| follow::set_genres(db, &body.name, &body.genres))
+        .run(async move |db| follow::set_genres(db, &body.name, &body.genres).await)
         .await
     {
         Ok(Ok(())) => ok(&quench_serde::Map::new()),
@@ -246,7 +258,7 @@ pub async fn add_category(Inject(app): Inject<App>, Json(body): Json<NewCategory
     let name = body.name.clone();
     match app
         .index
-        .run(move |db| follow::add_category(db, &body.name))
+        .run(async move |db| follow::add_category(db, &body.name).await)
         .await
     {
         Ok(Ok(true)) => ok(&Added {
@@ -268,14 +280,17 @@ pub async fn rename_category(
     }
     let result = app
         .index
-        .run(move |db| {
-            db.transaction(|db| {
-                if let Err(e) = follow::rename_category(db, &body.name, &body.new_name)? {
-                    return Ok(Err(e));
-                }
-                let cmap = follow::category_map(db)?;
-                Ok(Ok(songs::retag(db, &cmap)?))
-            })
+        .run(async move |db| {
+            db.transaction(
+                async |db| -> crate::index::Result<std::result::Result<u32, follow::Refused>> {
+                    if let Err(e) = follow::rename_category(db, &body.name, &body.new_name).await? {
+                        return Ok(Err(e));
+                    }
+                    let cmap = follow::category_map(db).await?;
+                    Ok(Ok(songs::retag(db, &cmap).await?))
+                },
+            )
+            .await
         })
         .await;
     match result {
@@ -287,7 +302,7 @@ pub async fn rename_category(
 
 /// The jobs `POST /jobs` starts. Every one has a branch in [`start_job`]; a name missing here is refused as unknown (as
 /// `purge` was, so the page's delete button never worked).
-pub const JOBS: [&str; 10] = [
+pub const JOBS: [&str; 11] = [
     "sync",
     "tags",
     "similar",
@@ -296,6 +311,7 @@ pub const JOBS: [&str; 10] = [
     "convert",
     "images",
     "purge",
+    "fix-links",
     "pipeline",
     "scheduled",
 ];
@@ -333,6 +349,7 @@ pub async fn start_job(Inject(app): Inject<App>, Json(body): Json<JobStart>) -> 
             "images" => crate::images::run(&worker, body.retry_missing, &log).await,
             "pipeline" => pipeline::run(&worker, &body, &log).await,
             "purge" => crate::purge::run(&worker, body.dry_run, &log).await,
+            "fix-links" => crate::fixlinks::run(&worker, &body, &log).await,
             _ => convert::run(&worker.config.data, true, &log).await,
         }
     });

@@ -232,6 +232,12 @@ ui_purge_preview = Podgląd
 ui_purge_preview_title = Wypisz pliki, które zostałyby usunięte; niczego nie usuwa
 ui_purge_delete = Usuń pliki z czarnej listy
 ui_purge_delete_title = Usuń na stałe pliki z podglądu
+ui_fixlinks_title = Napraw niepasujące linki
+ui_fixlinks_text = Znajduje utwory, których link YouTube nie pasuje (tytuł filmu nie zawiera tytułu utworu), odkłada ich pliki audio do .mismatch-old i szuka nowego linku, pobiera i konwertuje. Poza pipeline'em. Najpierw podgląd: wypisuje utwory i niczego nie zmienia. Obowiązuje limit wyszukiwania linków.
+ui_fixlinks_preview = Podgląd
+ui_fixlinks_preview_title = Wypisz utwory z niepasującym linkiem; niczego nie zmienia
+ui_fixlinks_run = Napraw linki
+ui_fixlinks_run_title = Zamień linki i pliki utworów z podglądu
 
 # Czarna lista i podmiana utworu
 ui_nav_blacklist = Czarna lista

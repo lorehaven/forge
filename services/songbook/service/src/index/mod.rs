@@ -1,33 +1,29 @@
-//! The index: `meta/library.db`, opened through `quench-sqlite`.
+//! The index: the library tables in Postgres (the `songbook` schema, installed by Foundry).
 //!
-//! One connection behind a mutex (the service is the only writer; the engine locks the file exclusively anyway). Calls are
-//! blocking and short; the long ones (a sync's write phase) run inside `spawn_blocking` at their call site.
+//! Every call checks a connection out of the pool. A [`Writer`] is a connection that may change the tables: taking one and
+//! dropping it drop the cached copy of the library, so a snapshot built while a write was under way is never kept.
 
 pub mod browse;
+pub mod db;
 pub mod follow;
-pub mod import;
 pub mod songs;
 
-use quench_sqlite::Connection;
-pub use quench_sqlite::{Error as DbError, Value};
-use std::path::Path;
+pub use db::{Db, DbError, Result, Rows, Value};
+use quench_pg::Pool;
+use std::ops::{Deref, DerefMut};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-
-pub type Result<T> = std::result::Result<T, DbError>;
-
-/// The tables, run on every start (`CREATE ... IF NOT EXISTS`). The same file builds a converted database.
-pub const SCHEMA: &str = include_str!("../schema.sql");
 
 /// How `songs.key` is computed; stored in `meta` so a change of rule recomputes the keys once.
 pub const KEY_SCHEME: &str = "unicode-1";
 
 #[derive(Clone)]
 pub struct Index {
-    db: Arc<Mutex<Connection>>,
-    /// The library as the page reads it; dropped by every call that is not a read of it, rebuilt on the next `snapshot`.
+    pool: Pool,
+    /// The library as the page reads it; dropped by every write, rebuilt on the next `snapshot`.
     snapshot: Arc<Mutex<Option<Arc<browse::Snapshot>>>>,
-    /// Counts the calls that may have changed the tables, for whatever keeps a copy of them.
-    generation: Arc<std::sync::atomic::AtomicU64>,
+    /// Counts the writes (twice each: when it starts and when it ends), for whatever keeps a copy of the tables.
+    generation: Arc<AtomicU64>,
 }
 
 impl std::fmt::Debug for Index {
@@ -36,69 +32,91 @@ impl std::fmt::Debug for Index {
     }
 }
 
+/// A connection that may change the tables; the cached copy of the library is dropped when it is taken and when it is dropped.
+pub struct Writer {
+    db: Db,
+    index: Index,
+}
+
+impl std::fmt::Debug for Writer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Writer { .. }")
+    }
+}
+
+impl Deref for Writer {
+    type Target = Db;
+
+    fn deref(&self) -> &Db {
+        &self.db
+    }
+}
+
+impl DerefMut for Writer {
+    fn deref_mut(&mut self) -> &mut Db {
+        &mut self.db
+    }
+}
+
+impl Drop for Writer {
+    fn drop(&mut self) {
+        self.index.invalidate();
+    }
+}
+
 impl Index {
-    /// Opens (creating, with the schema) the database at `path`, brings its keys up to date and, on a first start with an
-    /// empty `follows` table, imports the text files of the Python helper from `meta_dir`.
-    pub fn open(path: &Path, meta_dir: &Path) -> Result<Self> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                DbError::Unsupported(format!("cannot create {}: {e}", parent.display()))
-            })?;
-        }
-        let mut db = Connection::open_or_create(path)?;
-        db.execute(SCHEMA, &[])?;
-        // Columns added after the first release: an older file lacks them (CREATE IF NOT EXISTS leaves its table alone).
-        for (table, column, kind) in [
-            ("songs", "rank", "INTEGER"),
-            ("songs", "yt_views", "INTEGER"),
-            ("follows", "genres", "TEXT NOT NULL DEFAULT ''"),
-        ] {
-            if db
-                .query(&format!("SELECT {column} FROM {table} LIMIT 1"), &[])
-                .is_err()
-            {
-                db.execute(
-                    &format!("ALTER TABLE {table} ADD COLUMN {column} {kind}"),
-                    &[],
-                )?;
-            }
-        }
+    /// Uses the tables in `pool`'s schema and brings the song keys up to date. The schema is Foundry's: this creates nothing.
+    pub async fn open(pool: Pool) -> Result<Self> {
         let index = Self {
-            db: Arc::new(Mutex::new(db)),
+            pool,
             snapshot: Arc::default(),
             generation: Arc::default(),
         };
-        index.with(|db| {
-            songs::rekey(db)?;
-            import::once(db, meta_dir)
-        })?;
+        let mut db = index.write().await?;
+        songs::rekey(&mut db).await?;
+        drop(db);
         Ok(index)
     }
 
-    /// Runs `f` with the connection. Anything may change under it, so the snapshot of the library is dropped.
-    pub fn with<T>(&self, f: impl FnOnce(&mut Connection) -> Result<T>) -> Result<T> {
-        let mut guard = self.db.lock().unwrap_or_else(PoisonError::into_inner);
-        let out = f(&mut guard);
-        self.generation
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        // Taken while the connection is still held, so a snapshot built from the old tables cannot outlive the change.
+    /// The pool, for what keeps its own tables (the playlists).
+    #[must_use]
+    pub const fn pool(&self) -> &Pool {
+        &self.pool
+    }
+
+    fn invalidate(&self) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
         self.snapshot
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        out
     }
 
-    /// Runs `f` with the connection for a read: neither the snapshot nor the generation is touched.
-    pub fn read<T>(&self, f: impl FnOnce(&mut Connection) -> Result<T>) -> Result<T> {
-        let mut guard = self.db.lock().unwrap_or_else(PoisonError::into_inner);
-        f(&mut guard)
+    /// A connection that may change the tables.
+    pub async fn write(&self) -> Result<Writer> {
+        let db = Db::checkout(&self.pool).await?;
+        self.invalidate();
+        Ok(Writer {
+            db,
+            index: self.clone(),
+        })
     }
 
-    /// How many calls have gone through [`with`](Self::with): a copy of the tables made at another number is stale.
+    /// Runs `f` with a connection that may change the tables.
+    pub async fn run<T>(&self, f: impl AsyncFnOnce(&mut Db) -> Result<T>) -> Result<T> {
+        let mut writer = self.write().await?;
+        f(&mut writer).await
+    }
+
+    /// A connection for reading: neither the snapshot nor the generation is touched.
+    pub async fn read(&self) -> Result<Db> {
+        Db::checkout(&self.pool).await
+    }
+
+    /// How many writes have started or ended: a copy of the tables made at another number is stale.
     #[must_use]
     pub fn generation(&self) -> u64 {
-        self.generation.load(std::sync::atomic::Ordering::SeqCst)
+        self.generation.load(Ordering::SeqCst)
     }
 
     /// The library as the page reads it: built from the tables on the first call after a change, then shared.
@@ -111,38 +129,15 @@ impl Index {
         if let Some(ready) = cached {
             return Ok(ready);
         }
-        let index = self.clone();
-        tokio::task::spawn_blocking(move || {
-            let mut guard = index.db.lock().unwrap_or_else(PoisonError::into_inner);
-            let built = Arc::new(browse::Snapshot::load(&mut guard)?);
-            // Stored while the connection is still held: no write can slip between the read and the store.
-            *index
-                .snapshot
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&built));
-            Ok(built)
-        })
-        .await
-        .unwrap_or_else(|e| {
-            Err(DbError::Unsupported(format!(
-                "the database task failed: {e}"
-            )))
-        })
-    }
-
-    /// `with` on a blocking thread, for anything that touches many rows.
-    pub async fn run<T: Send + 'static>(
-        &self,
-        f: impl FnOnce(&mut Connection) -> Result<T> + Send + 'static,
-    ) -> Result<T> {
-        let index = self.clone();
-        tokio::task::spawn_blocking(move || index.with(f))
-            .await
-            .unwrap_or_else(|e| {
-                Err(DbError::Unsupported(format!(
-                    "the database task failed: {e}"
-                )))
-            })
+        let started = self.generation();
+        let mut db = self.read().await?;
+        let built = Arc::new(browse::Snapshot::load(&mut db).await?);
+        // Kept only if no write started or ended while it was being read.
+        let mut slot = self.snapshot.lock().unwrap_or_else(PoisonError::into_inner);
+        if self.generation() == started {
+            *slot = Some(Arc::clone(&built));
+        }
+        Ok(built)
     }
 }
 
@@ -189,12 +184,14 @@ pub fn placeholders(n: usize) -> String {
     vec!["?"; n].join(",")
 }
 
-pub fn meta_get(db: &mut Connection, key: &str) -> Result<Option<String>> {
-    let rows = db.query("SELECT value FROM meta WHERE key = ?", &[text(key)])?;
+pub async fn meta_get(db: &mut Db, key: &str) -> Result<Option<String>> {
+    let rows = db
+        .query("SELECT value FROM meta WHERE key = ?", &[text(key)])
+        .await?;
     Ok(rows.rows.first().map(|r| str_at(r, 0)))
 }
 
-pub fn meta_set(db: &mut Connection, key: &str, value: &str) -> Result<()> {
-    db.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", &[text(key), text(value)])?;
+pub async fn meta_set(db: &mut Db, key: &str, value: &str) -> Result<()> {
+    db.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", &[text(key), text(value)]).await?;
     Ok(())
 }

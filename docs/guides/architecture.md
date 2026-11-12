@@ -115,7 +115,7 @@ Thirteen server crates exist: `conveyor`, `daybook`, `foundry`, `gantry`, `gateh
 * **Gantry** deploys `.rivet` packages with runner Jobs.
 * **Gauge** shows host metrics; no database.
 * **Lectern** serves the documentation books held in a Warehouse files storage to anyone: no login, no database, no schema. See [Lectern](../services/lectern/index.md).
-* **Songbook** is the music library (a personal streaming replacement); its admin module keeps the index of songs in a SQLite file and runs the Deezer sync, the YouTube lookup, the downloads and the conversion. No Postgres, no Foundry schema.
+* **Songbook** is the music library (a personal streaming replacement); its admin module keeps the index of songs in the Postgres schema `songbook` (Foundry module `songbook`) and runs the Deezer sync, the YouTube lookup, the downloads and the conversion.
 * **Daybook**, **Hoist** and **Forklift** are the apps; Daybook and Hoist have servers, Forklift talks to Warehouse.
 
 Per-service facts (ports, env, schemas) are on each service's page.

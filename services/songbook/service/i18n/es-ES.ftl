@@ -228,6 +228,12 @@ ui_purge_preview = Vista previa
 ui_purge_preview_title = Listar los archivos que se borrarían; no borra nada
 ui_purge_delete = Borrar archivos de la lista negra
 ui_purge_delete_title = Borrar para siempre los archivos de la vista previa
+ui_fixlinks_title = Corregir enlaces erróneos
+ui_fixlinks_text = Busca canciones cuyo enlace de YouTube no coincide (el título del vídeo no contiene el de la canción), aparta sus archivos de audio en .mismatch-old y busca un enlace nuevo, descarga y convierte. No forma parte del pipeline. Primero la vista previa: lista las canciones y no cambia nada. Se aplica el límite de buscar enlaces.
+ui_fixlinks_preview = Vista previa
+ui_fixlinks_preview_title = Listar las canciones cuyo enlace no coincide; no cambia nada
+ui_fixlinks_run = Corregir enlaces
+ui_fixlinks_run_title = Reemplazar los enlaces y archivos de las canciones de la vista previa
 
 # La lista negra y el reemplazo de una canción
 ui_nav_blacklist = Lista negra

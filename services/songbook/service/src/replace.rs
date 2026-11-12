@@ -21,12 +21,13 @@ pub async fn run(app: &App, track_id: i64, url: &str, log: &Log) -> Result<(), S
     }
     let row = app
         .index
-        .run(move |db| {
+        .run(async move |db| {
             Ok(db
                 .query(
                     "SELECT title, filename FROM songs WHERE id = ?",
                     &[crate::index::int(track_id)],
-                )?
+                )
+                .await?
                 .rows
                 .first()
                 .map(|r| (str_at(r, 0), str_at(r, 1))))
@@ -51,7 +52,7 @@ pub async fn run(app: &App, track_id: i64, url: &str, log: &Log) -> Result<(), S
     // The link now is the song's own, so that the next download run does not look for another.
     let kept = url.clone();
     app.index
-        .run(move |db| browse::set_link(db, track_id, &kept))
+        .run(async move |db| browse::set_link(db, track_id, &kept).await)
         .await
         .map_err(|e| e.to_string())?
         .map_err(|_| "the new link was refused".to_string())?;

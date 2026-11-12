@@ -71,15 +71,17 @@ fn plain(s: &str) -> String {
 
 impl Catalog {
     /// Reads the index and the audio folder.
-    pub fn load(index: &Index, data: &Path) -> Result<Self> {
+    pub async fn load(index: &Index, data: &Path) -> Result<Self> {
         let files = file_index(data);
-        index.read(|db| {
+        let db = &mut index.read().await?;
+        {
             let mut rows = Vec::new();
             for r in db
                 .query(
                     "SELECT id, title, filename, duration, rank, yt_views FROM songs",
                     &[],
-                )?
+                )
+                .await?
                 .rows
             {
                 let stem = str_at(&r, 2);
@@ -96,7 +98,7 @@ impl Catalog {
             // How many fans Deezer gives the artists that are followed: the only measure of fame for songs that have no
             // rating of their own.
             let mut fans: HashMap<String, u64> = HashMap::new();
-            for r in db.query("SELECT name, fans FROM follows", &[])?.rows {
+            for r in db.query("SELECT name, fans FROM follows", &[]).await?.rows {
                 if let Ok(n) = str_at(&r, 1).trim().parse::<u64>() {
                     fans.insert(fold(&str_at(&r, 0)), n);
                 }
@@ -106,7 +108,7 @@ impl Catalog {
                 .query(
                     "SELECT sa.song_id, a.name FROM song_artist sa JOIN artists a ON a.id = sa.artist_id ORDER BY sa.song_id, sa.position",
                     &[],
-                )?
+                ).await?
                 .rows
             {
                 who.entry(int_at(&r, 0)).or_default().push(str_at(&r, 1));
@@ -114,9 +116,9 @@ impl Catalog {
             let mut cats: HashMap<i64, Vec<String>> = HashMap::new();
             for r in db
                 .query(
-                    "SELECT st.song_id, t.name FROM song_tag st JOIN tags t ON t.id = st.tag_id WHERE t.kind = 'category' ORDER BY t.name",
+                    "SELECT st.song_id, t.name FROM song_tag st JOIN tags t ON t.id = st.tag_id WHERE t.kind = 'category' ORDER BY t.name COLLATE \"C\"",
                     &[],
-                )?
+                ).await?
                 .rows
             {
                 cats.entry(int_at(&r, 0)).or_default().push(str_at(&r, 1));
@@ -129,18 +131,26 @@ impl Catalog {
                      FROM song_album sl JOIN albums al ON al.id = sl.album_id LEFT JOIN artists o ON o.id = al.owner_id \
                      ORDER BY sl.song_id, CASE al.type WHEN 'album' THEN 0 WHEN 'ep' THEN 1 ELSE 2 END, al.year, al.id",
                     &[],
-                )?
+                ).await?
                 .rows;
             let mut album_deezer = HashMap::new();
             for r in db
-                .query("SELECT id, deezer_id FROM albums WHERE deezer_id IS NOT NULL", &[])?
+                .query(
+                    "SELECT id, deezer_id FROM albums WHERE deezer_id IS NOT NULL",
+                    &[],
+                )
+                .await?
                 .rows
             {
                 album_deezer.insert(int_at(&r, 0), int_at(&r, 1));
             }
             let mut artist_deezer = HashMap::new();
             for r in db
-                .query("SELECT name, deezer_id FROM artists WHERE deezer_id IS NOT NULL", &[])?
+                .query(
+                    "SELECT name, deezer_id FROM artists WHERE deezer_id IS NOT NULL",
+                    &[],
+                )
+                .await?
                 .rows
             {
                 artist_deezer.insert(fold(&str_at(&r, 0)), int_at(&r, 1));
@@ -149,7 +159,7 @@ impl Catalog {
             catalog.album_deezer = album_deezer;
             catalog.artist_deezer = artist_deezer;
             Ok(catalog)
-        })
+        }
     }
 
     #[must_use]
@@ -756,13 +766,7 @@ impl Library {
         {
             return Ok(catalog);
         }
-        let index = index.clone();
-        let catalog = tokio::task::spawn_blocking(move || Catalog::load(&index, &data))
-            .await
-            .map_err(|e| {
-                crate::index::DbError::Unsupported(format!("the catalog task failed: {e}"))
-            })??;
-        let catalog = Arc::new(catalog);
+        let catalog = Arc::new(Catalog::load(index, &data).await?);
         *self.built.lock().unwrap_or_else(PoisonError::into_inner) =
             Some((Instant::now(), generation, Arc::clone(&catalog)));
         Ok(catalog)

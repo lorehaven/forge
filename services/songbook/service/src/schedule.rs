@@ -96,7 +96,7 @@ pub fn next_run(s: &Schedule, now: Time) -> String {
 pub async fn load(app: &App) -> Result<Schedule, String> {
     let stored = app
         .index
-        .run(|db| meta_get(db, KEY))
+        .run(async |db| meta_get(db, KEY).await)
         .await
         .map_err(|e| e.to_string())?;
     let mut s = stored
@@ -110,7 +110,7 @@ pub async fn load(app: &App) -> Result<Schedule, String> {
 async fn store(app: &App, s: &Schedule) -> Result<(), String> {
     let text = json::to_string(s);
     app.index
-        .run(move |db| meta_set(db, KEY, &text))
+        .run(async move |db| meta_set(db, KEY, &text).await)
         .await
         .map_err(|e| e.to_string())
 }

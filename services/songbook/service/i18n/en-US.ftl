@@ -228,6 +228,12 @@ ui_purge_preview = Preview
 ui_purge_preview_title = List the files that would be deleted; deletes nothing
 ui_purge_delete = Delete blacklisted files
 ui_purge_delete_title = Delete the files the preview lists, for good
+ui_fixlinks_title = Fix mismatched links
+ui_fixlinks_text = Find songs whose YouTube link does not match the song (the video's title does not contain the song's title), put their audio files aside in .mismatch-old, and look for a new link, download and convert them. Not part of the pipeline. Preview first: it lists the songs and changes nothing. The limit of find links applies.
+ui_fixlinks_preview = Preview
+ui_fixlinks_preview_title = List the songs whose link does not match; changes nothing
+ui_fixlinks_run = Fix links
+ui_fixlinks_run_title = Replace the links and files of the songs the preview lists
 
 # The blacklist page, and replacing a song
 ui_nav_blacklist = Blacklist

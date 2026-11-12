@@ -125,15 +125,23 @@ fn combined_credits_are_split_only_when_every_part_is_known() {
 
 #[quench_test::test]
 async fn a_sync_writes_the_discography_of_a_followed_artist_into_the_index() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let app = app_with(&dir, &ANSWERS);
+    let app = app_with(&dir, &ANSWERS).await;
     app.index
-        .with(|db| {
-            follow::add_category(db, "American Rap")?.unwrap();
-            follow::add_follow(db, "Nas", "", "American Rap")?.unwrap();
-            follow::add_follow(db, "Nobody Known", "", "")?.unwrap();
+        .run(async |db| {
+            follow::add_category(db, "American Rap").await?.unwrap();
+            follow::add_follow(db, "Nas", "", "American Rap")
+                .await?
+                .unwrap();
+            follow::add_follow(db, "Nobody Known", "", "")
+                .await?
+                .unwrap();
             Ok(())
         })
+        .await
         .unwrap();
     let (error, log) = sync(&app, false).await;
     assert_eq!(error, None, "{log}");
@@ -143,11 +151,13 @@ async fn a_sync_writes_the_discography_of_a_followed_artist_into_the_index() {
     );
     assert!(log.contains("NO MATCH: Nobody Known"), "{log}");
     app.index
-        .with(|db| {
-            let files = db.query(
-                "SELECT filename, duration FROM songs ORDER BY filename",
-                &[],
-            )?;
+        .run(async |db| {
+            let files = db
+                .query(
+                    "SELECT filename, duration FROM songs ORDER BY filename",
+                    &[],
+                )
+                .await?;
             let files: Vec<(String, i64)> = files
                 .rows
                 .iter()
@@ -166,7 +176,7 @@ async fn a_sync_writes_the_discography_of_a_followed_artist_into_the_index() {
                     ("Someone - Mystery".to_string(), 100),
                 ]
             );
-            let f = follow::follows(db)?;
+            let f = follow::follows(db).await?;
             assert_eq!(
                 (
                     f[0].deezer_id.as_str(),
@@ -177,12 +187,14 @@ async fn a_sync_writes_the_discography_of_a_followed_artist_into_the_index() {
             );
             assert_eq!(f[1].note.as_deref(), Some("NO MATCH"));
             let tags = db
-                .query("SELECT kind, name FROM tags ORDER BY kind, name", &[])?
+                .query("SELECT kind, name FROM tags ORDER BY kind, name", &[])
+                .await?
                 .rows
                 .len();
             assert_eq!(tags, 2, "American Rap and Rap/Hip Hop");
             Ok(())
         })
+        .await
         .unwrap();
 
     // a second sync changes nothing, and a song cannot be duplicated
@@ -190,9 +202,12 @@ async fn a_sync_writes_the_discography_of_a_followed_artist_into_the_index() {
     assert_eq!(error, None);
     assert_eq!(
         app.index
-            .with(|db| Ok(db.query("SELECT COUNT(*) FROM songs", &[])?.rows[0][0].clone()))
+            .run(async |db| Ok(
+                db.query("SELECT COUNT(*) FROM songs", &[]).await?.rows[0][0].clone()
+            ))
+            .await
             .unwrap(),
-        quench_sqlite::Value::Integer(3)
+        songbook_service::index::Value::Integer(3)
     );
 
     // with singles, the single comes too, and its combined credit is split into the artists we know
@@ -200,27 +215,31 @@ async fn a_sync_writes_the_discography_of_a_followed_artist_into_the_index() {
     assert_eq!(error, None);
     let names = app
         .index
-        .with(|db| {
+        .run(async |db| {
             Ok(db
                 .query(
                     "SELECT filename FROM songs WHERE title = 'Single Track'",
                     &[],
-                )?
+                )
+                .await?
                 .rows
                 .len())
         })
+        .await
         .unwrap();
     assert_eq!(names, 1);
     let credit = app
         .index
-        .with(|db| {
+        .run(async |db| {
             let id = db
-                .query("SELECT id FROM songs WHERE title = 'Single Track'", &[])?
+                .query("SELECT id FROM songs WHERE title = 'Single Track'", &[])
+                .await?
                 .rows[0][0]
                 .as_integer()
                 .unwrap();
-            songbook_service::index::songs::artists_of(db, id)
+            songbook_service::index::songs::artists_of(db, id).await
         })
+        .await
         .unwrap();
     assert_eq!(
         credit,
@@ -231,47 +250,59 @@ async fn a_sync_writes_the_discography_of_a_followed_artist_into_the_index() {
 
 #[quench_test::test]
 async fn an_unfollowed_artist_and_a_blacklisted_album_leave_at_the_next_sync() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let app = app_with(&dir, &ANSWERS);
+    let app = app_with(&dir, &ANSWERS).await;
     app.index
-        .with(|db| {
-            follow::add_follow(db, "Nas", "", "")?.unwrap();
+        .run(async |db| {
+            follow::add_follow(db, "Nas", "", "").await?.unwrap();
             Ok(())
         })
+        .await
         .unwrap();
     assert_eq!(sync(&app, false).await.0, None);
     assert_eq!(
         app.index
-            .with(|db| Ok(db.query("SELECT COUNT(*) FROM songs", &[])?.rows[0][0].as_integer()))
+            .run(async |db| Ok(
+                db.query("SELECT COUNT(*) FROM songs", &[]).await?.rows[0][0].as_integer()
+            ))
+            .await
             .unwrap(),
         Some(3)
     );
 
     app.index
-        .with(|db| {
-            follow::remove_follow(db, "Nas")?;
+        .run(async |db| {
+            follow::remove_follow(db, "Nas").await?;
             Ok(())
         })
+        .await
         .unwrap();
     assert_eq!(sync(&app, false).await.0, None);
     app.index
-        .with(|db| {
+        .run(async |db| {
             assert_eq!(
-                db.query("SELECT COUNT(*) FROM songs", &[])?.rows[0][0].as_integer(),
+                db.query("SELECT COUNT(*) FROM songs", &[]).await?.rows[0][0].as_integer(),
                 Some(0)
             );
             assert_eq!(
-                db.query("SELECT COUNT(*) FROM albums", &[])?.rows[0][0].as_integer(),
+                db.query("SELECT COUNT(*) FROM albums", &[]).await?.rows[0][0].as_integer(),
                 Some(0)
             );
             Ok(())
         })
+        .await
         .unwrap();
 }
 
 #[quench_test::test]
 async fn similar_saves_the_best_songs_of_each_suggested_artist() {
     use songbook_service::index::follow;
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
     let app = app_with(
         &dir,
@@ -285,12 +316,13 @@ async fn similar_saves_the_best_songs_of_each_suggested_artist() {
                 r#"{"data": [{"id": 9, "title": "Regulate", "rank": 700000, "album": {"title": "G Funk"}}]}"#,
             ),
         ],
-    );
+    ).await;
     app.index
-        .with(|db| {
-            follow::add_follow(db, "Nas", "", "")?.unwrap();
-            follow::set_match(db, "Nas", "Nas", "1", "1", "")
+        .run(async |db| {
+            follow::add_follow(db, "Nas", "", "").await?.unwrap();
+            follow::set_match(db, "Nas", "Nas", "1", "1", "").await
         })
+        .await
         .unwrap();
     let worker = app.clone();
     assert!(app.jobs.start("similar", move |log| async move {
@@ -304,7 +336,11 @@ async fn similar_saves_the_best_songs_of_each_suggested_artist() {
     }
     let job = app.jobs.read(0);
     assert_eq!(job.error, None, "{}", job.log);
-    let list = app.index.with(follow::suggestions).unwrap();
+    let list = app
+        .index
+        .run(async |db| follow::suggestions(db).await)
+        .await
+        .unwrap();
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].artist, "Warren G");
     assert_eq!(list[0].best.len(), 1);
@@ -321,13 +357,17 @@ async fn similar_saves_the_best_songs_of_each_suggested_artist() {
 #[quench_test::test]
 async fn purge_deletes_only_the_files_of_blacklisted_albums_that_the_library_does_not_keep() {
     use songbook_service::index::browse;
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let app = app_with(&dir, &ANSWERS);
+    let app = app_with(&dir, &ANSWERS).await;
     app.index
-        .with(|db| {
-            follow::add_follow(db, "Nas", "", "")?.unwrap();
+        .run(async |db| {
+            follow::add_follow(db, "Nas", "", "").await?.unwrap();
             Ok(())
         })
+        .await
         .unwrap();
     let (err, log) = sync(&app, false).await;
     assert_eq!(err, None, "{log}");
@@ -336,14 +376,16 @@ async fn purge_deletes_only_the_files_of_blacklisted_albums_that_the_library_doe
     let data = dir.path().join("data");
     let names: Vec<String> = app
         .index
-        .with(|db| {
+        .run(async |db| {
             Ok(db
-                .query("SELECT filename FROM songs ORDER BY id", &[])?
+                .query("SELECT filename FROM songs ORDER BY id", &[])
+                .await?
                 .rows
                 .iter()
                 .map(|r| songbook_service::index::str_at(r, 0))
                 .collect())
         })
+        .await
         .unwrap();
     for n in &names {
         std::fs::write(data.join(format!("{n}.mp3")), b"audio").unwrap();
@@ -351,11 +393,19 @@ async fn purge_deletes_only_the_files_of_blacklisted_albums_that_the_library_doe
     std::fs::write(data.join("My own recording.mp3"), b"mine").unwrap();
     // Blacklist Illmatic: its songs leave the index but the files stay.
     app.index
-        .with(|db| browse::blacklist_album(db, "Nas", 10).map(|r| r.unwrap()))
+        .run(async |db| {
+            browse::blacklist_album(db, "Nas", 10)
+                .await
+                .map(|r| r.unwrap())
+        })
+        .await
         .unwrap();
     assert_eq!(
         app.index
-            .with(|db| Ok(db.query("SELECT COUNT(*) FROM songs", &[])?.rows[0][0].as_integer()))
+            .run(async |db| Ok(
+                db.query("SELECT COUNT(*) FROM songs", &[]).await?.rows[0][0].as_integer()
+            ))
+            .await
             .unwrap(),
         Some(0),
         "the blacklist removed the songs"
@@ -380,6 +430,154 @@ async fn purge_deletes_only_the_files_of_blacklisted_albums_that_the_library_doe
     );
 }
 
+#[quench_test::test]
+fn a_link_matches_when_the_video_title_holds_the_song_title() {
+    use songbook_service::fixlinks::matches;
+    assert!(matches(
+        "N.Y. State of Mind",
+        "Nas - N.Y. State Of Mind (Official Audio)"
+    ));
+    assert!(matches("Hysteria (feat. X)", "Muse - Hysteria"));
+    assert!(matches("Pięć", "PIĘĆ - live"), "case is ignored");
+    assert!(!matches("Uprising", "Some Other Song"));
+    assert!(
+        matches("", "anything"),
+        "a song with no title is never in doubt"
+    );
+}
+
+#[quench_test::test]
+async fn fix_links_preview_lists_the_mismatched_automatic_links_and_changes_nothing() {
+    use songbook_service::fixlinks;
+    if !have_database() {
+        return;
+    }
+    let dir = Scratch::new();
+    let app = app_with(&dir, &ANSWERS).await;
+    app.index
+        .run(async |db| {
+            follow::add_follow(db, "Nas", "", "").await?.unwrap();
+            Ok(())
+        })
+        .await
+        .unwrap();
+    let (err, log) = sync(&app, false).await;
+    assert_eq!(err, None, "{log}");
+    let songs: Vec<(i64, String, String)> = app
+        .index
+        .run(async |db| {
+            Ok(db
+                .query("SELECT id, title, filename FROM songs ORDER BY id", &[])
+                .await?
+                .rows
+                .iter()
+                .map(|r| {
+                    (
+                        songbook_service::index::int_at(r, 0),
+                        songbook_service::index::str_at(r, 1),
+                        songbook_service::index::str_at(r, 2),
+                    )
+                })
+                .collect())
+        })
+        .await
+        .unwrap();
+    assert!(songs.len() >= 3);
+    let (right, wrong, manual) = (&songs[0], &songs[1], &songs[2]);
+    let data = dir.path().join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(data.join(format!("{}.mp3", wrong.2)), b"audio").unwrap();
+    app.index
+        .run(async |db| {
+            for (id, video, manual) in [
+                (right.0, format!("Nas - {} (Official)", right.1), 0),
+                (wrong.0, "A Completely Different Song".to_string(), 0),
+                (manual.0, "Another Different Song".to_string(), 1),
+            ] {
+                db.execute(
+                    "UPDATE songs SET yt_url = 'https://y/x', yt_title = ?, yt_manual = ? WHERE id = ?",
+                    &[
+                        songbook_service::index::text(&video),
+                        songbook_service::index::int(manual),
+                        songbook_service::index::int(id),
+                    ],
+                ).await?;
+            }
+            Ok(())
+        }).await
+        .unwrap();
+
+    let found = app
+        .index
+        .run(async |db| fixlinks::suspects(db, "").await)
+        .await
+        .unwrap();
+    assert_eq!(
+        found.iter().map(|s| s.id).collect::<Vec<_>>(),
+        vec![wrong.0],
+        "only the automatic link that does not match"
+    );
+
+    let worker = app.clone();
+    assert!(app.jobs.start("fix-links", move |log| async move {
+        let job = songbook_core::JobStart {
+            name: "fix-links".into(),
+            dry_run: true,
+            ..Default::default()
+        };
+        fixlinks::run(&worker, &job, &log).await
+    }));
+    wait(&app).await;
+    let preview = app.jobs.read(0);
+    assert_eq!(preview.error, None, "{}", preview.log);
+    assert!(
+        preview.log.contains("1 songs whose link does not match"),
+        "{}",
+        preview.log
+    );
+    assert!(
+        data.join(format!("{}.mp3", wrong.2)).exists(),
+        "a preview moves nothing"
+    );
+    assert_eq!(
+        app.index
+            .run(async |db| fixlinks::suspects(db, "").await)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // The clearing step: the link is gone, so find links looks at the song again.
+    app.index
+        .run(async |db| fixlinks::clear(db, &[wrong.0]).await)
+        .await
+        .unwrap();
+    assert_eq!(
+        app.index
+            .run(async |db| fixlinks::suspects(db, "").await)
+            .await
+            .unwrap(),
+        vec![]
+    );
+    let status: Option<String> = app
+        .index
+        .run(async |db| {
+            Ok(songbook_service::index::opt_str_at(
+                &db.query(
+                    "SELECT yt_status FROM songs WHERE id = ?",
+                    &[songbook_service::index::int(wrong.0)],
+                )
+                .await?
+                .rows[0],
+                0,
+            ))
+        })
+        .await
+        .unwrap();
+    assert_eq!(status, None);
+}
+
 async fn purge(app: &App, dry: bool) {
     let worker = app.clone();
     assert!(app.jobs.start("purge", move |log| async move {
@@ -399,27 +597,43 @@ async fn wait(app: &App) {
 
 #[quench_test::test]
 async fn an_artists_genres_keep_only_its_own_albums_and_drop_the_others_at_the_next_sync() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let app = app_with(&dir, &ANSWERS);
+    let app = app_with(&dir, &ANSWERS).await;
     app.index
-        .with(|db| {
-            follow::add_follow(db, "Nas", "", "")?.unwrap();
+        .run(async |db| {
+            follow::add_follow(db, "Nas", "", "").await?.unwrap();
             Ok(())
         })
+        .await
         .unwrap();
-    let songs = |app: &App| {
+    let songs = async |app: &App| {
         app.index
-            .with(|db| Ok(db.query("SELECT COUNT(*) FROM songs", &[])?.rows[0][0].as_integer()))
+            .run(async |db| {
+                Ok(db.query("SELECT COUNT(*) FROM songs", &[]).await?.rows[0][0].as_integer())
+            })
+            .await
             .unwrap()
     };
     assert_eq!(sync(&app, false).await.0, None);
-    assert_eq!(songs(&app), Some(3), "no filter keeps every album");
+    assert_eq!(songs(&app).await, Some(3), "no filter keeps every album");
 
     // The profile mixes in someone else: only Rock is wanted, so Illmatic (Rap/Hip Hop) goes.
     app.index
-        .with(|db| follow::set_genres(db, "Nas", " Rock ;; Punk ").map(|r| r.unwrap()))
+        .run(async |db| {
+            follow::set_genres(db, "Nas", " Rock ;; Punk ")
+                .await
+                .map(|r| r.unwrap())
+        })
+        .await
         .unwrap();
-    let rows = app.index.with(follow::artist_rows).unwrap();
+    let rows = app
+        .index
+        .run(async |db| follow::artist_rows(db).await)
+        .await
+        .unwrap();
     assert_eq!(rows[0].genres, "Rock; Punk");
     let (err, log) = sync(&app, false).await;
     assert_eq!(err, None);
@@ -427,23 +641,37 @@ async fn an_artists_genres_keep_only_its_own_albums_and_drop_the_others_at_the_n
         log.contains("skip Illmatic (Rap/Hip Hop): not in Rock; Punk"),
         "{log}"
     );
-    assert_eq!(songs(&app), Some(0));
+    assert_eq!(songs(&app).await, Some(0));
 
     // The right genre, in any case, brings it back.
     app.index
-        .with(|db| follow::set_genres(db, "Nas", "rap/hip hop").map(|r| r.unwrap()))
+        .run(async |db| {
+            follow::set_genres(db, "Nas", "rap/hip hop")
+                .await
+                .map(|r| r.unwrap())
+        })
+        .await
         .unwrap();
     assert_eq!(sync(&app, false).await.0, None);
-    assert_eq!(songs(&app), Some(3));
+    assert_eq!(songs(&app).await, Some(3));
 
     // Cleared, every album again; an unknown artist is refused.
     app.index
-        .with(|db| follow::set_genres(db, "Nas", "").map(|r| r.unwrap()))
+        .run(async |db| follow::set_genres(db, "Nas", "").await.map(|r| r.unwrap()))
+        .await
         .unwrap();
-    assert_eq!(app.index.with(follow::artist_rows).unwrap()[0].genres, "");
+    assert_eq!(
+        app.index
+            .run(async |db| follow::artist_rows(db).await)
+            .await
+            .unwrap()[0]
+            .genres,
+        ""
+    );
     assert!(
         app.index
-            .with(|db| follow::set_genres(db, "Nobody", "Rock"))
+            .run(async |db| follow::set_genres(db, "Nobody", "Rock").await)
+            .await
             .unwrap()
             .is_err()
     );

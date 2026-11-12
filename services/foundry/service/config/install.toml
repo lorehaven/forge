@@ -26,6 +26,9 @@ module = "hoist"
 module = "sage"
 
 [[install]]
+module = "songbook"
+
+[[install]]
 module = "switchboard"
 
 [[install]]

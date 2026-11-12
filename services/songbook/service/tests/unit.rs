@@ -18,6 +18,8 @@ mod index_tests;
 mod jobs_tests;
 #[path = "unit/listen_tests.rs"]
 mod listen_tests;
+#[path = "unit/migrate_tests.rs"]
+mod migrate_tests;
 #[path = "unit/replace_tests.rs"]
 mod replace_tests;
 #[path = "unit/routers_tests.rs"]

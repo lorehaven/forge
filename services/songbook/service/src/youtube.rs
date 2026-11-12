@@ -4,7 +4,7 @@
 use crate::app::App;
 use crate::config::Config;
 use crate::files;
-use crate::index::{browse, int, int_at, opt_int_at, str_at, text};
+use crate::index::{Db, browse, int, int_at, opt_int_at, str_at, text};
 use crate::jobs::Log;
 use quench_serde::{Map, Value, json};
 use songbook_core::naming::norm;
@@ -414,8 +414,8 @@ pub struct Wanted {
 
 /// Songs with no link yet (or, with `retry_missing`, none found last time) and no file in `on_disk`. `artist` limits it to
 /// songs by one artist.
-pub fn songs_to_look_up(
-    db: &mut quench_sqlite::Connection,
+pub async fn songs_to_look_up(
+    db: &mut Db,
     artist: &str,
     retry_missing: bool,
 ) -> crate::index::Result<Vec<Wanted>> {
@@ -424,11 +424,11 @@ pub fn songs_to_look_up(
          JOIN song_artist sa ON sa.song_id = s.id AND sa.position = 0 JOIN artists a ON a.id = sa.artist_id \
          WHERE s.yt_manual = 0 ORDER BY s.id",
         &[],
-    )?;
+    ).await?;
     let mine = if artist.is_empty() {
         None
     } else {
-        Some(browse::songs_of(db, artist)?)
+        Some(browse::songs_of(db, artist).await?)
     };
     Ok(rows
         .rows
@@ -459,7 +459,7 @@ pub async fn run(
     let (name, retry) = (artist.to_string(), retry_missing);
     let all = app
         .index
-        .run(move |db| songs_to_look_up(db, &name, retry))
+        .run(async move |db| songs_to_look_up(db, &name, retry).await)
         .await
         .map_err(|e| e.to_string())?;
     let on_disk = files::file_index(&app.config.data);
@@ -479,9 +479,10 @@ pub async fn run(
     }
     let linked = app
         .index
-        .run(|db| {
+        .run(async |db| {
             Ok(int_at(
-                &db.query("SELECT COUNT(*) FROM songs WHERE yt_url != ''", &[])?
+                &db.query("SELECT COUNT(*) FROM songs WHERE yt_url != ''", &[])
+                    .await?
                     .rows[0],
                 0,
             ))
@@ -532,16 +533,16 @@ pub async fn run(
             .map_or_else(|| "no match".to_string(), |(c, _)| c.channel.clone());
         let id = w.id;
         app.index
-            .run(move |db| match found {
+            .run(async move |db| match found {
                 Some((c, true)) => db
                     .execute(
                         "UPDATE songs SET yt_url = ?, yt_channel = ?, yt_title = ?, yt_official = ?, yt_score = ?, yt_views = ?, yt_status = 'ok', yt_candidate = '' WHERE id = ?",
-                        &[text(&c.url), text(&c.channel), text(&c.title), int(i64::from(c.official)), quench_sqlite::Value::Real((c.score * 10.0).round() / 10.0), c.views.map_or(quench_sqlite::Value::Null, int), int(id)],
-                    )
+                        &[text(&c.url), text(&c.channel), text(&c.title), int(i64::from(c.official)), crate::index::Value::Real((c.score * 10.0).round() / 10.0), c.views.map_or(crate::index::Value::Null, int), int(id)],
+                    ).await
                     .map(|_| ()),
                 other => {
                     let cand = other.map_or_else(|| "{}".to_string(), |(c, _)| json::to_string(&c.to_value()));
-                    db.execute("UPDATE songs SET yt_status = 'miss', yt_candidate = ? WHERE id = ?", &[text(&cand), int(id)]).map(|_| ())
+                    db.execute("UPDATE songs SET yt_status = 'miss', yt_candidate = ? WHERE id = ?", &[text(&cand), int(id)]).await.map(|_| ())
                 }
             })
             .await
@@ -558,18 +559,23 @@ pub async fn run(
     write_misses(app, log).await?;
     let (got, n, off) = app
         .index
-        .run(|db| {
+        .run(async |db| {
             let a = int_at(
-                &db.query("SELECT COUNT(*) FROM songs WHERE yt_url != ''", &[])?
+                &db.query("SELECT COUNT(*) FROM songs WHERE yt_url != ''", &[])
+                    .await?
                     .rows[0],
                 0,
             );
-            let n = int_at(&db.query("SELECT COUNT(*) FROM songs", &[])?.rows[0], 0);
+            let n = int_at(
+                &db.query("SELECT COUNT(*) FROM songs", &[]).await?.rows[0],
+                0,
+            );
             let o = int_at(
                 &db.query(
                     "SELECT COUNT(*) FROM songs WHERE yt_url != '' AND yt_official = 1",
                     &[],
-                )?
+                )
+                .await?
                 .rows[0],
                 0,
             );
@@ -595,11 +601,11 @@ fn csv_cell(s: &str) -> String {
 async fn write_misses(app: &App, log: &Log) -> Result<(), String> {
     let rows = app
         .index
-        .run(|db| {
-            let rows = db.query("SELECT id, title, duration, yt_status, yt_candidate FROM songs WHERE yt_url = '' ORDER BY id", &[])?.rows;
+        .run(async |db| {
+            let rows = db.query("SELECT id, title, duration, yt_status, yt_candidate FROM songs WHERE yt_url = '' ORDER BY id", &[]).await?.rows;
             let mut out = Vec::new();
             for r in rows {
-                let who = crate::index::songs::artists_of(db, int_at(&r, 0))?.join(", ");
+                let who = crate::index::songs::artists_of(db, int_at(&r, 0)).await?.join(", ");
                 out.push((who, r));
             }
             Ok(out)

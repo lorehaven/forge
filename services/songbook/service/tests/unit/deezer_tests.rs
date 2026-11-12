@@ -72,6 +72,9 @@ async fn a_failing_request_is_retried_and_a_quota_answer_waited_out() {
 
 #[quench_test::test]
 async fn an_artist_is_found_by_exact_name_with_the_most_fans_or_by_pin() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
     let app = app_with(
         &dir,
@@ -82,7 +85,7 @@ async fn an_artist_is_found_by_exact_name_with_the_most_fans_or_by_pin() {
             ),
             ("artist/77", r#"{"id": 77, "name": "Pinned", "nb_fan": 3}"#),
         ],
-    );
+    ).await;
     let hit = app.deezer.resolve("Nas", "").await.unwrap().unwrap();
     assert_eq!((hit.id, hit.fans), (2, 50));
     assert!(app.deezer.resolve("Nobody", "").await.unwrap().is_none());
@@ -106,6 +109,9 @@ async fn an_artist_is_found_by_exact_name_with_the_most_fans_or_by_pin() {
 
 #[quench_test::test]
 async fn lists_are_read_page_by_page() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
     let app = app_with(
         &dir,
@@ -119,7 +125,7 @@ async fn lists_are_read_page_by_page() {
                 r#"{"data": [{"id": 11, "title": "A", "record_type": "ep", "release_date": "2001-01-01", "explicit_lyrics": true}]}"#,
             ),
         ],
-    );
+    ).await;
     let albums = app.deezer.artist_albums(1).await.unwrap();
     assert_eq!(
         albums.iter().map(|a| a.id).collect::<Vec<_>>(),
@@ -130,6 +136,9 @@ async fn lists_are_read_page_by_page() {
 
 #[quench_test::test]
 async fn an_album_and_a_track_are_read_once_and_then_from_the_cache() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
     let answers = [
         (
@@ -145,7 +154,7 @@ async fn an_album_and_a_track_are_read_once_and_then_from_the_cache() {
             r#"{"id": 90, "title": "One (feat. Guest)", "duration": 121, "isrc": "X", "contributors": [{"id": 1, "name": "Main", "role": "Main"}, {"id": 2, "name": "Guest"}]}"#,
         ),
     ];
-    let app = app_with(&dir, &answers);
+    let app = app_with(&dir, &answers).await;
     let album = app.deezer.album(9).await.unwrap();
     assert_eq!(
         (
@@ -191,6 +200,9 @@ async fn an_album_and_a_track_are_read_once_and_then_from_the_cache() {
 
 #[quench_test::test]
 async fn an_artists_top_tracks_come_best_first_with_their_album() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
     let app = app_with(
         &dir,
@@ -202,7 +214,8 @@ async fn an_artists_top_tracks_come_best_first_with_their_album() {
                 {"id": 3, "title": "Unranked"}
             ]}"#,
         )],
-    );
+    )
+    .await;
     let top = app.deezer.top_tracks(712, 5).await.unwrap();
     let titles: Vec<&str> = top.iter().map(|t| t.title.as_str()).collect();
     assert_eq!(titles, ["More", "Less", "Unranked"]);

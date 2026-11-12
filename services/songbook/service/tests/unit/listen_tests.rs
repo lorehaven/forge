@@ -23,60 +23,68 @@ fn names(list: &[(i64, &str)]) -> Vec<(i64, String)> {
 }
 
 /// Nate Dogg with two albums and three songs (one with Snoop Dogg); only the first two have a file.
-fn library(dir: &Scratch) -> (Index, Vec<i64>) {
-    let index = index_in(dir);
+async fn library(dir: &Scratch) -> (Index, Vec<i64>) {
+    let index = index_in(dir).await;
     let ids = index
-        .with(|db| {
-            let nate = upsert_artist(db, 359, "Nate Dogg", Some("Nate Dogg"))?;
-            let a1 = upsert_album(db, &album(1, "Ghetto Preacher", "2001"), nate)?;
-            let a2 = upsert_album(db, &album(2, "Elements of Rap", "2005"), nate)?;
+        .run(async |db| {
+            let nate = upsert_artist(db, 359, "Nate Dogg", Some("Nate Dogg")).await?;
+            let a1 = upsert_album(db, &album(1, "Ghetto Preacher", "2001"), nate).await?;
+            let a2 = upsert_album(db, &album(2, "Elements of Rap", "2005"), nate).await?;
             let one = upsert_song(
                 db,
                 &names(&[(359, "Nate Dogg")]),
                 "Nobody Does It Better",
                 Some(269),
                 1,
-            )?;
-            link_album(db, one, a1, 1)?;
+            )
+            .await?;
+            link_album(db, one, a1, 1).await?;
             let two = upsert_song(
                 db,
                 &names(&[(359, "Nate Dogg"), (1, "Snoop Dogg")]),
                 "Never Leave Me Alone",
                 Some(250),
                 2,
-            )?;
-            link_album(db, two, a2, 1)?;
+            )
+            .await?;
+            link_album(db, two, a2, 1).await?;
             let three = upsert_song(
                 db,
                 &names(&[(359, "Nate Dogg")]),
                 "No File Yet",
                 Some(200),
                 3,
-            )?;
-            link_album(db, three, a2, 2)?;
-            db.execute(
-                "INSERT INTO tags(kind, name) VALUES ('category', 'Rap')",
-                &[],
-            )?;
-            let tag = db.last_insert_rowid();
+            )
+            .await?;
+            link_album(db, three, a2, 2).await?;
+            let tag = db
+                .insert(
+                    "INSERT INTO tags(kind, name) VALUES ('category', 'Rap')",
+                    &[],
+                )
+                .await?;
             db.execute(
                 "INSERT INTO song_tag(song_id, tag_id) VALUES (?, ?)",
                 &[int(one), int(tag)],
-            )?;
+            )
+            .await?;
             Ok(vec![one, two, three])
         })
+        .await
         .unwrap();
     let data = dir.path().join("data");
     std::fs::create_dir_all(&data).unwrap();
     for id in &ids[..2] {
         let stem = index
-            .with(|db| {
+            .run(async |db| {
                 Ok(str_at(
-                    &db.query("SELECT filename FROM songs WHERE id = ?", &[int(*id)])?
+                    &db.query("SELECT filename FROM songs WHERE id = ?", &[int(*id)])
+                        .await?
                         .rows[0],
                     0,
                 ))
             })
+            .await
             .unwrap();
         std::fs::write(data.join(format!("{stem}.mp3")), b"audio").unwrap();
     }
@@ -84,11 +92,16 @@ fn library(dir: &Scratch) -> (Index, Vec<i64>) {
 }
 
 #[quench_test::test]
-fn only_songs_with_a_file_are_in_the_catalog_and_they_are_found_by_album_artist_category_and_words()
-{
+async fn only_songs_with_a_file_are_in_the_catalog_and_they_are_found_by_album_artist_category_and_words()
+ {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let (index, ids) = library(&dir);
-    let catalog = Catalog::load(&index, &dir.path().join("data")).unwrap();
+    let (index, ids) = library(&dir).await;
+    let catalog = Catalog::load(&index, &dir.path().join("data"))
+        .await
+        .unwrap();
 
     let all = catalog.songs(&SongQuery::default());
     assert_eq!(all.total, 2, "the song with no file is not offered");
@@ -167,24 +180,31 @@ fn only_songs_with_a_file_are_in_the_catalog_and_they_are_found_by_album_artist_
 }
 
 #[quench_test::test]
-fn the_catalog_notices_a_new_file_when_it_is_built_again() {
+async fn the_catalog_notices_a_new_file_when_it_is_built_again() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let (index, ids) = library(&dir);
+    let (index, ids) = library(&dir).await;
     let stem = index
-        .with(|db| {
+        .run(async |db| {
             Ok(str_at(
-                &db.query("SELECT filename FROM songs WHERE id = ?", &[int(ids[2])])?
+                &db.query("SELECT filename FROM songs WHERE id = ?", &[int(ids[2])])
+                    .await?
                     .rows[0],
                 0,
             ))
         })
+        .await
         .unwrap();
     std::fs::write(
         dir.path().join("data").join(format!("{stem}.opus")),
         b"audio",
     )
     .unwrap();
-    let catalog = Catalog::load(&index, &dir.path().join("data")).unwrap();
+    let catalog = Catalog::load(&index, &dir.path().join("data"))
+        .await
+        .unwrap();
     assert_eq!(catalog.overview().songs, 3);
     assert_eq!(
         catalog.file(ids[2]).unwrap().rsplit_once('.').unwrap().1,
@@ -194,57 +214,83 @@ fn the_catalog_notices_a_new_file_when_it_is_built_again() {
 }
 
 #[quench_test::test]
-fn playlists_belong_to_their_owner_and_keep_their_order() {
+async fn playlists_belong_to_their_owner_and_keep_their_order() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let lists = Playlists::open(&dir.path().join("user.db")).unwrap();
-    let mine = lists.create("ann", "  Road   trip ", 1).unwrap().unwrap();
+    let lists = Playlists::new(pool_in(&dir).await);
+    let mine = lists
+        .create("ann", "  Road   trip ", 1)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(mine.name, "Road trip");
     assert_eq!(
-        lists.create("ann", "  ", 1).unwrap().unwrap_err(),
+        lists.create("ann", "  ", 1).await.unwrap().unwrap_err(),
         Refused::Limit("A playlist needs a name.")
     );
-    let theirs = lists.create("bob", "Bob's", 1).unwrap().unwrap();
+    let theirs = lists.create("bob", "Bob's", 1).await.unwrap().unwrap();
 
     assert_eq!(
         lists
             .add("ann", mine.id, &[3, 1, 2])
+            .await
             .unwrap()
             .unwrap()
             .songs,
         3
     );
     assert_eq!(
-        lists.add("ann", mine.id, &[1]).unwrap().unwrap().songs,
+        lists
+            .add("ann", mine.id, &[1])
+            .await
+            .unwrap()
+            .unwrap()
+            .songs,
         4,
         "a song may be on twice"
     );
     assert_eq!(
-        lists.songs("ann", mine.id).unwrap().unwrap(),
+        lists.songs("ann", mine.id).await.unwrap().unwrap(),
         vec![3, 1, 2, 1]
     );
 
     // Not Bob's to read, change or delete.
-    assert!(lists.songs("bob", mine.id).unwrap().is_none());
+    assert!(lists.songs("bob", mine.id).await.unwrap().is_none());
     assert_eq!(
-        lists.add("bob", mine.id, &[9]).unwrap().unwrap_err(),
+        lists.add("bob", mine.id, &[9]).await.unwrap().unwrap_err(),
         Refused::Unknown
     );
-    assert!(!lists.delete("bob", mine.id).unwrap());
-    assert_eq!(lists.list("ann").unwrap().len(), 1);
-    assert_eq!(lists.list("bob").unwrap()[0].id, theirs.id);
+    assert!(!lists.delete("bob", mine.id).await.unwrap());
+    assert_eq!(lists.list("ann").await.unwrap().len(), 1);
+    assert_eq!(lists.list("bob").await.unwrap()[0].id, theirs.id);
 
     assert_eq!(
-        lists.set("ann", mine.id, &[2, 3]).unwrap().unwrap().songs,
+        lists
+            .set("ann", mine.id, &[2, 3])
+            .await
+            .unwrap()
+            .unwrap()
+            .songs,
         2
     );
-    assert_eq!(lists.songs("ann", mine.id).unwrap().unwrap(), vec![2, 3]);
     assert_eq!(
-        lists.rename("ann", mine.id, "Trip").unwrap().unwrap().name,
+        lists.songs("ann", mine.id).await.unwrap().unwrap(),
+        vec![2, 3]
+    );
+    assert_eq!(
+        lists
+            .rename("ann", mine.id, "Trip")
+            .await
+            .unwrap()
+            .unwrap()
+            .name,
         "Trip"
     );
-    assert!(lists.delete("ann", mine.id).unwrap());
+    assert!(lists.delete("ann", mine.id).await.unwrap());
     assert_eq!(
-        lists.list("ann").unwrap(),
+        lists.list("ann").await.unwrap(),
         [] as [songbook_core::PlaylistInfo; 0]
     );
 }
@@ -275,28 +321,31 @@ fn a_range_is_read_the_way_a_player_asks_for_it() {
 
 /// Thirty songs with a file: ten artists with three songs each (artist `n` has `n * 1000` fans), two categories, one album per
 /// artist whose year grows with `n`.
-fn big_library(dir: &Scratch) -> Index {
-    let index = index_in(dir);
+async fn big_library(dir: &Scratch) -> Index {
+    let index = index_in(dir).await;
     let data = dir.path().join("data");
     std::fs::create_dir_all(&data).unwrap();
     index
-        .with(|db| {
+        .run(async |db| {
             db.execute(
                 "INSERT INTO tags(kind, name) VALUES ('category', 'Rap'), ('category', 'Rock')",
                 &[],
-            )?;
+            )
+            .await?;
             for n in 1..=10_i64 {
                 let name = format!("Artist {n:02}");
-                let artist = upsert_artist(db, n, &name, Some(&name))?;
+                let artist = upsert_artist(db, n, &name, Some(&name)).await?;
                 db.execute(
                     "INSERT INTO follows(name, fans) VALUES (?, ?)",
                     &[text(&name), text(&(n * 1000).to_string())],
-                )?;
+                )
+                .await?;
                 let album = upsert_album(
                     db,
                     &album(n, &format!("Album {n:02}"), &format!("{}", 2000 + n)),
                     artist,
-                )?;
+                )
+                .await?;
                 for t in 1..=3_i64 {
                     let song = upsert_song(
                         db,
@@ -304,15 +353,18 @@ fn big_library(dir: &Scratch) -> Index {
                         &format!("Song {n:02}-{t}"),
                         Some(200),
                         n * 10 + t,
-                    )?;
-                    link_album(db, song, album, t)?;
+                    )
+                    .await?;
+                    link_album(db, song, album, t).await?;
                     let tag = if n % 2 == 0 { 1 } else { 2 };
                     db.execute(
                         "INSERT INTO song_tag(song_id, tag_id) VALUES (?, ?)",
                         &[int(song), int(tag)],
-                    )?;
+                    )
+                    .await?;
                     let stem = str_at(
-                        &db.query("SELECT filename FROM songs WHERE id = ?", &[int(song)])?
+                        &db.query("SELECT filename FROM songs WHERE id = ?", &[int(song)])
+                            .await?
                             .rows[0],
                         0,
                     );
@@ -321,15 +373,21 @@ fn big_library(dir: &Scratch) -> Index {
             }
             Ok(())
         })
+        .await
         .unwrap();
     index
 }
 
 #[quench_test::test]
-fn the_home_page_offers_the_best_mixes_artists_to_try_and_the_newest_albums() {
+async fn the_home_page_offers_the_best_mixes_artists_to_try_and_the_newest_albums() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let index = big_library(&dir);
-    let catalog = Catalog::load(&index, &dir.path().join("data")).unwrap();
+    let index = big_library(&dir).await;
+    let catalog = Catalog::load(&index, &dir.path().join("data"))
+        .await
+        .unwrap();
     let home = catalog.home(1);
 
     // The best: the best-known artist's songs first, and no artist more than twice.
@@ -377,10 +435,15 @@ fn the_home_page_offers_the_best_mixes_artists_to_try_and_the_newest_albums() {
 }
 
 #[quench_test::test]
-fn the_days_picks_stay_and_change_with_the_day() {
+async fn the_days_picks_stay_and_change_with_the_day() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let index = big_library(&dir);
-    let catalog = Catalog::load(&index, &dir.path().join("data")).unwrap();
+    let index = big_library(&dir).await;
+    let catalog = Catalog::load(&index, &dir.path().join("data"))
+        .await
+        .unwrap();
     assert_eq!(catalog.home(5), catalog.home(5));
     let (a, b) = (catalog.home(5), catalog.home(6));
     assert_eq!(a.popular, b.popular, "the plain best does not change");
@@ -391,10 +454,15 @@ fn the_days_picks_stay_and_change_with_the_day() {
 }
 
 #[quench_test::test]
-fn a_library_with_no_ratings_ranks_songs_by_how_well_known_their_artist_is() {
+async fn a_library_with_no_ratings_ranks_songs_by_how_well_known_their_artist_is() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let index = big_library(&dir);
-    let catalog = Catalog::load(&index, &dir.path().join("data")).unwrap();
+    let index = big_library(&dir).await;
+    let catalog = Catalog::load(&index, &dir.path().join("data"))
+        .await
+        .unwrap();
     let top = catalog.songs(&SongQuery {
         sort: "popular".into(),
         limit: 3,
@@ -433,40 +501,43 @@ use songbook_service::jobs::Jobs;
 use songbook_service::routers::api::art::{content_type as image_type, etag, width_for};
 
 /// An app (as the job tests build one) over `dir`, whose index has what `seed` puts in it.
-fn app_over(dir: &Scratch, answers: &[(&str, &str)]) -> songbook_service::app::App {
-    app_with(dir, answers)
+async fn app_over(dir: &Scratch, answers: &[(&str, &str)]) -> songbook_service::app::App {
+    app_with(dir, answers).await
 }
 
-fn seed_pictures(app: &songbook_service::app::App) {
+async fn seed_pictures(app: &songbook_service::app::App) {
     app.index
-        .with(|db| {
+        .run(async |db| {
             // Nate Dogg (Deezer 359) with an album and a single, and Snoop Dogg (Deezer 1) who has no picture.
-            let nate = upsert_artist(db, 359, "Nate Dogg", Some("Nate Dogg"))?;
-            let snoop = upsert_artist(db, 1, "Snoop Dogg", None)?;
-            let album_id = upsert_album(db, &album(11, "Ghetto Preacher", "1999"), nate)?;
+            let nate = upsert_artist(db, 359, "Nate Dogg", Some("Nate Dogg")).await?;
+            let snoop = upsert_artist(db, 1, "Snoop Dogg", None).await?;
+            let album_id = upsert_album(db, &album(11, "Ghetto Preacher", "1999"), nate).await?;
             let mut single = album(12, "Lonely Single", "2001");
             single.record_type = "single".into();
-            let single_id = upsert_album(db, &single, nate)?;
+            let single_id = upsert_album(db, &single, nate).await?;
             let a = upsert_song(
                 db,
                 &names(&[(359, "Nate Dogg")]),
                 "On The Album",
                 Some(200),
                 1,
-            )?;
-            link_album(db, a, album_id, 1)?;
+            )
+            .await?;
+            link_album(db, a, album_id, 1).await?;
             let b = upsert_song(
                 db,
                 &names(&[(359, "Nate Dogg")]),
                 "On The Single",
                 Some(200),
                 2,
-            )?;
-            link_album(db, b, single_id, 1)?;
-            let c = upsert_song(db, &names(&[(1, "Snoop Dogg")]), "Alone", Some(200), 3)?;
+            )
+            .await?;
+            link_album(db, b, single_id, 1).await?;
+            let c = upsert_song(db, &names(&[(1, "Snoop Dogg")]), "Alone", Some(200), 3).await?;
             let _ = (c, snoop);
             Ok(())
         })
+        .await
         .unwrap();
 }
 
@@ -479,6 +550,9 @@ const ARTIST_1: &str = r#"{"id":1,"name":"Snoop Dogg","picture_big":"https://cdn
 
 #[quench_test::test]
 async fn the_images_job_saves_what_deezer_has_and_remembers_what_it_has_not() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
     let app = app_over(
         &dir,
@@ -488,8 +562,9 @@ async fn the_images_job_saves_what_deezer_has_and_remembers_what_it_has_not() {
             ("artist/359", ARTIST_359),
             ("artist/1", ARTIST_1),
         ],
-    );
-    seed_pictures(&app);
+    )
+    .await;
+    seed_pictures(&app).await;
     let jobs = Jobs::default();
     let done = std::sync::Arc::new(std::sync::Mutex::new(None));
     let (a, slot) = (app.clone(), done.clone());
@@ -550,6 +625,9 @@ async fn the_images_job_saves_what_deezer_has_and_remembers_what_it_has_not() {
 
 #[quench_test::test]
 async fn retrying_asks_again_for_what_deezer_had_none_of() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
     let app = app_over(
         &dir,
@@ -558,8 +636,9 @@ async fn retrying_asks_again_for_what_deezer_had_none_of() {
             ("artist/359", ARTIST_359),
             ("artist/1", ARTIST_1),
         ],
-    );
-    seed_pictures(&app);
+    )
+    .await;
+    seed_pictures(&app).await;
     let pictures = images::dir(&app.config);
     std::fs::create_dir_all(&pictures).unwrap();
     std::fs::write(
@@ -592,10 +671,13 @@ async fn retrying_asks_again_for_what_deezer_had_none_of() {
 }
 
 #[quench_test::test]
-fn a_song_has_its_albums_cover_a_singles_own_and_else_its_artists_picture() {
+async fn a_song_has_its_albums_cover_a_singles_own_and_else_its_artists_picture() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let app = app_over(&dir, &[]);
-    seed_pictures(&app);
+    let app = app_over(&dir, &[]).await;
+    seed_pictures(&app).await;
     let data = dir.path().join("data");
     std::fs::create_dir_all(&data).unwrap();
     for stem in [
@@ -605,7 +687,7 @@ fn a_song_has_its_albums_cover_a_singles_own_and_else_its_artists_picture() {
     ] {
         std::fs::write(data.join(format!("{stem}.mp3")), b"a").unwrap();
     }
-    let catalog = Catalog::load(&app.index, &data).unwrap();
+    let catalog = Catalog::load(&app.index, &data).await.unwrap();
     let id = |title: &str| {
         catalog
             .songs(&SongQuery {
@@ -676,48 +758,59 @@ fn a_picture_is_named_by_its_file_and_width_so_a_device_can_ask_whether_it_chang
 }
 
 #[quench_test::test]
-fn what_a_person_played_last_is_theirs_newest_first_and_each_song_once() {
-    let dir = Scratch::new();
-    let lists = Playlists::open(&dir.path().join("user.db")).unwrap();
-    for (song, at) in [(1, 100), (2, 200), (3, 300), (1, 400)] {
-        lists.played("ann", song, at).unwrap();
+async fn what_a_person_played_last_is_theirs_newest_first_and_each_song_once() {
+    if !have_database() {
+        return;
     }
-    lists.played("bob", 9, 500).unwrap();
+    let dir = Scratch::new();
+    let lists = Playlists::new(pool_in(&dir).await);
+    for (song, at) in [(1, 100), (2, 200), (3, 300), (1, 400)] {
+        lists.played("ann", song, at).await.unwrap();
+    }
+    lists.played("bob", 9, 500).await.unwrap();
     assert_eq!(
-        lists.recent("ann", 10).unwrap(),
+        lists.recent("ann", 10).await.unwrap(),
         vec![1, 3, 2],
         "song 1 again is the newest, and once"
     );
-    assert_eq!(lists.recent("ann", 2).unwrap(), vec![1, 3]);
-    assert_eq!(lists.recent("bob", 10).unwrap(), vec![9]);
-    assert_eq!(lists.recent("nobody", 10).unwrap(), [] as [i64; 0]);
+    assert_eq!(lists.recent("ann", 2).await.unwrap(), vec![1, 3]);
+    assert_eq!(lists.recent("bob", 10).await.unwrap(), vec![9]);
+    assert_eq!(lists.recent("nobody", 10).await.unwrap(), [] as [i64; 0]);
 }
 
 #[quench_test::test]
-fn only_the_latest_plays_are_kept() {
-    let dir = Scratch::new();
-    let lists = Playlists::open(&dir.path().join("user.db")).unwrap();
-    for n in 0..12_i64 {
-        lists.played_keeping("ann", n, n, 5).unwrap();
+async fn only_the_latest_plays_are_kept() {
+    if !have_database() {
+        return;
     }
-    lists.played_keeping("bob", 99, 1, 5).unwrap();
+    let dir = Scratch::new();
+    let lists = Playlists::new(pool_in(&dir).await);
+    for n in 0..12_i64 {
+        lists.played_keeping("ann", n, n, 5).await.unwrap();
+    }
+    lists.played_keeping("bob", 99, 1, 5).await.unwrap();
     assert_eq!(
-        lists.recent("ann", 100).unwrap(),
+        lists.recent("ann", 100).await.unwrap(),
         vec![11, 10, 9, 8, 7],
         "the oldest went"
     );
     assert_eq!(
-        lists.recent("bob", 100).unwrap(),
+        lists.recent("bob", 100).await.unwrap(),
         vec![99],
         "another person's plays stay"
     );
 }
 
 #[quench_test::test]
-fn the_recent_songs_of_the_catalog_skip_what_has_no_file() {
+async fn the_recent_songs_of_the_catalog_skip_what_has_no_file() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let (index, ids) = library(&dir);
-    let catalog = Catalog::load(&index, &dir.path().join("data")).unwrap();
+    let (index, ids) = library(&dir).await;
+    let catalog = Catalog::load(&index, &dir.path().join("data"))
+        .await
+        .unwrap();
     // The third song of the seed has no file: asked for by id it is not listed, and the order asked for is kept.
     let asked = format!("{},{},{}", ids[2], ids[1], ids[0]);
     let list = catalog.songs(&SongQuery {
@@ -731,10 +824,13 @@ fn the_recent_songs_of_the_catalog_skip_what_has_no_file() {
 }
 
 #[quench_test::test]
-fn where_a_person_stopped_is_theirs_and_the_newest_write_wins() {
+async fn where_a_person_stopped_is_theirs_and_the_newest_write_wins() {
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let lists = Playlists::open(&dir.path().join("user.db")).unwrap();
-    assert!(lists.resume("ann").unwrap().is_none());
+    let lists = Playlists::new(pool_in(&dir).await);
+    assert!(lists.resume("ann").await.unwrap().is_none());
     let first = songbook_core::Resume {
         song_id: 7,
         position_ms: 61_250,
@@ -743,7 +839,7 @@ fn where_a_person_stopped_is_theirs_and_the_newest_write_wins() {
         device: "laptop".into(),
         at: 0,
     };
-    lists.set_resume("ann", &first, 100).unwrap();
+    lists.set_resume("ann", &first, 100).await.unwrap();
     lists
         .set_resume(
             "ann",
@@ -756,24 +852,28 @@ fn where_a_person_stopped_is_theirs_and_the_newest_write_wins() {
             },
             200,
         )
+        .await
         .unwrap();
-    let got = lists.resume("ann").unwrap().unwrap();
+    let got = lists.resume("ann").await.unwrap().unwrap();
     assert_eq!(
         (got.song_id, got.position_ms, got.index, got.at),
         (9, 5, 2, 200)
     );
     assert_eq!((got.queue, got.device.as_str()), (vec![5, 7, 9], "phone"));
     assert!(
-        lists.resume("bob").unwrap().is_none(),
+        lists.resume("bob").await.unwrap().is_none(),
         "another person's is theirs"
     );
 }
 
 #[quench_test::test]
-fn what_a_person_chose_to_start_is_kept_once_newest_first_and_trimmed() {
+async fn what_a_person_chose_to_start_is_kept_once_newest_first_and_trimmed() {
     use songbook_core::{RecentItem, SongQuery};
+    if !have_database() {
+        return;
+    }
     let dir = Scratch::new();
-    let lists = Playlists::open(&dir.path().join("user.db")).unwrap();
+    let lists = Playlists::new(pool_in(&dir).await);
     let album = |id: i64, name: &str| {
         RecentItem::of(
             &SongQuery {
@@ -787,14 +887,20 @@ fn what_a_person_chose_to_start_is_kept_once_newest_first_and_trimmed() {
     };
     lists
         .started("ann", &album(1, "Devils Night"), 100)
+        .await
         .unwrap();
-    lists.started("ann", &album(2, "D12 World"), 200).unwrap();
+    lists
+        .started("ann", &album(2, "D12 World"), 200)
+        .await
+        .unwrap();
     lists
         .started("ann", &album(1, "Devils Night"), 300)
+        .await
         .unwrap();
-    lists.started("bob", &album(9, "Other"), 400).unwrap();
+    lists.started("bob", &album(9, "Other"), 400).await.unwrap();
     let names: Vec<_> = lists
         .contexts("ann", 10)
+        .await
         .unwrap()
         .into_iter()
         .map(|i| (i.kind, i.name, i.art_key, i.at))
@@ -820,14 +926,17 @@ fn what_a_person_chose_to_start_is_kept_once_newest_first_and_trimmed() {
     // The same songs shuffled are another thing; and only the latest are kept.
     let mut shuffled = album(1, "Devils Night");
     shuffled.shuffle = true;
-    lists.started_keeping("ann", &shuffled, 500, 2).unwrap();
-    let kept = lists.contexts("ann", 10).unwrap();
+    lists
+        .started_keeping("ann", &shuffled, 500, 2)
+        .await
+        .unwrap();
+    let kept = lists.contexts("ann", 10).await.unwrap();
     assert_eq!(kept.len(), 2);
     assert!(
         kept[0].shuffle && kept[0].query.album == 1,
         "round trip of the query"
     );
-    assert_eq!(lists.contexts("bob", 10).unwrap().len(), 1);
+    assert_eq!(lists.contexts("bob", 10).await.unwrap().len(), 1);
 }
 
 #[quench_test::test]
