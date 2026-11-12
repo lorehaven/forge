@@ -8,6 +8,7 @@ use quench_starter::common::db::DbWrapper;
 use quench_starter::common::health::HealthState;
 use quench_starter::common::routes::normalize_base_path;
 use quench_starter::common::wait::{gatehouse_health_url, wait_for_services};
+use quench_starter::http::middleware::security_headers::SecurityHeaders;
 use quench_starter::http::serve_app;
 use std::sync::Arc;
 use warehouse_service::docker_token::DockerTokenConfig;
@@ -109,5 +110,6 @@ async fn main() -> std::io::Result<()> {
         base_path_app,
     });
 
+    let app = wrap(app, SecurityHeaders);
     serve_app("warehouse-service", app, container).await
 }

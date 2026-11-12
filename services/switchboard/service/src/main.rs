@@ -7,6 +7,7 @@ use quench_starter::common::db::DbWrapper;
 use quench_starter::common::health::HealthState;
 use quench_starter::common::routes::normalize_base_path;
 use quench_starter::common::wait::{gatehouse_health_url, wait_for_services};
+use quench_starter::http::middleware::security_headers::SecurityHeaders;
 use quench_starter::http::serve_app;
 use std::sync::Arc;
 use switchboard_service::routers;
@@ -66,6 +67,7 @@ async fn main() -> std::io::Result<()> {
     let app = routers::models::wrap_auth(app, jwt_config.clone(), &base_path);
     let app = routers::gpu::wrap_auth(app, jwt_config.clone(), &base_path);
     let app = routers::vllm::wrap_auth(app, jwt_config, &base_path);
+    let app = wrap(app, SecurityHeaders);
 
     serve_app("switchboard-service", app, container).await
 }

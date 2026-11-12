@@ -336,6 +336,10 @@ pub async fn open(
     if !crate::routers::files_enabled() {
         return gone();
     }
+    // Postgres cannot store a NUL in text: such a token names nothing, and must not reach the lookup.
+    if token.contains('\0') {
+        return gone();
+    }
     let share = match share::by_token(&db, &token).await {
         Ok(Some(share)) => share,
         Ok(None) => return gone(),

@@ -2,6 +2,7 @@ use quench_http::prelude::*;
 use quench_starter::common::health::HealthState;
 use quench_starter::common::routes::normalize_base_path;
 use quench_starter::common::wait::{gatehouse_health_url, wait_for_services};
+use quench_starter::http::middleware::security_headers::SecurityHeaders;
 use quench_starter::http::serve_app;
 use sage_service::{routers, startup};
 use std::sync::Arc;
@@ -82,6 +83,7 @@ async fn main() -> std::io::Result<()> {
 
     let app = quench_starter::http::discover_and_mount(base_path.clone());
     let app = routers::wrap_auth(app, &jwt_config, &base_path);
+    let app = wrap(app, SecurityHeaders);
 
     let result = serve_app("sage-service", app, container).await;
 
