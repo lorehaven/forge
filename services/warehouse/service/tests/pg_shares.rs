@@ -388,6 +388,9 @@ async fn links_are_made_opened_and_withdrawn() {
     // Nothing outside it, nothing that is not there; the answer is the same for all of them.
     let nothing = get(&app, &open("no-such-token", "")).await;
     assert_eq!(nothing.status, StatusCode::NOT_FOUND);
+    // A NUL in the token (`%00`) cannot be stored by Postgres: it names nothing, it is not a server error.
+    let nul = get(&app, &open("%00", "")).await;
+    assert_eq!(nul.status, StatusCode::NOT_FOUND);
     for query in [
         "?path=../top.txt",
         "?path=../pics_other/y.txt",
