@@ -129,7 +129,7 @@ dependencies = [
 
 [[package]]
 name = "daybook"
-version = "0.3.13"
+version = "0.3.14"
 dependencies = [
  "daybook-web",
  "forge-web",
@@ -423,7 +423,7 @@ dependencies = [
 
 [[package]]
 name = "foundry"
-version = "0.2.42"
+version = "0.2.43"
 dependencies = [
  "quench-args",
  "quench-cli",

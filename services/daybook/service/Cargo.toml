@@ -1,6 +1,6 @@
 [package]
 name = "daybook"
-version = "0.3.13"
+version = "0.3.14"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Daybook - personal tasks and project lists"
