@@ -835,7 +835,10 @@ fn the_steps_container_is_capped_so_a_build_cannot_take_every_core_of_the_node()
     let resources = &built.job["spec"]["template"]["spec"]["containers"][0]["resources"];
     assert_eq!(resources["limits"]["cpu"], "8");
     assert_eq!(resources["requests"]["cpu"], "500m");
-    assert!(resources["limits"]["memory"].is_null(), "no memory limit unless asked for");
+    assert!(
+        resources["limits"]["memory"].is_null(),
+        "no memory limit unless asked for"
+    );
 
     let settings = Settings {
         cpu_limit: String::new(),

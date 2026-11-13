@@ -397,7 +397,10 @@ impl Settings {
             allow_privileged: quench_core::env::is_or("CONVEYOR_K8S_ALLOW_PRIVILEGED", false),
             cpu_request: quench_core::env::get_or("CONVEYOR_K8S_CPU_REQUEST", DEFAULT_CPU_REQUEST),
             cpu_limit: quench_core::env::get_or("CONVEYOR_K8S_CPU_LIMIT", DEFAULT_CPU_LIMIT),
-            memory_request: quench_core::env::get_or("CONVEYOR_K8S_MEMORY_REQUEST", DEFAULT_MEMORY_REQUEST),
+            memory_request: quench_core::env::get_or(
+                "CONVEYOR_K8S_MEMORY_REQUEST",
+                DEFAULT_MEMORY_REQUEST,
+            ),
             memory_limit: quench_core::env::get_or("CONVEYOR_K8S_MEMORY_LIMIT", ""),
         }
     }
