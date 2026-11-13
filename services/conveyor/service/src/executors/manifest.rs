@@ -170,6 +170,7 @@ pub fn build(
             "workingDir": WORKSPACE_PATH,
             "volumeMounts": [volume_mount],
             "securityContext": hardened(),
+            "resources": settings.resources(),
         }],
         "volumes": [{ "name": WORKSPACE_VOLUME, "emptyDir": {} }],
     });
@@ -321,6 +322,10 @@ fn hardened() -> Value {
     json!({ "allowPrivilegeEscalation": false })
 }
 
+const DEFAULT_CPU_REQUEST: &str = "500m";
+const DEFAULT_CPU_LIMIT: &str = "8";
+const DEFAULT_MEMORY_REQUEST: &str = "1Gi";
+
 /// How this deployment runs cluster jobs.
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -338,9 +343,36 @@ pub struct Settings {
     /// (`CONVEYOR_K8S_ALLOW_PRIVILEGED`): the container can do what the node can. With it off, [`build`] never
     /// emits a privileged container and the executor refuses the job before anything is created.
     pub allow_privileged: bool,
+    /// What the steps container may use. Without a limit a build takes every core of the node (cargo and the test harness start
+    /// one thread per core), which pins the CPU and heats the machine: a small CPU request keeps the build below the services
+    /// that run on the same node when they compete, and the limit caps it. Rust and cargo read the limit as the number of cores.
+    /// Empty text for a limit means none.
+    pub cpu_request: String,
+    pub cpu_limit: String,
+    pub memory_request: String,
+    pub memory_limit: String,
 }
 
 impl Settings {
+    /// The `resources` of the steps container.
+    #[must_use]
+    pub fn resources(&self) -> Value {
+        let pick = |cpu: &str, memory: &str| {
+            let mut m = json!({});
+            if !cpu.trim().is_empty() {
+                m["cpu"] = json!(cpu.trim());
+            }
+            if !memory.trim().is_empty() {
+                m["memory"] = json!(memory.trim());
+            }
+            m
+        };
+        json!({
+            "requests": pick(&self.cpu_request, &self.memory_request),
+            "limits": pick(&self.cpu_limit, &self.memory_limit),
+        })
+    }
+
     #[must_use]
     pub fn from_env() -> Self {
         Self {
@@ -363,6 +395,10 @@ impl Settings {
                 .parse()
                 .unwrap_or(120),
             allow_privileged: quench_core::env::is_or("CONVEYOR_K8S_ALLOW_PRIVILEGED", false),
+            cpu_request: quench_core::env::get_or("CONVEYOR_K8S_CPU_REQUEST", DEFAULT_CPU_REQUEST),
+            cpu_limit: quench_core::env::get_or("CONVEYOR_K8S_CPU_LIMIT", DEFAULT_CPU_LIMIT),
+            memory_request: quench_core::env::get_or("CONVEYOR_K8S_MEMORY_REQUEST", DEFAULT_MEMORY_REQUEST),
+            memory_limit: quench_core::env::get_or("CONVEYOR_K8S_MEMORY_LIMIT", ""),
         }
     }
 }
@@ -377,6 +413,10 @@ impl Default for Settings {
             service_ready_timeout_secs: 300,
             pod_start_timeout_secs: 120,
             allow_privileged: false,
+            cpu_request: DEFAULT_CPU_REQUEST.to_string(),
+            cpu_limit: DEFAULT_CPU_LIMIT.to_string(),
+            memory_request: DEFAULT_MEMORY_REQUEST.to_string(),
+            memory_limit: String::new(),
         }
     }
 }

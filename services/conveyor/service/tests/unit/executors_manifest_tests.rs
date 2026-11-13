@@ -826,3 +826,24 @@ fn only_the_service_that_asked_is_privileged_and_only_where_the_deployment_allow
             .is_none()
     );
 }
+
+#[quench_test::test]
+fn the_steps_container_is_capped_so_a_build_cannot_take_every_core_of_the_node() {
+    let spec = with_services(vec![]);
+    let commands = vec![conveyor_service::steps::argv(&spec.steps[0]).unwrap()];
+    let built = manifest::build(&spec, &commands, "conveyor", &Settings::default());
+    let resources = &built.job["spec"]["template"]["spec"]["containers"][0]["resources"];
+    assert_eq!(resources["limits"]["cpu"], "8");
+    assert_eq!(resources["requests"]["cpu"], "500m");
+    assert!(resources["limits"]["memory"].is_null(), "no memory limit unless asked for");
+
+    let settings = Settings {
+        cpu_limit: String::new(),
+        memory_limit: "16Gi".into(),
+        ..Settings::default()
+    };
+    let built = manifest::build(&spec, &commands, "conveyor", &settings);
+    let resources = &built.job["spec"]["template"]["spec"]["containers"][0]["resources"];
+    assert!(resources["limits"]["cpu"].is_null());
+    assert_eq!(resources["limits"]["memory"], "16Gi");
+}
