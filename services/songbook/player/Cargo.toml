@@ -1,6 +1,6 @@
 [package]
 name = "songbook-player"
-version = "0.1.12"
+version = "0.1.13"
 edition.workspace = true
 publish = false
 authors.workspace = true
