@@ -392,6 +392,24 @@ fn recently_played_joins_the_servers_list_with_this_phones_and_survives_the_serv
 }
 
 #[quench_test::test]
+fn recently_played_shows_the_artists_and_albums_as_cards_above_the_songs() {
+    let (t, _, _) = tree("recent-cards", false);
+    t.played(&song(60, "Local", "Ed"));
+    let items = t.children("recent").unwrap();
+    let cards: Vec<(&str, &str, bool)> = items
+        .iter()
+        .filter(|i| i.kind == "artist" || i.kind == "album")
+        .map(|i| (i.kind.as_str(), i.group.as_str(), i.grid))
+        .collect();
+    assert!(cards.contains(&("artist", "Artists", true)), "{cards:?}");
+    assert!(cards.contains(&("album", "Albums", true)), "{cards:?}");
+    assert!(items.iter().any(|i| i.id == "artist/Ed"), "artists open as folders");
+    assert!(items.iter().any(|i| i.id == "album/7" && i.art.contains("/art/album/7")));
+    let first_song = items.iter().position(|i| i.kind == "song").unwrap();
+    assert!(items[..first_song].iter().any(|i| i.kind == "artist"), "cards come before the songs");
+}
+
+#[quench_test::test]
 fn the_continue_row_is_the_song_that_was_playing() {
     let (t, store, _) = tree("last", false);
     assert_eq!(t.children("recent-root").unwrap()[0].title, "Server");

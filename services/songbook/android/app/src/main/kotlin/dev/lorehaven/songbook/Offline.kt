@@ -50,7 +50,12 @@ class Offline private constructor(private val context: Context) {
     val playback: CacheDataSource.Factory = CacheDataSource.Factory().setCache(keptCache).setCacheWriteDataSinkFactory(null).setUpstreamDataSourceFactory(playedLayer).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     /** What pictures are read through: those seen before need no network. */
-    val pictures: CacheDataSource.Factory = CacheDataSource.Factory().setCache(artCache).setUpstreamDataSourceFactory(network).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+    private val picturesCached = CacheDataSource.Factory().setCache(artCache).setUpstreamDataSourceFactory(network).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+    /** The same, also for the `content://` addresses the car is given ([ArtProvider]): they are read as the service address they stand for. */
+    val pictures: androidx.media3.datasource.DataSource.Factory = ResolvingDataSource.Factory(picturesCached) { spec: DataSpec ->
+        ArtProvider.original(spec.uri)?.let { spec.withUri(Uri.parse(it)) } ?: spec
+    }
 
     private val io = Executors.newFixedThreadPool(2)
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
@@ -130,7 +135,7 @@ class Offline private constructor(private val context: Context) {
     private fun prefetchPicture(song: Song) {
         io.execute {
             try {
-                val source = pictures.createDataSource()
+                val source = picturesCached.createDataSource()
                 CacheWriter(source, DataSpec(Uri.parse("${session.api}/art/song/${song.id}?w=320")), null, null).cache()
             } catch (e: Exception) {
                 // No picture, or no network: the list shows a tile.

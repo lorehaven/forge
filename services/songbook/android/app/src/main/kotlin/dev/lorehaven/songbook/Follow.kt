@@ -1,6 +1,8 @@
 package dev.lorehaven.songbook
 
 import android.content.Context
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Handler
 import androidx.media3.common.MediaItem
@@ -184,8 +186,18 @@ class FocusResume(context: Context, private val player: Player, private val main
         }
     }
 
+    private var holdUntil = 0L
+
+    /** Does not play again for a while: the person's speaker or car went away, and the phone's own speaker must stay quiet. */
+    fun hold() {
+        holdUntil = System.currentTimeMillis() + HOLD_MS
+        lostAt = 0
+        main.removeCallbacks(resume)
+    }
+
     private val listener = object : Player.Listener {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (System.currentTimeMillis() < holdUntil) return
             lostAt = if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS) System.currentTimeMillis() else 0L
             if (lostAt == 0L) main.removeCallbacks(resume)
         }
@@ -209,5 +221,44 @@ class FocusResume(context: Context, private val player: Player, private val main
 
         /** How long nothing else plays before this does (advertisements have gaps). */
         const val QUIET_MS = 1_500L
+
+        /** How long after a disconnect a loss of the sound is not answered with playing. */
+        const val HOLD_MS = 15_000L
+    }
+}
+
+/**
+ * Stops the music when what it was heard through goes away: a Bluetooth speaker or headset, a wired or USB output, a car. The
+ * player's own "becoming noisy" handling covers only some of these (it is a broadcast the system sends for some disconnects),
+ * so this watches the outputs themselves. Android Auto leaving is seen by the service (its controller disconnects).
+ */
+class OutputWatch(context: Context, private val player: Player, private val main: Handler, private val focus: FocusResume) {
+    private val audio = context.getSystemService(AudioManager::class.java)
+
+    private val callback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+            if (removedDevices.any { it.isSink && it.type in EXTERNAL }) stopMusic("an output went away")
+        }
+    }
+
+    /** Pauses what plays, and keeps it from starting again by itself. */
+    fun stopMusic(why: String) {
+        if (!player.playWhenReady) return
+        android.util.Log.i("SongbookOutput", "$why: pausing")
+        focus.hold()
+        player.pause()
+    }
+
+    fun start() = audio.registerAudioDeviceCallback(callback, main)
+    fun stop() = audio.unregisterAudioDeviceCallback(callback)
+
+    private companion object {
+        val EXTERNAL = setOf(
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLE_SPEAKER, AudioDeviceInfo.TYPE_HEARING_AID, AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_USB_ACCESSORY, AudioDeviceInfo.TYPE_LINE_ANALOG, AudioDeviceInfo.TYPE_LINE_DIGITAL,
+            AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_AUX_LINE, AudioDeviceInfo.TYPE_DOCK,
+        )
     }
 }

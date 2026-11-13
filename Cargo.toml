@@ -92,12 +92,12 @@ forge-ui = { path = "libs/forge-ui", version = "0.1.0" }
 forge-shell = { path = "libs/forge-shell" }
 forge-web = { path = "libs/forge-web" }
 libc = { version = "0.2" }
-quench-android-surface = { registry = "ennor", version = "0.1.11" }
-quench-desktop-native = { registry = "ennor", version = "0.1.13" }
+quench-android-surface = { registry = "ennor", version = "0.1.12" }
+quench-desktop-native = { registry = "ennor", version = "0.1.14" }
 quench-style = { registry = "ennor", version = "0.1.5" }
-quench-ui = { registry = "ennor", version = "0.1.7" }
-quench-ui-native = { registry = "ennor", version = "0.1.11" }
-quench-ui-web = { registry = "ennor", version = "0.1.11" }
+quench-ui = { registry = "ennor", version = "0.1.8" }
+quench-ui-native = { registry = "ennor", version = "0.1.12" }
+quench-ui-web = { registry = "ennor", version = "0.1.12" }
 quench-archive = { registry = "ennor", version = "0.1.5" }
 quench-args = { registry = "ennor", version = "0.1.5" }
 quench-auth = { registry = "ennor", version = "0.4.21" }
@@ -112,7 +112,7 @@ quench-db = { registry = "ennor", version = "0.2.18" }
 quench-image = { registry = "ennor", version = "0.1.4" }
 quench-html = { registry = "ennor", version = "0.1.5" }
 quench-markdown-term = { registry = "ennor", version = "0.1.0" }
-quench-fullstack = { registry = "ennor", version = "0.1.13" }
+quench-fullstack = { registry = "ennor", version = "0.1.14" }
 quench-http = { registry = "ennor", version = "0.1.18" }
 quench-k8s = { registry = "ennor", version = "0.1.8" }
 quench-layout = { registry = "ennor", version = "0.1.9" }

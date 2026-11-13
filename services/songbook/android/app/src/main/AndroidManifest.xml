@@ -51,6 +51,10 @@
                 <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
             </intent-filter>
         </receiver>
+        <provider
+            android:name=".ArtProvider"
+            android:authorities="dev.lorehaven.songbook.art"
+            android:exported="true" />
         <service
             android:name=".SongDownloadService"
             android:exported="false"

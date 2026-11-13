@@ -59,6 +59,7 @@ class PlaybackService : MediaLibraryService() {
         // Where the person stopped, on every device; and playing again when what took the sound away is over.
         sync = Sync(this, player, brain, tree, work, main).also { it.start() }
         focus = FocusResume(this, player, main).also { it.start() }
+        outputs = OutputWatch(this, player, main, focus!!).also { it.start() }
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val item = mediaItem ?: return
@@ -90,6 +91,7 @@ class PlaybackService : MediaLibraryService() {
         stopWatching = settings.onChange { main.post { librarySession?.setMediaButtonPreferences(ImmutableList.of(fadeButton(settings))) } }
     }
 
+    private var outputs: OutputWatch? = null
     private var stopWatching: (() -> Unit)? = null
 
     /** Looks up the details of a song the screens (or another device) queued by its id alone, and puts them in its place in the queue. */
@@ -136,6 +138,7 @@ class PlaybackService : MediaLibraryService() {
     override fun onDestroy() {
         sync?.stop()
         focus?.stop()
+        outputs?.stop()
         stopWatching?.invoke()
         librarySession?.player?.let { p -> p.currentMediaItem?.let { Resume.save(Brain.of(this), it, p.currentPosition) } }
         crossfader?.release()
@@ -161,6 +164,12 @@ class PlaybackService : MediaLibraryService() {
             } catch (e: java.io.IOException) {
                 LibraryResult.ofError<T>(LibraryResult.RESULT_ERROR_IO)
             }
+        }
+
+        /** Android Auto going away (the cable out, the car off): the music stops, as it does for any other output. */
+        override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+            if (controller.packageName != GEARHEAD) return
+            if (session.connectedControllers.none { it.packageName == GEARHEAD && it != controller }) outputs?.stopMusic("Android Auto disconnected")
         }
 
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
@@ -258,6 +267,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     companion object {
+        private const val GEARHEAD = "com.google.android.projection.gearhead"
         /** The session command of the crossfade button on the car's player. */
         const val FADE_COMMAND = "songbook.crossfade"
 

@@ -116,7 +116,7 @@ class CarBrowseTest {
             assertTrue(it.mediaMetadata.isPlayable == true)
             assertTrue("a title", it.mediaMetadata.title!!.isNotEmpty())
             assertTrue("an artist", it.mediaMetadata.artist!!.isNotEmpty())
-            assertTrue("a picture address", it.mediaMetadata.artworkUri.toString().contains("/art/song/"))
+            assertTrue("a picture address", ArtProvider.original(it.mediaMetadata.artworkUri!!)!!.contains("/art/song/"))
         }
     }
 

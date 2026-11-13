@@ -21,6 +21,9 @@ pub const SUGGESTED_ROOT: &str = "suggested-root";
 const FRESH: Duration = Duration::from_secs(120);
 /// A car shows a screenful: a place's queue is not the whole library.
 const CAR_LIMIT: u32 = 300;
+/// How many artist and album cards "Recently played" shows, and how many songs under them.
+const RECENT_CARDS: usize = 12;
+const RECENT_SONGS: usize = 30;
 /// How many songs the phone remembers.
 const REMEMBERED: usize = 40;
 
@@ -308,11 +311,7 @@ impl Tree {
         Ok(match parent {
             ROOT => Self::root_children(),
             "home" => self.home_items()?,
-            "recent" => [
-                play_entries("recent"),
-                self.song_items("recent", &self.recent_songs()),
-            ]
-            .concat(),
+            "recent" => self.recent_items(),
             // What Android Auto asks for to offer "continue": the song that was playing, and a few to start with.
             RECENT_ROOT => match self.store.last() {
                 Some(last) => vec![self.song_item("recent", &last.song)],
@@ -397,6 +396,56 @@ impl Tree {
                 .concat()
             }
         })
+    }
+
+    /// Recently played: the artists and albums the songs came from (as picture cards), then the songs themselves.
+    fn recent_items(&self) -> Vec<Item> {
+        let songs = self.recent_songs();
+        let mut artists: Vec<String> = Vec::new();
+        let mut albums: Vec<&SongInfo> = Vec::new();
+        for s in &songs {
+            if let Some(a) = s.artists.first()
+                && !artists.contains(a)
+            {
+                artists.push(a.clone());
+            }
+            if s.album_id > 0 && albums.iter().all(|x| x.album_id != s.album_id) {
+                albums.push(s);
+            }
+        }
+        let base = self.api.base();
+        let mut out = play_entries("recent");
+        out.extend(section(
+            artists
+                .iter()
+                .take(RECENT_CARDS)
+                .map(|name| {
+                    let art = format!("{base}/art/artist?name={}&w=320", encode(name));
+                    folder(&format!("artist/{}", encode(name)), name, "", &art, "artist")
+                })
+                .collect(),
+            "Artists",
+            true,
+        ));
+        out.extend(section(
+            albums
+                .iter()
+                .take(RECENT_CARDS)
+                .map(|s| {
+                    let art = format!("{base}/art/album/{}?w=320", s.album_id);
+                    let by = s.artists.first().map_or("", String::as_str);
+                    folder(&format!("album/{}", s.album_id), &s.album, by, &art, "album")
+                })
+                .collect(),
+            "Albums",
+            true,
+        ));
+        out.extend(section(
+            self.song_items("recent", &songs[..songs.len().min(RECENT_SONGS)]),
+            "Songs",
+            false,
+        ));
+        out
     }
 
     /// The first letters of the artists' names, as folders (`letter/N`).

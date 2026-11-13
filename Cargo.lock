@@ -257,9 +257,9 @@ dependencies = [
 
 [[package]]
 name = "errno"
-version = "0.3.14"
+version = "0.3.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
+checksum = "e35d6e78f4cebb90e51d543db8fe41528851d6deeef6ef21ebd4bfdc1e784776"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
@@ -933,9 +933,9 @@ dependencies = [
 
 [[package]]
 name = "quench-android-surface"
-version = "0.1.11"
+version = "0.1.12"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "d7967270b7ffec30f3149e9f8f0205e5287593074f4f8e582c3fb7a67aa41cef"
+checksum = "4a958fd64582c784d8c7f3e8e4e46712acda26b90c98b412b81cafc523fa28db"
 dependencies = [
  "quench-raster",
  "quench-serde",
@@ -1092,18 +1092,18 @@ dependencies = [
 
 [[package]]
 name = "quench-desktop-atspi"
-version = "0.1.10"
+version = "0.1.12"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "a37bf51dc3be2d3a611dfecb7cb6c5fc35cb3b5acbc361b67bc3661f1c3c07f1"
+checksum = "39efe856e01ea0aaf41878550eaf7483fa4e3c4b2035bb7a977d7d5cc33ccbb3"
 dependencies = [
  "quench-ui-native",
 ]
 
 [[package]]
 name = "quench-desktop-native"
-version = "0.1.13"
+version = "0.1.14"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "fcd970eeca478a646b5b42ee0969888a348555bafcfa335017dc28eed7cb5cba"
+checksum = "3221fb892160a21c8dbe508c941a907a47e0745e3f32bf0d29a80fd832aecc81"
 dependencies = [
  "quench-desktop-atspi",
  "quench-desktop-wayland",
@@ -1123,9 +1123,9 @@ dependencies = [
 
 [[package]]
 name = "quench-fullstack"
-version = "0.1.13"
+version = "0.1.14"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "ca2ccfabcc0328e7b3d8b19cd9eaeb0baeb2c3b4b73fe0698bf2e84c7b2b8ce1"
+checksum = "118dfba861328178f35c845e80f478bc70d524d3980102a45e64facc8fafc9d0"
 dependencies = [
  "quench-archive",
  "quench-auth",
@@ -1508,15 +1508,15 @@ dependencies = [
 
 [[package]]
 name = "quench-ui"
-version = "0.1.7"
+version = "0.1.8"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "14c6508b0cee9ef2386a230548b90075eac17c8eb0fe83d2e4dd80d350431865"
+checksum = "e9afff609145e06b48f430160768e99863f45edb3608812c2d4494d2196ec198"
 
 [[package]]
 name = "quench-ui-native"
-version = "0.1.11"
+version = "0.1.12"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "9fd013efcd015ef38f1f3875049890d8861c0698d99d4002ce31f811df5c0628"
+checksum = "ce189271af370d595c885067ddb00632d9d8aac67644b3ef77f4544a728ac99f"
 dependencies = [
  "quench-core",
  "quench-css",
@@ -1530,9 +1530,9 @@ dependencies = [
 
 [[package]]
 name = "quench-ui-web"
-version = "0.1.11"
+version = "0.1.12"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "9ad06fb40d4c9839cc35ca2a6cba3af73d627eda03a43e75e09a53d8b57b421e"
+checksum = "3aa4bfd5d3f0b4f3cca3925f777aee0ba52ce81ef98834387c73154939423136"
 dependencies = [
  "quench-serde",
  "quench-ui",
@@ -1647,18 +1647,18 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.15.1"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96"
+checksum = "102f35f7de7b06d8c61f1cff6592f5253e0dea431c74867aad5dfd70f44663fb"
 dependencies = [
  "zeroize",
 ]
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.16"
+version = "0.103.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
+checksum = "e3a0760a887c14823fca5a1c970b01d47c328c696c0c64829d1df50e8f853fd5"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -2048,9 +2048,9 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.11"
+version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5f280bbb2b287bc8e7de7e3852945a0ff50d1bbcb5ed42b6c7a568c546df171"
+checksum = "7265c9301c16a8711c992c2d8da90ee77ef54b1ed51482d6dfeb00dc756b1297"
 dependencies = [
  "rustls-pki-types",
 ]

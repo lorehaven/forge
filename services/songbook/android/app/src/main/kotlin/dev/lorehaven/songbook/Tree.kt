@@ -30,9 +30,10 @@ class Tree(private val session: Session, private val brain: Brain, private val o
     }
 
     /** An item of the program's JSON as a `MediaItem`. */
-    private fun item(o: JSONObject): MediaItem {
+    private fun item(o: JSONObject, small: Boolean = false): MediaItem {
         val playable = o.optBoolean("playable")
-        val art = o.optString("art").takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }
+        // The car reads pictures through our provider (it has no token); in lists a smaller picture is enough and loads faster.
+        val art = o.optString("art").takeIf { it.isNotEmpty() }?.let { ArtProvider.uri(if (small) it.replace("w=320", "w=160") else it) }
         val metadata = MediaMetadata.Builder()
             .setTitle(o.optString("title"))
             .setArtworkUri(art)
@@ -59,12 +60,12 @@ class Tree(private val session: Session, private val brain: Brain, private val o
             .build()
     }
 
-    private fun items(list: org.json.JSONArray?): List<MediaItem> = (0 until (list?.length() ?: 0)).map { item(list!!.getJSONObject(it)) }
+    private fun items(list: org.json.JSONArray?, small: Boolean = false): List<MediaItem> = (0 until (list?.length() ?: 0)).map { item(list!!.getJSONObject(it), small) }
 
     private fun folder(id: String, title: String): MediaItem = item(JSONObject().put("id", id).put("title", title).put("browsable", true).put("kind", "folder"))
 
     /** A song kept on the device: listed without the program, so it works with no network. */
-    fun songItem(place: String, s: Song): MediaItem = MediaItem.Builder()
+    fun songItem(place: String, s: Song, small: Boolean = false): MediaItem = MediaItem.Builder()
         .setMediaId("s:$place:${s.id}")
         .setUri(streamUri(s.id))
         .setMediaMetadata(
@@ -72,7 +73,7 @@ class Tree(private val session: Session, private val brain: Brain, private val o
                 .setTitle(s.title)
                 .setArtist(s.artist)
                 .setAlbumTitle(s.album)
-                .setArtworkUri(Uri.parse("${session.api}/art/song/${s.id}?w=320"))
+                .setArtworkUri(ArtProvider.uri("${session.api}/art/song/${s.id}?w=${if (small) 160 else 320}"))
                 .setDurationMs(s.durationSecs * 1000L)
                 .setIsBrowsable(false)
                 .setIsPlayable(true)
@@ -98,11 +99,11 @@ class Tree(private val session: Session, private val brain: Brain, private val o
     }
 
     fun children(parent: String): List<MediaItem> = when (parent) {
-        "kept" -> keptEntries() + offline.kept().map { songItem("kept", it) }
+        "kept" -> keptEntries() + offline.kept().map { songItem("kept", it, true) }
         // The tabs of the car: Home, Artists, Playlists, and last the songs kept on the device.
-        ROOT -> items(brain.call("children", "parent" to parent).optJSONArray("items")) +
+        ROOT -> items(brain.call("children", "parent" to parent).optJSONArray("items"), true) +
             (if (offline.kept().isNotEmpty()) listOf(folder("kept", "On this device")) else emptyList())
-        else -> items(brain.call("children", "parent" to parent).optJSONArray("items"))
+        else -> items(brain.call("children", "parent" to parent).optJSONArray("items"), true)
     }
 
     /** A folder or a song by its id; null for one that is not there. */
@@ -133,7 +134,7 @@ class Tree(private val session: Session, private val brain: Brain, private val o
         .setUri(streamUri(id))
         .setMediaMetadata(
             MediaMetadata.Builder()
-                .setArtworkUri(Uri.parse("${session.api}/art/song/$id?w=320"))
+                .setArtworkUri(ArtProvider.uri("${session.api}/art/song/$id?w=320"))
                 .setIsPlayable(true)
                 .setIsBrowsable(false)
                 .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
