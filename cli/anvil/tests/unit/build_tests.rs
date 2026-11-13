@@ -189,9 +189,15 @@ fn a_command_is_run_through_nice_unless_the_level_is_zero() {
     let mut cmd = std::process::Command::new("cargo");
     cmd.arg("build").current_dir("/tmp").env("A", "1");
     let wrapped = anvil::util::niced(cmd);
-    let args: Vec<_> = wrapped.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+    let args: Vec<_> = wrapped
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     assert_eq!(wrapped.get_program(), "nice");
     assert_eq!(args, ["-n", "10", "cargo", "build"]);
-    assert_eq!(wrapped.get_current_dir(), Some(std::path::Path::new("/tmp")));
+    assert_eq!(
+        wrapped.get_current_dir(),
+        Some(std::path::Path::new("/tmp"))
+    );
     assert!(wrapped.get_envs().any(|(k, v)| k == "A" && v.is_some()));
 }

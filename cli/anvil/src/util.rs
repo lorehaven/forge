@@ -278,9 +278,11 @@ pub fn run_command_streamed(cmd: Command, operation: &str) -> Result<()> {
 /// The niceness the commands anvil runs get unless `ANVIL_NICE` says otherwise (`0` or less: none).
 const DEFAULT_NICE: i32 = 10;
 
-/// `cmd` run through `nice -n <ANVIL_NICE>`, so that a build (every compiler process it starts inherits it) gives way to what
-/// else the machine is doing and leaves the desktop responsive, instead of competing with it for every core. Unchanged where
-/// there is no `nice` (not Unix) or the niceness is zero or not a number.
+/// `cmd` run through `nice -n <ANVIL_NICE>`.
+///
+/// A build (every compiler process it starts inherits the niceness) gives way to what else the machine is doing and leaves the
+/// desktop responsive, instead of competing with it for every core. Unchanged where there is no `nice` (not Unix) or the
+/// niceness is zero or not a number.
 #[must_use]
 pub fn niced(cmd: Command) -> Command {
     let level = quench_core::env::get_or("ANVIL_NICE", &DEFAULT_NICE.to_string())
