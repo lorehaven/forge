@@ -289,7 +289,8 @@ pub fn niced(cmd: Command) -> Command {
         .trim()
         .parse::<i32>()
         .unwrap_or(0);
-    if !cfg!(unix) || level <= 0 {
+    // A program that cannot be found is left to fail where it always did (the spawn, with its own message), not inside `nice`.
+    if !cfg!(unix) || level <= 0 || !is_runnable(cmd.get_program()) {
         return cmd;
     }
     let mut wrapped = Command::new("nice");
@@ -308,6 +309,15 @@ pub fn niced(cmd: Command) -> Command {
         };
     }
     wrapped
+}
+
+/// Whether `program` is a path to a file, or a name found on `PATH`.
+fn is_runnable(program: &std::ffi::OsStr) -> bool {
+    let path = std::path::Path::new(program);
+    if path.components().count() > 1 {
+        return path.is_file();
+    }
+    std::env::var_os("PATH").is_some_and(|dirs| std::env::split_paths(&dirs).any(|dir| dir.join(program).is_file()))
 }
 
 /// Runs `cmd` for a `--json` invocation: stdin/stdout/stderr all pass straight

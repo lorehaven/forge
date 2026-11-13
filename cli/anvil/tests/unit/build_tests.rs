@@ -201,3 +201,9 @@ fn a_command_is_run_through_nice_unless_the_level_is_zero() {
     );
     assert!(wrapped.get_envs().any(|(k, v)| k == "A" && v.is_some()));
 }
+
+#[quench_test::test]
+fn a_program_that_does_not_exist_is_not_hidden_behind_nice() {
+    let wrapped = anvil::util::niced(std::process::Command::new("definitely-not-a-real-binary-anvil-test"));
+    assert_eq!(wrapped.get_program(), "definitely-not-a-real-binary-anvil-test");
+}
