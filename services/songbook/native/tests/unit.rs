@@ -403,10 +403,20 @@ fn recently_played_shows_the_artists_and_albums_as_cards_above_the_songs() {
         .collect();
     assert!(cards.contains(&("artist", "Artists", true)), "{cards:?}");
     assert!(cards.contains(&("album", "Albums", true)), "{cards:?}");
-    assert!(items.iter().any(|i| i.id == "artist/Ed"), "artists open as folders");
-    assert!(items.iter().any(|i| i.id == "album/7" && i.art.contains("/art/album/7")));
+    assert!(
+        items.iter().any(|i| i.id == "artist/Ed"),
+        "artists open as folders"
+    );
+    assert!(
+        items
+            .iter()
+            .any(|i| i.id == "album/7" && i.art.contains("/art/album/7"))
+    );
     let first_song = items.iter().position(|i| i.kind == "song").unwrap();
-    assert!(items[..first_song].iter().any(|i| i.kind == "artist"), "cards come before the songs");
+    assert!(
+        items[..first_song].iter().any(|i| i.kind == "artist"),
+        "cards come before the songs"
+    );
 }
 
 #[quench_test::test]

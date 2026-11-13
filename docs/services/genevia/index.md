@@ -1,7 +1,7 @@
 ---
 title: Genevia
 parent: Services
-nav_order: 8
+nav_order: 16
 ---
 
 Genevia keeps family trees. A GEDCOM file is imported into Postgres; a tree is browsed as a list (Ahnentafel table by generation), a pedigree or a radial fan, and people, couples and relatives can be edited. A wedding is one record, so a change made from either spouse shows for both.

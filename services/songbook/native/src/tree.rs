@@ -421,7 +421,13 @@ impl Tree {
                 .take(RECENT_CARDS)
                 .map(|name| {
                     let art = format!("{base}/art/artist?name={}&w=320", encode(name));
-                    folder(&format!("artist/{}", encode(name)), name, "", &art, "artist")
+                    folder(
+                        &format!("artist/{}", encode(name)),
+                        name,
+                        "",
+                        &art,
+                        "artist",
+                    )
                 })
                 .collect(),
             "Artists",
@@ -434,7 +440,13 @@ impl Tree {
                 .map(|s| {
                     let art = format!("{base}/art/album/{}?w=320", s.album_id);
                     let by = s.artists.first().map_or("", String::as_str);
-                    folder(&format!("album/{}", s.album_id), &s.album, by, &art, "album")
+                    folder(
+                        &format!("album/{}", s.album_id),
+                        &s.album,
+                        by,
+                        &art,
+                        "album",
+                    )
                 })
                 .collect(),
             "Albums",
