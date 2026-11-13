@@ -166,7 +166,8 @@ fn print_tail_lines(lines: &[String], n: usize, source: &str) {
 /// `log_to_file` controls whether output is also captured to
 /// `target/anvil-logs/<operation>.log`; both behave the same with respect to
 /// the current [`OutputMode`] otherwise.
-fn run_command_with_logging(mut cmd: Command, operation: &str, log_to_file: bool) -> Result<()> {
+fn run_command_with_logging(cmd: Command, operation: &str, log_to_file: bool) -> Result<()> {
+    let mut cmd = niced(cmd);
     print_status(
         Tone::Info,
         "anvil",
@@ -274,6 +275,39 @@ pub fn run_command_streamed(cmd: Command, operation: &str) -> Result<()> {
     run_command_with_logging(cmd, operation, false)
 }
 
+/// The niceness the commands anvil runs get unless `ANVIL_NICE` says otherwise (`0` or less: none).
+const DEFAULT_NICE: i32 = 10;
+
+/// `cmd` run through `nice -n <ANVIL_NICE>`, so that a build (every compiler process it starts inherits it) gives way to what
+/// else the machine is doing and leaves the desktop responsive, instead of competing with it for every core. Unchanged where
+/// there is no `nice` (not Unix) or the niceness is zero or not a number.
+#[must_use]
+pub fn niced(cmd: Command) -> Command {
+    let level = quench_core::env::get_or("ANVIL_NICE", &DEFAULT_NICE.to_string())
+        .trim()
+        .parse::<i32>()
+        .unwrap_or(0);
+    if !cfg!(unix) || level <= 0 {
+        return cmd;
+    }
+    let mut wrapped = Command::new("nice");
+    wrapped
+        .arg("-n")
+        .arg(level.to_string())
+        .arg(cmd.get_program())
+        .args(cmd.get_args());
+    if let Some(dir) = cmd.get_current_dir() {
+        wrapped.current_dir(dir);
+    }
+    for (key, value) in cmd.get_envs() {
+        match value {
+            Some(value) => wrapped.env(key, value),
+            None => wrapped.env_remove(key),
+        };
+    }
+    wrapped
+}
+
 /// Runs `cmd` for a `--json` invocation: stdin/stdout/stderr all pass straight
 /// through to anvil's own, uninterrupted.
 ///
@@ -284,7 +318,8 @@ pub fn run_command_streamed(cmd: Command, operation: &str) -> Result<()> {
 /// is enough to keep a consumer piping anvil's stdout from seeing anything
 /// but that report. `--silent`/`--tail` have no effect here; they govern the
 /// human-output modes, not this one.
-pub fn run_command_json(mut cmd: Command) -> Result<()> {
+pub fn run_command_json(cmd: Command) -> Result<()> {
+    let mut cmd = niced(cmd);
     let status = cmd.status().context("Failed to execute command")?;
     if !status.success() {
         quench_core::bail!("command failed with status: {status}");

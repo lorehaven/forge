@@ -1,4 +1,4 @@
 # Cargo never prunes target/. After `anvil build|test|nextest|lint`, anvil trims it to this many GiB: incremental caches first,
 # then the profiles not just built, the least recently built first. `anvil clean --max-size [SIZE]` does it on request.
 [build]
-max_target_gb = 20
+max_target_gb = 45
