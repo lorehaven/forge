@@ -26,7 +26,6 @@ quench-serde = { workspace = true }
 quench-core = { workspace = true }
 quench-args = { workspace = true }
 conveyor-pipeline = { workspace = true }
-quench-cli = { workspace = true }
 quench-client = { workspace = true }
 tokio = { workspace = true }
 

@@ -89,7 +89,6 @@ dependencies = [
  "conveyor-pipeline",
  "forge-tui",
  "quench-args",
- "quench-cli",
  "quench-client",
  "quench-core",
  "quench-serde",
