@@ -5,7 +5,7 @@ use crate::cli::{
     SecretCommands, ShowArgs, ValidateArgs,
 };
 use crate::client::Client;
-use quench_cli::prelude::{Tone, print_status};
+use forge_tui::console::{Tone, print_status};
 use quench_core::stream::StreamExt;
 use quench_core::{Context, Result, bail};
 use quench_serde::{Value, json};

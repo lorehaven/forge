@@ -1,4 +1,4 @@
-use quench_cli::prelude::{DIM, RESET, Tone, print_status};
+use forge_tui::console::{Tone, print_status};
 use quench_core::{Context, Result};
 use std::collections::VecDeque;
 use std::fs::{self, File};
@@ -153,13 +153,16 @@ fn print_tail_lines(lines: &[String], n: usize, source: &str) {
     let shown = &lines[start..];
 
     eprintln!(
-        "{DIM}--- last {} line(s) of {source} ---{RESET}",
-        shown.len()
+        "{}",
+        forge_tui::console::muted(&format!("--- last {} line(s) of {source} ---", shown.len()))
     );
     for line in shown {
         eprintln!("{line}");
     }
-    eprintln!("{DIM}--- end of log ({source}) ---{RESET}");
+    eprintln!(
+        "{}",
+        forge_tui::console::muted(&format!("--- end of log ({source}) ---"))
+    );
 }
 
 /// Shared implementation behind [`run_command`] and [`run_command_streamed`].
@@ -317,7 +320,8 @@ fn is_runnable(program: &std::ffi::OsStr) -> bool {
     if path.components().count() > 1 {
         return path.is_file();
     }
-    std::env::var_os("PATH").is_some_and(|dirs| std::env::split_paths(&dirs).any(|dir| dir.join(program).is_file()))
+    std::env::var_os("PATH")
+        .is_some_and(|dirs| std::env::split_paths(&dirs).any(|dir| dir.join(program).is_file()))
 }
 
 /// Runs `cmd` for a `--json` invocation: stdin/stdout/stderr all pass straight

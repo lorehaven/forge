@@ -1,6 +1,6 @@
 [package]
 name = "pulley"
-version = "0.1.30"
+version = "0.2.0"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Pulley CLI - sync/backup jobs powered by rsync"
@@ -21,6 +21,7 @@ name = "pulley"
 path = "src/lib.rs"
 
 [dependencies]
+forge-tui = { workspace = true }
 quench-serde = { workspace = true }
 quench-core = { workspace = true }
 quench-tz = { workspace = true }

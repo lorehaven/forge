@@ -1,7 +1,7 @@
 use conveyor_cli::cli::*;
 use conveyor_cli::client::Client;
 use conveyor_cli::commands::*;
-use quench_cli::prelude::Tone;
+use forge_tui::console::Tone;
 use quench_serde::json;
 
 #[quench_test::test]

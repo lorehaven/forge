@@ -1,5 +1,5 @@
 use crate::config;
-use quench_cli::prelude::{Tone, print_status};
+use forge_tui::console::{Tone, print_status};
 use quench_core::Context;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};

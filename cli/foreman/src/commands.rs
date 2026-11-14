@@ -1,6 +1,6 @@
 //! What each verb does.
 
-use quench_cli::prelude::{DIM, RESET};
+use forge_tui::console;
 use quench_core::{Context, Result, bail};
 
 use crate::config::Role;
@@ -242,35 +242,38 @@ pub fn list(estate: &Estate) -> Result<()> {
     ui::blank();
 
     if !estate.config.containers.is_empty() {
-        println!("{DIM}containers{RESET}");
+        println!("{}", console::muted("containers"));
         for container in &estate.config.containers {
             ui::entry(&container.name, &container.image);
         }
         ui::blank();
     }
 
-    println!("{DIM}services{RESET}");
+    println!("{}", console::muted("services"));
     for name in estate.service_names() {
         let service = estate.resolve(&name)?;
         let needs = &estate.service(&name)?.needs;
         let suffix = if needs.is_empty() {
             String::new()
         } else {
-            format!("  {DIM}needs {}{RESET}", needs.join(", "))
+            format!(
+                "  {}",
+                console::muted(&format!("needs {}", needs.join(", ")))
+            )
         };
         ui::entry(&name, &format!("{}{suffix}", service.url()));
     }
 
     if !estate.config.tasks.is_empty() {
         ui::blank();
-        println!("{DIM}tasks{RESET}");
+        println!("{}", console::muted("tasks"));
         for (name, task) in &estate.config.tasks {
             let role = match task.role {
                 Role::Migrate => "runs before a start, and on `foreman db`",
                 Role::Reset => "runs on `foreman reset`",
                 Role::Manual => "runs on `foreman run`",
             };
-            ui::entry(name, &format!("{DIM}{role}{RESET}"));
+            ui::entry(name, &console::muted(role));
         }
     }
 
@@ -296,7 +299,7 @@ pub fn env(estate: &Estate, name: &str) -> Result<()> {
     ui::blank();
 
     for name in &service.unset {
-        println!("  {DIM}unset {name}{RESET}");
+        println!("  {}", console::muted(&format!("unset {name}")));
     }
     for (key, value) in &service.env {
         println!("  {key}={value}");

@@ -192,7 +192,7 @@ fn gib(bytes: u64) -> String {
 /// # Errors
 /// As [`prune`].
 pub fn run(limit: u64, keep: &[&str], spare_kept: bool, dry_run: bool) -> Result<Report> {
-    use quench_cli::prelude::{Tone, print_status};
+    use forge_tui::console::{Tone, print_status};
     let target = target_dir();
     let report = prune(&target, limit, keep, spare_kept, dry_run)?;
     if report.removed.is_empty() {

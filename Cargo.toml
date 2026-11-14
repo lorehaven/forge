@@ -89,6 +89,7 @@ conveyor-pipeline = { path = "libs/conveyor-pipeline", registry = "ennor", versi
 gatehouse-client = { path = "libs/gatehouse-client" }
 gatehouse-auth = { path = "libs/gatehouse-auth", registry = "ennor", version = "0.1.0" }
 forge-ui = { path = "libs/forge-ui", version = "0.1.0" }
+forge-tui = { path = "libs/forge-tui", registry = "ennor", version = "0.1.0" }
 forge-shell = { path = "libs/forge-shell" }
 forge-web = { path = "libs/forge-web" }
 libc = { version = "0.2" }

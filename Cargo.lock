@@ -4,9 +4,10 @@ version = 4
 
 [[package]]
 name = "anvil"
-version = "0.4.38"
+version = "0.5.0"
 dependencies = [
  "docs-book",
+ "forge-tui",
  "gatehouse-auth",
  "quench-archive",
  "quench-args",
@@ -83,9 +84,10 @@ dependencies = [
 
 [[package]]
 name = "conveyor-cli"
-version = "0.3.33"
+version = "0.4.0"
 dependencies = [
  "conveyor-pipeline",
+ "forge-tui",
  "quench-args",
  "quench-cli",
  "quench-client",
@@ -273,8 +275,9 @@ checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "foreman"
-version = "0.1.19"
+version = "0.2.0"
 dependencies = [
+ "forge-tui",
  "quench-args",
  "quench-cli",
  "quench-core",
@@ -319,13 +322,22 @@ dependencies = [
 
 [[package]]
 name = "forge-toolbox"
-version = "0.1.22"
+version = "0.2.0"
 dependencies = [
+ "forge-tui",
  "quench-args",
  "quench-cli",
  "quench-client",
  "quench-core",
  "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "forge-tui"
+version = "0.1.0"
+dependencies = [
+ "quench-core",
  "quench-test",
 ]
 
@@ -920,8 +932,9 @@ dependencies = [
 
 [[package]]
 name = "pulley"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
+ "forge-tui",
  "quench-args",
  "quench-cli",
  "quench-core",
@@ -1611,9 +1624,10 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.4.22"
+version = "0.5.0"
 dependencies = [
  "conveyor-pipeline",
+ "forge-tui",
  "gatehouse-auth",
  "kube-cluster",
  "quench-args",
@@ -2008,8 +2022,9 @@ dependencies = [
 
 [[package]]
 name = "warehouse-cli"
-version = "0.1.19"
+version = "0.2.0"
 dependencies = [
+ "forge-tui",
  "quench-args",
  "quench-cli",
  "quench-client",
@@ -2057,8 +2072,9 @@ dependencies = [
 
 [[package]]
 name = "welder"
-version = "0.2.20"
+version = "0.3.0"
 dependencies = [
+ "forge-tui",
  "quench-cli",
  "quench-client",
  "quench-core",

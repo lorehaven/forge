@@ -5,9 +5,8 @@ use crate::render::{
     Gate, RenderedManifest, ResourceRef, ResourceScope, Selector, WaitFor,
     generate_manifests_selected, list_resources,
 };
-use quench_cli::prelude::{
-    ReplControl, Tone, print_box_banner, print_status, repl_prompt, repl_run,
-};
+use forge_tui::console::{Tone, print_box_banner, print_status};
+use quench_cli::prelude::{ReplControl, repl_prompt, repl_run};
 use std::time::Duration;
 
 pub use crate::cluster::JobState;

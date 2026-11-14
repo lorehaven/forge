@@ -1,6 +1,6 @@
 [package]
 name = "riveter"
-version = "0.4.22"
+version = "0.5.0"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Riveter – k8s support tool, powered by Rust and minijinja."
@@ -25,6 +25,7 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
+forge-tui = { workspace = true }
 quench-crypto = { workspace = true }
 quench-core = { workspace = true }
 quench-serde = { workspace = true, features = ["yaml"] }

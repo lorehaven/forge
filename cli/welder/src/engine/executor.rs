@@ -39,7 +39,7 @@ impl Debug for AgentNode {
     }
 }
 
-use crate::ui::{BLUE, BOLD, CYAN, DIM, RESET, SEP, SEP_THIN, YELLOW};
+use crate::ui;
 
 pub fn execute<'a, S: std::hash::BuildHasher + Sync>(
     name: &'a str,
@@ -50,20 +50,14 @@ pub fn execute<'a, S: std::hash::BuildHasher + Sync>(
     Box::pin(async move {
         let indent = "  ".repeat(depth);
 
-        let sep = if depth == 0 { SEP } else { SEP_THIN };
-        let model_hint = agents.get(name).map_or(String::new(), |n| {
-            format!("  {DIM}{}{RESET}", n.model.name())
-        });
-        println!(
-            "\n{CYAN}{sep}{RESET}\n{indent}{BOLD}{BLUE}  ▸ {name}{RESET}{model_hint}\n{CYAN}{sep}{RESET}"
-        );
+        ui::print_agent_header(name, agents.get(name).map(|n| n.model.name()), &indent);
 
         let node = agents
             .get(name)
             .ok_or_else(|| quench_core::err!("Agent not found: {name}"))?;
 
         if !node.children.is_empty() {
-            println!("{DIM}{indent}  routing…{RESET}");
+            ui::print_note(&indent, "routing…");
 
             let child_descriptions: String = node
                 .children
@@ -121,13 +115,13 @@ Delegate:"
                     .find(|c| c.to_ascii_lowercase() == decision)
             {
                 let child = child.clone();
-                println!("{YELLOW}{indent}  ↳ {child}{RESET}");
+                ui::print_delegate(&indent, &child);
                 return execute(&child, input, agents, depth + 1).await;
             }
-            println!("{DIM}{indent}  no delegate matched — executing as SELF{RESET}");
+            ui::print_note(&indent, "no delegate matched — executing as SELF");
         }
 
-        println!("{DIM}{indent}  executing…{RESET}");
+        ui::print_note(&indent, "executing…");
 
         let result = if node.tools.is_empty() {
             let execution_prompt = format!("{}\n\nUser request:\n{input}", node.instruction);
@@ -142,7 +136,7 @@ Delegate:"
             execute_with_tools(node, input).await?
         };
 
-        println!("{CYAN}{indent}  ✓ {name}{RESET}");
+        ui::print_done(&indent, name);
 
         Ok(result)
     })

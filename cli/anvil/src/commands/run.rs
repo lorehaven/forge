@@ -1,5 +1,5 @@
+use forge_tui::console::{Tone, print_status};
 use quench_cli::keys::{KeyCode, Keys};
-use quench_cli::prelude::{Tone, print_status};
 use quench_cli::tty::RawMode;
 use quench_core::fs::Walk;
 use quench_core::{Context, Result};

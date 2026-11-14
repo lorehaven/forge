@@ -1,6 +1,6 @@
 [package]
 name = "conveyor-cli"
-version = "0.3.33"
+version = "0.4.0"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Conveyor CLI - drive the Forge CI/CD service from a terminal"
@@ -21,6 +21,7 @@ name = "conveyor"
 path = "src/main.rs"
 
 [dependencies]
+forge-tui = { workspace = true }
 quench-serde = { workspace = true }
 quench-core = { workspace = true }
 quench-args = { workspace = true }

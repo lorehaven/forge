@@ -1,9 +1,10 @@
+use forge_tui::console::{Tone, print_status};
 use pulley::cli::{Cli, Command, ServiceAction};
 use pulley::config::Config;
 use pulley::repl::Repl;
 use pulley::{daemon, service};
 use quench_args::Parser;
-use quench_cli::prelude::{Tone, print_status, require_binary};
+use quench_cli::prelude::require_binary;
 
 #[cfg(unix)]
 const RSYNC_HINT: &str = "pulley shells out to it for every sync job; install it (e.g. `apt install rsync` / `pacman -S rsync`)";

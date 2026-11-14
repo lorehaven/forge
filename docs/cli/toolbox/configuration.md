@@ -5,7 +5,16 @@ grand_parent: Command-line tools
 nav_order: 2
 ---
 
-Forge Toolbox has **no configuration file, environment variables or flags**. Everything is compiled in (`forge_toolbox::lib`):
+Forge Toolbox has **no configuration file or flags**. Everything is compiled in (`forge_toolbox::lib`), except how the screen looks, which is read from the environment (see [forge-tui](../../libs/forge-tui/index.md)):
+
+| Variable | Effect |
+|---|---|
+| `FORGE_THEME` | `dark` (default) or `light`. Without it, `COLORFGBG` (a background of 7 or 15 is light) decides. |
+| `FORGE_PALETTE` | Brand colour: `green` (default), `purple`, `blue`, `teal`, `orange`, `rose`, as on the web. |
+| `COLORTERM` | `truecolor` or `24bit` gives 24-bit colour; otherwise the 256-colour palette is used. |
+| `NO_COLOR` | Any non-empty value turns all styling off (also `TERM=dumb`). |
+
+Compiled in:
 
 | Constant | Value |
 |---|---|

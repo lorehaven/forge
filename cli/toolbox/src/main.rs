@@ -1,12 +1,16 @@
 use forge_toolbox::{
     ActionDispatch, App, KeyOutcome, PollOutcome, SelfUpdate, dispatch_action,
-    fetch_latest_registry_version, handle_key, installed_versions, plan_self_update,
-    poll_in_flight, refresh_app_state, render, run_selected_action, self_update_command,
+    fetch_latest_registry_version, frame, handle_key, installed_versions, plan_self_update,
+    poll_in_flight, refresh_app_state, render_with, run_selected_action, self_update_command,
 };
+use forge_tui::console::{Tone, print_status};
+use forge_tui::{ColorLevel, Theme};
 use quench_args::{Parser, Subcommand};
 use quench_cli::keys::Keys;
-use quench_cli::prelude::{Tone, print_status, require_binary};
-use quench_cli::term::{ENTER_ALTERNATE_SCREEN, LEAVE_ALTERNATE_SCREEN, clear_screen, size};
+use quench_cli::prelude::require_binary;
+use quench_cli::term::{
+    CLEAR_ALL, ENTER_ALTERNATE_SCREEN, HIDE_CURSOR, LEAVE_ALTERNATE_SCREEN, SHOW_CURSOR, size,
+};
 use quench_cli::tty::RawMode;
 use quench_core::{Context, Result};
 use std::io::{Write, stdout};
@@ -41,6 +45,7 @@ impl TerminalGuard {
         let raw = RawMode::enable(0).context("failed to enable raw mode")?;
         let mut out = stdout();
         out.write_all(ENTER_ALTERNATE_SCREEN.as_bytes())
+            .and_then(|()| out.write_all(HIDE_CURSOR.as_bytes()))
             .and_then(|()| out.flush())
             .context("failed to enter alternate screen")?;
         Ok(Self { _raw: raw })
@@ -50,6 +55,7 @@ impl TerminalGuard {
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let mut out = stdout();
+        let _ = out.write_all(SHOW_CURSOR.as_bytes());
         let _ = out.write_all(LEAVE_ALTERNATE_SCREEN.as_bytes());
         let _ = out.flush();
     }
@@ -110,6 +116,9 @@ fn run_repl() -> Result<()> {
     let mut keys = Keys::stdin();
     let mut dirty = true;
     let mut in_flight: Option<forge_toolbox::InFlightAction> = None;
+    let theme = Theme::from_env();
+    let level = ColorLevel::detect();
+    let mut last = Painted::default();
 
     loop {
         if let Some(job) = in_flight.as_mut() {
@@ -124,6 +133,12 @@ fn run_repl() -> Result<()> {
             }
         }
 
+        // The terminal can change size after the screen is up (a full-screen app takes over the window), and the
+        // layout is centred on the width, so a resize must repaint.
+        if size().is_ok_and(|now| now != last.size) {
+            dirty = true;
+        }
+
         if dirty {
             let transient_status = in_flight.as_ref().map(|job| {
                 format!(
@@ -132,7 +147,7 @@ fn run_repl() -> Result<()> {
                     job.label
                 )
             });
-            draw(&app, transient_status.as_deref())?;
+            draw(&app, transient_status.as_deref(), &theme, level, &mut last)?;
             dirty = false;
         }
 
@@ -196,16 +211,46 @@ fn run_repl() -> Result<()> {
     Ok(())
 }
 
-fn draw(app: &App, transient_status: Option<&str>) -> Result<()> {
-    let mut out = stdout();
-    clear_screen(&mut out).context("failed to clear terminal")?;
-    let (term_width, _) = size().context("failed to read terminal size")?;
+/// What is on the screen: the last frame sent and the terminal size it was drawn for.
+#[derive(Debug, Default)]
+struct Painted {
+    frame: String,
+    size: (u16, u16),
+}
 
-    for line in render(app, transient_status, term_width as usize) {
-        out.write_all(line.as_bytes())?;
-        out.write_all(b"\r\n")?;
+/// Paints the screen over the old one (see [`frame`]). An unchanged screen is not sent again; after a resize the
+/// terminal is cleared first, since the old frame was laid out for another size.
+fn draw(
+    app: &App,
+    transient_status: Option<&str>,
+    theme: &Theme,
+    level: ColorLevel,
+    last: &mut Painted,
+) -> Result<()> {
+    let size_now = size().context("failed to read terminal size")?;
+    let (term_width, term_height) = size_now;
+    let rows = render_with(
+        app,
+        transient_status,
+        usize::from(term_width).saturating_sub(1),
+        usize::from(term_height),
+        theme,
+        level,
+    );
+    let resized = size_now != last.size;
+    let painted = frame(&rows, &theme.bg.background_escape(level));
+    if painted == last.frame && !resized {
+        return Ok(());
     }
-
+    let mut out = stdout();
+    if resized {
+        out.write_all(CLEAR_ALL.as_bytes())?;
+    }
+    out.write_all(painted.as_bytes())?;
     out.flush().context("failed to flush terminal output")?;
+    *last = Painted {
+        frame: painted,
+        size: size_now,
+    };
     Ok(())
 }

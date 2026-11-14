@@ -1,13 +1,11 @@
 //! Output.
 //!
 //! One line per thing that happened, the label in a fixed column so a start
-//! reads as a column of services rather than a wall of prose. Colours come from
-//! quench-cli so foreman looks like the rest of the toolchain.
+//! reads as a column of services rather than a wall of prose. The label is a badge from forge-tui, so foreman looks
+//! like the other forge tools and the web apps.
 
 use crate::config::ToneName;
-use quench_cli::prelude::{CYAN, DIM, GREEN, RESET, WHITE, YELLOW};
-
-pub const RED: &str = "\x1b[31m";
+use forge_tui::console;
 
 /// Width of the label column. Long enough for the service names anyone
 /// actually types.
@@ -32,26 +30,22 @@ impl From<ToneName> for Tone {
     }
 }
 
-impl Tone {
-    #[must_use]
-    pub const fn colour(self) -> &'static str {
-        match self {
-            Self::Info => CYAN,
-            Self::Ok => GREEN,
-            Self::Warn => YELLOW,
-            Self::Error => RED,
+impl From<Tone> for console::Tone {
+    fn from(tone: Tone) -> Self {
+        match tone {
+            Tone::Info => Self::Info,
+            Tone::Ok => Self::Success,
+            Tone::Warn => Self::Warn,
+            Tone::Error => Self::Error,
         }
     }
 }
 
 pub fn say(tone: Tone, label: &str, message: impl AsRef<str>) {
     println!(
-        "{}{:<width$}{} {}",
-        tone.colour(),
-        label,
-        RESET,
-        message.as_ref(),
-        width = LABEL_WIDTH
+        "{} {}",
+        console::chip(tone.into(), label, LABEL_WIDTH),
+        message.as_ref()
     );
 }
 
@@ -73,11 +67,14 @@ pub fn error(label: &str, message: impl AsRef<str>) {
 
 /// A service and its address, as printed in the summary and the picker.
 pub fn entry(name: &str, url: &str) {
-    println!("  {WHITE}{name:<LABEL_WIDTH$}{RESET} {url}");
+    println!(
+        "  {} {url}",
+        console::strong(&format!("{name:<LABEL_WIDTH$}"))
+    );
 }
 
 pub fn dim(message: impl AsRef<str>) {
-    println!("{DIM}{}{RESET}", message.as_ref());
+    println!("{}", console::muted(message.as_ref()));
 }
 
 pub fn blank() {
@@ -87,6 +84,6 @@ pub fn blank() {
 /// Indented tail of a log, for a service that died on the way up.
 pub fn quote(text: &str) {
     for line in text.lines() {
-        println!("{DIM}             {line}{RESET}");
+        println!("{}", console::muted(&format!("             {line}")));
     }
 }

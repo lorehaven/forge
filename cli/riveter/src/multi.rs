@@ -8,7 +8,7 @@
 
 use crate::render::{ResourceScope, Selector, generate_manifests_selected};
 use crate::repl::{WaitPolicy, cluster_apply, cluster_diff, describe, ok, warn};
-use quench_cli::prelude::{Tone, print_status};
+use forge_tui::console::{Tone, print_status};
 use quench_core::Result;
 
 /// What happened to one environment.

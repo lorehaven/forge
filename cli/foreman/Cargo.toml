@@ -1,6 +1,6 @@
 [package]
 name = "foreman"
-version = "0.1.19"
+version = "0.2.0"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Foreman - run a project's local development estate from one TOML file"
@@ -21,6 +21,7 @@ name = "foreman"
 path = "src/lib.rs"
 
 [dependencies]
+forge-tui = { workspace = true }
 quench-serde = { workspace = true }
 quench-core = { workspace = true }
 quench-args = { workspace = true }

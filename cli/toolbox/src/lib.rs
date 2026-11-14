@@ -1,5 +1,6 @@
+use forge_tui::widgets::{self, ButtonKind};
+use forge_tui::{ColorLevel, Line, Style, Theme, Tone, fill_screen};
 use quench_cli::keys::KeyCode;
-use quench_cli::style::Stylize;
 use quench_core::{Context, Result};
 use std::collections::HashMap;
 use std::hash::BuildHasher;
@@ -90,32 +91,39 @@ pub enum PlannedAction {
     Update,
 }
 
+/// Column widths of the tools table, each including its two-column gutter. A width of 0 means the column is hidden.
 #[derive(Debug)]
 pub struct TableWidths {
     pub package: usize,
     pub binary: usize,
     pub installed: usize,
     pub latest: usize,
-    pub updatable: usize,
+    pub status: usize,
     pub action: usize,
 }
 
+/// Columns before the first cell: the selection bar and the space after it.
+const MARKER_WIDTH: usize = 2;
+/// Padding the badge and button widgets put around their text.
+const BADGE_CHROME: usize = 4;
+const BUTTON_CHROME: usize = 2;
+
 #[must_use]
 pub fn content_widths(statuses: &[CrateStatus]) -> TableWidths {
-    let mut package = char_width("package");
-    let mut binary = char_width("binary");
-    let mut installed = char_width("installed");
-    let mut latest = char_width("latest");
-    let mut updatable = char_width("updatable");
-    let mut action = char_width("action");
+    let mut package = char_width("Package");
+    let mut binary = char_width("Binary");
+    let mut installed = char_width("Installed");
+    let mut latest = char_width("Latest");
+    let mut status_w = char_width("Status");
+    let mut action = char_width("Action");
 
     for status in statuses {
         package = package.max(char_width(&status.package));
         binary = binary.max(char_width(&status.binary));
         installed = installed.max(char_width(&display_installed(status)));
         latest = latest.max(char_width(&display_latest(status)));
-        updatable = updatable.max(char_width(display_updatable(status)));
-        action = action.max(char_width(action_label(status)));
+        status_w = status_w.max(char_width(status_kind(status).1) + BADGE_CHROME);
+        action = action.max(char_width(action_text(status)) + BUTTON_CHROME);
     }
 
     TableWidths {
@@ -123,28 +131,36 @@ pub fn content_widths(statuses: &[CrateStatus]) -> TableWidths {
         binary: binary + 2,
         installed: installed + 2,
         latest: latest + 2,
-        updatable: updatable + 2,
+        status: status_w + 2,
         action: action + 2,
     }
 }
 
-pub const fn shrink_widths_to_fit(widths: &mut TableWidths, term_width: usize) {
-    let min_package = 7;
-    let min_binary = 7;
-    let min_installed = 12;
-    let min_latest = 6;
-    let min_updatable = 9;
-    let min_action = 6;
+impl TableWidths {
+    const fn total(&self) -> usize {
+        MARKER_WIDTH
+            + self.package
+            + self.binary
+            + self.installed
+            + self.latest
+            + self.status
+            + self.action
+    }
+}
 
-    while widths.package
-        + widths.binary
-        + widths.installed
-        + widths.latest
-        + widths.updatable
-        + widths.action
-        + 10
-        > term_width
-    {
+/// Narrows the columns until the table fits `term_width` columns.
+///
+/// Columns shrink towards a floor, widest-first in a fixed order; if that is still too wide the binary column and then
+/// the latest-version column are hidden (set to 0), the way the web table drops columns on a phone.
+pub const fn shrink_widths_to_fit(widths: &mut TableWidths, term_width: usize) {
+    let min_package = 9;
+    let min_binary = 9;
+    let min_installed = 11;
+    let min_latest = 8;
+    let min_status = 14;
+    let min_action = 9;
+
+    while widths.total() > term_width {
         if widths.package > min_package {
             widths.package -= 1;
             continue;
@@ -161,12 +177,20 @@ pub const fn shrink_widths_to_fit(widths: &mut TableWidths, term_width: usize) {
             widths.latest -= 1;
             continue;
         }
-        if widths.updatable > min_updatable {
-            widths.updatable -= 1;
+        if widths.status > min_status {
+            widths.status -= 1;
             continue;
         }
         if widths.action > min_action {
             widths.action -= 1;
+            continue;
+        }
+        if widths.binary > 0 {
+            widths.binary = 0;
+            continue;
+        }
+        if widths.latest > 0 {
+            widths.latest = 0;
             continue;
         }
         break;
@@ -174,39 +198,11 @@ pub const fn shrink_widths_to_fit(widths: &mut TableWidths, term_width: usize) {
 }
 
 #[must_use]
-pub fn make_border(
-    left: char,
-    mid: char,
-    right: char,
-    marker_w: usize,
-    widths: &TableWidths,
-) -> String {
-    let mut out = String::new();
-    out.push(left);
-    out.push_str(&"─".repeat(marker_w));
-    out.push(mid);
-    out.push_str(&"─".repeat(widths.package));
-    out.push(mid);
-    out.push_str(&"─".repeat(widths.binary));
-    out.push(mid);
-    out.push_str(&"─".repeat(widths.installed));
-    out.push(mid);
-    out.push_str(&"─".repeat(widths.latest));
-    out.push(mid);
-    out.push_str(&"─".repeat(widths.updatable));
-    out.push(mid);
-    out.push_str(&"─".repeat(widths.action));
-    out.push(right);
-    out
-}
-
-#[must_use]
 pub fn display_installed(status: &CrateStatus) -> String {
-    match (&status.installed_version, status.installable) {
-        (Some(v), _) => v.to_string(),
-        (None, true) => "no (can install)".to_string(),
-        (None, false) => "no".to_string(),
-    }
+    status
+        .installed_version
+        .as_ref()
+        .map_or_else(|| "—".to_string(), std::string::ToString::to_string)
 }
 
 #[must_use]
@@ -214,12 +210,63 @@ pub fn display_latest(status: &CrateStatus) -> String {
     status
         .latest_version
         .as_ref()
-        .map_or_else(|| "n/a".to_string(), std::string::ToString::to_string)
+        .map_or_else(|| "—".to_string(), std::string::ToString::to_string)
 }
 
+/// The badge of the status column: its tone and text.
 #[must_use]
-pub const fn display_updatable(status: &CrateStatus) -> &'static str {
-    if status.updatable { "yes" } else { "no" }
+pub const fn status_kind(status: &CrateStatus) -> (Tone, &'static str) {
+    if status.error.is_some() {
+        (Tone::Error, "Registry error")
+    } else if status.installed_version.is_none() {
+        if status.installable {
+            (Tone::Gray, "Not installed")
+        } else {
+            (Tone::Gray, "Unavailable")
+        }
+    } else if status.updatable {
+        (Tone::Warning, "Update available")
+    } else if status.latest_version.is_none() {
+        (Tone::Gray, "Not in registry")
+    } else {
+        (Tone::Success, "Up to date")
+    }
+}
+
+/// The text of the action button, `—` when Enter would do nothing.
+#[must_use]
+pub const fn action_text(status: &CrateStatus) -> &'static str {
+    match action_label(status).as_bytes() {
+        b"install" => "Install",
+        b"update" => "Update",
+        _ => "—",
+    }
+}
+
+/// The tone of the toolbox self-update banner (see [`format_toolbox_note`]).
+#[must_use]
+pub fn note_tone(note: &str) -> Tone {
+    if note.contains("update available") {
+        Tone::Warning
+    } else if note.contains("up to date") {
+        Tone::Success
+    } else if note.contains("not installed") {
+        Tone::Info
+    } else {
+        Tone::Gray
+    }
+}
+
+/// The tone of the status message at the bottom: failures are errors, a finished install or update is a success.
+#[must_use]
+pub fn message_tone(message: &str) -> Tone {
+    if message.contains("failed") || message.contains("not installable") {
+        Tone::Error
+    } else if message.ends_with("installed") || message.ends_with("updated") {
+        Tone::Success
+    } else {
+        Tone::Gray
+    }
 }
 
 #[must_use]
@@ -923,120 +970,344 @@ pub fn on_key(app: &mut App, in_flight: bool, code: KeyCode) -> KeyEffect {
     }
 }
 
-/// Renders the monitor screen as a list of already-styled lines, one per
-/// terminal row.
+/// The bytes that paint `rows` over whatever is on the screen, without clearing it first.
 ///
-/// Pure string building - split out from the event loop so it
-/// can be tested without a real terminal (crossterm's `Stylize` just wraps
-/// ANSI codes around the text, it doesn't need a tty).
+/// The cursor goes home, each row is written over the old one and followed by `erase` (a background escape, or empty)
+/// and "erase to end of line", and everything below the last row is erased, all in one write.
+/// Clearing the screen before each frame is what made the old screen blink on every spinner tick. Rows should be one
+/// column narrower than the terminal: the erase fills the last column, so nothing is ever written there and no terminal
+/// is left in its "pending wrap" state.
+#[must_use]
+pub fn frame(rows: &[String], erase: &str) -> String {
+    let mut out = String::from("\x1b[H");
+    let tail = format!("{erase}\x1b[K\x1b[0m\r\n");
+    out.push_str(&rows.join(&tail));
+    out.push_str(&tail.replace("\r\n", ""));
+    out.push_str(erase);
+    out.push_str("\x1b[J\x1b[0m");
+    out
+}
+
+/// Renders the monitor screen with the theme and colour level of the environment (see [`render_with`]); the rows are
+/// not padded down to the terminal height.
 #[must_use]
 pub fn render(app: &App, transient_status: Option<&str>, term_width: usize) -> Vec<String> {
-    let usable_width = term_width.saturating_sub(1);
+    render_with(
+        app,
+        transient_status,
+        term_width,
+        0,
+        &Theme::from_env(),
+        ColorLevel::detect(),
+    )
+}
+
+/// Renders the monitor screen as one string per terminal row, styled like the forge web apps.
+///
+/// A page background, a header with the version tag, the self-update banner as an alert, the tools in a card with
+/// status badges and action buttons, the keys as chips and the last message as an alert. Pure string building, so it can be tested without a terminal. With a `term_height` the rows are painted down to
+/// the bottom of the screen; 0 leaves the row count alone.
+#[must_use]
+pub fn render_with(
+    app: &App,
+    transient_status: Option<&str>,
+    term_width: usize,
+    term_height: usize,
+    theme: &Theme,
+    level: ColorLevel,
+) -> Vec<String> {
+    let page = page_lines(app, transient_status, term_width, term_height, theme);
+    let rows = if level == ColorLevel::None {
+        page
+    } else {
+        fill_screen(page, term_width, term_height, theme.bg)
+    };
+    rows.iter().map(|line| line.render(level)).collect()
+}
+
+/// The widest the content grows; wider terminals centre it, as the web page does with `--fui-content-max`.
+const CONTENT_MAX: usize = 120;
+
+/// Rows of the page that are not tool rows: header block, banner, card chrome, key hints and the message.
+const PAGE_CHROME_ROWS: usize = 16;
+
+fn page_lines(
+    app: &App,
+    transient_status: Option<&str>,
+    term_width: usize,
+    term_height: usize,
+    theme: &Theme,
+) -> Vec<Line> {
+    let margin = if term_width >= 60 { 2 } else { 1 };
+    let content = term_width.saturating_sub(margin * 2).clamp(1, CONTENT_MAX);
+    let margin = margin.max(term_width.saturating_sub(content) / 2);
+    let indent = |line: Line| Line::new().space(margin, Style::new()).append(line);
+    let blank = Line::new();
+
+    let text = Style::new().fg(theme.text);
+    let tertiary = Style::new().fg(theme.text_tertiary);
+
+    let mut page: Vec<Line> = vec![blank.clone()];
+
+    // Page header: title, version tag, subtitle.
+    page.push(indent(
+        Line::styled("Forge Toolbox", text.bold())
+            .space(2, Style::new())
+            .append(widgets::tag(
+                theme,
+                Tone::Brand,
+                concat!("v", env!("CARGO_PKG_VERSION")),
+            )),
+    ));
+    page.push(indent(
+        Line::styled(
+            "Monitor and install the forge command-line tools.",
+            tertiary,
+        )
+        .truncate(content),
+    ));
+    page.push(indent(
+        Line::styled("Registry ", tertiary)
+            .push(
+                REGISTRY_NAME,
+                Style::new().fg(theme.soft(Tone::Brand).text).bold(),
+            )
+            .push(format!("  {REGISTRY_INDEX}"), tertiary)
+            .truncate(content),
+    ));
+    page.push(blank.clone());
+
+    // Self-update banner.
+    let note = app.toolbox_note.trim_start_matches("note: ");
+    page.push(indent(widgets::alert(
+        theme,
+        note_tone(&app.toolbox_note),
+        note,
+        content,
+    )));
+    page.push(blank.clone());
+
+    // The tools card.
+    page.extend(
+        tools_card(app, theme, content, tool_rows_available(term_height))
+            .into_iter()
+            .map(&indent),
+    );
+    page.push(blank.clone());
+
+    // Key hints.
+    let gap = Style::new();
+    let hints = widgets::hint(theme, "↑↓", "Navigate")
+        .space(3, gap)
+        .append(widgets::hint(theme, "↵", "Install / update"))
+        .space(3, gap)
+        .append(widgets::hint(theme, "r", "Refresh"))
+        .space(3, gap)
+        .append(widgets::hint(theme, "q", "Quit"));
+    page.push(indent(hints.truncate(content)));
+    page.push(blank);
+
+    // Last message, or the running action with its spinner.
+    let status_line = transient_status.map_or_else(
+        || widgets::alert(theme, message_tone(&app.message), &app.message, content),
+        |busy| {
+            let (icon, label) = busy.split_once(' ').unwrap_or(("…", busy));
+            widgets::alert_with_icon(theme, Tone::Brand, icon, label, content)
+        },
+    );
+    page.push(indent(status_line));
+    page
+}
+
+/// How many table rows fit on a screen of `term_height` rows (`None` when the height is unknown, 0).
+fn tool_rows_available(term_height: usize) -> Option<usize> {
+    (term_height != 0).then(|| term_height.saturating_sub(PAGE_CHROME_ROWS).max(3))
+}
+
+/// Table rows one tool takes: its own, plus a line for its error.
+const fn row_count(status: &CrateStatus) -> usize {
+    if status.error.is_some() { 2 } else { 1 }
+}
+
+/// The tools shown when only `capacity` table rows fit: the range that ends at or after the selected tool, as far
+/// up as needed to keep it in view, then filled downwards.
+#[must_use]
+pub fn visible_range(
+    statuses: &[CrateStatus],
+    selected: usize,
+    capacity: usize,
+) -> std::ops::Range<usize> {
+    if statuses.is_empty() {
+        return 0..0;
+    }
+    let selected = selected.min(statuses.len() - 1);
+    let mut start = 0;
+    let mut used: usize = statuses[..=selected].iter().map(row_count).sum();
+    while used > capacity && start < selected {
+        used -= row_count(&statuses[start]);
+        start += 1;
+    }
+    let mut end = selected + 1;
+    while end < statuses.len() && used + row_count(&statuses[end]) <= capacity {
+        used += row_count(&statuses[end]);
+        end += 1;
+    }
+    start..end
+}
+
+/// The card with the tools table, `width` columns wide including its border, showing as many rows as `capacity` allows.
+fn tools_card(app: &App, theme: &Theme, width: usize, capacity: Option<usize>) -> Vec<Line> {
+    let inner = widgets::card_inner(width);
+    let updates = app.statuses.iter().filter(|s| s.updatable).count();
+    let shown = capacity.map_or(0..app.statuses.len(), |rows| {
+        visible_range(&app.statuses, app.selected, rows)
+    });
+
+    let count = if shown.len() < app.statuses.len() {
+        format!(
+            "  {}–{} of {}",
+            shown.start + 1,
+            shown.end,
+            app.statuses.len()
+        )
+    } else {
+        let noun = if app.statuses.len() == 1 {
+            "package"
+        } else {
+            "packages"
+        };
+        format!("  {} {noun}", app.statuses.len())
+    };
+    let mut header = Line::styled(" Tools", Style::new().fg(theme.text).bold())
+        .push(count, Style::new().fg(theme.text_tertiary));
+    if updates > 0 {
+        let label = format!(
+            "{updates} {}",
+            if updates == 1 { "update" } else { "updates" }
+        );
+        header = header
+            .space(2, Style::new())
+            .append(widgets::badge(theme, Tone::Warning, &label));
+    }
+
     let mut widths = content_widths(&app.statuses);
-    shrink_widths_to_fit(&mut widths, usable_width);
-    let row_len = widths.package
-        + widths.binary
-        + widths.installed
-        + widths.latest
-        + widths.updatable
-        + widths.action
-        + 10;
-    let sep_len = row_len.min(usable_width);
+    shrink_widths_to_fit(&mut widths, inner);
 
-    let mut lines = Vec::new();
-
-    lines.push(format!("{}", "Forge Toolbox Status".bold().underlined()));
-    lines.push(String::new());
-    lines.push(format!(
-        "{} {} {}",
-        "registry:".dark_grey(),
-        REGISTRY_NAME.cyan().bold(),
-        format!("({REGISTRY_INDEX})").dark_grey()
-    ));
-    lines.push(format!("{}", app.toolbox_note.as_str().yellow()));
-    lines.push(format!(
-        "{} {}",
-        "controls:".dark_grey(),
-        "↑/↓ move, Enter install/update, r refresh, q quit".cyan()
-    ));
-    lines.push(String::new());
-
-    let top = fit_cell(&make_border('┌', '┬', '┐', 2, &widths), sep_len);
-    let mid = fit_cell(&make_border('├', '┼', '┤', 2, &widths), sep_len);
-    let bottom = fit_cell(&make_border('└', '┴', '┘', 2, &widths), sep_len);
-
-    lines.push(format!("{}", top.dark_cyan()));
-    lines.push(format!(
-        "│{}│{}│{}│{}│{}│{}│{}│",
-        fit_cell("", 2).dark_cyan(),
-        fit_cell("package", widths.package).bold().white(),
-        fit_cell("binary", widths.binary).bold().white(),
-        fit_cell("installed", widths.installed).bold().white(),
-        fit_cell("latest", widths.latest).bold().white(),
-        fit_cell("updatable", widths.updatable).bold().white(),
-        fit_cell("action", widths.action).bold().white(),
-    ));
-    lines.push(format!("{}", mid.dark_cyan()));
-
-    for (idx, status) in app.statuses.iter().enumerate() {
-        let installed = display_installed(status);
-        let latest = display_latest(status);
-        let updatable = display_updatable(status);
-        let action = action_label(status);
-        let marker = if idx == app.selected {
-            fit_cell(">", 2).green().bold().to_string()
-        } else {
-            fit_cell(" ", 2).dark_grey().to_string()
-        };
-
-        let installed_cell = match (&status.installed_version, status.installable) {
-            (Some(_), _) => fit_cell(&installed, widths.installed).green().to_string(),
-            (None, true) => fit_cell(&installed, widths.installed).yellow().to_string(),
-            (None, false) => fit_cell(&installed, widths.installed)
-                .dark_grey()
-                .to_string(),
-        };
-        let latest_cell = if status.latest_version.is_some() {
-            fit_cell(&latest, widths.latest).cyan().to_string()
-        } else {
-            fit_cell(&latest, widths.latest).dark_grey().to_string()
-        };
-        let updatable_cell = if status.updatable {
-            fit_cell(updatable, widths.updatable)
-                .yellow()
-                .bold()
-                .to_string()
-        } else {
-            fit_cell(updatable, widths.updatable)
-                .dark_grey()
-                .to_string()
-        };
-        let action_cell = match action {
-            "install" => fit_cell(action, widths.action).green().bold().to_string(),
-            "update" => fit_cell(action, widths.action).yellow().bold().to_string(),
-            _ => fit_cell(action, widths.action).dark_grey().to_string(),
-        };
-
-        lines.push(format!(
-            "│{}│{}│{}│{}│{}│{}│{}│",
-            marker,
-            fit_cell(&status.package, widths.package).white(),
-            fit_cell(&status.binary, widths.binary).white(),
-            installed_cell,
-            latest_cell,
-            updatable_cell,
-            action_cell,
+    let mut body = vec![column_header(theme, &widths, inner)];
+    if app.statuses.is_empty() {
+        body.push(Line::styled(
+            "  No tools found in the registry.",
+            Style::new().fg(theme.text_tertiary),
         ));
-
+    }
+    for index in shown {
+        let status = &app.statuses[index];
+        let selected = index == app.selected;
+        body.push(tool_row(theme, &widths, status, selected, inner));
         if let Some(error) = &status.error {
-            lines.push(format!("{} {}", "warn:".red().bold(), error.as_str().red()));
+            let soft = theme.soft(Tone::Error);
+            body.push(
+                Line::styled(
+                    format!("  {} {error}", widgets::alert_icon(Tone::Error)),
+                    Style::new().fg(soft.text),
+                )
+                .truncate(inner),
+            );
         }
     }
-    lines.push(format!("{}", bottom.dark_cyan()));
+    widgets::card(theme, Some(header), body, width)
+}
 
-    lines.push(String::new());
-    let status_text = transient_status.unwrap_or(app.message.as_str());
-    lines.push(format!("{} {}", "status:".dark_grey(), status_text.white()));
+fn cell(line: Line, width: usize, bg: Style) -> Line {
+    if width == 0 {
+        Line::new()
+    } else {
+        line.pad_to(width, bg)
+    }
+}
 
-    lines
+fn column_header(theme: &Theme, widths: &TableWidths, inner: usize) -> Line {
+    let bg = Style::new().bg(theme.surface_2);
+    let style = bg.fg(theme.text_tertiary).bold();
+    let head = |name: &str, width: usize| cell(Line::styled(name, style), width, bg);
+    Line::new()
+        .space(MARKER_WIDTH, bg)
+        .append(head("Package", widths.package))
+        .append(head("Binary", widths.binary))
+        .append(head("Installed", widths.installed))
+        .append(head("Latest", widths.latest))
+        .append(head(" Status", widths.status))
+        .append(head(" Action", widths.action))
+        .pad_to(inner, bg)
+}
+
+fn tool_row(
+    theme: &Theme,
+    widths: &TableWidths,
+    status: &CrateStatus,
+    selected: bool,
+    inner: usize,
+) -> Line {
+    let row_bg = if selected {
+        theme.surface_hover
+    } else {
+        theme.surface
+    };
+    let bg = Style::new().bg(row_bg);
+    let marker = if selected {
+        Line::styled("▌", bg.fg(theme.brand_solid)).space(1, bg)
+    } else {
+        Line::new().space(MARKER_WIDTH, bg)
+    };
+
+    let package = if selected {
+        bg.fg(theme.text).bold()
+    } else {
+        bg.fg(theme.text)
+    };
+    let installed_style = if status.installed_version.is_some() {
+        bg.fg(theme.text_secondary)
+    } else {
+        bg.fg(theme.text_disabled)
+    };
+    let latest_style = if status.latest_version.is_some() {
+        bg.fg(theme.text_secondary)
+    } else {
+        bg.fg(theme.text_disabled)
+    };
+
+    let (tone, label) = status_kind(status);
+    let badge = widgets::badge(theme, tone, label);
+    let kind = match action_label(status) {
+        "install" => ButtonKind::Primary,
+        "update" => ButtonKind::Secondary,
+        _ => ButtonKind::Disabled,
+    };
+    let button = widgets::button(theme, kind, action_text(status));
+
+    marker
+        .append(cell(
+            Line::styled(&status.package, package),
+            widths.package,
+            bg,
+        ))
+        .append(cell(
+            Line::styled(&status.binary, bg.fg(theme.text_tertiary)),
+            widths.binary,
+            bg,
+        ))
+        .append(cell(
+            Line::styled(display_installed(status), installed_style),
+            widths.installed,
+            bg,
+        ))
+        .append(cell(
+            Line::styled(display_latest(status), latest_style),
+            widths.latest,
+            bg,
+        ))
+        .append(cell(badge, widths.status, bg))
+        .append(cell(button, widths.action, bg))
+        .on(row_bg)
+        .pad_to(inner, bg)
 }

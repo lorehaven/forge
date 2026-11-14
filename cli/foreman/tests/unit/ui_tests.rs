@@ -9,21 +9,6 @@ fn tone_from_tone_name_maps_every_variant() {
     assert!(matches!(Tone::from(ToneName::Error), Tone::Error));
 }
 
-#[quench_test::test]
-fn tone_colour_is_distinct_per_variant() {
-    let colours = [
-        Tone::Info.colour(),
-        Tone::Ok.colour(),
-        Tone::Warn.colour(),
-        Tone::Error.colour(),
-    ];
-    for (i, a) in colours.iter().enumerate() {
-        for (j, b) in colours.iter().enumerate() {
-            assert_eq!(i == j, a == b);
-        }
-    }
-}
-
 // Nothing here has an interesting return value - these just prove every
 // print helper runs to completion without panicking, for every tone.
 #[quench_test::test]

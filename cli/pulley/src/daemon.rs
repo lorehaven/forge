@@ -3,7 +3,7 @@ use crate::job_log;
 use crate::rsync::{self, Output};
 use crate::source::{self, Availability};
 use crate::state::{Outcome, Recording};
-use quench_cli::prelude::{Tone, print_status};
+use forge_tui::console::{Tone, print_status};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};

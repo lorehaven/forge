@@ -1,4 +1,4 @@
-use quench_cli::prelude::{Tone, print_status};
+use forge_tui::console::{Tone, print_status};
 use quench_core::Error;
 use quench_serde::Deserialize;
 use std::fs;

@@ -1,9 +1,8 @@
 use crate::config::{Config, Job};
 use crate::rsync;
 use crate::source;
-use quench_cli::prelude::{
-    ReplControl, Tone, print_box_banner, print_status, repl_prompt, repl_run,
-};
+use forge_tui::console::{Tone, print_box_banner, print_status};
+use quench_cli::prelude::{ReplControl, repl_prompt, repl_run};
 use std::io::{self, Write};
 
 fn prompt() -> String {

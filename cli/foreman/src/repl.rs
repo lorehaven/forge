@@ -4,7 +4,8 @@
 //! what is already up, then starting it. `foreman start conveyor` is the same
 //! thing in one line once you know what you want.
 
-use quench_cli::prelude::{DIM, GREEN, RESET, ReplControl, print_box_banner, repl_run};
+use forge_tui::console::{self, print_box_banner};
+use quench_cli::prelude::{ReplControl, repl_run};
 use quench_core::Result;
 
 use crate::commands;
@@ -179,15 +180,15 @@ impl<'a> Picker<'a> {
         ui::blank();
         for (index, name) in self.estate.service_names().iter().enumerate() {
             let mark = if self.picked.contains(name) {
-                format!("{GREEN}[x]{RESET}")
+                console::accent("[x]")
             } else {
                 "[ ]".to_string()
             };
             let state = if services::is_running(self.estate, name) {
                 let service = self.estate.resolve(name)?;
-                format!("{GREEN}running on {}{RESET}", service.port)
+                console::accent(&format!("running on {}", service.port))
             } else {
-                format!("{DIM}stopped{RESET}")
+                console::muted("stopped")
             };
             println!("  {mark} {}) {name:<12} {state}", index + 1);
         }

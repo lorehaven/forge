@@ -1,4 +1,4 @@
-use quench_cli::prelude::{Tone, print_status};
+use forge_tui::console::{Tone, print_status};
 use quench_core::Result;
 use quench_core::{Context, bail};
 use quench_serde::{Deserialize, Map, Value};

@@ -7,7 +7,7 @@ use crate::repl::{error, ok, warn};
 use crate::schema::{
     CrdSchema, Issue, Outcome, SchemaSet, Source, TEMPLATED_CRDS, cache_dir, load,
 };
-use quench_cli::prelude::{Tone, print_status};
+use forge_tui::console::{Tone, print_status};
 use quench_core::{Context as _, Result, bail, ensure};
 use quench_serde::Value;
 use std::collections::BTreeMap;

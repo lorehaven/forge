@@ -1,7 +1,8 @@
 use forge_toolbox::{
-    CrateStatus, action_label, display_installed, display_latest, display_updatable, fit_cell,
-    make_border,
+    CrateStatus, action_label, action_text, display_installed, display_latest, fit_cell,
+    message_tone, note_tone, status_kind,
 };
+use forge_tui::Tone;
 use quench_core::version::Version;
 
 fn status(
@@ -61,39 +62,27 @@ fn display_installed_shows_version_when_present() {
 }
 
 #[quench_test::test]
-fn display_installed_shows_can_install_when_missing_but_installable() {
+fn display_installed_shows_a_dash_when_missing() {
     let s = status(None, Some("1.0.0"), true, false);
-    assert_eq!(display_installed(&s), "no (can install)");
+    assert_eq!(display_installed(&s), "—");
 }
 
 #[quench_test::test]
-fn display_installed_shows_plain_no_when_not_installable() {
+fn display_installed_shows_a_dash_when_not_installable() {
     let s = status(None, None, false, false);
-    assert_eq!(display_installed(&s), "no");
+    assert_eq!(display_installed(&s), "—");
 }
 
 #[quench_test::test]
-fn display_latest_shows_na_when_unknown() {
+fn display_latest_shows_a_dash_when_unknown() {
     let s = status(Some("1.0.0"), None, false, false);
-    assert_eq!(display_latest(&s), "n/a");
+    assert_eq!(display_latest(&s), "—");
 }
 
 #[quench_test::test]
 fn display_latest_shows_version_when_known() {
     let s = status(None, Some("2.0.0"), true, false);
     assert_eq!(display_latest(&s), "2.0.0");
-}
-
-#[quench_test::test]
-fn display_updatable_yes_no() {
-    assert_eq!(
-        display_updatable(&status(Some("1.0.0"), Some("2.0.0"), true, true)),
-        "yes"
-    );
-    assert_eq!(
-        display_updatable(&status(Some("1.0.0"), Some("1.0.0"), true, false)),
-        "no"
-    );
 }
 
 #[quench_test::test]
@@ -121,11 +110,76 @@ fn action_label_dash_when_not_installable_and_not_installed() {
 }
 
 #[quench_test::test]
-fn make_border_uses_given_corner_and_junction_chars() {
-    let widths = forge_toolbox::content_widths(&[]);
-    let border = make_border('┌', '┬', '┐', 2, &widths);
-    assert!(border.starts_with('┌'));
-    assert!(border.ends_with('┐'));
-    // marker + 6 columns = 7 segments, joined by 6 '┬' characters.
-    assert_eq!(border.matches('┬').count(), 6);
+fn status_kind_maps_every_state_to_a_badge() {
+    let kind = |s: &CrateStatus| status_kind(s);
+    assert_eq!(
+        kind(&status(Some("1.0.0"), Some("1.0.0"), true, false)),
+        (Tone::Success, "Up to date")
+    );
+    assert_eq!(
+        kind(&status(Some("1.0.0"), Some("2.0.0"), true, true)),
+        (Tone::Warning, "Update available")
+    );
+    assert_eq!(
+        kind(&status(None, Some("1.0.0"), true, false)),
+        (Tone::Gray, "Not installed")
+    );
+    assert_eq!(
+        kind(&status(None, None, false, false)),
+        (Tone::Gray, "Unavailable")
+    );
+    assert_eq!(
+        kind(&status(Some("1.0.0"), None, false, false)),
+        (Tone::Gray, "Not in registry")
+    );
+    let mut failed = status(Some("1.0.0"), None, false, false);
+    failed.error = Some("boom".to_string());
+    assert_eq!(kind(&failed), (Tone::Error, "Registry error"));
+}
+
+#[quench_test::test]
+fn action_text_names_the_button() {
+    assert_eq!(
+        action_text(&status(None, Some("1.0.0"), true, false)),
+        "Install"
+    );
+    assert_eq!(
+        action_text(&status(Some("1.0.0"), Some("2.0.0"), true, true)),
+        "Update"
+    );
+    assert_eq!(
+        action_text(&status(Some("1.0.0"), Some("1.0.0"), true, false)),
+        "—"
+    );
+}
+
+#[quench_test::test]
+fn note_tone_follows_the_self_update_banner() {
+    assert_eq!(
+        note_tone(
+            "note: forge-toolbox update available: 0.1.0 -> 0.2.0. run forge-toolbox self-update"
+        ),
+        Tone::Warning
+    );
+    assert_eq!(
+        note_tone("note: forge-toolbox is up to date"),
+        Tone::Success
+    );
+    assert_eq!(
+        note_tone("note: forge-toolbox is not installed (latest 0.2.0)"),
+        Tone::Info
+    );
+    assert_eq!(note_tone("note: could not determine latest"), Tone::Gray);
+}
+
+#[quench_test::test]
+fn message_tone_marks_failures_and_successes() {
+    assert_eq!(message_tone("action failed: x"), Tone::Error);
+    assert_eq!(
+        message_tone("anvil is not installable from registry ennor"),
+        Tone::Error
+    );
+    assert_eq!(message_tone("anvil updated"), Tone::Success);
+    assert_eq!(message_tone("anvil installed"), Tone::Success);
+    assert_eq!(message_tone("Ready"), Tone::Gray);
 }

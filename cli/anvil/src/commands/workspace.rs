@@ -1,4 +1,4 @@
-use quench_cli::prelude::{Tone, print_status};
+use forge_tui::console::{Tone, print_status};
 use quench_core::{Context, Result};
 use std::fs;
 use std::io::Write;

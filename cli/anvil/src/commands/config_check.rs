@@ -13,7 +13,7 @@
 //! command exists to not do.
 
 use crate::config;
-use quench_cli::prelude::{Tone, print_status};
+use forge_tui::console::{Tone, print_status};
 use quench_core::Result;
 use quench_serde::Value;
 use std::collections::BTreeMap;

@@ -1,4 +1,5 @@
-use quench_cli::prelude::{Tone, print_status, require_binary};
+use forge_tui::console::{Tone, print_status};
+use quench_cli::prelude::require_binary;
 use std::process::Command;
 
 const TASK_NAME: &str = "Pulley";

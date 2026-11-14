@@ -895,8 +895,8 @@ pub fn check_image_updates(overlays_dir: &Path, apply: bool, cli_auth: &[String]
     print_results(&updates, &messages);
 
     if updates.is_empty() {
-        quench_cli::prelude::print_status(
-            quench_cli::prelude::Tone::Success,
+        forge_tui::console::print_status(
+            forge_tui::console::Tone::Success,
             "ok",
             "no updates found",
         );
@@ -906,14 +906,14 @@ pub fn check_image_updates(overlays_dir: &Path, apply: bool, cli_auth: &[String]
     if apply {
         let count = updates.len();
         apply_updates(&updates)?;
-        quench_cli::prelude::print_status(
-            quench_cli::prelude::Tone::Success,
+        forge_tui::console::print_status(
+            forge_tui::console::Tone::Success,
             "ok",
             &format!("updated {count} image tag(s)"),
         );
     } else {
-        quench_cli::prelude::print_status(
-            quench_cli::prelude::Tone::Warn,
+        forge_tui::console::print_status(
+            forge_tui::console::Tone::Warn,
             "warn",
             &format!(
                 "found {} update(s); re-run with --update to apply",

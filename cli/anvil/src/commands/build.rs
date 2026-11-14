@@ -52,8 +52,8 @@ pub fn auto_prune(config: &Config, built: &str) {
         return;
     };
     if let Err(err) = crate::target_gc::run(gb * (1 << 30), &[built], true, false) {
-        quench_cli::prelude::print_status(
-            quench_cli::prelude::Tone::Warn,
+        forge_tui::console::print_status(
+            forge_tui::console::Tone::Warn,
             "anvil",
             &format!("could not prune target/: {err}"),
         );

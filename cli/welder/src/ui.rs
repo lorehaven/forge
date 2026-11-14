@@ -1,14 +1,21 @@
-pub use quench_cli::prelude::{BLUE, BOLD, CYAN, DIM, GREEN, RESET, SEP, SEP_THIN, WHITE, YELLOW};
+//! Terminal output, styled with forge-tui so welder looks like the other forge tools.
+
+use forge_tui::console::{accent, muted, rule, section, strong};
+
+/// Width of the rules between blocks.
+const RULE_WIDTH: usize = 56;
 
 /// Print the backend-ready banner.
 pub fn print_backend_banner(kind: &str, url: &str) {
     println!(
-        "\n{CYAN}{SEP}{RESET}\n\
-         {BOLD}{WHITE}  ▸ LLM BACKEND READY{RESET}\n\
-         {CYAN}{SEP}{RESET}\n\
-         {DIM}  type  {RESET}{WHITE}{kind}{RESET}\n\
-         {DIM}  url   {RESET}{WHITE}{url}{RESET}\n\
-         {CYAN}{SEP}{RESET}\n"
+        "\n{}\n{}\n{} {}\n{} {}\n{}\n",
+        rule(RULE_WIDTH),
+        section("LLM backend ready", ""),
+        muted("  type "),
+        strong(kind),
+        muted("  url  "),
+        strong(url),
+        rule(RULE_WIDTH),
     );
 }
 
@@ -19,13 +26,14 @@ pub fn print_workflow_header<S: std::hash::BuildHasher>(
     agents: &std::collections::HashMap<String, crate::engine::executor::AgentNode, S>,
 ) {
     println!(
-        "{CYAN}{SEP}{RESET}\n\
-         {BOLD}{WHITE}  ▸ WORKFLOW{RESET}  {DIM}{workflow_path}{RESET}\n\
-         {CYAN}{SEP}{RESET}"
+        "{}\n{}\n{}",
+        rule(RULE_WIDTH),
+        section("Workflow", workflow_path),
+        rule(RULE_WIDTH)
     );
     print_graph_node(root_name, agents, 0);
-    println!("{CYAN}{SEP_THIN}{RESET}");
-    println!("{DIM}  type 'exit' to quit{RESET}\n");
+    println!("{}", rule(RULE_WIDTH));
+    println!("{}\n", muted("  type 'exit' to quit"));
 }
 
 fn print_graph_node<S: std::hash::BuildHasher>(
@@ -41,30 +49,57 @@ fn print_graph_node<S: std::hash::BuildHasher>(
         let tools_hint = if node.tools.is_empty() {
             String::new()
         } else {
-            format!("  {DIM}[{} tools]{RESET}", node.tools.len())
+            format!("  {}", muted(&format!("[{} tools]", node.tools.len())))
         };
         println!(
-            "  {indent}{CYAN}{connector}{RESET} {BOLD}{WHITE}{name}{RESET}  \
-             {DIM}{model_name}{RESET}{tools_hint}"
+            "  {indent}{} {}  {}{tools_hint}",
+            accent(connector),
+            strong(name),
+            muted(model_name),
         );
         for child in &node.children {
             print_graph_node(child, agents, depth + 1);
         }
     } else {
-        println!("  {indent}{CYAN}{connector}{RESET} {WHITE}{name}{RESET}");
+        println!("  {indent}{} {name}", accent(connector));
     }
 }
 
 /// Print the final agent answer.
 pub fn print_answer(text: &str) {
-    println!("\n{CYAN}{SEP_THIN}{RESET}");
-    println!("{GREEN}{BOLD}  ▸ Answer{RESET}");
-    println!("{CYAN}{SEP_THIN}{RESET}");
+    println!("\n{}", rule(RULE_WIDTH));
+    println!("{}", section("Answer", ""));
+    println!("{}", rule(RULE_WIDTH));
     println!("{}", text.trim());
-    println!("{CYAN}{SEP_THIN}{RESET}\n");
+    println!("{}\n", rule(RULE_WIDTH));
 }
 
 /// Print the REPL prompt (no newline).
 pub fn print_prompt() {
-    print!("{BOLD}{WHITE}You ▸{RESET} ");
+    print!("{} ", strong("You ▸"));
+}
+
+/// The header of an agent's turn: a rule, its name with the model, and a rule.
+pub fn print_agent_header(name: &str, model: Option<&str>, indent: &str) {
+    println!(
+        "\n{indent}{}\n{indent}{}\n{indent}{}",
+        rule(RULE_WIDTH),
+        section(name, model.unwrap_or("")),
+        rule(RULE_WIDTH)
+    );
+}
+
+/// A progress note under an agent's header (`routing…`, `executing…`).
+pub fn print_note(indent: &str, text: &str) {
+    println!("{indent}  {}", muted(text));
+}
+
+/// An agent handing the request to a child.
+pub fn print_delegate(indent: &str, child: &str) {
+    println!("{indent}  {}", accent(&format!("↳ {child}")));
+}
+
+/// An agent finished.
+pub fn print_done(indent: &str, name: &str) {
+    println!("{indent}  {}", accent(&format!("✓ {name}")));
 }

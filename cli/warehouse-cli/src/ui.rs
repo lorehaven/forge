@@ -1,4 +1,5 @@
-use quench_cli::prelude::{Tone, print_box_banner, print_line, print_status};
+use forge_tui::console::{Tone, print_box_banner, print_status};
+use quench_cli::prelude::print_line;
 
 pub fn banner() {
     print_box_banner("Warehouse CLI", "docker crates files admin");

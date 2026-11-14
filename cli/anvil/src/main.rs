@@ -2,9 +2,9 @@ use anvil::cli::{ArtifactCommands, Cli, Commands, ConfigCommands, DockerCommands
 use anvil::commands;
 use anvil::config;
 use anvil::util::{OutputMode, set_output_mode, stdout_is_data};
+use forge_tui::console::print_box_banner;
 use quench_args::Parser;
 use quench_cli::require::require_binary;
-use quench_cli::terminal::print_box_banner;
 use quench_core::{Context, Result};
 
 #[allow(clippy::too_many_lines)]

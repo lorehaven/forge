@@ -590,11 +590,11 @@ fn collect_package_dependencies_finds_this_crate_and_its_workspace_members() {
     let metadata = cargo_meta::cargo_metadata().unwrap();
     let deps = collect_package_dependencies(&metadata).unwrap();
     assert!(deps.contains_key("anvil"));
-    // `anvil` depends on `docs-book` and `gatehouse-auth`; every entry should
+    // `anvil` depends on `docs-book`, `forge-tui` and `gatehouse-auth`; every entry should
     // at least have been populated (empty, not missing).
     let mut anvil_deps = deps["anvil"].member_deps.clone();
     anvil_deps.sort();
-    assert_eq!(anvil_deps, ["docs-book", "gatehouse-auth"]);
+    assert_eq!(anvil_deps, ["docs-book", "forge-tui", "gatehouse-auth"]);
 }
 
 #[quench_test::test]

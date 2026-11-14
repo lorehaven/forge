@@ -1,6 +1,6 @@
 [package]
 name = "welder"
-version = "0.2.20"
+version = "0.3.0"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Welder - a multi-agent execution engine for building, routing, and coordinating structured LLM workflows."
@@ -24,6 +24,7 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
+forge-tui = { workspace = true }
 quench-serde = { workspace = true }
 quench-core = { workspace = true }
 quench-regex = { workspace = true }

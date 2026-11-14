@@ -1,6 +1,6 @@
 [package]
 name = "forge-toolbox"
-version = "0.1.22"
+version = "0.2.0"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Forge Toolbox - monitor and self-update Forge installables"
@@ -21,6 +21,7 @@ name = "forge_toolbox"
 path = "src/lib.rs"
 
 [dependencies]
+forge-tui = { workspace = true }
 quench-core = { workspace = true }
 quench-args = { workspace = true }
 quench-cli = { workspace = true }
@@ -33,6 +34,7 @@ path = "tests/unit.rs"
 harness = false
 
 [dev-dependencies]
+forge-tui = { workspace = true }
 quench-test = { workspace = true }
 
 [lints]

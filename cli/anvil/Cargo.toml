@@ -1,6 +1,6 @@
 [package]
 name = "anvil"
-version = "0.4.38"
+version = "0.5.0"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Anvil CLI - workspace build tools for cargo projects"
@@ -24,6 +24,7 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
+forge-tui = { workspace = true }
 docs-book = { workspace = true }
 quench-serde = { workspace = true, features = ["yaml"] }
 quench-core = { workspace = true }
