@@ -47,3 +47,40 @@ fn extract_rich_text_truncates_on_char_boundary_and_rejects_empty_pages() {
     assert!(text.ends_with("[Content truncated...]"));
     assert!(extract_rich_text("<html><body></body></html>", 100).is_err());
 }
+
+#[quench_test::test]
+fn is_public_url_refuses_private_and_internal_targets() {
+    use sage_service::tools::web_fetch::is_public_url;
+    for ok in [
+        "https://example.org/a?b=1",
+        "http://news.example.com:8080/x",
+        "https://8.8.8.8/",
+        "https://[2606:4700::1111]/",
+    ] {
+        assert!(is_public_url(ok), "{ok}");
+    }
+    for bad in [
+        "http://127.0.0.1/",
+        "http://localhost:8080/",
+        "http://10.0.0.5/admin",
+        "http://192.168.1.1/",
+        "http://172.16.0.9/",
+        "http://169.254.169.254/latest/meta-data",
+        "http://100.64.0.1/",
+        "http://[::1]/",
+        "http://[fd00::1]/",
+        "http://[::ffff:10.0.0.1]/",
+        "http://kubernetes/",
+        "http://kubernetes.default.svc/",
+        "http://switchboard.forge.svc.cluster.local:8080/",
+        "http://ossiriand.arda/",
+        "http://printer.local/",
+        "ftp://example.org/file",
+        "file:///etc/passwd",
+        "http://user:pw@example.org/",
+        "http:///nohost",
+        "not a url",
+    ] {
+        assert!(!is_public_url(bad), "{bad}");
+    }
+}

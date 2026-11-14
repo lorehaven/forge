@@ -94,9 +94,12 @@ fn routes(request: &HttpRequest) -> (u16, String) {
             format!(r#"{},"jobs":[],"artifacts":[]}}"#, &run[..run.len() - 1])
         }
         ("POST", "/api/v1/runs/run-1/restart") => run_json("run-2", "queued"),
+        ("POST", "/api/v1/runs/run-1/cancel") | ("DELETE", "/api/v1/repos/r1") => String::new(),
+        ("POST", "/api/v1/runs/done/cancel") => {
+            return (409, r#"{"error":"this run is not queued or running; there is nothing to cancel"}"#.into());
+        }
         ("POST", "/api/v1/repos/r1/runs") => run_json("run-3", "queued"),
         ("POST", "/api/v1/repos") | ("PATCH", "/api/v1/repos/r1") => repo_json("r1", "renamed"),
-        ("DELETE", "/api/v1/repos/r1") => String::new(),
         ("PUT" | "DELETE", "/api/v1/repos/r1/subscription") => r#"{"subscribed":true}"#.to_string(),
         ("GET", "/api/v1/repos/r1/stages") => r#"[{"name":"check","on_by_default":true}]"#.to_string(),
         ("GET", "/api/v1/repos/r1/scan") => format!(r#"{{"run":{},"checks":[]}}"#, run_json("run-1", "success")),
@@ -189,6 +192,21 @@ fn restarting_and_running_by_hand_open_the_new_run() {
     assert_eq!(msgs, vec![Msg::Opened("run-3".into())]);
     let sent = bodies.borrow().last().cloned().flatten().unwrap();
     assert!(sent.contains(r#""stages":["check"]"#), "{sent}");
+}
+
+#[quench_test::test]
+fn cancelling_a_run_reads_it_again_and_a_refusal_says_why() {
+    let (client, _, _) = client(routes);
+    let msgs = block_on(client.execute(Request::Cancel("run-1".into())));
+    assert!(
+        matches!(msgs.as_slice(), [Msg::Run(view)] if view.run.id == "run-1"),
+        "{msgs:?}"
+    );
+    let msgs = block_on(client.execute(Request::Cancel("done".into())));
+    assert!(
+        matches!(msgs.as_slice(), [Msg::Rejected(why)] if why.contains("nothing to cancel")),
+        "{msgs:?}"
+    );
 }
 
 #[quench_test::test]

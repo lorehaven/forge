@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use conveyor_core::graph::stage_levels;
-use conveyor_core::{Job, Status, format};
+use conveyor_core::{Job, Run, RunView, Status, TriggerRun, format};
 use quench_ui::prelude::*;
 use quench_ui::router::{Router, link};
 
@@ -162,7 +162,7 @@ fn labelled_value(env: &Env, key: &str, value: &str) -> Element {
         .child(span().text(format!(" {value}")))
 }
 
-/// The header, the facts, the reason and the restart button: all of it follows the polled run.
+/// The header, the facts, the reason and the restart, run-again or cancel buttons: all of it follows the polled run.
 fn summary(env: &Env, state: &State, id: &str) -> View {
     let (env, run, id) = (env.clone(), state.run.clone(), id.to_string());
     View::dynamic(move || {
@@ -170,77 +170,134 @@ fn summary(env: &Env, state: &State, id: &str) -> View {
             return View::Empty;
         };
         let r = &view.run;
-        let now = (env.now)();
-        let slug = view
-            .repo
-            .as_ref()
-            .map_or_else(|| env.t.t("ui_unknown_repo"), conveyor_core::Repo::slug);
-        let header = div()
-            .attr("id", "run-header")
-            .class("cv-run-header")
-            .child(pill(&env, r.status))
-            .child(h3().text(slug))
-            .child(
-                span()
-                    .class("cv-mono cv-muted")
-                    .text(r.ref_name().to_string()),
-            )
-            .child(
-                span()
-                    .class("cv-mono cv-muted")
-                    .text(r.short_sha().to_string()),
-            )
-            .child(r.message.clone().map(|m| span().class("cv-muted").text(m)));
-        let meta = div()
-            .attr("id", "run-meta")
-            .class("cv-run-meta")
-            .child(labelled_value(
-                &env,
-                "ui_meta_trigger",
-                &r.trigger.to_string(),
-            ))
-            .child(
-                r.stages
-                    .as_ref()
-                    .map(|s| labelled_value(&env, "ui_meta_stages", &s.join(", "))),
-            )
-            .child(labelled_value(
-                &env,
-                "ui_meta_queued",
-                &env.since(r.queued_at),
-            ))
-            .child(labelled_value(
-                &env,
-                "ui_meta_duration",
-                &format::elapsed(r.started_at, r.finished_at, now),
-            ))
-            .child(labelled_value(
-                &env,
-                "ui_meta_attempt",
-                &r.attempt.to_string(),
-            ));
         let reason = r.error.clone().map(|error| {
             panel(div().text(env.t.t("ui_run_reason")))
                 .attr("id", "run-reason")
                 .child(div().class("cv-job-reason").text(error))
         });
-        // A restart does not rebuild passed stages.
-        let restart = r.status.is_failure().then(|| {
-            let (ask, id) = (Rc::clone(&env.ask), id.clone());
-            button()
-                .attr("type", "button")
-                .attr("id", "restart")
-                .class("cv-btn cv-run-button")
-                .text(env.t.t("ui_run_restart"))
-                .on_click(move || ask(Request::Restart(id.clone())))
-        });
         div()
-            .child(header)
-            .child(meta)
+            .child(run_header(&env, &view))
+            .child(run_meta(&env, r))
             .child(reason)
-            .child(restart)
+            .child(run_actions(&env, r, &id))
             .into_view()
     })
+}
+
+/// The status, the repository, the ref, the commit and the message.
+fn run_header(env: &Env, view: &RunView) -> Element {
+    let r = &view.run;
+    let slug = view
+        .repo
+        .as_ref()
+        .map_or_else(|| env.t.t("ui_unknown_repo"), conveyor_core::Repo::slug);
+    div()
+        .attr("id", "run-header")
+        .class("cv-run-header")
+        .child(pill(env, r.status))
+        .child(h3().text(slug))
+        .child(
+            span()
+                .class("cv-mono cv-muted")
+                .text(r.ref_name().to_string()),
+        )
+        .child(
+            span()
+                .class("cv-mono cv-muted")
+                .text(r.short_sha().to_string()),
+        )
+        .child(r.message.clone().map(|m| span().class("cv-muted").text(m)))
+}
+
+/// What started it, which stages, and how long it waited, ran and was tried.
+fn run_meta(env: &Env, r: &Run) -> Element {
+    let now = (env.now)();
+    div()
+        .attr("id", "run-meta")
+        .class("cv-run-meta")
+        .child(labelled_value(
+            env,
+            "ui_meta_trigger",
+            &r.trigger.to_string(),
+        ))
+        .child(
+            r.stages
+                .as_ref()
+                .map(|s| labelled_value(env, "ui_meta_stages", &s.join(", "))),
+        )
+        .child(labelled_value(
+            env,
+            "ui_meta_queued",
+            &env.since(r.queued_at),
+        ))
+        .child(labelled_value(
+            env,
+            "ui_meta_duration",
+            &format::elapsed(r.started_at, r.finished_at, now),
+        ))
+        .child(labelled_value(
+            env,
+            "ui_meta_attempt",
+            &r.attempt.to_string(),
+        ))
+}
+
+/// One of the run's buttons: it asks `request` when clicked.
+fn run_button(
+    env: &Env,
+    id: &str,
+    label_key: &str,
+    request: impl Fn() -> Request + 'static,
+) -> Element {
+    let ask = Rc::clone(&env.ask);
+    button()
+        .attr("type", "button")
+        .attr("id", id)
+        .class("cv-btn cv-run-button")
+        .text(env.t.t(label_key))
+        .on_click(move || ask(request()))
+}
+
+/// Restart, run again and cancel, whichever the run's state allows.
+fn run_actions(env: &Env, r: &Run, id: &str) -> Element {
+    // A restart does not rebuild passed stages.
+    let restart = r.status.is_failure().then(|| {
+        let id = id.to_string();
+        run_button(env, "restart", "ui_run_restart", move || {
+            Request::Restart(id.clone())
+        })
+    });
+    // A queued or running run can be stopped; the service winds it down and the poll shows it.
+    let cancel = (!r.status.is_terminal()).then(|| {
+        let id = id.to_string();
+        run_button(env, "cancel", "ui_run_cancel", move || {
+            Request::Cancel(id.clone())
+        })
+    });
+    // A finished run, whatever its outcome, can be built again from scratch: the same commit and
+    // stages, nothing carried over (a restart resumes a failed run and keeps the stages that passed).
+    let again = r.status.is_terminal().then(|| {
+        let (repo, body) = (
+            r.repo_id.clone(),
+            TriggerRun {
+                git_ref: Some(r.git_ref.clone()),
+                sha: Some(r.sha.clone()),
+                stages: r.stages.clone(),
+            },
+        );
+        run_button(env, "run-again", "ui_run_again", move || {
+            Request::RunStages {
+                repo: repo.clone(),
+                body: body.clone(),
+            }
+        })
+    });
+    div()
+        .attr("id", "run-actions")
+        .class("cv-run-actions")
+        .child(restart)
+        .child(again)
+        .child(cancel)
 }
 
 /// A job with only what decides where it sits: the graph is rebuilt when that changes, not when a status does.

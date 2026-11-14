@@ -609,6 +609,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "gauge-cli"
+version = "0.1.0"
+dependencies = [
+ "forge-tui",
+ "gatehouse-client",
+ "gauge-core",
+ "quench-args",
+ "quench-cli",
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
 name = "gauge-core"
 version = "0.1.0"
 dependencies = [

@@ -45,6 +45,8 @@ pub enum Request {
     /// A run with its jobs, artifacts and repository (opening it, and the poll).
     Run(String),
     Restart(String),
+    /// Ask the service to stop a queued or running run; the run is read again after.
+    Cancel(String),
     /// Start a run of the repository now, then read the front page's runs again.
     RunNow {
         repo: String,

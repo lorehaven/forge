@@ -86,7 +86,7 @@ readme = "README.md"
 [workspace.dependencies]
 quench-android = { registry = "ennor", version = "0.1.4" }
 conveyor-pipeline = { path = "libs/conveyor-pipeline", registry = "ennor", version = "0.2.0" }
-gatehouse-client = { path = "libs/gatehouse-client" }
+gatehouse-client = { path = "libs/gatehouse-client", registry = "ennor", version = "0.1.0" }
 gatehouse-auth = { path = "libs/gatehouse-auth", registry = "ennor", version = "0.1.0" }
 forge-ui = { path = "libs/forge-ui", version = "0.1.0" }
 forge-tui = { path = "libs/forge-tui", registry = "ennor", version = "0.1.0" }
@@ -154,7 +154,7 @@ gatehouse-app = { path = "services/gatehouse/app" }
 gatehouse-core = { path = "services/gatehouse/core" }
 gatehouse-web = { path = "services/gatehouse/web" }
 gauge-app = { path = "services/gauge/app" }
-gauge-core = { path = "services/gauge/core" }
+gauge-core = { path = "services/gauge/core", registry = "ennor", version = "0.1.0" }
 gauge-web = { path = "services/gauge/web" }
 warehouse-app = { path = "services/warehouse/app" }
 warehouse-core = { path = "services/warehouse/core" }

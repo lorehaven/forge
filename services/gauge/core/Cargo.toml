@@ -2,11 +2,13 @@
 name = "gauge-core"
 version = "0.1.0"
 edition.workspace = true
-publish = false
 authors = { workspace = true }
+keywords = ["gauge", "metrics", "monitoring", "forge"]
+categories = ["data-structures"]
 homepage = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
+description = "What Gauge's API says and how it is read: the host model, rates, formatting and chart geometry"
 autotests = false
 
 # What Gauge's API says and how it is read: the model, the rates worked out from two readings, the numbers as people

@@ -33,7 +33,7 @@ impl WebFetchExecutor {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            client: quench_client::transport::Client::new(),
+            client: fetch_client(),
             cache: Arc::new(DataCache::new()),
         }
     }
@@ -278,34 +278,197 @@ async fn fetch_and_extract(
     extract_text(&html)
 }
 
+/// Largest page body fetched, in bytes.
+const MAX_PAGE_BYTES: usize = 3_000_000;
+/// Redirect hops followed by hand, so each hop is checked.
+const MAX_HOPS: usize = 4;
+
+/// A client for pages found by a search: no automatic redirects (each hop is checked by
+/// [`fetch_html`]) and a cap on the body size.
+#[must_use]
+pub fn fetch_client() -> quench_client::transport::Client {
+    quench_client::transport::Client::builder()
+        .redirect(quench_client::transport::Redirect::None)
+        .max_response_bytes(MAX_PAGE_BYTES)
+        .build()
+        .unwrap_or_else(|_| quench_client::transport::Client::new())
+}
+
+fn is_public_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let o = v4.octets();
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_multicast()
+                || (o[0] == 100 && (64..128).contains(&o[1]))
+                || o[0] == 0)
+        }
+        std::net::IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_public_ip(std::net::IpAddr::V4(v4));
+            }
+            let first = v6.segments()[0];
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80)
+        }
+    }
+}
+
+/// `(host, port)` of an http(s) URL, or `None` when it has another scheme, credentials or no host.
+fn host_and_port(url: &str) -> Option<(String, u16)> {
+    let (scheme, rest) = url.split_once("://")?;
+    let default = match scheme.to_ascii_lowercase().as_str() {
+        "http" => 80,
+        "https" => 443,
+        _ => return None,
+    };
+    let authority = rest.split(['/', '?', '#']).next()?;
+    if authority.is_empty() || authority.contains('@') {
+        return None;
+    }
+    let (host, port) = if let Some(inner) = authority.strip_prefix('[') {
+        let (h, after) = inner.split_once(']')?;
+        (h, after.strip_prefix(':'))
+    } else {
+        match authority.rsplit_once(':') {
+            Some((h, p)) => (h, Some(p)),
+            None => (authority, None),
+        }
+    };
+    let port = match port {
+        Some(p) => p.parse().ok()?,
+        None => default,
+    };
+    Some((host.to_ascii_lowercase(), port))
+}
+
+/// Whether a page found by a web search may be fetched: an http(s) URL whose host is a public
+/// name or address.
+///
+/// Loopback, private, link-local and cluster-internal targets are refused, so a
+/// poisoned search result cannot make Sage read the network it runs in.
+#[must_use]
+pub fn is_public_url(url: &str) -> bool {
+    let Some((host, _)) = host_and_port(url) else {
+        return false;
+    };
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return is_public_ip(ip);
+    }
+    let host = host.trim_end_matches('.');
+    if !host.contains('.') {
+        return false;
+    }
+    ![
+        ".local",
+        ".localhost",
+        ".internal",
+        ".svc",
+        ".cluster",
+        ".lan",
+        ".home.arpa",
+        ".arda",
+    ]
+    .iter()
+    .any(|suffix| host.ends_with(suffix))
+}
+
+/// Local development and the tests fetch from loopback servers: `SAGE_FETCH_ALLOW_PRIVATE=true`
+/// switches the address check off. Never set it on a deployed Sage.
+fn allow_private() -> bool {
+    quench_core::env::is_or("SAGE_FETCH_ALLOW_PRIVATE", false)
+}
+
+/// [`is_public_url`], and every address the name resolves to is public too.
+async fn resolves_public(url: &str) -> bool {
+    if allow_private() {
+        return host_and_port(url).is_some();
+    }
+    if !is_public_url(url) {
+        return false;
+    }
+    let Some((host, port)) = host_and_port(url) else {
+        return false;
+    };
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return true;
+    }
+    tokio::net::lookup_host((host.as_str(), port))
+        .await
+        .is_ok_and(|addrs| {
+            let addrs: Vec<_> = addrs.collect();
+            !addrs.is_empty() && addrs.iter().all(|a| is_public_ip(a.ip()))
+        })
+}
+
+/// The absolute URL a `Location` header points at.
+fn redirect_target(current: &str, location: &str) -> Option<String> {
+    if location.starts_with("http://") || location.starts_with("https://") {
+        return Some(location.to_string());
+    }
+    let (scheme, rest) = current.split_once("://")?;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    if let Some(path) = location.strip_prefix('/') {
+        return Some(format!("{scheme}://{authority}/{path}"));
+    }
+    None
+}
+
 async fn fetch_html(
     client: &quench_client::transport::Client,
     url: &str,
 ) -> Result<String, String> {
-    let response = client
-        .get(url)
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        )
-        .timeout(std::time::Duration::from_secs(10))
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {e}"))?;
+    let mut current = url.to_string();
+    for _ in 0..=MAX_HOPS {
+        if !resolves_public(&current).await {
+            return Err("Blocked: not a public web address".to_string());
+        }
+        let response = client
+            .get(&current)
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            )
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {e}"))?;
 
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!(
-            "HTTP {}: {}",
-            status.as_u16(),
-            status.canonical_reason().unwrap_or("Unknown")
-        ));
+        let status = response.status();
+        if status.is_redirection() {
+            let next = response
+                .headers()
+                .get("location")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|loc| redirect_target(&current, loc));
+            match next {
+                Some(next) => {
+                    current = next;
+                    continue;
+                }
+                None => return Err(format!("HTTP {}: bad redirect", status.as_u16())),
+            }
+        }
+        if !status.is_success() {
+            return Err(format!(
+                "HTTP {}: {}",
+                status.as_u16(),
+                status.canonical_reason().unwrap_or("Unknown")
+            ));
+        }
+        return response
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read response: {e}"));
     }
-
-    response
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read response: {e}"))
+    Err("Too many redirects".to_string())
 }
 
 fn extract_text(html: &str) -> Result<String, String> {

@@ -666,7 +666,7 @@ fn composer(env: &Env, state: &State) -> View {
         .class("sg-send")
         .attr("title", env.t.t("ui_chat_send_button"))
         .attr_bool("disabled", no_model)
-        .child(glyph("↑"));
+        .child(span().class("sg-chev-up").attr("aria-hidden", "true"));
 
     // The shell's script posts the chosen file and reports back through this input.
     let upload_result_input = {

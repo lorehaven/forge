@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "A blocking client session for gatehouse: login, rotating refresh token, bearer requests with one renewal"
+keywords = ["gatehouse", "auth", "session", "client"]
+categories = ["authentication", "api-bindings"]
 homepage = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
-publish = false
 autotests = false
 
 [lib]

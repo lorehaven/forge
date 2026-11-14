@@ -23,6 +23,8 @@ const fn config() -> GroundingConfig {
         verifier_model: None,
         verify_timeout: Duration::from_secs(10),
         cite_repair: false,
+        lang_repair: false,
+        min_score: 0.0,
     }
 }
 
@@ -184,6 +186,8 @@ async fn gather_reads_pages_and_falls_back_to_natural_order_without_an_embedder(
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // the page server of this test is on loopback, which the fetcher refuses by default
+    quench_core::env::set("SAGE_FETCH_ALLOW_PRIVATE", "true");
     let (server, switchboard) = mock_estate(&[]).await;
     on_chat(
         &server,
@@ -249,6 +253,7 @@ async fn gather_reads_pages_and_falls_back_to_natural_order_without_an_embedder(
         .find(|r| r.body_string().contains("retrieval planner"))
         .expect("a planner call");
     assert!(planner.body_string().contains("2026-10-26"));
+    quench_core::env::remove("SAGE_FETCH_ALLOW_PRIVATE");
 }
 
 #[allow(clippy::await_holding_lock)]
@@ -577,5 +582,298 @@ async fn verify_uses_the_configured_model_when_running_else_the_answerer_and_fai
         )
         .await
         .is_none()
+    );
+}
+
+#[allow(clippy::await_holding_lock)]
+#[quench_test::test]
+async fn finalize_answer_never_returns_a_blank_answer() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (server, switchboard) = mock_estate(&[]).await;
+    for (answer, question, expected) in [
+        ("", "Jaki jest numer telefonu restauracji?", "Nie znalazłem"),
+        (
+            "<tool_call>{\"name\":\"web_search\"}</tool_call>",
+            "What is the phone number?",
+            "I could not find a verified answer",
+        ),
+    ] {
+        // with sources
+        let out = finalize_answer(
+            &config(),
+            &switchboard,
+            &VllmClient::new(),
+            &answerer(&server),
+            answer,
+            1,
+            "[1] a.example\nsome text",
+            "2026-11-14",
+            question,
+        )
+        .await;
+        assert!(out.contains(expected), "{out}");
+        // without sources: still says so
+        let out = finalize_answer(
+            &config(),
+            &switchboard,
+            &VllmClient::new(),
+            &answerer(&server),
+            answer,
+            0,
+            "",
+            "2026-11-14",
+            question,
+        )
+        .await;
+        assert!(out.contains(expected) && out.contains('ℹ'), "{out}");
+    }
+}
+
+#[allow(clippy::await_holding_lock)]
+#[quench_test::test]
+async fn the_page_fetcher_refuses_private_addresses_by_default() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    quench_core::env::remove("SAGE_FETCH_ALLOW_PRIVATE");
+    let client = sage_service::tools::web_fetch::fetch_client();
+    for url in [
+        "http://127.0.0.1:9/x",
+        "http://169.254.169.254/latest/meta-data",
+        "http://localhost/",
+    ] {
+        let err = sage_service::tools::web_fetch::fetch_page_text(&client, url, 1000)
+            .await
+            .unwrap_err();
+        assert!(err.contains("Blocked"), "{url}: {err}");
+    }
+}
+
+/// Runs `gather` against a mocked planner and embedder: the query is `[1, 0]`, the snippets get `snippet_vectors`.
+async fn gather_with_vectors(
+    floor: f32,
+    snippet_vectors: &[[f32; 2]],
+    hits: &[(&str, &str)],
+) -> Grounding {
+    let (server, switchboard) = mock_estate(&[]).await;
+    on_chat(
+        &server,
+        "retrieval planner",
+        completion(r#"{"kind":"factual","queries":["height of the tower"]}"#),
+    )
+    .await;
+    let mut data = vec![quench_serde::json!({"index": 0, "embedding": [1.0, 0.0]})];
+    for (i, v) in snippet_vectors.iter().enumerate() {
+        data.push(quench_serde::json!({"index": i + 1, "embedding": [v[0], v[1]]}));
+    }
+    Mock::given(method("POST"))
+        .and(path("/v1/embeddings"))
+        .respond_with(json(200, &quench_serde::json!({ "data": data })))
+        .mount(&server)
+        .await;
+    let mut cfg = config();
+    cfg.min_score = floor;
+    gather(
+        &cfg,
+        &switchboard,
+        &VllmClient::new(),
+        &registry(&results(hits)),
+        "searxng",
+        &answerer(&server),
+        &[],
+        "How high is the tower?",
+        "2026-11-14",
+        None,
+    )
+    .await
+    .expect("a grounding, even an empty one")
+}
+
+#[allow(clippy::await_holding_lock)]
+#[quench_test::test]
+async fn gather_drops_passages_below_the_relevance_floor() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // the first snippet is orthogonal to the query (similarity 0), the second nearly parallel
+    let g = gather_with_vectors(
+        0.3,
+        &[[0.0, 1.0], [1.0, 0.1]],
+        &[
+            ("Cookies are used on this site.", "https://noise.example/a"),
+            ("The tower is 330 metres high.", "https://near.example/b"),
+        ],
+    )
+    .await;
+    assert!(!g.unavailable);
+    assert!(g.block.contains("330 metres"));
+    assert!(!g.block.contains("Cookies"), "{}", g.block);
+    assert_eq!(g.sources.len(), 1);
+}
+
+#[allow(clippy::await_holding_lock)]
+#[quench_test::test]
+async fn gather_with_nothing_relevant_counts_as_no_sources() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let g = gather_with_vectors(
+        0.3,
+        &[[0.0, 1.0], [0.1, 1.0]],
+        &[
+            ("Cookies are used on this site.", "https://noise.example/a"),
+            ("Careers at Red Hat.", "https://noise.example/b"),
+        ],
+    )
+    .await;
+    assert!(g.unavailable);
+    assert!(g.sources.is_empty() && g.evidence.is_empty());
+    assert!(g.block.contains("not relevant"), "{}", g.block);
+    // with the floor off the same results are used
+    let g = gather_with_vectors(
+        0.0,
+        &[[0.0, 1.0], [0.1, 1.0]],
+        &[
+            ("Cookies are used on this site.", "https://noise.example/a"),
+            ("Careers at Red Hat.", "https://noise.example/b"),
+        ],
+    )
+    .await;
+    assert!(!g.unavailable);
+}
+
+#[allow(clippy::await_holding_lock)]
+#[quench_test::test]
+async fn finalize_answer_rewrites_an_answer_that_came_out_in_the_wrong_language() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (server, switchboard) = mock_estate(&[]).await;
+    on_chat(
+        &server,
+        "You rewrite an answer",
+        completion(
+            r#"{"answer":"The tower is 330 metres high according to the official guide [1]."}"#,
+        ),
+    )
+    .await;
+    let mut cfg = config();
+    cfg.lang_repair = true;
+    let polish = "Wieża ma 330 metrów wysokości według oficjalnego przewodnika, który jest dostępny dla wszystkich [1].";
+    let out = finalize_answer(
+        &cfg,
+        &switchboard,
+        &VllmClient::new(),
+        &answerer(&server),
+        polish,
+        1,
+        EVIDENCE,
+        "2026-11-14",
+        "How high is the tower according to the guide?",
+    )
+    .await;
+    assert_eq!(
+        out,
+        "The tower is 330 metres high according to the official guide [1]."
+    );
+
+    // the question is in Polish: a Polish answer is left alone (no call needed)
+    let out = finalize_answer(
+        &cfg,
+        &switchboard,
+        &VllmClient::new(),
+        &answerer(&server),
+        polish,
+        1,
+        EVIDENCE,
+        "2026-11-14",
+        "Jak wysoka jest wieża według oficjalnego przewodnika?",
+    )
+    .await;
+    assert_eq!(out, polish);
+}
+
+#[allow(clippy::await_holding_lock)]
+#[quench_test::test]
+async fn finalize_answer_keeps_the_original_when_the_language_rewrite_is_no_better() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (server, switchboard) = mock_estate(&[]).await;
+    // still Polish, and the citation is gone
+    on_chat(
+        &server,
+        "You rewrite an answer",
+        completion(r#"{"answer":"Wieża ma 330 metrów wysokości według przewodnika, który jest dostępny dla wszystkich."}"#),
+    )
+    .await;
+    let mut cfg = config();
+    cfg.lang_repair = true;
+    let polish = "Wieża ma 330 metrów wysokości według oficjalnego przewodnika, który jest dostępny dla wszystkich [1].";
+    let out = finalize_answer(
+        &cfg,
+        &switchboard,
+        &VllmClient::new(),
+        &answerer(&server),
+        polish,
+        1,
+        EVIDENCE,
+        "2026-11-14",
+        "How high is the tower according to the guide?",
+    )
+    .await;
+    assert_eq!(out, polish);
+}
+
+#[allow(clippy::await_holding_lock)]
+#[quench_test::test]
+async fn finalize_answer_without_sources_refuses_instead_of_answering_from_memory() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (server, switchboard) = mock_estate(&[]).await;
+    let ask = |answer: &'static str, question: &'static str| {
+        let (server, switchboard) = (&server, &switchboard);
+        async move {
+            finalize_answer(
+                &config(),
+                switchboard,
+                &VllmClient::new(),
+                &answerer(server),
+                answer,
+                0,
+                "",
+                "2026-11-15",
+                question,
+            )
+            .await
+        }
+    };
+    // an answer from memory is replaced
+    let out = ask(
+        "Jane Austen was born in 1775.",
+        "In what year was she born?",
+    )
+    .await;
+    assert!(!out.contains("1775"), "{out}");
+    assert!(out.contains("I could not find a verified answer"), "{out}");
+    assert!(out.contains("ℹ No sources were found"), "{out}");
+    let pl = ask(
+        "Jane Austen urodziła się w 1775 roku.",
+        "W którym roku się urodziła Jane Austen?",
+    )
+    .await;
+    assert!(!pl.contains("1775") && pl.contains("Nie znalazłem"), "{pl}");
+    // a refusal is kept as the model wrote it
+    let out = ask(
+        "I could not find anything about that café.",
+        "What is its phone number?",
+    )
+    .await;
+    assert!(
+        out.starts_with("I could not find anything about that café."),
+        "{out}"
     );
 }

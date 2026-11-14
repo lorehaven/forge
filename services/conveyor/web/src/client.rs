@@ -407,6 +407,23 @@ impl<T: Transport> Client<T> {
                     Err(failure) => failure.write(),
                 }]
             }
+            Request::Cancel(id) => {
+                // 202 with no body: the run winds down on its own, so show it as it is now.
+                if let Err(failure) = self
+                    .call(
+                        "POST",
+                        format!("/api/v1/runs/{}/cancel", segment(&id)),
+                        None,
+                    )
+                    .await
+                {
+                    return vec![failure.write()];
+                }
+                vec![match self.run_view(&id).await {
+                    Ok(view) => Msg::Run(Box::new(view)),
+                    Err(failure) => failure.read(),
+                }]
+            }
             Request::RunNow { repo, scope } => {
                 if let Err(failure) = self
                     .post::<Run>(format!("/api/v1/repos/{}/runs", segment(&repo)))

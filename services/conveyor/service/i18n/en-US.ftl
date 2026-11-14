@@ -65,6 +65,8 @@ ui_log_loading = Loading…
 ui_log_raw_tooltip = Open raw log
 ui_log_copy_tooltip = Copy log
 ui_run_restart = Restart
+ui_run_cancel = Cancel
+ui_run_again = Run again
 ui_job_reused = Reused from an earlier run
 
 # ── Scan ─────────────────────────────────────────────────────────────────────

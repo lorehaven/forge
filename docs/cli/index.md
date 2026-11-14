@@ -16,6 +16,7 @@ One section per tool: commands, flags, configuration, interactive modes and reci
 | [foreman](foreman/index.md) | `foreman` | Runs the local development estate from `foreman.toml`. |
 | [conveyor-cli](conveyor-cli/index.md) | `conveyor` | Client of the Conveyor CI/CD service; local pipeline validation. |
 | [pulley](pulley/index.md) | `pulley` | rsync-backed sync jobs: REPL, one-shot, daemon, background service. |
+| [gauge-cli](gauge-cli/index.md) | `gauge` | Full-screen terminal monitor of the hosts Gauge watches: meters, alerts, storage; refreshes every 5 s, keyboard only. |
 | [toolbox](toolbox/index.md) | `forge-toolbox` | Terminal table to install and update the tools above from the registry. |
 | [loupe](loupe/index.md) | `loupe` | Markdown files and documentation books in the terminal: pager, links, search, book navigation, `--check`, typeset formulas. |
 

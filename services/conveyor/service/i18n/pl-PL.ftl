@@ -65,6 +65,8 @@ ui_log_loading = Ładowanie…
 ui_log_raw_tooltip = Otwórz surowy dziennik
 ui_log_copy_tooltip = Kopiuj dziennik
 ui_run_restart = Uruchom ponownie
+ui_run_cancel = Anuluj
+ui_run_again = Uruchom od nowa
 ui_job_reused = Ponownie użyto z poprzedniego przebiegu
 
 # ── Scan ─────────────────────────────────────────────────────────────────────

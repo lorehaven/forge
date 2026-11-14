@@ -461,6 +461,51 @@ fn a_failed_run_shows_why_its_jobs_and_a_restart() {
 }
 
 #[quench_test::test]
+fn a_run_that_has_not_finished_can_be_cancelled_and_a_finished_one_cannot() {
+    for status in [Status::Queued, Status::Running] {
+        let l = live("/conveyor/ui/runs/run-1");
+        l.send(Msg::Run(Box::new(run_view(status))));
+        assert!(present(&l.r, "cancel"), "{status:?}");
+        assert!(!present(&l.r, "restart"), "{status:?}");
+        l.click("button", "cancel");
+        assert_eq!(l.asked().last(), Some(&Request::Cancel("run-1".into())));
+    }
+    for status in [Status::Success, Status::Failed, Status::Cancelled] {
+        let l = live("/conveyor/ui/runs/run-1");
+        l.send(Msg::Run(Box::new(run_view(status))));
+        assert!(!present(&l.r, "cancel"), "{status:?}");
+    }
+}
+
+#[quench_test::test]
+fn a_finished_run_can_be_run_again_from_scratch_on_the_same_commit() {
+    for status in [Status::Success, Status::Failed, Status::Cancelled] {
+        let l = live("/conveyor/ui/runs/run-1");
+        let view = run_view(status);
+        let run = view.run.clone();
+        l.send(Msg::Run(Box::new(view)));
+        assert!(present(&l.r, "run-again"), "{status:?}");
+        l.click("button", "run-again");
+        assert_eq!(
+            l.asked().last(),
+            Some(&Request::RunStages {
+                repo: run.repo_id.clone(),
+                body: conveyor_core::TriggerRun {
+                    git_ref: Some(run.git_ref.clone()),
+                    sha: Some(run.sha.clone()),
+                    stages: run.stages.clone(),
+                },
+            }),
+            "{status:?}"
+        );
+    }
+    // not while it is still going: that is what cancel is for
+    let l = live("/conveyor/ui/runs/run-1");
+    l.send(Msg::Run(Box::new(run_view(Status::Running))));
+    assert!(!present(&l.r, "run-again"));
+}
+
+#[quench_test::test]
 fn a_run_that_passed_has_no_restart_and_a_missing_one_says_so() {
     let l = live("/conveyor/ui/runs/run-1");
     l.send(Msg::Run(Box::new(run_view(Status::Success))));
