@@ -67,9 +67,16 @@ fn fetch_latest_registry_version_returns_none_for_an_unpublished_name() {
 }
 
 #[quench_test::test]
-fn collect_statuses_returns_one_row_per_monitored_crate() {
+fn collect_statuses_returns_a_row_for_every_tool_the_registry_lists() {
+    if !live_registry_enabled() {
+        skipped("collect_statuses_returns_a_row_for_every_tool_the_registry_lists");
+        return;
+    }
+    // The tool list comes from the registry (the built-in list is only the
+    // fallback), so its length is whatever is published - at least the
+    // fallback's, since every fallback crate is a published command-line tool.
     let statuses = collect_statuses(&HashMap::new());
-    assert_eq!(statuses.len(), MONITORED_CRATES.len());
+    assert!(statuses.len() >= MONITORED_CRATES.len());
 }
 
 #[quench_test::test]
@@ -80,8 +87,12 @@ fn toolbox_note_is_never_empty() {
 
 #[quench_test::test]
 fn refresh_app_state_builds_a_full_app() {
+    if !live_registry_enabled() {
+        skipped("refresh_app_state_builds_a_full_app");
+        return;
+    }
     let app = refresh_app_state(0, "Ready").expect("refresh should succeed");
-    assert_eq!(app.statuses.len(), MONITORED_CRATES.len());
+    assert!(app.statuses.len() >= MONITORED_CRATES.len());
     assert_eq!(app.message, "Ready");
 }
 
