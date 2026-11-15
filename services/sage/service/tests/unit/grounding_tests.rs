@@ -1452,3 +1452,18 @@ fn consolation_drops_an_offer_of_another_entity_and_its_list() {
     let en = "I could not find a hotel called Zorp.\nIf you meant the Grand Hotel, here are its details:\n* Phone 555 0100 [1]";
     assert!(!strip_consolation_sentences(en).contains("555"));
 }
+
+#[quench_test::test]
+fn consolation_drops_a_list_of_other_entities_in_spanish_and_polish() {
+    let es = "Basado en las fuentes proporcionadas, no se encuentra el teléfono del restaurante \"El Dragón\" en Albacete.\nLas fuentes mencionan:\n*   Una cafetería llamada \"La Dorada\" con el teléfono 661 832 898 [3].\n*   Un sitio web llamado \"El Dragón Dorado\" [4].";
+    let out = strip_consolation_sentences(es);
+    assert!(out.contains("no se encuentra"), "{out}");
+    assert!(!out.contains("661") && !out.contains("Dorada"), "{out}");
+    let pl = "Na podstawie dostępnych źródeł nie ma informacji o piekarni „Pod Złotym Kłosem”.\nZnaleziono jedynie piekarnię Złoty Kłos przy ulicy Jagiellońskiej [2].\nDostępne dane dotyczą piekarni w Dobczycach [3].";
+    let out = strip_consolation_sentences(pl);
+    assert!(out.contains("nie ma informacji"), "{out}");
+    assert!(
+        !out.contains("Złoty Kłos") && !out.contains("Dobczycach"),
+        "{out}"
+    );
+}

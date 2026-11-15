@@ -7,9 +7,12 @@ use tokio::sync::Mutex;
 use crate::clients::switchboard::{SwitchboardClient, VllmInstance};
 use crate::config::{DefaultModel, SageConfig};
 
-/// Retries before giving up on an unlaunchable model and moving on -
-/// launches are serialized, so one stuck model would block the rest.
-pub const MAX_LAUNCH_ATTEMPTS: u32 = 3;
+/// Retries (one per 10 s tick) before giving up on an unlaunchable model and moving on.
+///
+/// Launches are serialized, so one stuck model would block the rest. Two minutes: after a Sage
+/// update the old pod of the same model can still be terminating ("pod ... is being deleted"),
+/// and Switchboard refuses to create the new one until it is gone; 30 s was not enough.
+pub const MAX_LAUNCH_ATTEMPTS: u32 = 12;
 
 /// Instances this monitor launched, by id + `started_at` - both, so a
 /// rolling update's new pod can't have the old pod tear its launch down.

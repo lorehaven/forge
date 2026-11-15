@@ -64,7 +64,7 @@ The name compared is the instance's `model` as Switchboard reports it (the strin
 
 1. List Switchboard's instances (`GET /api/v1/vllm/instances`, client credentials, 3 attempts with backoff 100 ms to 2 s, circuit breaker opening after 5 failures, closing after 3 successes, 60 s cool-down). On failure: log and skip the tick.
 2. For every supported default model with a `running` instance, forget its failed attempts.
-3. Choose the next model: none if any instance has status `starting` or `pending` (models are launched one at a time so they do not contend for GPU memory); otherwise the first supported default model with fewer than 3 attempts and no instance in `running`, `starting` or `pending`.
+3. Choose the next model: none if any instance has status `starting` or `pending` (models are launched one at a time so they do not contend for GPU memory); otherwise the first supported default model with fewer than 12 attempts (one per 10 s tick: an old pod of the same model may still be terminating after an update) and no instance in `running`, `starting` or `pending`.
 4. Count an attempt and ask Switchboard to launch it. After the third attempt the model is skipped so the others can start; it is retried only after it has been seen `running` (which resets the count).
 
 `validate_startup` (once, after readiness): lists instances (failure is logged as an error, the service keeps running; skip with `SKIP_SWITCHBOARD_CHECK=true`) and logs the search providers.
