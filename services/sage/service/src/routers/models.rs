@@ -98,7 +98,10 @@ pub fn models_view(
         .iter()
         .map(|model| DefaultModelState {
             name: model.name.clone(),
-            embedding: matches!(model.task.as_deref(), Some("embed" | "embedding")),
+            embedding: matches!(
+                model.task.as_deref(),
+                Some("embed" | "embedding" | "classify")
+            ),
             state: instances
                 .as_ref()
                 .map_or(ModelState::Unknown, |all| model_state(model, all))

@@ -24,6 +24,8 @@ const MAX_PASSAGES_PER_SOURCE: usize = 3;
 const MAX_CHUNKS_PER_PAGE: usize = 12;
 const PAGE_TEXT_LIMIT: usize = 20_000;
 const PAGE_FETCH_TIMEOUT: Duration = Duration::from_secs(8);
+/// A passage is cut to this many characters for the reranker; its relevance shows early.
+const RERANK_CHARS: usize = 1500;
 const QUERY_INSTRUCTION: &str =
     "Given a web search query, retrieve relevant passages that answer the query";
 
@@ -49,9 +51,16 @@ pub struct GroundingConfig {
     pub cite_repair: bool,
     /// When the answer is in another language than the question, rewrite it once in the question's.
     pub lang_repair: bool,
+    /// Also look the queries up on Wikipedia and merge the articles with the web results.
+    pub wikipedia: bool,
     /// Passages whose embedding similarity to every query is below this are not shown to the
     /// model: with nothing relevant left the search counts as having found nothing. 0 switches it off.
     pub min_score: f32,
+    /// Cross-encoder reranker that re-orders the best embedding matches; empty switches it off.
+    /// Without a running instance of it the embedding order stands.
+    pub rerank_model: String,
+    /// How many of the best embedding matches the reranker re-orders.
+    pub rerank_top: usize,
 }
 
 impl GroundingConfig {
@@ -94,7 +103,18 @@ impl GroundingConfig {
             )),
             cite_repair: quench_core::env::is_or("SAGE_GROUNDED_CITE_REPAIR", true),
             lang_repair: quench_core::env::is_or("SAGE_GROUNDED_LANG_REPAIR", true),
+            wikipedia: quench_core::env::is_or("SAGE_GROUNDED_WIKIPEDIA", true),
             min_score: quench_core::env::get_parsed::<f32>("SAGE_GROUNDED_MIN_SCORE", 0.28),
+            rerank_model: quench_core::env::get_or(
+                "SAGE_GROUNDED_RERANK_MODEL",
+                "BAAI/bge-reranker-v2-m3",
+            ),
+            rerank_top: usize::try_from(quench_core::env::get_parsed::<u64>(
+                "SAGE_GROUNDED_RERANK_TOP",
+                24,
+            ))
+            .unwrap_or(24)
+            .clamp(2, 64),
         }
     }
 }
@@ -526,6 +546,40 @@ pub fn parse_plan(text: &str, question: &str, max_queries: usize) -> Plan {
     }
 }
 
+/// Runs every query on the web search and, with `SAGE_GROUNDED_WIKIPEDIA`, on Wikipedia too.
+///
+/// Encyclopedic facts are one API call away and do not depend on a metasearch engine that may be
+/// throttled, so the first queries are also looked up on Wikipedia, in parallel with the web
+/// search. The articles join the round-robin as further result lists; the relevance floor drops
+/// them when they do not fit.
+async fn search_all(
+    cfg: &GroundingConfig,
+    registry: &SearchProviderRegistry,
+    provider_name: &str,
+    plan: &Plan,
+) -> Vec<Vec<Hit>> {
+    let web = join_all(
+        plan.queries
+            .iter()
+            .map(|q| search_with_fallback(registry, provider_name, q)),
+    );
+    let wiki = async {
+        if cfg.wikipedia && provider_name != "wikipedia" {
+            join_all(
+                wikipedia_queries(&plan.queries)
+                    .iter()
+                    .map(|q| wikipedia_hits(registry, q)),
+            )
+            .await
+        } else {
+            Vec::new()
+        }
+    };
+    let (mut per_query, wiki_lists) = tokio::join!(web, wiki);
+    per_query.extend(wiki_lists);
+    per_query
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn retrieve(
     cfg: &GroundingConfig,
@@ -537,12 +591,9 @@ async fn retrieve(
     today: &str,
     progress: Option<&Progress>,
 ) -> Grounding {
-    let per_query: Vec<Vec<Hit>> = join_all(
-        plan.queries
-            .iter()
-            .map(|q| search_with_fallback(registry, provider_name, q)),
-    )
-    .await;
+    let started = std::time::Instant::now();
+    let per_query = search_all(cfg, registry, provider_name, plan).await;
+    let searched = started.elapsed();
 
     let hits = merge_hits(&per_query, MAX_CANDIDATES);
     if hits.is_empty() {
@@ -595,7 +646,17 @@ async fn retrieve(
         }
     }
 
-    let Ranked { order, scores } = rank_passages(switchboard, vllm, &plan.queries, &passages).await;
+    let read = started.elapsed();
+    let Ranked { order, scores } =
+        rank_passages(cfg, switchboard, vllm, &plan.queries, &passages).await;
+    quench_log::info!(
+        "[GROUNDING] timing: search {} ms, read {} ms, rank {} ms ({} hits, {} passages)",
+        searched.as_millis(),
+        read.saturating_sub(searched).as_millis(),
+        started.elapsed().saturating_sub(read).as_millis(),
+        hits.len(),
+        passages.len()
+    );
     let ranked: Vec<usize> = match &scores {
         Some(scores) if cfg.min_score > 0.0 => {
             let best = order.first().map_or(0.0, |&i| scores[i]);
@@ -633,11 +694,63 @@ struct Ranked {
     scores: Option<Vec<f32>>,
 }
 
+/// What to look up on Wikipedia for the planner's queries.
+///
+/// The first two as written, and the entity each one is about. Wikipedia's keyword search is
+/// thrown by the extra words of a search query ("Frank Herbert death date" finds "Deaths in
+/// 2026"; "Frank Herbert" finds the article).
+#[must_use]
+pub fn wikipedia_queries(queries: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for query in queries.iter().take(2) {
+        let mut best: Vec<&str> = Vec::new();
+        let mut run: Vec<&str> = Vec::new();
+        for word in query.split_whitespace().chain(std::iter::once("")) {
+            let word_clean = word.trim_matches(|c: char| !c.is_alphanumeric());
+            let capital = word_clean.chars().next().is_some_and(char::is_uppercase)
+                && word_clean.chars().any(char::is_lowercase);
+            if capital {
+                run.push(word_clean);
+            } else {
+                let keep = run.len() >= 2 || run.iter().any(|w| w.chars().count() >= 4);
+                if keep && run.len() > best.len() {
+                    best = std::mem::take(&mut run);
+                }
+                run.clear();
+            }
+        }
+        for candidate in std::iter::once(query.trim().to_string())
+            .chain((!best.is_empty()).then(|| best.join(" ")))
+        {
+            if !candidate.is_empty() && !out.iter().any(|o| o.eq_ignore_ascii_case(&candidate)) {
+                out.push(candidate);
+            }
+        }
+    }
+    out.truncate(4);
+    out
+}
+
+/// The Wikipedia articles for one query, or nothing when the provider is missing or fails.
+async fn wikipedia_hits(registry: &SearchProviderRegistry, query: &str) -> Vec<Hit> {
+    let Some(provider) = registry.get(Some("wikipedia")) else {
+        return Vec::new();
+    };
+    match provider.search(query).await {
+        Ok(text) => parse_search_output(&text),
+        Err(err) => {
+            quench_log::info!("[GROUNDING] wikipedia: {err}");
+            Vec::new()
+        }
+    }
+}
+
 /// Passage indexes best-first. Embedding similarity to the closest of the planner's queries
 /// (a page found by the second query is judged against the second query, not the first), or
 /// the natural order (snippets, then page text) when the embedder does not answer, so the
 /// pipeline still works without it.
 async fn rank_passages(
+    cfg: &GroundingConfig,
     switchboard: &SwitchboardClient,
     vllm: &VllmClient,
     queries: &[String],
@@ -676,8 +789,10 @@ async fn rank_passages(
                 by_passage[i] = sc;
             }
             scored.sort_by(|a, b| b.1.total_cmp(&a.1));
+            let mut order: Vec<usize> = scored.into_iter().map(|(i, _)| i).collect();
+            rerank(cfg, switchboard, vllm, queries, passages, &mut order).await;
             Ranked {
-                order: scored.into_iter().map(|(i, _)| i).collect(),
+                order,
                 scores: Some(by_passage),
             }
         }
@@ -686,6 +801,63 @@ async fn rank_passages(
             quench_log::warn!("[GROUNDING] embedding rank unavailable, using natural order: {err}");
             natural
         }
+    }
+}
+
+/// Re-orders the best `rerank_top` passages with a cross-encoder, which reads query and passage
+/// together and so tells "mentions the topic" from "answers the question" better than embedding
+/// similarity does. A passage's score is its best over the queries. Fails open: with no reranker
+/// running, or when it errors, `order` stays as the embeddings left it.
+async fn rerank(
+    cfg: &GroundingConfig,
+    switchboard: &SwitchboardClient,
+    vllm: &VllmClient,
+    queries: &[String],
+    passages: &[Passage],
+    order: &mut [usize],
+) {
+    if cfg.rerank_model.is_empty() || order.len() < 2 {
+        return;
+    }
+    let top = cfg.rerank_top.min(order.len());
+    let instance = match embedder::find_running_instance(switchboard, &cfg.rerank_model).await {
+        Ok(instance) => instance,
+        Err(reason) => {
+            quench_log::debug!("[GROUNDING] rerank skipped: {reason}");
+            return;
+        }
+    };
+    let docs: Vec<String> = order[..top]
+        .iter()
+        .map(|&i| passages[i].text.chars().take(RERANK_CHARS).collect())
+        .collect();
+    let results = join_all(
+        queries
+            .iter()
+            .map(|q| vllm.rerank(&instance.host, instance.port, &cfg.rerank_model, q, &docs)),
+    )
+    .await;
+    let mut best = vec![f32::NEG_INFINITY; top];
+    let mut answered = false;
+    for result in results {
+        match result {
+            Ok(scores) => {
+                answered = true;
+                for (b, s) in best.iter_mut().zip(scores) {
+                    *b = b.max(s);
+                }
+            }
+            Err(err) => quench_log::warn!("[GROUNDING] rerank failed for one query: {err}"),
+        }
+    }
+    if !answered {
+        return;
+    }
+    let mut head: Vec<(usize, f32)> = order[..top].iter().copied().zip(best).collect();
+    // Stable: equal scores keep the embedding order.
+    head.sort_by(|a, b| b.1.total_cmp(&a.1));
+    for (slot, (i, _)) in order[..top].iter_mut().zip(head) {
+        *slot = i;
     }
 }
 
@@ -1150,6 +1322,86 @@ pub fn format_verdict_for(json: &str, lang: &str) -> Option<String> {
     Some(out)
 }
 
+/// How much of `claim` the sources can account for.
+///
+/// The share of its content words (four letters or more) and numbers that occur in `evidence`,
+/// matched on word stems so Polish and German endings count. 0 when the claim has too few
+/// content words to say anything.
+#[must_use]
+pub fn lexical_support(claim: &str, evidence: &str) -> f32 {
+    let words: Vec<String> = evidence
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(fold)
+        .collect();
+    let digits = |t: &str| t.chars().filter(char::is_ascii_digit).collect::<String>();
+    let numbers: HashSet<String> = figures_in(evidence)
+        .into_iter()
+        .map(|(shown, _)| digits(&shown))
+        .collect();
+    let mut total = 0usize;
+    let mut found = 0usize;
+    let mut seen: HashSet<String> = HashSet::new();
+    for token in claim
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+    {
+        let folded = fold(token);
+        if !seen.insert(folded.clone()) {
+            continue;
+        }
+        if folded.chars().any(|c| c.is_ascii_digit()) {
+            total += 1;
+            if numbers.contains(&digits(&folded)) || words.contains(&folded) {
+                found += 1;
+            }
+        } else if folded.chars().count() >= 4 {
+            total += 1;
+            let keep = folded.chars().count().saturating_sub(2).max(4);
+            let stem: String = folded.chars().take(keep).collect();
+            if words.iter().any(|w| w.starts_with(&stem)) {
+                found += 1;
+            }
+        }
+    }
+    if total < 3 {
+        0.0
+    } else {
+        let count = |n: usize| f32::from(u16::try_from(n).unwrap_or(u16::MAX));
+        count(found) / count(total)
+    }
+}
+
+/// Drops the flagged claims the sources do in fact account for word for word.
+///
+/// A small verifier often flags "The capital of Japan is Tokyo" while the source says exactly
+/// that. A claim the verifier calls contradicted stays, whatever its words.
+#[must_use]
+pub fn drop_lexically_supported(json: &str, evidence: &str) -> String {
+    let Ok(mut value) = quench_serde::json::from_str::<quench_serde::Value>(json.trim()) else {
+        return json.to_string();
+    };
+    let Some(list) = value.get_mut("unsupported").and_then(|u| u.as_array_mut()) else {
+        return json.to_string();
+    };
+    list.retain(|c| {
+        let claim = c.get("claim").and_then(|v| v.as_str()).unwrap_or("");
+        let severity = c.get("severity").and_then(|v| v.as_str()).unwrap_or("core");
+        if severity.eq_ignore_ascii_case("contradicted") {
+            return true;
+        }
+        let support = lexical_support(claim, evidence);
+        if support >= 0.9 {
+            quench_log::info!(
+                "[GROUNDING] dropped verifier claim the sources cover ({support:.2}): {claim}"
+            );
+            return false;
+        }
+        true
+    });
+    quench_serde::json::to_string(&value)
+}
+
 /// Texts of the claims the verifier flagged as worth a warning.
 #[must_use]
 pub fn flagged_claims(json: &str) -> Vec<String> {
@@ -1366,7 +1618,11 @@ pub async fn verify_with_claims(
         {
             Ok(text) => {
                 quench_log::info!("[GROUNDING] verifier ({}): {}", instance.model, text.trim());
-                format_verdict_for(&text, lang).map(|note| (note, flagged_claims(&text)))
+                {
+                    // contact stripping looks at every flagged claim; the warning only at those the sources do not cover
+                    let shown = drop_lexically_supported(&text, evidence);
+                    format_verdict_for(&shown, lang).map(|note| (note, flagged_claims(&text)))
+                }
             }
             Err(err) => {
                 quench_log::warn!("[GROUNDING] verifier failed: {err}");
@@ -1441,6 +1697,18 @@ const REFUSAL_HINTS: &[&str] = &[
     "nie jest podan",
     "nicht angegeben",
     "no se menciona",
+    "no he encontrado",
+    "jeszcze się nie wydarzyło",
+    "noch nicht stattgefunden",
+    "aún no ha ocurrido",
+    "pas encore eu lieu",
+    "has not happened yet",
+    "no pude encontrar",
+    "no encuentro",
+    "no hay información",
+    "je n'ai pas trouvé",
+    "ich habe keine",
+    "nie udało mi się",
     "non précis",
     "there is no ",
     "there are no ",
@@ -1647,13 +1915,36 @@ pub fn mark_unsourced(answer: &str, question: &str) -> String {
     )
 }
 
-fn split_sentences(line: &str) -> Vec<&str> {
+/// Whether `before` (the text up to a full stop) ends in an abbreviation or a lone initial, so
+/// the stop does not end the sentence: "z. B.", "e.g.", "np.", "Dr.", "St.".
+fn ends_with_abbreviation(before: &str) -> bool {
+    const ABBREVIATIONS: &[&str] = &[
+        "np", "tzw", "itp", "itd", "ok", "ul", "al", "godz", "tys", "mln", "mld", "zob", "por",
+        "bzw", "usw", "ca", "vgl", "evtl", "etc", "vs", "cf", "eg", "ie", "mr", "mrs", "ms", "dr",
+        "prof", "st", "approx", "inc", "ltd", "sr", "jr", "ej",
+    ];
+    let word: String = before
+        .chars()
+        .rev()
+        .take_while(|c| c.is_alphabetic() || *c == '.')
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let word = word.trim_matches('.').to_lowercase();
+    word.chars().count() == 1 || ABBREVIATIONS.contains(&word.as_str()) || word.contains('.')
+}
+
+/// The sentences of one line, each trimmed; a full stop after an abbreviation does not end one.
+#[must_use]
+pub fn split_sentences(line: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut start = 0;
     let chars: Vec<(usize, char)> = line.char_indices().collect();
     for (k, &(i, c)) in chars.iter().enumerate() {
         let ends = matches!(c, '.' | '!' | '?')
-            && chars.get(k + 1).is_none_or(|&(_, n)| n.is_whitespace());
+            && chars.get(k + 1).is_none_or(|&(_, n)| n.is_whitespace())
+            && !(c == '.' && ends_with_abbreviation(&line[start..i]));
         if ends {
             let end = i + c.len_utf8();
             out.push(line[start..end].trim());
@@ -1756,7 +2047,7 @@ pub fn language_mismatch(question: &str, answer: &str) -> Option<&'static str> {
     let body = answer.split("\n\n\u{26a0}").next().unwrap_or(answer);
     let urls = quench_regex::Regex::new(r"https?://\S+|\[\d[\d, ]*\]").expect("valid regex");
     let prose = urls.replace_all(body, " ");
-    if prose.chars().count() < 60 || question.split_whitespace().count() < 3 {
+    if prose.trim().chars().count() < 12 || question.split_whitespace().count() < 3 {
         return None;
     }
     let (q, a) = (detect_lang(question), detect_lang(&prose));
@@ -2166,16 +2457,33 @@ pub fn strip_consolation_sentences(answer: &str) -> String {
         r"|^die (?:quellen|suchergebnisse) (?:nennen|zeigen|enthalten|erwähnen)\s",
         r"|^las fuentes (?:mencionan|indican|muestran|contienen)\s",
         r"|^les sources (?:mentionnent|indiquent|montrent)\s",
+        r"|^(?:however,?\s+|aber\s+|pero\s+|mais\s+|jednak\s+)?(?:es gibt (?:einen|eine|ein|zwei|mehrere|einige)|there (?:is|are) (?:a|an|one|two|some|several|another)|hay (?:un|una|dos|varios|algunos)|il y a (?:un|une|deux|plusieurs)|istnieje|jest (?:inna|podobna|podobny))\b",
+        r"|^los resultados (?:de búsqueda )?(?:muestran|indican|mencionan|contienen)\s",
+        r"|^les résultats (?:de recherche )?(?:montrent|indiquent|mentionnent)\s",
+        r"|^(?:the )?(?:search )?results (?:show|list|mention|indicate|only)\b",
+        r"|^(?:they|these) (?:only )?(?:discuss|mention|describe|list|cover)\s",
     ))
     .expect("valid regex");
+    let bullet = quench_regex::Regex::new(r"^\s*(?:[*\-\u{2022}]|\d+[.)])\s").expect("valid regex");
     let mut lines = Vec::new();
+    let mut dropping_list = false;
     for (i, line) in body.lines().enumerate() {
-        let kept: Vec<&str> = split_sentences(line)
+        if dropping_list && bullet.is_match(line) {
+            continue;
+        }
+        dropping_list = false;
+        let sentences = split_sentences(line);
+        let total = sentences.len();
+        let kept: Vec<&str> = sentences
             .into_iter()
             .enumerate()
             .filter(|(j, u)| (i == 0 && *j == 0) || is_hint(u) || !consolation.is_match(u.trim()))
             .map(|(_, u)| u)
             .collect();
+        // an intro that was dropped takes the list it introduced with it
+        if kept.len() < total {
+            dropping_list = true;
+        }
         if !kept.is_empty() {
             lines.push(kept.join(" "));
         }
@@ -2188,6 +2496,207 @@ pub fn strip_consolation_sentences(answer: &str) -> String {
     }
 }
 
+/// "That has not happened yet", in `lang`.
+#[must_use]
+pub fn not_happened_yet(lang: &str) -> &'static str {
+    match lang {
+        "pl" => "To jeszcze się nie wydarzyło, więc nie ma wyniku do podania.",
+        "de" => "Das hat noch nicht stattgefunden, also gibt es kein Ergebnis zu berichten.",
+        "es" => "Eso aún no ha ocurrido, así que no hay ningún resultado que informar.",
+        "fr" => "Cela n'a pas encore eu lieu, il n'y a donc pas de résultat à rapporter.",
+        _ => "That has not happened yet, so there is no result to report.",
+    }
+}
+
+/// Removes the sentences that report an outcome in the past tense for a year after today's.
+///
+/// "Alexander Rybak won the 2030 Eurovision Song Contest" cannot be true, whatever source the
+/// answer cites. If nothing else is left the answer says it has not happened yet.
+#[must_use]
+pub fn strip_future_outcomes(answer: &str, today: &str, question: &str) -> String {
+    let Some(this_year) = years_in(today).first().and_then(|y| y.parse::<u32>().ok()) else {
+        return answer.to_string();
+    };
+    let outcome = quench_regex::Regex::new(concat!(
+        r"(?i)\b(?:won|wins|winner\b[^.]{0,60}\bwas|champion|defeated|beat|was elected|elected|died|was awarded|took place|was held|scored",
+        r"|wygra\w+|zwyci\w+|odby\w+|zmar\w+|wybran\w+",
+        r"|gewann\w*|sieger\b[^.]{0,60}\bwar|gewinner\b[^.]{0,60}\bwar|besiegte\w*|fand statt|ganó|ganador\b[^.]{0,60}\bfue|venció|murió|se celebró",
+        r"|a gagné|vainqueur\b[^.]{0,60}\best|remporté\w*|est mort|a eu lieu)\b",
+    ))
+    .expect("valid regex");
+    let (body, tail) = answer.split_at(answer.find("\n\n\u{26a0}").unwrap_or(answer.len()));
+    let future = |unit: &str| {
+        years_in(unit)
+            .iter()
+            .filter_map(|y| y.parse::<u32>().ok())
+            .any(|y| y > this_year)
+            && outcome.is_match(unit)
+    };
+    if !split_sentences(body).iter().any(|u| future(u)) {
+        return answer.to_string();
+    }
+    // from the first impossible result to the end of its paragraph: what follows elaborates it
+    // ("The winner was X. He won with the song Y.")
+    let mut lines = Vec::new();
+    for line in body.lines() {
+        let kept: Vec<&str> = split_sentences(line)
+            .into_iter()
+            .take_while(|u| !future(u))
+            .collect();
+        if !kept.is_empty() {
+            lines.push(kept.join(" "));
+        }
+    }
+    let cleaned = lines.join("\n");
+    let text = if cleaned.trim().is_empty() {
+        not_happened_yet(reply_lang(question, body)).to_string()
+    } else {
+        cleaned
+    };
+    format!("{text}{tail}")
+}
+
+/// Phrases that already tell the reader a thing cannot be predicted.
+const PREDICTION_HINTS: &[&str] = &[
+    "cannot be predicted",
+    "can't be predicted",
+    "cannot predict",
+    "can't predict",
+    "impossible to predict",
+    "not possible to predict",
+    "no one can know",
+    "nobody can know",
+    "unpredictable",
+    "nie da się przewidzieć",
+    "nie można przewidzieć",
+    "nie można określić",
+    "nicht vorhersag",
+    "no se puede predecir",
+    "ne peut pas être prédit",
+];
+
+/// "This cannot be known yet…", in `lang`: the opening of an answer that quotes plans or forecasts.
+#[must_use]
+pub fn forecast_caveat(lang: &str) -> &'static str {
+    match lang {
+        "pl" => {
+            "Tego nie da się jeszcze wiedzieć; to, co poniżej, pochodzi ze źródeł i jest planem lub prognozą, a nie wynikiem."
+        }
+        "de" => {
+            "Das lässt sich noch nicht wissen; was folgt, stammt aus den Quellen und ist ein Plan oder eine Prognose, kein Ergebnis."
+        }
+        "es" => {
+            "Eso todavía no se puede saber; lo siguiente viene de las fuentes y es un plan o un pronóstico, no un resultado."
+        }
+        "fr" => {
+            "On ne peut pas encore le savoir ; ce qui suit vient des sources et est un projet ou une prévision, pas un résultat."
+        }
+        _ => {
+            "This cannot be known yet; what follows comes from the sources and is a plan or a forecast, not a result."
+        }
+    }
+}
+
+/// Whether the question asks about something that has not happened yet: a year after today's, or
+/// "next week", "one month from now", "tomorrow" (and their Polish, German, Spanish, French forms).
+#[must_use]
+pub fn asks_about_the_future(question: &str, today: &str) -> bool {
+    if let Some(this_year) = years_in(today).first().and_then(|y| y.parse::<u32>().ok())
+        && years_in(question)
+            .iter()
+            .filter_map(|y| y.parse::<u32>().ok())
+            .any(|y| y > this_year)
+    {
+        return true;
+    }
+    let markers = quench_regex::Regex::new(concat!(
+        r"(?i)\b(?:next (?:week|month|year|quarter|monday|tuesday|wednesday|thursday|friday|saturday|sunday)",
+        r"|(?:in )?(?:a|one|two|three|\d+) (?:day|week|month|year)s? from now|tomorrow",
+        r"|za (?:tydzień|miesiąc|rok|\d+ (?:dni|tygodni|miesięcy|lat))|w przyszł\w+|jutro|następn\w+ (?:tydzień|miesiąc|rok)",
+        r"|nächste\w* (?:woche|monat|jahr)|in einem (?:monat|jahr)|morgen",
+        r"|próxim\w+ (?:semana|mes|año)|mañana|dentro de (?:un|una|\d+)",
+        r"|prochain\w* (?:semaine|mois|année)|demain|dans (?:un|une|\d+) (?:mois|an|ans|semaines?))\b",
+    ))
+    .expect("valid regex");
+    markers.is_match(question)
+}
+
+/// Puts [`forecast_caveat`] in front of an answer to a question about the future that does not
+/// already say it cannot be known. The sources may well discuss forecasts; they must not read
+/// as the answer.
+#[must_use]
+pub fn ensure_forecast_caveat(answer: &str, question: &str, today: &str) -> String {
+    let body = answer
+        .split("\n\n\u{26a0}")
+        .next()
+        .unwrap_or(answer)
+        .to_lowercase();
+    if !asks_about_the_future(question, today)
+        || admits_not_finding(answer)
+        || PREDICTION_HINTS.iter().any(|h| body.contains(h))
+    {
+        return answer.to_string();
+    }
+    format!(
+        "{}\n\n{answer}",
+        forecast_caveat(reply_lang(question, answer))
+    )
+}
+
+/// Replaces an answer that explains the asked name away as a misspelling of something else.
+///
+/// "The Treaty of Versailles (often misspelled as 'Vellmar') was signed in 1919" answers a
+/// question about a treaty no source mentions. The question's name must be missing from the
+/// sources, and the answer must say outright that it is a misspelling or a typo; an answer that
+/// merely names an alternative ("also known as") is left alone.
+#[must_use]
+pub fn strip_misspelling_excuse(answer: &str, question: &str, evidence: &str) -> String {
+    let excuse = quench_regex::Regex::new(concat!(
+        r"(?i)(?:misspell\w*|mis-spell\w*|typo\b|typographical|spelling (?:error|mistake|of)|alternative spelling|variant spelling",
+        r"|literówk\w+|błędn\w+ (?:zapis|pisown)\w*|Schreibfehler|falsch geschrieben|Tippfehler|error ortográfico|mal escrit\w+|faute d.orthographe|mal orthographi\w+)",
+    ))
+    .expect("valid regex");
+    let body = answer.split("\n\n\u{26a0}").next().unwrap_or(answer);
+    if !excuse.is_match(body) {
+        return answer.to_string();
+    }
+    let words: Vec<String> = evidence
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.chars().count() >= 3)
+        .map(fold)
+        .collect();
+    let missing: Vec<String> = question
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .enumerate()
+        .filter(|(i, t)| {
+            *i > 0
+                && t.chars().count() >= 5
+                && t.chars().next().is_some_and(char::is_uppercase)
+                && !TRANSLATED_NAMES.iter().any(|n| fold(t).starts_with(n))
+        })
+        .map(|(_, t)| fold(t))
+        .filter(|t| {
+            let keep = t.chars().count().saturating_sub(3).max(3);
+            let stem: String = t.chars().take(keep).collect();
+            !words.iter().any(|w| w.starts_with(&stem))
+        })
+        .collect();
+    let mentions = |sentence: &str| {
+        let folded = fold(sentence);
+        missing.iter().any(|m| folded.contains(m.as_str()))
+    };
+    if !missing.is_empty()
+        && split_sentences(body)
+            .iter()
+            .any(|u| excuse.is_match(u) && mentions(u))
+    {
+        let tail = &answer[body.len()..];
+        return format!("{}{tail}", no_verified_answer(detect_lang(question)));
+    }
+    answer.to_string()
+}
+
 /// Drops sentences that talk about the model's own instructions ("per the strict instruction to
 /// answer using ONLY the sources, I must…"): that is prompt text leaking into the answer.
 #[must_use]
@@ -2196,6 +2705,8 @@ pub fn strip_instruction_talk(answer: &str) -> String {
         r"(?i)\b(?:strict (?:source )?(?:instructions?|adherence)",
         r"|(?:per|following|according to) (?:the|my|these|your) (?:strict |system )?(?:instructions?|rules|prompt)",
         r"|(?:my|the) system (?:prompt|instructions)",
+        r"|(?:the|my|these|your) (?:strict |system )?instructions? (?:also |further |explicitly )?(?:say|says|said|state|states|stated|tell|tells|require|requires|ask|asks|mention|mentions)",
+        r"|since the instruction",
         r"|as instructed|i was instructed|i am instructed)\b",
     ))
     .expect("valid regex");
@@ -2278,16 +2789,19 @@ const TRANSLATED_NAMES: &[&str] = &[
     "wald", "ocean", "hotel", "resta",
 ];
 
-/// Capitalized names in the question that no source contains.
+/// Long words of the quoted names in the question that no source contains.
 ///
-/// The first word is skipped. The sources are then about something else ("Zlotogrod Nowy" asked, "Nowy Żmigród" found), and an answer
-/// built on them describes the wrong thing.
-///
-/// A word counts as present when a source word starts
-/// with it, less its last three letters, so Polish and German endings still match ("Rzece" for
-/// "Rzeka"). Country names and generic place nouns are skipped: they are translated.
+/// The sources are then about something else ("'Zum Goldenen Quantenhirsch'" asked, "Zum Goldenen Hirsch" found), and an
+/// answer built on them describes the wrong thing. Only quoted names are judged, and only their
+/// long words (seven letters or more): common capitalized words and translated titles in an
+/// ordinary question are far too often "missing" without anything being wrong. A word counts as
+/// present when a source word starts with it, less its last three letters.
 #[must_use]
 pub fn missing_question_names(question: &str, evidence: &str) -> Vec<String> {
+    let quoted = quench_regex::Regex::new(
+        "['\"\u{201e}\u{201c}\u{201d}\u{2018}\u{2019}\u{ab}\u{bb}`]([^'\"\u{201e}\u{201c}\u{201d}\u{2018}\u{2019}\u{ab}\u{bb}`]{3,80})['\"\u{201c}\u{201d}\u{2018}\u{2019}\u{ab}\u{bb}`]",
+    )
+    .expect("valid regex");
     let words: Vec<String> = evidence
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| w.chars().count() >= 3)
@@ -2295,27 +2809,23 @@ pub fn missing_question_names(question: &str, evidence: &str) -> Vec<String> {
         .collect();
     let mut seen: HashSet<String> = HashSet::new();
     let mut out: Vec<String> = Vec::new();
-    for (i, token) in question
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|t| !t.is_empty())
-        .enumerate()
-    {
-        let starts_upper = token.chars().next().is_some_and(char::is_uppercase);
-        if i == 0
-            || !starts_upper
-            || token.chars().count() < 5
-            || token.chars().any(|c| c.is_ascii_digit())
+    for span in quoted.captures_iter(question) {
+        for token in span[1]
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|t| !t.is_empty())
         {
-            continue;
-        }
-        let folded = fold(token);
-        if TRANSLATED_NAMES.iter().any(|n| folded.starts_with(n)) {
-            continue;
-        }
-        let keep = folded.chars().count().saturating_sub(3).max(3);
-        let stem: String = folded.chars().take(keep).collect();
-        if !words.iter().any(|w| w.starts_with(&stem)) && seen.insert(folded) {
-            out.push(token.to_string());
+            let folded = fold(token);
+            if folded.chars().count() < 7
+                || TRANSLATED_NAMES.iter().any(|n| folded.starts_with(n))
+                || token.chars().any(|c| c.is_ascii_digit())
+            {
+                continue;
+            }
+            let keep = folded.chars().count().saturating_sub(3).max(3);
+            let stem: String = folded.chars().take(keep).collect();
+            if !words.iter().any(|w| w.starts_with(&stem)) && seen.insert(folded) {
+                out.push(token.to_string());
+            }
         }
     }
     out
@@ -2406,6 +2916,9 @@ pub async fn finalize_answer(
     text = strip_refusal_leaks(&text, question);
     text = strip_consolation_sentences(&text);
     text = strip_instruction_talk(&text);
+    text = strip_misspelling_excuse(&text, question, evidence);
+    text = strip_future_outcomes(&text, today, question);
+    text = ensure_forecast_caveat(&text, question, today);
     // An answer that admits it found nothing and still states a figure no source gave is
     // contradicting itself: the figure goes.
     if admits_not_finding(&text) && !ungrounded_numbers(&text, evidence, question, today).is_empty()

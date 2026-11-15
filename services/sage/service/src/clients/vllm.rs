@@ -442,6 +442,63 @@ impl VllmClient {
             .context("vLLM completion had no message content")
     }
 
+    /// Scores how well each document answers the query with a cross-encoder reranker; returns one
+    /// relevance score per document, in document order (higher is better).
+    pub async fn rerank(
+        &self,
+        host: &str,
+        port: u16,
+        model: &str,
+        query: &str,
+        documents: &[String],
+    ) -> Result<Vec<f32>> {
+        if !self.circuit_breaker.is_available() {
+            return Err(quench_core::err!(
+                "Circuit breaker open: vLLM temporarily unavailable"
+            ));
+        }
+        let host = host
+            .trim_start_matches("http://")
+            .trim_start_matches("https://");
+        let url = format!("http://{host}:{port}/rerank");
+        let res = self
+            .http
+            .post(&url)
+            .json(&RerankRequest {
+                model,
+                query,
+                documents,
+            })
+            .send()
+            .await
+            .with_context(|| format!("Failed to connect to vLLM instance at {url}"))?;
+        if !res.status().is_success() {
+            let status = res.status();
+            let err_text = res.text().await.unwrap_or_default();
+            self.circuit_breaker.call_failed();
+            quench_core::bail!("vLLM rerank returned error {status}: {err_text}");
+        }
+        self.circuit_breaker.call_succeeded();
+        let response: RerankResponse = res
+            .json()
+            .await
+            .context("Failed to parse vLLM rerank response")?;
+        let returned = response.results.len();
+        let mut scores = vec![f32::NEG_INFINITY; documents.len()];
+        for r in response.results {
+            if let Some(slot) = scores.get_mut(r.index) {
+                *slot = r.relevance_score;
+            }
+        }
+        if scores.contains(&f32::NEG_INFINITY) {
+            quench_core::bail!(
+                "vLLM rerank scored {returned} of {} documents",
+                documents.len()
+            );
+        }
+        Ok(scores)
+    }
+
     /// Generate embeddings for a batch of inputs; returns one vector per input, in input order.
     pub async fn embeddings(
         &self,
@@ -504,6 +561,24 @@ impl VllmClient {
         response.data.sort_by_key(|d| d.index);
         Ok(response.data.into_iter().map(|d| d.embedding).collect())
     }
+}
+
+#[derive(Debug, Serialize)]
+struct RerankRequest<'a> {
+    model: &'a str,
+    query: &'a str,
+    documents: &'a [String],
+}
+
+#[derive(Debug, Deserialize)]
+struct RerankResponse {
+    results: Vec<RerankResult>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RerankResult {
+    index: usize,
+    relevance_score: f32,
 }
 
 #[derive(Debug, Serialize)]

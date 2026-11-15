@@ -13,7 +13,7 @@
 use crate::env_support::env_lock;
 use sage_service::tools::search_providers::{
     BraveProvider, DuckDuckGoProvider, SearchProvider, SearchProviderRegistry, SearxngProvider,
-    SerpapiProvider,
+    SerpapiProvider, WikipediaProvider,
 };
 
 struct DummyProvider {
@@ -260,4 +260,139 @@ async fn searxng_search_reports_invalid_json_from_the_instance() {
     let provider = SearxngProvider::new(&server.uri());
     let error = provider.search("q").await.unwrap_err();
     assert!(error.contains("Invalid JSON"));
+}
+
+#[quench_test::test]
+async fn wikipedia_returns_the_intro_of_the_best_articles_in_search_order() {
+    let server = quench_test::mock::MockServer::start().await;
+    quench_test::mock::Mock::given(quench_test::mock::matchers::method("GET"))
+        .and(quench_test::mock::matchers::path("/w/api.php"))
+        .respond_with(quench_test::mock::ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&quench_serde::json!({
+                "query": { "pages": {
+                    "22": { "title": "Dune (novel)", "index": 2, "fullurl": "https://en.wikipedia.org/wiki/Dune_(novel)",
+                            "extract": "Dune is a 1965 science fiction novel by Frank Herbert.\n\nIt won the Hugo." },
+                    "11": { "title": "Frank Herbert", "index": 1, "fullurl": "https://en.wikipedia.org/wiki/Frank_Herbert",
+                            "extract": "Franklin Patrick Herbert Jr. (October 8, 1920 - February 11, 1986) was an American author." },
+                    "33": { "title": "Empty", "index": 3, "fullurl": "https://en.wikipedia.org/wiki/Empty", "extract": "" }
+                }}
+            })),
+            "application/json",
+        ))
+        .mount(&server)
+        .await;
+
+    let provider = WikipediaProvider::new(&server.uri());
+    let out = provider
+        .search("Frank Herbert death date")
+        .await
+        .expect("search ok");
+    assert!(out.contains("via Wikipedia"));
+    let herbert = out
+        .find("Frank Herbert: Franklin Patrick")
+        .expect("first article");
+    let dune = out
+        .find("Dune (novel): Dune is a 1965")
+        .expect("second article");
+    assert!(herbert < dune, "{out}");
+    assert!(out.contains("February 11, 1986"));
+    assert!(out.contains("Source: https://en.wikipedia.org/wiki/Frank_Herbert"));
+    // one line per article, and the empty article is left out
+    assert!(out.contains("Frank Herbert. It won the Hugo."), "{out}");
+    assert!(!out.contains("Empty"), "{out}");
+    // the output is what the grounding pipeline reads
+    let hits = sage_service::grounding::parse_search_output(&out);
+    assert_eq!(hits.len(), 2);
+    assert_eq!(hits[0].url, "https://en.wikipedia.org/wiki/Frank_Herbert");
+}
+
+#[quench_test::test]
+async fn wikipedia_reports_no_results_and_failures() {
+    let server = quench_test::mock::MockServer::start().await;
+    quench_test::mock::Mock::given(quench_test::mock::matchers::method("GET"))
+        .and(quench_test::mock::matchers::path("/w/api.php"))
+        .respond_with(
+            quench_test::mock::ResponseTemplate::new(200)
+                .set_body_raw(r#"{"batchcomplete":""}"#.to_string(), "application/json"),
+        )
+        .mount(&server)
+        .await;
+    let provider = WikipediaProvider::new(&server.uri());
+    assert!(
+        provider
+            .search("zxqv")
+            .await
+            .unwrap_err()
+            .contains("nothing")
+    );
+    assert!(
+        WikipediaProvider::new("http://127.0.0.1:9")
+            .search("x")
+            .await
+            .is_err()
+    );
+}
+
+#[quench_test::test]
+async fn searxng_asks_for_results_in_the_language_of_the_query() {
+    let server = quench_test::mock::MockServer::start().await;
+    for (lang, query) in [
+        ("en", "capital of Japan population"),
+        ("pl", "ile mieszkańców ma Wrocław"),
+    ] {
+        quench_test::mock::Mock::given(quench_test::mock::matchers::method("GET"))
+            .and(quench_test::mock::matchers::path("/search"))
+            .and(quench_test::mock::matchers::query_param("language", lang))
+            .respond_with(quench_test::mock::ResponseTemplate::new(200).set_body_raw(
+                quench_serde::json::to_string(&quench_serde::json!({
+                    "results": [{ "title": lang, "url": "https://a.example", "content": lang }]
+                })),
+                "application/json",
+            ))
+            .mount(&server)
+            .await;
+        let out = SearxngProvider::new(&server.uri())
+            .search(query)
+            .await
+            .expect("search ok");
+        assert!(out.contains(&format!("{lang}\nSource")), "{lang}: {out}");
+    }
+}
+
+async fn searxng_with_one_result() -> (quench_test::mock::MockServer, String) {
+    let server = quench_test::mock::MockServer::start().await;
+    quench_test::mock::Mock::given(quench_test::mock::matchers::method("GET"))
+        .and(quench_test::mock::matchers::path("/search"))
+        .respond_with(quench_test::mock::ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "results": [{"title": "T", "url": "https://a.example", "content": "About A"}]
+                })),
+            ),
+            "application/json",
+        ))
+        .mount(&server)
+        .await;
+    let uri = server.uri();
+    (server, uri)
+}
+
+#[quench_test::test]
+async fn searxng_serves_a_repeated_query_from_its_cache() {
+    let (server, uri) = searxng_with_one_result().await;
+    let provider = SearxngProvider::new(&uri);
+    let first = provider.search("Rust Testing").await.expect("first ok");
+    // The instance is gone: only the cache can answer now, and the key ignores case and padding.
+    drop(server);
+    let second = provider.search("  rust testing ").await.expect("cached");
+    assert_eq!(first, second);
+}
+
+#[quench_test::test]
+async fn searxng_cache_can_be_switched_off() {
+    let (server, uri) = searxng_with_one_result().await;
+    let provider = SearxngProvider::new(&uri).with_cache_ttl(std::time::Duration::ZERO);
+    provider.search("rust testing").await.expect("first ok");
+    drop(server);
+    assert!(provider.search("rust testing").await.is_err());
 }

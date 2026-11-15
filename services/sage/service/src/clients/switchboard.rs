@@ -32,7 +32,10 @@ impl VllmInstance {
     /// Whether this instance can serve chat completions; embedding (pooling) instances yield a 404 if routed chat.
     #[must_use]
     pub fn is_chat_capable(&self) -> bool {
-        !matches!(self.task.as_deref(), Some("embed" | "embedding"))
+        !matches!(
+            self.task.as_deref(),
+            Some("embed" | "embedding" | "classify" | "score" | "rerank")
+        )
     }
 }
 

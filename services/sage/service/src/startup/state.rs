@@ -106,6 +106,12 @@ fn init_search_providers() -> Arc<tools::SearchProviderRegistry> {
         quench_log::info!("SerpAPI API key not set, provider not available");
     }
 
+    registry.register(
+        "wikipedia".to_string(),
+        Box::new(tools::search_providers::WikipediaProvider::from_env()),
+    );
+    quench_log::info!("Wikipedia provider registered");
+
     let default_provider = quench_core::env::get_or("SEARCH_PROVIDER", "duckduckgo");
     registry.set_default(default_provider);
 

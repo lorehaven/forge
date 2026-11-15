@@ -4,11 +4,13 @@ pub mod providers_brave;
 pub mod providers_duckduckgo;
 pub mod providers_searxng;
 pub mod providers_serpapi;
+pub mod providers_wikipedia;
 
 pub use providers_brave::BraveProvider;
 pub use providers_duckduckgo::DuckDuckGoProvider;
 pub use providers_searxng::SearxngProvider;
 pub use providers_serpapi::SerpapiProvider;
+pub use providers_wikipedia::WikipediaProvider;
 
 #[async_trait]
 pub trait SearchProvider: Send + Sync {

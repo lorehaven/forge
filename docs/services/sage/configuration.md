@@ -35,11 +35,12 @@ SAGE_ or plain: see [Models](models.md) for the semantics.
 | `BRAVE_SEARCH_API_KEY` | none | Enables `brave`. (The startup check looks for `BRAVE_API_KEY` and warns when it is missing: see the report.) |
 | `SERPAPI_API_KEY` | none | Enables `serpapi`. |
 | `SEARXNG_INSTANCE_URL` | `https://searxng.be` | SearXNG endpoint. |
+| `SEARXNG_CACHE_TTL_SECS` | `600` | How long a SearXNG answer is reused for the same query (case and padding ignored); `0` turns the cache off. Up to 256 queries are kept. |
 | `FILE_OPS_BASE_PATH` | `.` | Root of the `file_ops` tool. |
 
 ## Grounding
 
-`SAGE_GROUNDED`, `SAGE_GROUNDED_MAX_QUERIES`, `SAGE_GROUNDED_FETCH_PAGES`, `SAGE_GROUNDED_PASSAGES`, `SAGE_GROUNDED_MAX_CHARS`, `SAGE_GROUNDED_TIMEOUT_SECS`, `SAGE_GROUNDED_VERIFY`, `SAGE_GROUNDED_VERIFIER_MODEL`, `SAGE_GROUNDED_VERIFY_TIMEOUT_SECS`, `SAGE_GROUNDED_CITE_REPAIR`, `SAGE_SEARCH_FALLBACK`: table in [Grounding](grounding.md). Read at each request, not cached.
+`SAGE_GROUNDED`, `SAGE_GROUNDED_MAX_QUERIES`, `SAGE_GROUNDED_FETCH_PAGES`, `SAGE_GROUNDED_PASSAGES`, `SAGE_GROUNDED_MAX_CHARS`, `SAGE_GROUNDED_TIMEOUT_SECS`, `SAGE_GROUNDED_VERIFY`, `SAGE_GROUNDED_VERIFIER_MODEL`, `SAGE_GROUNDED_VERIFY_TIMEOUT_SECS`, `SAGE_GROUNDED_CITE_REPAIR`, `SAGE_GROUNDED_LANG_REPAIR`, `SAGE_GROUNDED_WIKIPEDIA`, `SAGE_GROUNDED_MIN_SCORE`, `SAGE_GROUNDED_RERANK_MODEL`, `SAGE_GROUNDED_RERANK_TOP`, `SAGE_FETCH_ALLOW_PRIVATE`, `WIKIPEDIA_API_BASE`, `SAGE_SEARCH_FALLBACK`: table in [Grounding](grounding.md). Read at each request, not cached.
 
 ## Files and retrieval
 

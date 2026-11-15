@@ -24,7 +24,10 @@ const fn config() -> GroundingConfig {
         verify_timeout: Duration::from_secs(10),
         cite_repair: false,
         lang_repair: false,
+        wikipedia: false,
         min_score: 0.0,
+        rerank_model: String::new(),
+        rerank_top: 24,
     }
 }
 
@@ -876,4 +879,165 @@ async fn finalize_answer_without_sources_refuses_instead_of_answering_from_memor
         out.starts_with("I could not find anything about that café."),
         "{out}"
     );
+}
+
+#[allow(clippy::await_holding_lock)]
+#[quench_test::test]
+async fn gather_adds_wikipedia_articles_to_the_web_results() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (server, switchboard) = mock_estate(&[]).await;
+    on_chat(
+        &server,
+        "retrieval planner",
+        completion(r#"{"kind":"factual","queries":["Frank Herbert death date"]}"#),
+    )
+    .await;
+    let mut registry = registry(&results(&[(
+        "Currency rates for the Swiss franc today.",
+        "https://kantor.example/franc",
+    )]));
+    registry.register(
+        "wikipedia".to_string(),
+        Box::new(Search(results(&[(
+            "Frank Herbert: Herbert (October 8, 1920 - February 11, 1986) was an American author.",
+            "https://en.wikipedia.org/wiki/Frank_Herbert",
+        )]))),
+    );
+    let mut cfg = config();
+    cfg.wikipedia = true;
+    let g = gather(
+        &cfg,
+        &switchboard,
+        &VllmClient::new(),
+        &registry,
+        "searxng",
+        &answerer(&server),
+        &[],
+        "When did Frank Herbert die?",
+        "2026-11-15",
+        None,
+    )
+    .await
+    .expect("grounded");
+    assert!(g.block.contains("February 11, 1986"), "{}", g.block);
+    assert!(g.sources.iter().any(|s| s.domain == "en.wikipedia.org"));
+
+    // switched off, the same search never asks Wikipedia
+    cfg.wikipedia = false;
+    let g = gather(
+        &cfg,
+        &switchboard,
+        &VllmClient::new(),
+        &registry,
+        "searxng",
+        &answerer(&server),
+        &[],
+        "When did Frank Herbert die?",
+        "2026-11-15",
+        None,
+    )
+    .await
+    .expect("grounded");
+    assert!(!g.block.contains("February 11, 1986"), "{}", g.block);
+}
+
+/// The embeddings prefer the "330 metres" snippet, so it is document 0 of the rerank request; the
+/// reranker (when it answers) prefers document 1, the Eiffel one.
+async fn gather_with_reranker(rerank: ResponseTemplate, model: &str) -> Grounding {
+    let (server, switchboard) = mock_estate(&["BAAI/bge-reranker-v2-m3"]).await;
+    on_chat(
+        &server,
+        "retrieval planner",
+        completion(r#"{"kind":"factual","queries":["height of the tower"]}"#),
+    )
+    .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/embeddings"))
+        .respond_with(json(
+            200,
+            &quench_serde::json!({"data": [
+                {"index": 0, "embedding": [1.0, 0.0]},
+                {"index": 1, "embedding": [0.6, 0.8]},
+                {"index": 2, "embedding": [1.0, 0.1]},
+            ]}),
+        ))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/rerank"))
+        .respond_with(rerank)
+        .mount(&server)
+        .await;
+    let mut cfg = config();
+    cfg.passages = 1;
+    cfg.rerank_model = model.to_string();
+    gather(
+        &cfg,
+        &switchboard,
+        &VllmClient::new(),
+        &registry(&results(&[
+            (
+                "The tower was designed by Gustave Eiffel.",
+                "https://a.example/a",
+            ),
+            ("The tower is 330 metres high.", "https://b.example/b"),
+        ])),
+        "searxng",
+        &answerer(&server),
+        &[],
+        "How high is the tower?",
+        "2026-11-15",
+        None,
+    )
+    .await
+    .expect("grounded")
+}
+
+#[allow(clippy::await_holding_lock)]
+#[quench_test::test]
+async fn gather_lets_the_reranker_overrule_the_embedding_order() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let g = gather_with_reranker(
+        json(
+            200,
+            &quench_serde::json!({"results": [
+                {"index": 0, "relevance_score": 0.2},
+                {"index": 1, "relevance_score": 0.9},
+            ]}),
+        ),
+        "BAAI/bge-reranker-v2-m3",
+    )
+    .await;
+    assert!(g.block.contains("Gustave Eiffel"), "{}", g.block);
+    assert!(!g.block.contains("330 metres"), "{}", g.block);
+}
+
+#[allow(clippy::await_holding_lock)]
+#[quench_test::test]
+async fn gather_keeps_the_embedding_order_when_the_reranker_fails_or_is_off() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let failing = gather_with_reranker(
+        json(500, &quench_serde::json!({})),
+        "BAAI/bge-reranker-v2-m3",
+    )
+    .await;
+    assert!(failing.block.contains("330 metres"), "{}", failing.block);
+    let off = gather_with_reranker(
+        json(
+            200,
+            &quench_serde::json!({"results": [
+                {"index": 0, "relevance_score": 0.2},
+                {"index": 1, "relevance_score": 0.9},
+            ]}),
+        ),
+        "",
+    )
+    .await;
+    assert!(off.block.contains("330 metres"), "{}", off.block);
 }

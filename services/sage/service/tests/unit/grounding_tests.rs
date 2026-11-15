@@ -1081,38 +1081,279 @@ fn reply_lang_trusts_a_clearly_foreign_question_over_a_short_answer() {
 }
 
 #[quench_test::test]
-fn missing_question_names_finds_names_the_sources_never_mention() {
-    let ev = "Nowy Żmigród is a town in Poland. Population 8,447. Wąchock is a village in Świętokrzyskie.";
+fn missing_question_names_judges_only_long_words_of_quoted_names() {
+    let ev = "Zum Goldenen Hirsch is a Gasthof in Oberguenzburg. Nowy Żmigród is a town.";
     assert_eq!(
         missing_question_names(
-            "What is the population of the village of Zlotogrod Nowy in Poland?",
+            "Wie lautet die Telefonnummer vom Gasthof 'Zum Goldenen Quantenhirsch' in Hintertupfingen?",
             ev
         ),
-        vec!["Zlotogrod"]
+        vec!["Quantenhirsch"]
     );
-    // present, with diacritics, case or a Polish ending: not missing
-    assert!(
-        missing_question_names("What is the population of Nowy Zmigrod in Poland?", ev).is_empty()
+    assert_eq!(
+        missing_question_names(
+            "Jaki jest numer telefonu restauracji „Pod Fioletowym Krasnalem” w Ustrzykach?",
+            ev
+        ),
+        vec!["Fioletowym", "Krasnalem"]
     );
-    assert!(missing_question_names("Ile mieszkańców ma Wąchocku w Polsce?", ev).is_empty());
-    // an inflected form (Polish locative), and a translated generic noun inside a name
+    assert!(missing_question_names("Wo ist der Gasthof 'Zum Goldenen Hirsch'?", ev).is_empty());
+    assert!(missing_question_names("Ile mieszkańców ma 'Nowy Żmigród'?", ev).is_empty());
     assert!(
         missing_question_names(
-            "Jaka jest wysokość wieży w Dolnej Rzece?",
-            "Dolna Rzeka: wieża ciśnień, 31 m."
+            "Kto wygrał Mistrzostwa Świata w 2034 roku? Nagrodę Nobla?",
+            ev
         )
         .is_empty()
     );
-    let got = missing_question_names(
-        "Wann wurde die Zelmar-Brücke eröffnet?",
-        "The Zelmar Bridge opened in 1987.",
+    assert!(
+        missing_question_names("What is the population of Zlotogrod Nowy in Poland?", ev)
+            .is_empty()
     );
-    assert!(got.is_empty(), "{got:?}");
-    // the first word, short words, lower case and numbers are not names
-    assert!(missing_question_names("Population of the village, 2025?", ev).is_empty());
-    assert!(missing_question_names("Zlotogrod is where?", ev).is_empty());
     assert_eq!(
         missing_names_line("pl", &["Zlotogrod".to_string()]),
         "Tych nazw z pytania nie ma w źródłach: Zlotogrod. Odpowiedź może dotyczyć czegoś innego."
     );
+}
+
+#[quench_test::test]
+fn split_sentences_does_not_break_after_abbreviations() {
+    let a = "Es gibt Gasthöfe, z. B. in Bühlerzell oder Heubach. Keiner passt. Siehe np. Kraków i tzw. stare miasto.";
+    let out = split_sentences(a);
+    assert_eq!(out.len(), 3, "{out:?}");
+    assert_eq!(
+        out[0],
+        "Es gibt Gasthöfe, z. B. in Bühlerzell oder Heubach."
+    );
+    assert_eq!(
+        split_sentences("One. Two! Three?"),
+        vec!["One.", "Two!", "Three?"]
+    );
+}
+
+#[quench_test::test]
+fn strip_consolation_sentences_drops_the_list_an_intro_introduced() {
+    let es = "No puedo encontrar información sobre un restaurante llamado \"El Dragón\".\nLos resultados muestran dos negocios separados en Albacete:\n*   **Asador El Dorado** en Castilla-La Mancha\n*   **El Dragón Dorado**, una tienda\nSi quiere, revise el nombre.";
+    assert_eq!(
+        strip_consolation_sentences(es),
+        "No puedo encontrar información sobre un restaurante llamado \"El Dragón\".\nSi quiere, revise el nombre."
+    );
+    let de = "Ich habe gesucht, aber ich konnte keine solche Einrichtung finden.\nDie Suchergebnisse zeigen nur einen Gasthof namens X (z. B. in Heubach), aber keinen mit Y.";
+    assert_eq!(
+        strip_consolation_sentences(de),
+        "Ich habe gesucht, aber ich konnte keine solche Einrichtung finden."
+    );
+}
+
+#[quench_test::test]
+fn lexical_support_measures_how_much_of_a_claim_the_sources_contain() {
+    let ev = "[1] a.example\nThe capital of Japan is Tokyo. Neil Armstrong walked on the Moon on 20 July 1969.";
+    assert!(lexical_support("The capital of Japan is Tokyo", ev) >= 0.9);
+    assert!(lexical_support("Neil Armstrong walked on the Moon in 1969", ev) >= 0.9);
+    // invented parts lower it
+    assert!(lexical_support("Frank Herbert was born in 1960 in Tacoma", ev) < 0.5);
+    // too little to judge
+    assert_eq!(lexical_support("It is Tokyo", ev), 0.0);
+}
+
+#[quench_test::test]
+fn drop_lexically_supported_removes_baseless_flags_and_keeps_real_ones() {
+    let ev = "The capital of Japan is Tokyo. Brightwell Technologies Inc. is a company in Ohio.";
+    let json = r#"{"notice":"n","unsupported":[
+      {"claim":"The capital of Japan is Tokyo","severity":"core","reason":"supports this claim"},
+      {"claim":"Brightwell Technologies Inc. has the ticker BRTW","severity":"core","reason":"not in sources"},
+      {"claim":"The capital of Japan is Tokyo","severity":"contradicted","reason":"a source says Kyoto"}]}"#;
+    let kept = drop_lexically_supported(json, ev);
+    let claims = flagged_claims(&kept);
+    assert_eq!(claims.len(), 2, "{kept}");
+    assert!(claims.iter().any(|c| c.contains("BRTW")));
+    assert!(
+        format_verdict(&kept)
+            .unwrap()
+            .contains("a source says Kyoto")
+    );
+    // all baseless: no warning at all
+    let only = r#"{"notice":"n","unsupported":[{"claim":"The capital of Japan is Tokyo","severity":"core","reason":"r"}]}"#;
+    assert!(format_verdict(&drop_lexically_supported(only, ev)).is_none());
+    // unusable json passes through untouched
+    assert_eq!(drop_lexically_supported("not json", ev), "not json");
+}
+
+#[quench_test::test]
+fn wikipedia_queries_add_the_entity_a_query_is_about() {
+    let q = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        wikipedia_queries(&q(&["Frank Herbert death date", "Frank Herbert died when"])),
+        q(&[
+            "Frank Herbert death date",
+            "Frank Herbert",
+            "Frank Herbert died when"
+        ])
+    );
+    assert_eq!(
+        wikipedia_queries(&q(&["US president when Berlin Wall fell 1989"])),
+        q(&["US president when Berlin Wall fell 1989", "Berlin Wall"])
+    );
+    assert_eq!(
+        wikipedia_queries(&q(&["Rysy wysokość nad poziomem morza"])),
+        q(&["Rysy wysokość nad poziomem morza", "Rysy"])
+    );
+    // nothing to extract from a lowercase query, and a lone short capital is not an entity
+    assert_eq!(
+        wikipedia_queries(&q(&["capital of australia"])),
+        q(&["capital of australia"])
+    );
+    assert_eq!(
+        wikipedia_queries(&q(&["US inflation"])),
+        q(&["US inflation"])
+    );
+    // a query that is only the entity is not repeated, and only the first two queries count
+    assert_eq!(
+        wikipedia_queries(&q(&["Wrocław", "Wrocław population", "Kraków"])),
+        q(&["Wrocław", "Wrocław population"])
+    );
+}
+
+#[quench_test::test]
+fn strip_consolation_sentences_recognizes_a_spanish_first_person_refusal() {
+    let es = "No he encontrado información sobre ese restaurante.\nLos resultados muestran dos negocios en esa ciudad:\n*   **La Dorada** tiene el teléfono 967 00 00 00\nPuede revisar el nombre.";
+    assert_eq!(
+        strip_consolation_sentences(es),
+        "No he encontrado información sobre ese restaurante.\nPuede revisar el nombre."
+    );
+}
+
+#[quench_test::test]
+fn strip_future_outcomes_removes_results_reported_for_a_year_that_has_not_come() {
+    let today = "2026-11-15";
+    assert_eq!(
+        strip_future_outcomes(
+            "Alexander Rybak won the 2030 Eurovision Song Contest with the song \"Like a Flower\" [3].",
+            today,
+            "Who won the 2030 Eurovision Song Contest?"
+        ),
+        not_happened_yet("en")
+    );
+    assert_eq!(
+        strip_future_outcomes(
+            "Mistrzostwa w 2034 roku wygrała Hiszpania [1].",
+            today,
+            "Kto wygrał Mistrzostwa Świata w 2034 roku?"
+        ),
+        not_happened_yet("pl")
+    );
+    // the rest of the answer stays
+    assert_eq!(
+        strip_future_outcomes(
+            "The 2031 World Cup will be held in Mexico [1]. Its winner was Brazil in 2031.",
+            today,
+            "Who won?"
+        ),
+        "The 2031 World Cup will be held in Mexico [1]."
+    );
+    // past years, schedules and plans are untouched
+    for ok in [
+        "Spain won the 2010 World Cup [1].",
+        "The 2030 World Cup will take place in Spain, Portugal and Morocco [2].",
+        "The tournament is scheduled for 2034.",
+    ] {
+        assert_eq!(strip_future_outcomes(ok, today, "q"), ok);
+    }
+}
+
+#[quench_test::test]
+fn strip_instruction_talk_catches_the_instruction_also_says() {
+    let a = "The sources do not give the port. However, since the instruction also says to use only the sources, I will stop here. The default is in the docs.";
+    assert_eq!(
+        strip_instruction_talk(a),
+        "The sources do not give the port. The default is in the docs."
+    );
+}
+
+#[quench_test::test]
+fn strip_future_outcomes_catches_the_winner_was_form_and_what_follows_it() {
+    let today = "2026-11-15";
+    let a = "The winner of the 2030 Eurovision Song Contest was **Alexander Rybak** from Norway. He won with the song \"Like a Flower\".";
+    assert_eq!(
+        strip_future_outcomes(a, today, "Who won the 2030 Eurovision Song Contest?"),
+        not_happened_yet("en")
+    );
+    let b = "Der Sieger der WM 2034 war Spanien. Es war ein knappes Finale.";
+    assert_eq!(
+        strip_future_outcomes(b, today, "Wer hat die WM 2034 gewonnen?"),
+        not_happened_yet("de")
+    );
+    // what comes before the impossible result stays
+    let c = "The 2031 final is scheduled for July [1]. Its winner was Brazil in 2031. They lifted the cup.";
+    assert_eq!(
+        strip_future_outcomes(c, today, "Who won?"),
+        "The 2031 final is scheduled for July [1]."
+    );
+}
+
+#[quench_test::test]
+fn ensure_forecast_caveat_opens_an_answer_to_a_question_about_the_future() {
+    let today = "2026-11-15";
+    assert!(asks_about_the_future(
+        "What will the price of Bitcoin be one month from now?",
+        today
+    ));
+    assert!(asks_about_the_future(
+        "What will the S&P 500 close at next Friday?",
+        today
+    ));
+    assert!(asks_about_the_future(
+        "Kto wygra mistrzostwa w 2034 roku?",
+        today
+    ));
+    assert!(asks_about_the_future(
+        "Jaka będzie cena złota za miesiąc?",
+        today
+    ));
+    assert!(!asks_about_the_future("How will I install Rust?", today));
+    assert!(!asks_about_the_future("Who won the 2010 World Cup?", today));
+
+    let a = "Analysts expect $93,000 by December [1].";
+    let q = "What will the price of Bitcoin be one month from now?";
+    let out = ensure_forecast_caveat(a, q, today);
+    assert!(out.starts_with(forecast_caveat("en")), "{out}");
+    assert!(out.ends_with(a));
+    // already says so, or refuses, or is not about the future: untouched
+    for ok in [
+        "Nobody can know this; analysts expect $93,000 [1].",
+        "I could not find a forecast.",
+        "It cannot be predicted [1].",
+    ] {
+        assert_eq!(ensure_forecast_caveat(ok, q, today), ok);
+    }
+    assert_eq!(
+        ensure_forecast_caveat(a, "What is the price of Bitcoin?", today),
+        a
+    );
+}
+
+#[quench_test::test]
+fn strip_consolation_sentences_drops_there_is_a_similar_one() {
+    let de = "Ich habe nach dem Gasthof gesucht, aber ich konnte keine Informationen finden.\nEs gibt einen bekannten Gasthof namens „Zum Goldenen Hirsch“ in der Nähe.\nVielleicht ist der Name falsch.";
+    assert_eq!(
+        strip_consolation_sentences(de),
+        "Ich habe nach dem Gasthof gesucht, aber ich konnte keine Informationen finden.\nVielleicht ist der Name falsch."
+    );
+}
+
+#[quench_test::test]
+fn strip_misspelling_excuse_replaces_an_answer_that_explains_the_asked_name_away() {
+    let ev = "The Treaty of Versailles was signed on 28 June 1919 in the Hall of Mirrors.";
+    let q = "When was the Treaty of Vellmar signed, and by whom?";
+    let a = "The Treaty of Versailles (often misspelled as \"Vellmar\") was signed on June 28, 1919 [1]. It was signed by Germany and the Allied Powers [1].";
+    assert_eq!(strip_misspelling_excuse(a, q, ev), no_verified_answer("en"));
+    // a name the sources do contain, an alternative name rather than a misspelling, or no excuse: untouched
+    assert_eq!(
+        strip_misspelling_excuse(a, "When was the Treaty of Versailles signed?", ev),
+        a
+    );
+    let aka = "The Treaty of Versailles (also known as the Vellmar accord) was signed in 1919 [1].";
+    assert_eq!(strip_misspelling_excuse(aka, q, ev), aka);
+    let plain = "The Treaty of Versailles was signed in 1919 [1].";
+    assert_eq!(strip_misspelling_excuse(plain, q, ev), plain);
 }

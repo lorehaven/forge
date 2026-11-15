@@ -41,7 +41,7 @@ fn db_schema() -> String {
     quench_core::env::get_or("DB_SCHEMA", "sage")
 }
 
-async fn find_running_instance(
+pub async fn find_running_instance(
     switchboard: &SwitchboardClient,
     model: &str,
 ) -> Result<VllmInstance, String> {
@@ -52,7 +52,7 @@ async fn find_running_instance(
     instances
         .into_iter()
         .find(|i| i.model == model && i.status == "running")
-        .ok_or_else(|| format!("no running instance of embedding model '{model}'"))
+        .ok_or_else(|| format!("no running instance of model '{model}'"))
 }
 
 /// Embed arbitrary texts with the configured embedding model; errors if embedding is disabled or no model instance is running.
