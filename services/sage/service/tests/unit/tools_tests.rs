@@ -84,3 +84,12 @@ fn is_public_url_refuses_private_and_internal_targets() {
         assert!(!is_public_url(bad), "{bad}");
     }
 }
+
+#[quench_test::test]
+fn calculator_results_carry_no_float_noise() {
+    use sage_service::tools::calculator::format_number;
+    assert_eq!(format_number(100.0 * 0.621_371), "62.1371");
+    assert_eq!(format_number(391.0), "391");
+    assert_eq!(format_number(0.1 + 0.2), "0.3");
+    assert_eq!(format_number(-2.5), "-2.5");
+}

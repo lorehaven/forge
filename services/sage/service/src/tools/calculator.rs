@@ -50,11 +50,7 @@ impl ToolExecutor for CalculatorExecutor {
         match eval_expression(&expression) {
             Ok(result) => {
                 // Format the result with proper formatting
-                let formatted_result = if result.fract() == 0.0 {
-                    format!("{result:.0}")
-                } else {
-                    format!("{result}")
-                };
+                let formatted_result = format_number(result);
 
                 let content = format!(
                     "**Calculation Result**\n\n\
@@ -75,6 +71,21 @@ impl ToolExecutor for CalculatorExecutor {
                 is_error: true,
             },
         }
+    }
+}
+
+/// A result without float noise: 100 * 0.621371 is 62.1371, not 62.137100000000004.
+#[must_use]
+pub fn format_number(value: f64) -> String {
+    if value.fract() == 0.0 {
+        return format!("{value:.0}");
+    }
+    let rounded = format!("{value:.10}");
+    let trimmed = rounded.trim_end_matches('0').trim_end_matches('.');
+    if trimmed.is_empty() || trimmed == "-" || trimmed == "-0" {
+        "0".to_string()
+    } else {
+        trimmed.to_string()
     }
 }
 

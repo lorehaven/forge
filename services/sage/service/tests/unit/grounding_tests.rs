@@ -1426,3 +1426,29 @@ fn reattach_citations_restores_the_markers_a_rewrite_dropped() {
     // markers beyond the source count are not brought back
     assert_eq!(reattach_citations("Tokio [9].", "Tokyo.", 3), "Tokyo.");
 }
+
+#[quench_test::test]
+fn drop_dangling_opening_removes_a_leading_conjunction() {
+    assert_eq!(
+        drop_dangling_opening("However, the winner has not been determined."),
+        "The winner has not been determined."
+    );
+    assert_eq!(
+        drop_dangling_opening("Jednak nie ma wyniku."),
+        "Nie ma wyniku."
+    );
+    assert_eq!(
+        drop_dangling_opening("Tokyo is the capital."),
+        "Tokyo is the capital."
+    );
+}
+
+#[quench_test::test]
+fn consolation_drops_an_offer_of_another_entity_and_its_list() {
+    let answer = "Ich habe nach dem Gasthof „Zum Goldenen Quantenhirsch“ gesucht, aber ich konnte keine solche Einrichtung finden.\nFalls Sie den Gasthof in Heubach meinen, sind die Kontaktdaten wie folgt:\n- Telefon: +49 7173 12345 [1]\n- Website: https://example.org [1]";
+    let out = strip_consolation_sentences(answer);
+    assert!(out.contains("konnte keine solche"), "{out}");
+    assert!(!out.contains("7173") && !out.contains("Heubach"), "{out}");
+    let en = "I could not find a hotel called Zorp.\nIf you meant the Grand Hotel, here are its details:\n* Phone 555 0100 [1]";
+    assert!(!strip_consolation_sentences(en).contains("555"));
+}

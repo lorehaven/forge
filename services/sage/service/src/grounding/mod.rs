@@ -2497,6 +2497,13 @@ pub fn strip_consolation_sentences(answer: &str) -> String {
         r"|^les résultats (?:de recherche )?(?:montrent|indiquent|mentionnent)\s",
         r"|^(?:the )?(?:search )?results (?:show|list|mention|indicate|only)\b",
         r"|^(?:they|these) (?:only )?(?:discuss|mention|describe|list|cover)\s",
+        // "If you meant X, here are its details": a redirect to another entity
+        r"|^(?:if|in case) you (?:meant|mean|were looking for|are looking for|are thinking of)\b",
+        r"|^(?:perhaps|maybe) you (?:meant|mean|are thinking of)\b",
+        r"|^(?:falls|wenn|sollten) sie\b[^.:]{0,120}\b(?:meinen|gemeint|suchen)\b",
+        r"|^(?:jeśli|jeżeli) (?:chodzi|miał\w*|szuka\w*)\b",
+        r"|^si (?:se refiere|quiso decir|busca|está buscando)\b",
+        r"|^si vous (?:voulez dire|cherchez|pensez)\b",
     ))
     .expect("valid regex");
     let bullet = quench_regex::Regex::new(r"^\s*(?:[*\-\u{2022}]|\d+[.)])\s").expect("valid regex");
@@ -2743,6 +2750,33 @@ pub fn strip_future_claims(answer: &str, question: &str, today: &str) -> String 
         cleaned.trim_end().to_string()
     };
     format!("{text}{tail}")
+}
+
+/// Removes a conjunction that opens an answer after the sentences it answered were dropped:
+/// "However, the winner has not been determined." becomes "The winner has not been determined."
+#[must_use]
+pub fn drop_dangling_opening(answer: &str) -> String {
+    const OPENERS: &[&str] = &[
+        "However, ",
+        "But ",
+        "Nevertheless, ",
+        "Jednak ",
+        "Natomiast ",
+        "Allerdings ",
+        "Jedoch ",
+        "Sin embargo, ",
+        "Cependant, ",
+    ];
+    let trimmed = answer.trim_start();
+    for opener in OPENERS {
+        if let Some(rest) = trimmed.strip_prefix(opener) {
+            let mut chars = rest.chars();
+            if let Some(first) = chars.next() {
+                return format!("{}{}", first.to_uppercase(), chars.as_str());
+            }
+        }
+    }
+    answer.to_string()
 }
 
 /// The first words of every [`forecast_caveat`], to tell an answer that only holds the caveat.
@@ -3037,7 +3071,12 @@ pub async fn finalize_answer(
     {
         text = strip_ungrounded_sentences(&text, evidence, question, today);
     }
+    text = drop_dangling_opening(&text);
+    // "That has not happened yet" is true whatever a source says about another year; a verifier
+    // that reads a 2026 winner into a 2030 question would only contradict a correct answer.
+    let future_refusal = asks_about_the_future(question, today) && admits_not_finding(&text);
     if cfg.verify
+        && !future_refusal
         && !evidence.is_empty()
         && !text.trim().is_empty()
         && let Some((note, flagged)) = verify_with_claims(
