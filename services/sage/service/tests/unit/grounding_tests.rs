@@ -1357,3 +1357,72 @@ fn strip_misspelling_excuse_replaces_an_answer_that_explains_the_asked_name_away
     let plain = "The Treaty of Versailles was signed in 1919 [1].";
     assert_eq!(strip_misspelling_excuse(plain, q, ev), plain);
 }
+
+#[quench_test::test]
+fn future_claims_drop_a_result_that_names_no_year() {
+    let caveat = forecast_caveat("en");
+    let answer = format!(
+        "{caveat}\n\nThey won with the song **\"Heartbeat\"** [1]. The contest took place in Oslo [1]. The host city has not been announced [2]."
+    );
+    let out = strip_future_claims(
+        &answer,
+        "Who won the 2030 Eurovision Song Contest?",
+        "2026-11-15",
+    );
+    assert!(out.starts_with(caveat), "{out}");
+    assert!(!out.contains("Heartbeat") && !out.contains("Oslo"), "{out}");
+    assert!(out.contains("has not been announced"), "{out}");
+}
+
+#[quench_test::test]
+fn future_claims_drop_predicted_figures_and_their_empty_headings() {
+    let caveat = forecast_caveat("en");
+    let answer = format!(
+        "{caveat}\n\nForecasts vary between sources.\n*   Analysts disagree about the trend [3].\n*   **Base case:** about $93,000 [2].\nOther scenarios:\n*   A 35.5% chance of $70,000 [1]."
+    );
+    let out = strip_future_claims(
+        &answer,
+        "What will the price of Bitcoin be one month from now?",
+        "2026-11-15",
+    );
+    assert!(!out.contains('$') && !out.contains('%'), "{out}");
+    assert!(!out.contains("Other scenarios"), "{out}");
+    assert!(
+        out.contains("Forecasts vary") && out.contains("Analysts disagree"),
+        "{out}"
+    );
+}
+
+#[quench_test::test]
+fn future_claims_leave_only_not_happened_yet_when_nothing_else_stays() {
+    let answer = format!("{}\n\nZwyciężyła Brazylia [1].", forecast_caveat("pl"));
+    let out = strip_future_claims(
+        &answer,
+        "Kto wygrał Mistrzostwa Świata w 2034 roku?",
+        "2026-11-15",
+    );
+    assert_eq!(out, not_happened_yet("pl"));
+}
+
+#[quench_test::test]
+fn future_claims_do_not_touch_questions_about_the_past() {
+    let answer = "France won the 2018 World Cup with 4 goals in the final [1].";
+    assert_eq!(
+        strip_future_claims(answer, "Who won the 2018 World Cup?", "2026-11-15"),
+        answer
+    );
+}
+
+#[quench_test::test]
+fn reattach_citations_restores_the_markers_a_rewrite_dropped() {
+    assert_eq!(
+        reattach_citations(
+            "Stolicą Japonii jest Tokio [1][3][4][1].",
+            "The capital of Japan is Tokyo.",
+            4
+        ),
+        "The capital of Japan is Tokyo. [1][3][4]"
+    );
+    // markers beyond the source count are not brought back
+    assert_eq!(reattach_citations("Tokio [9].", "Tokyo.", 3), "Tokyo.");
+}

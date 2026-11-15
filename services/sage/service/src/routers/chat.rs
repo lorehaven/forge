@@ -164,25 +164,84 @@ fn build_messages(
     messages
 }
 
-/// The answer streamed as it is generated, one `data:` event per piece.
-fn plain_reply(
-    stream: std::pin::Pin<
+/// Replaces the tool calls a model wrote into its answer.
+///
+/// This endpoint runs no tools, but a calculator is safe and cheap, so `<toolcall>{"name":"calculator",...}</toolcall>` becomes
+/// "`100 * 0.621371` = **62.1371**"; any other call is removed rather than shown as raw text.
+pub async fn resolve_tool_calls(answer: &str) -> String {
+    use crate::tools::ToolExecutor;
+    use std::fmt::Write as _;
+    let re = quench_regex::Regex::new(r"(?s)<(?:tool_call|toolcall)>.*?</(?:tool_call|toolcall)>")
+        .expect("valid regex");
+    let mut out = String::new();
+    let mut last = 0;
+    for m in re.find_iter(answer) {
+        out.push_str(&answer[last..m.start()]);
+        last = m.end();
+        let calls = crate::tools::parser::parse_tool_calls(&answer[m.start()..m.end()]);
+        let Some(call) = calls.first().filter(|c| c.name == "calculator") else {
+            continue;
+        };
+        let result = crate::tools::calculator::CalculatorExecutor
+            .execute(call)
+            .await;
+        let expression = call
+            .arguments
+            .get("expression")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        if !result.is_error
+            && let Some(value) = result
+                .content
+                .split("Result: **")
+                .nth(1)
+                .and_then(|r| r.split("**").next())
+        {
+            let _ = write!(out, "`{expression}` = **{value}**");
+        }
+    }
+    out.push_str(&answer[last..]);
+    out.trim().to_string()
+}
+
+/// The answer in one piece. A model that was told not to search may still write a tool call; the
+/// answer is collected so that the call can be resolved (see [`resolve_tool_calls`]) before it is
+/// sent. Everything else about the stream is unchanged: one `content` event, then the end.
+async fn plain_reply(
+    mut stream: std::pin::Pin<
         Box<dyn quench_core::stream::Stream<Item = quench_core::Result<String>> + Send + Sync>,
     >,
 ) -> Response {
-    let sse_stream = stream.map(|res| match res {
-        Ok(content) => {
-            let data = quench_serde::json!({ "content": content });
-            Ok::<_, std::io::Error>(Bytes::from(format!("data: {data}\n\n")))
+    let mut answer = String::new();
+    while let Some(res) = stream.next().await {
+        match res {
+            Ok(chunk) => answer.push_str(&chunk),
+            Err(err) => {
+                // Localization code plus the raw detail for diagnostics.
+                let data = quench_serde::json!({ "error": "api_error_stream_failed", "detail": err.to_string() });
+                return Response::streaming(
+                    StatusCode::OK,
+                    quench_core::stream::iter(vec![Ok::<_, std::io::Error>(Bytes::from(format!(
+                        "data: {data}\n\n"
+                    )))]),
+                )
+                .header("content-type", "text/event-stream");
+            }
         }
-        Err(err) => {
-            // Localization code plus the raw detail for diagnostics.
-            let data = quench_serde::json!({ "error": "api_error_stream_failed", "detail": err.to_string() });
-            Ok::<_, std::io::Error>(Bytes::from(format!("data: {data}\n\n")))
-        }
-    });
-
-    Response::streaming(StatusCode::OK, sse_stream).header("content-type", "text/event-stream")
+    }
+    let answer = if answer.contains("<toolcall>") || answer.contains("<tool_call>") {
+        resolve_tool_calls(&answer).await
+    } else {
+        answer
+    };
+    let data = quench_serde::json!({ "content": answer });
+    Response::streaming(
+        StatusCode::OK,
+        quench_core::stream::iter(vec![Ok::<_, std::io::Error>(Bytes::from(format!(
+            "data: {data}\n\n"
+        )))]),
+    )
+    .header("content-type", "text/event-stream")
 }
 
 #[post("/api/v1/chat")]
@@ -284,7 +343,7 @@ pub async fn chat(
         return grounded_reply(&context, &g, stream, retrieve_s).await;
     }
 
-    plain_reply(stream)
+    plain_reply(stream).await
 }
 
 #[get("/api/v1/chat/capabilities")]

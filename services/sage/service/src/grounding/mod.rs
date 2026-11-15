@@ -2128,13 +2128,48 @@ async fn repair_language(
         .as_str()?
         .trim()
         .to_string();
-    let keeps_citations =
-        !has_valid_citation(answer, source_count) || has_valid_citation(&fixed, source_count);
-    let usable = !fixed.is_empty() && detect_lang(&fixed) == lang && keeps_citations;
+    // A rewrite that drops the markers is still the right language: the original's markers go
+    // back on, rather than keeping an answer in the wrong language.
+    let fixed = if !fixed.is_empty()
+        && has_valid_citation(answer, source_count)
+        && !has_valid_citation(&fixed, source_count)
+    {
+        reattach_citations(answer, &fixed, source_count)
+    } else {
+        fixed
+    };
+    let found = detect_lang(&fixed);
+    let usable = !fixed.is_empty() && found == lang;
     if !usable {
-        quench_log::info!("[GROUNDING] language repair was not usable; keeping the original");
+        quench_log::info!(
+            "[GROUNDING] language repair was not usable (wanted {lang}, rewrite looks {found}, {} chars); keeping the original",
+            fixed.chars().count()
+        );
     }
     usable.then_some(fixed)
+}
+
+/// `fixed` with the source markers of `original` ("[1][3]") added at its end, in first-seen order.
+#[must_use]
+pub fn reattach_citations(original: &str, fixed: &str, source_count: usize) -> String {
+    let re = quench_regex::Regex::new(r"\[(\d{1,3})\]").expect("valid regex");
+    let mut seen: Vec<usize> = Vec::new();
+    for c in re.captures_iter(original) {
+        if let Ok(n) = c[1].parse::<usize>()
+            && (1..=source_count).contains(&n)
+            && !seen.contains(&n)
+        {
+            seen.push(n);
+        }
+    }
+    if seen.is_empty() {
+        return fixed.to_string();
+    }
+    let markers = seen.iter().fold(String::new(), |mut acc, n| {
+        let _ = write!(acc, "[{n}]");
+        acc
+    });
+    format!("{} {markers}", fixed.trim_end())
 }
 
 /// Four-digit years (1000-2099) in `text`, as they are written.
@@ -2508,6 +2543,17 @@ pub fn not_happened_yet(lang: &str) -> &'static str {
     }
 }
 
+/// Verbs that report a result: won, was held, died, gewann, wygrał...
+fn outcome_regex() -> quench_regex::Regex {
+    quench_regex::Regex::new(concat!(
+        r"(?i)\b(?:won|wins|winner\b[^.]{0,60}\bwas|champion|defeated|beat|was elected|elected|died|was awarded|took place|was held|scored",
+        r"|wygra\w+|zwyci\w+|odby\w+|zmar\w+|wybran\w+",
+        r"|gewann\w*|sieger\b[^.]{0,60}\bwar|gewinner\b[^.]{0,60}\bwar|besiegte\w*|fand statt|ganó|ganador\b[^.]{0,60}\bfue|venció|murió|se celebró",
+        r"|a gagné|vainqueur\b[^.]{0,60}\best|remporté\w*|est mort|a eu lieu)\b",
+    ))
+    .expect("valid regex")
+}
+
 /// Removes the sentences that report an outcome in the past tense for a year after today's.
 ///
 /// "Alexander Rybak won the 2030 Eurovision Song Contest" cannot be true, whatever source the
@@ -2517,13 +2563,7 @@ pub fn strip_future_outcomes(answer: &str, today: &str, question: &str) -> Strin
     let Some(this_year) = years_in(today).first().and_then(|y| y.parse::<u32>().ok()) else {
         return answer.to_string();
     };
-    let outcome = quench_regex::Regex::new(concat!(
-        r"(?i)\b(?:won|wins|winner\b[^.]{0,60}\bwas|champion|defeated|beat|was elected|elected|died|was awarded|took place|was held|scored",
-        r"|wygra\w+|zwyci\w+|odby\w+|zmar\w+|wybran\w+",
-        r"|gewann\w*|sieger\b[^.]{0,60}\bwar|gewinner\b[^.]{0,60}\bwar|besiegte\w*|fand statt|ganó|ganador\b[^.]{0,60}\bfue|venció|murió|se celebró",
-        r"|a gagné|vainqueur\b[^.]{0,60}\best|remporté\w*|est mort|a eu lieu)\b",
-    ))
-    .expect("valid regex");
+    let outcome = outcome_regex();
     let (body, tail) = answer.split_at(answer.find("\n\n\u{26a0}").unwrap_or(answer.len()));
     let future = |unit: &str| {
         years_in(unit)
@@ -2642,6 +2682,77 @@ pub fn ensure_forecast_caveat(answer: &str, question: &str, today: &str) -> Stri
         forecast_caveat(reply_lang(question, answer))
     )
 }
+
+/// Removes the invented answer from a reply to a question about the future.
+///
+/// What the sources only seem to answer with goes: sentences
+/// that report a result ("They won with the song X") even when no year stands in them, and
+/// sentences or bullets that quote a predicted amount, percentage or score. The caveat stays; what
+/// is left are the plans and the facts that are known (the host, the date still to come). When
+/// nothing is left the answer is "That has not happened yet".
+#[must_use]
+pub fn strip_future_claims(answer: &str, question: &str, today: &str) -> String {
+    if !asks_about_the_future(question, today) {
+        return answer.to_string();
+    }
+    let (body, tail) = answer.split_at(answer.find("\n\n\u{26a0}").unwrap_or(answer.len()));
+    let outcome = outcome_regex();
+    let figure = quench_regex::Regex::new(concat!(
+        r"(?i)(?:[$€£]\s?\d|\d\s?(?:%|percent\b|procent\w*|prozent\b|por ciento|pour cent)",
+        r"|\d[\d.,\s]*\s(?:points?|punkt\w*|pts|usd|eur|pln|dollars?|euros?|złot\w*|zł))",
+    ))
+    .expect("valid regex");
+    let bad = |u: &str| outcome.is_match(u) || figure.is_match(u);
+    if !split_sentences(body).iter().any(|u| bad(u)) {
+        return answer.to_string();
+    }
+    let mut lines: Vec<String> = Vec::new();
+    // a heading ("Other scenarios:") is only kept when something under it is
+    let mut heading: Option<String> = None;
+    let mut kept_any = false;
+    for line in body.lines() {
+        let units = split_sentences(line);
+        let kept: Vec<&str> = units.iter().copied().filter(|u| !bad(u)).collect();
+        if line.trim_end().ends_with(':') && kept.len() == units.len() {
+            heading = Some(line.to_string());
+            continue;
+        }
+        if kept.is_empty() && !units.is_empty() {
+            continue;
+        }
+        if kept.len() == units.len() {
+            if let Some(h) = heading.take() {
+                lines.push(h);
+            }
+            lines.push(line.to_string());
+        } else {
+            lines.push(kept.join(" "));
+        }
+        if !line.trim().is_empty() {
+            kept_any = true;
+        }
+    }
+    let cleaned = lines.join("\n");
+    // the caveat alone is not an answer: it announces "what follows"
+    let caveat_only = kept_any
+        && lines.iter().filter(|l| !l.trim().is_empty()).count() == 1
+        && PREDICTION_CAVEATS.iter().any(|c| cleaned.contains(c));
+    let text = if cleaned.trim().is_empty() || caveat_only {
+        not_happened_yet(reply_lang(question, body)).to_string()
+    } else {
+        cleaned.trim_end().to_string()
+    };
+    format!("{text}{tail}")
+}
+
+/// The first words of every [`forecast_caveat`], to tell an answer that only holds the caveat.
+const PREDICTION_CAVEATS: &[&str] = &[
+    "This cannot be known yet",
+    "Tego nie da się jeszcze wiedzieć",
+    "Das lässt sich noch nicht wissen",
+    "Eso todavía no se puede saber",
+    "On ne peut pas encore le savoir",
+];
 
 /// Replaces an answer that explains the asked name away as a misspelling of something else.
 ///
@@ -2919,6 +3030,7 @@ pub async fn finalize_answer(
     text = strip_misspelling_excuse(&text, question, evidence);
     text = strip_future_outcomes(&text, today, question);
     text = ensure_forecast_caveat(&text, question, today);
+    text = strip_future_claims(&text, question, today);
     // An answer that admits it found nothing and still states a figure no source gave is
     // contradicting itself: the figure goes.
     if admits_not_finding(&text) && !ungrounded_numbers(&text, evidence, question, today).is_empty()

@@ -534,7 +534,7 @@ Stateless chat and observability.
 
 One-shot chat completion against an instance (JSON API). Operation id `chat`.
 
-Stateless: nothing is stored. Used by tools such as the evaluation scripts. Does not check that the instance is chat-capable. `max_tokens` is the instance's `max_model_len` capped at 2048 (none when unknown). Grounded mode is on when SAGE_GROUNDED is true and the configured capability profile enables `web_search`.
+Stateless: nothing is stored. Used by tools such as the evaluation scripts. Does not check that the instance is chat-capable. `max_tokens` is the instance's `max_model_len` capped at 2048 (none when unknown). Grounded mode is on when SAGE_GROUNDED is true and the configured capability profile enables `web_search`. Without grounding the answer is collected and sent as one `content` event: a `calculator` tool call the model wrote into it is evaluated (`` `17 * 23` = **391** ``) and any other tool call is removed, because this endpoint runs no tools.
 
 Authentication: bearer token or session cookie.
 

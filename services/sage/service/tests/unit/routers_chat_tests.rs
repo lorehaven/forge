@@ -211,3 +211,26 @@ fn chat_request_distinguishes_no_evidence_field_from_an_empty_evidence_list() {
     .unwrap();
     assert_eq!(two.evidence.unwrap().len(), 2);
 }
+
+#[quench_test::test]
+async fn a_calculator_call_in_the_answer_is_resolved_and_other_calls_are_dropped() {
+    use sage_service::routers::chat::resolve_tool_calls;
+    let out = resolve_tool_calls(
+        "17 times 23, then:\n\n<toolcall>{\"type\": \"function\", \"function\": {\"name\": \"calculator\", \"arguments\": {\"expression\": \"17 * 23\"}}}</toolcall>",
+    )
+    .await;
+    assert_eq!(out, "17 times 23, then:\n\n`17 * 23` = **391**");
+
+    let out = resolve_tool_calls(
+        "Let me check.\n<tool_call>{\"name\": \"web_search\", \"arguments\": {\"query\": \"x\"}}</tool_call>",
+    )
+    .await;
+    assert_eq!(out, "Let me check.");
+
+    // an expression the calculator cannot evaluate leaves no raw call behind
+    let out = resolve_tool_calls(
+        "<toolcall>{\"name\": \"calculator\", \"arguments\": {\"expression\": \"hello\"}}</toolcall>",
+    )
+    .await;
+    assert!(!out.contains("toolcall"), "{out}");
+}
