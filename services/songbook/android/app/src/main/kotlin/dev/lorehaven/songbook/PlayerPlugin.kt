@@ -322,7 +322,8 @@ class PlayerPlugin(private val activity: Activity) : Plugin("player") {
         work.execute {
             try {
                 val items = brain.call("children", "parent" to "recent").getJSONArray("items")
-                val ids = (0 until items.length()).map { items.getJSONObject(it).getString("id").substringAfterLast(':').toLong() }
+                // The list also holds "play all" entries and artist/album cards; only the songs (`s:place:id`) count.
+                val ids = (0 until items.length()).map { items.getJSONObject(it).getString("id") }.filter { it.startsWith("s:") }.map { it.substringAfterLast(':').toLong() }
                 main.post { emit("event", JSONObject().put("ev", "recent").put("ids", JSONArray(ids))) }
             } catch (e: java.io.IOException) {
                 // Not now: the next song asks again.
