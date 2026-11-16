@@ -50,7 +50,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "conveyor"
-version = "0.7.19"
+version = "0.7.20"
 dependencies = [
  "conveyor-core",
  "conveyor-pipeline",
@@ -84,7 +84,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-cli"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "conveyor-pipeline",
  "forge-tui",
@@ -321,7 +321,7 @@ dependencies = [
 
 [[package]]
 name = "forge-toolbox"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "forge-tui",
  "quench-args",
@@ -502,7 +502,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse"
-version = "0.4.20"
+version = "0.4.21"
 dependencies = [
  "forge-web",
  "gatehouse-core",
@@ -1790,7 +1790,7 @@ dependencies = [
 
 [[package]]
 name = "songbook"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "forge-web",
  "quench-auth",
