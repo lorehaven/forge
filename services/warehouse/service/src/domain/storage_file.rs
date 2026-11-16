@@ -67,10 +67,6 @@ pub async fn put_file(
 
     if adding_reference {
         add_blob_reference(&mut tx, &schema, sha256, size, staging, blob_path).await?;
-
-        if let Some(old_sha256) = &old_sha256 {
-            release_blob(&mut tx, &schema, old_sha256, None).await?;
-        }
     } else {
         // Unchanged re-upload: already accounted for, streamed bytes are redundant.
         let _ = tokio::fs::remove_file(staging).await;
@@ -90,6 +86,13 @@ pub async fn put_file(
         ],
     )
     .await?;
+
+    // The old content is let go only now that the row points at the new one: `storage_files.sha256` references `blobs`, so
+    // dropping the old blob row (its last reference) before the row was repointed broke on RESTRICT, and a file could not be
+    // replaced by different bytes.
+    if adding_reference && let Some(old_sha256) = &old_sha256 {
+        release_blob(&mut tx, &schema, old_sha256, None).await?;
+    }
 
     let quota_sql =
         format!("UPDATE {schema}.storages SET used_bytes = used_bytes + $2 WHERE name = $1");
