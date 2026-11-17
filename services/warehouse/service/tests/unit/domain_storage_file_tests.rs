@@ -2,7 +2,7 @@
 //! into the half-open range `[prefix, prefix++)` the `C`-collation listing
 //! index resolves as a bound.
 
-use warehouse_service::domain::storage_file::prefix_upper_bound;
+use warehouse_service::domain::storage_file::{prefix_upper_bound, sibling_blob};
 
 #[quench_test::test]
 fn bumps_the_last_byte_of_an_ascii_prefix() {
@@ -69,4 +69,17 @@ fn the_bound_brackets_exactly_the_paths_that_start_with_the_prefix() {
             "{outside:?} should fall outside [{prefix:?}, {upper:?})"
         );
     }
+}
+
+#[quench_test::test]
+fn a_replaced_blob_is_found_next_to_the_new_one_in_the_same_store() {
+    let new = std::path::Path::new("/data/.blobs/ab/cd/abcdef0123");
+    let old = sibling_blob(new, "1234567890abcdef").unwrap();
+    assert_eq!(
+        old,
+        std::path::Path::new("/data/.blobs/12/34/1234567890abcdef")
+    );
+    // Nothing sensible for a path too short to have the store layout, or a digest too short to split.
+    assert!(sibling_blob(std::path::Path::new("x"), "1234567890").is_none());
+    assert!(sibling_blob(new, "1").is_none());
 }

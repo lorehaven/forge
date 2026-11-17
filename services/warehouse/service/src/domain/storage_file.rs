@@ -90,8 +90,12 @@ pub async fn put_file(
     // The old content is let go only now that the row points at the new one: `storage_files.sha256` references `blobs`, so
     // dropping the old blob row (its last reference) before the row was repointed broke on RESTRICT, and a file could not be
     // replaced by different bytes.
+    let mut replaced_blob = None;
     if adding_reference && let Some(old_sha256) = &old_sha256 {
-        release_blob(&mut tx, &schema, old_sha256, None).await?;
+        let gone = release_blob(&mut tx, &schema, old_sha256, None).await?;
+        if gone {
+            replaced_blob = sibling_blob(blob_path, old_sha256);
+        }
     }
 
     let quota_sql =
@@ -117,6 +121,12 @@ pub async fn put_file(
 
     tx.commit().await?;
     drop(conn);
+
+    // The old content has no reference left: its file goes once the change is safely recorded (before that, a failure
+    // would leave rows pointing at a file that is no longer there).
+    if let Some(old_file) = replaced_blob {
+        let _ = tokio::fs::remove_file(old_file).await;
+    }
 
     Ok(PutOutcome {
         existed: existing.is_some(),
@@ -246,13 +256,14 @@ pub async fn delete_file(
 }
 
 /// Decrements a blob's `ref_count`, deleting its row (and file, if `blob_path` given) at zero.
-/// `None` from `put_file`'s overwrite case just leaves a harmless leak, cleaned up lazily later.
+/// Returns whether the blob's last reference went (its row is deleted). Given a `blob_path` the file goes at once (`delete_file`);
+/// `put_file` passes `None` and removes the old file itself once its transaction has committed.
 async fn release_blob(
     tx: &mut quench_pg::Transaction<'_>,
     schema: &str,
     sha256: &str,
     blob_path: Option<&Path>,
-) -> Result<(), StorageError> {
+) -> Result<bool, StorageError> {
     let sql = format!(
         "UPDATE {schema}.blobs SET ref_count = ref_count - 1 WHERE sha256 = $1 RETURNING ref_count"
     );
@@ -269,9 +280,22 @@ async fn release_blob(
         if let Some(blob_path) = blob_path {
             let _ = tokio::fs::remove_file(blob_path).await;
         }
+        return Ok(true);
     }
 
-    Ok(())
+    Ok(false)
+}
+
+/// Where the blob `sha256` is kept, given where another blob of the same store is: the store is
+/// `<root>/.blobs/<aa>/<bb>/<sha256>` (see `dynamic::blob_path`), so a sibling is found by going up to `.blobs`.
+#[must_use]
+pub fn sibling_blob(blob_path: &Path, sha256: &str) -> Option<std::path::PathBuf> {
+    let blobs = blob_path.parent()?.parent()?.parent()?;
+    let mut path = blobs.to_path_buf();
+    path.push(sha256.get(0..2)?);
+    path.push(sha256.get(2..4)?);
+    path.push(sha256);
+    Some(path)
 }
 
 #[derive(Clone, Debug, quench_serde::Serialize)]
