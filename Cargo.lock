@@ -435,7 +435,7 @@ dependencies = [
 
 [[package]]
 name = "foundry"
-version = "0.2.45"
+version = "0.2.46"
 dependencies = [
  "quench-args",
  "quench-cli",
@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse"
-version = "0.4.22"
+version = "0.4.23"
 dependencies = [
  "forge-web",
  "gatehouse-core",
@@ -900,7 +900,7 @@ dependencies = [
 
 [[package]]
 name = "mailroom"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "forge-web",
  "mail-html",
