@@ -1,6 +1,6 @@
 [package]
 name = "mailroom"
-version = "0.1.1"
+version = "0.1.2"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Mailroom - the estate's own mail: a mailbox for every person, and the place forge services write to them"
