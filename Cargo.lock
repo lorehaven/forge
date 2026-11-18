@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse"
-version = "0.4.23"
+version = "0.4.24"
 dependencies = [
  "forge-web",
  "gatehouse-core",
