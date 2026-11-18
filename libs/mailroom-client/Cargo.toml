@@ -1,0 +1,33 @@
+[package]
+name = "mailroom-client"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "How a forge service sends mail: one call to Mailroom with a machine token from Gatehouse"
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+publish = false
+autotests = false
+
+[lib]
+name = "mailroom_client"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+mailroom-core = { workspace = true }
+quench-client = { workspace = true }
+quench-core = { workspace = true }
+quench-serde = { workspace = true }
+
+[dev-dependencies]
+quench-test = { workspace = true }
+tokio = { workspace = true }
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"
+harness = false

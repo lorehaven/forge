@@ -23,6 +23,9 @@ quench-http = { workspace = true }
 quench-crypto = { workspace = true }
 quench-serde = { workspace = true }
 quench-test-bdd = { workspace = true }
+quench-pg = { workspace = true }
+mail-client = { workspace = true }
+mail-testkit = { workspace = true }
 
 [lints]
 workspace = true

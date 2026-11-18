@@ -105,6 +105,16 @@ home = true
 description = "Music library: the player, and (write) the index, Deezer sync, YouTube links, downloads."
 actions = ["read", "write"]
 
+# Mail: the web client and the Android preview over the person's own mailboxes at other providers. `read` opens them, `write`
+# adds mailboxes and sends from them, `admin` is the panel (the sending server, sender addresses, the queue, everyone's
+# mailboxes as metadata - never anybody's mail). `send` is for a machine identity's call to the estate's send endpoint (the
+# services' own mail goes through it); a person has no use for it. Mail is personal: in no template, give it by hand.
+[services.mailroom]
+label = "Mailroom"
+home = true
+description = "Mail: your mailboxes at any provider, in one place; (admin) the estate's sending server and queue."
+actions = ["read", "write", "admin", "send"]
+
 # Family trees: `read` opens them, `write` imports GEDCOM files and edits people and families. A grant can name one tree
 # (`genevia:tree:<id>:read|write`, the id being the file name of the import), so someone sees their branch and no other.
 # `write` also lets the holder read. Trees hold names and dates of living people: in no template but `editor`.

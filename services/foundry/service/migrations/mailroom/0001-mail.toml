@@ -1,0 +1,179 @@
+[[migrations]]
+id = "0001-mail"
+author = "mailroom-service"
+since = "0.1.0"
+
+# A person's mailbox on a provider. `owner` is the person's user name (gatehouse). `secret` is the password sealed by the service
+# (XChaCha20-Poly1305 under MAILROOM_VAULT_KEY, the account id and owner as associated data): the database never holds it in the
+# clear. `disabled` is an administrator's switch; `state` is the sync worker's.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.accounts (
+    id TEXT PRIMARY KEY,
+    owner TEXT NOT NULL,
+    label TEXT NOT NULL,
+    address TEXT NOT NULL,
+    username TEXT NOT NULL,
+    imap_host TEXT NOT NULL,
+    imap_port INTEGER NOT NULL,
+    imap_security TEXT NOT NULL,
+    smtp_host TEXT NOT NULL,
+    smtp_port INTEGER NOT NULL,
+    smtp_security TEXT NOT NULL,
+    secret TEXT NOT NULL,
+    tls_roots TEXT NOT NULL DEFAULT '',
+    signature TEXT NOT NULL DEFAULT '',
+    save_sent BOOLEAN NOT NULL DEFAULT TRUE,
+    state TEXT NOT NULL DEFAULT 'ok',
+    last_error TEXT,
+    last_sync BIGINT,
+    disabled BOOLEAN NOT NULL DEFAULT FALSE,
+    created BIGINT NOT NULL
+);
+"""
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS accounts_owner ON ${schema}.accounts (owner);"
+
+# Folders as the server lists them. A folder whose UIDVALIDITY changes is emptied and fetched again.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.folders (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES ${schema}.accounts (id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT '',
+    uid_validity BIGINT NOT NULL DEFAULT 0,
+    uid_next BIGINT NOT NULL DEFAULT 0,
+    unread INTEGER NOT NULL DEFAULT 0,
+    total INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (account_id, path)
+);
+"""
+
+# Message headers, flags and a preview: what the list needs. `to_json` is a JSON array of {name, address}. `search` is the
+# lower-cased text a search looks in (subject, sender, recipients, preview).
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.messages (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES ${schema}.accounts (id) ON DELETE CASCADE,
+    folder_id TEXT NOT NULL REFERENCES ${schema}.folders (id) ON DELETE CASCADE,
+    uid BIGINT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '',
+    from_name TEXT NOT NULL DEFAULT '',
+    from_address TEXT NOT NULL DEFAULT '',
+    to_json TEXT NOT NULL DEFAULT '[]',
+    date BIGINT NOT NULL DEFAULT 0,
+    preview TEXT NOT NULL DEFAULT '',
+    message_id TEXT NOT NULL DEFAULT '',
+    in_reply_to TEXT NOT NULL DEFAULT '',
+    seen BOOLEAN NOT NULL DEFAULT FALSE,
+    flagged BOOLEAN NOT NULL DEFAULT FALSE,
+    answered BOOLEAN NOT NULL DEFAULT FALSE,
+    attachments BOOLEAN NOT NULL DEFAULT FALSE,
+    size INTEGER NOT NULL DEFAULT 0,
+    search TEXT NOT NULL DEFAULT '',
+    UNIQUE (folder_id, uid)
+);
+"""
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS messages_folder_date ON ${schema}.messages (folder_id, date DESC, uid DESC);"
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS messages_account ON ${schema}.messages (account_id);"
+
+# The body of a message the person opened, kept so reading it again needs no round trip. The HTML is stored as received: it
+# is sanitised every time it is served, so a better sanitiser applies to what is already stored.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.bodies (
+    message_id TEXT PRIMARY KEY REFERENCES ${schema}.messages (id) ON DELETE CASCADE,
+    text TEXT NOT NULL DEFAULT '',
+    html TEXT,
+    cc_json TEXT NOT NULL DEFAULT '[]',
+    reply_to_json TEXT NOT NULL DEFAULT '[]',
+    list_unsubscribe TEXT NOT NULL DEFAULT '',
+    attachments_json TEXT NOT NULL DEFAULT '[]',
+    inline_json TEXT NOT NULL DEFAULT '{}',
+    fetched BIGINT NOT NULL
+);
+"""
+
+# Everything waiting to go out, and a short history. `raw` is the message ready for SMTP; it is dropped when the message is
+# sent. `kind` is `service` (the estate's mail) or `user` (a person's mailbox, `account_id` set). `idem_key` makes a retry
+# of the same request a no-op.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.outbox (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    account_id TEXT,
+    envelope_from TEXT NOT NULL,
+    recipients TEXT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '',
+    raw BYTEA,
+    status TEXT NOT NULL DEFAULT 'queued',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created BIGINT NOT NULL,
+    next_attempt BIGINT,
+    sent BIGINT,
+    idem_key TEXT,
+    reply_to_message TEXT
+);
+"""
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS outbox_due ON ${schema}.outbox (status, next_attempt);"
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS outbox_created ON ${schema}.outbox (created DESC);"
+
+[[migrations.changes]]
+sql = "CREATE UNIQUE INDEX IF NOT EXISTS outbox_idem ON ${schema}.outbox (source, idem_key) WHERE idem_key IS NOT NULL;"
+
+# Files uploaded for a message being written; removed when sent or after a day.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.uploads (
+    id TEXT PRIMARY KEY,
+    owner TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    data BYTEA NOT NULL,
+    size INTEGER NOT NULL,
+    created BIGINT NOT NULL
+);
+"""
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS uploads_owner ON ${schema}.uploads (owner);"
+
+# The administrator's settings (one JSON document under `main`) and the sealed transport password (`transport_secret`).
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+# What administrators did.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.audit (
+    id TEXT PRIMARY KEY,
+    at BIGINT NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL DEFAULT ''
+);
+"""
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS audit_at ON ${schema}.audit (at DESC);"

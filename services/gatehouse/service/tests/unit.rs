@@ -31,6 +31,8 @@ mod directory_tests;
 mod email_change_tests;
 #[path = "unit/email_live_tests.rs"]
 mod email_live_tests;
+#[path = "unit/email_mailroom_tests.rs"]
+mod email_mailroom_tests;
 #[path = "unit/email_tests.rs"]
 mod email_tests;
 #[path = "unit/invite_tests.rs"]

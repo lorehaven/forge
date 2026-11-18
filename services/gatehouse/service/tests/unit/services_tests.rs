@@ -194,6 +194,7 @@ fn the_shipped_catalog_offers_every_estate_service_but_not_gatehouse() {
             "gauge",
             "genevia",
             "lectern",
+            "mailroom",
             "sage",
             "songbook",
             "switchboard",

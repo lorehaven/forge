@@ -158,6 +158,7 @@ impl Fixture {
             Target::Conveyor => self.start_conveyor().await,
             Target::Workbench => self.start_workbench().await,
             Target::Daybook => self.start_daybook().await,
+            Target::Mailroom => self.start_mailroom().await,
         }
     }
 
@@ -228,6 +229,53 @@ impl Fixture {
         Service {
             target: Target::Workbench,
             child: command.spawn().expect("failed to start workbench-service"),
+        }
+    }
+
+    /// Mailroom, over a Postgres schema of its own and the mail fakes of `mail.rs`: the sending server the estate's mail goes
+    /// to, and the provider mailbox a person adds. Both are on local ports Mailroom is told to allow, as an administrator would.
+    async fn start_mailroom(&self) -> Service {
+        self.build("mailroom-service").await;
+        println!("Starting mailroom-service...");
+
+        let mut command = Command::new(self.binary("mailroom-service"));
+        command
+            .current_dir(self.service_dir("mailroom-service"))
+            .envs(std::env::vars());
+        Self::common_env(&mut command, "mailroom");
+        command
+            .env("SERVER_ADDR", "127.0.0.1:18443")
+            .env("BASE_PATH", "/mailroom")
+            .env(
+                "DATABASE_URL",
+                crate::mail::database_url().unwrap_or_default(),
+            )
+            .env("DB_SCHEMA", crate::mail::SCHEMA)
+            .env("SERVICE_AUTH_ENABLED", "true")
+            .env("SERVER_CERT_PATH", "missing.pem")
+            .env("SERVER_KEY_PATH", "missing.pem")
+            .env(
+                "MAILROOM_VAULT_KEY",
+                "forge-bdd-mailroom-vault-key-0123456789",
+            )
+            .env("MAILROOM_PRIVATE_HOSTS", "localhost")
+            .env(
+                "MAILROOM_EXTRA_PORTS",
+                format!("{},{}", crate::mail::SMTP_PORT, crate::mail::IMAP_PORT),
+            )
+            .env("MAILROOM_SMTP_HOST", "localhost")
+            .env("MAILROOM_SMTP_PORT", crate::mail::SMTP_PORT.to_string())
+            .env("MAILROOM_SMTP_SECURITY", "tls")
+            .env("MAILROOM_SMTP_USERNAME", crate::mail::RELAY_USER)
+            .env("MAILROOM_SMTP_PASSWORD", crate::mail::RELAY_PASSWORD)
+            .env("MAILROOM_SMTP_TLS_ROOTS_PEM", crate::mail::certificate())
+            .env("MAILROOM_FROM", "Forge <noreply@bdd.example>")
+            // The scenarios drive the mailbox sync themselves, so the background schedule stays out of the way.
+            .env("MAILROOM_SYNC_SECS", "3600");
+
+        Service {
+            target: Target::Mailroom,
+            child: command.spawn().expect("failed to start mailroom-service"),
         }
     }
 
@@ -448,7 +496,23 @@ impl Fixture {
                 "http://127.0.0.1:10443/workbench/ui/home",
             )
             .env("FEATURE_WAREHOUSE_ENABLED", "false")
+            .env("MAILROOM_UI_URL", "http://127.0.0.1:18443/mailroom/ui/home")
+            .env("CLIENT_SECRET_MAILROOM", "bdd-client-secret-mailroom")
+            .env(
+                "CLIENT_SECRET_GATEHOUSE_MAILROOM",
+                "bdd-client-secret-gatehouse-mailroom",
+            )
             .stdout(Stdio::piped());
+        // With Mailroom in the run, gatehouse hands its mail to it (`mail.rs` reads what reaches the sending server).
+        if crate::mail::enabled() {
+            command
+                .env("MAILROOM_URL", "http://127.0.0.1:18443/mailroom")
+                .env("MAILROOM_CLIENT_ID", "gatehouse-mailroom")
+                .env(
+                    "MAILROOM_CLIENT_SECRET",
+                    "bdd-client-secret-gatehouse-mailroom",
+                );
+        }
 
         let mut child = command.spawn().expect("failed to start gatehouse-service");
         let stdout = child.stdout.take().expect("gatehouse stdout not piped");

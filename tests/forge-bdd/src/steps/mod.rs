@@ -2,6 +2,7 @@ pub mod common;
 pub mod conveyor;
 pub mod daybook;
 pub mod gatehouse;
+pub mod mailroom;
 pub mod sage;
 pub mod switchboard;
 pub mod warehouse;

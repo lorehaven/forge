@@ -67,6 +67,8 @@ client_secret_gantry_warehouse = { env_file = "services/gantry/service/.env", ke
 client_secret_lectern_warehouse = { env_file = "services/lectern/service/.env", key = "WAREHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-lectern-warehouse" }
 client_secret_gauge = { env_file = "services/gauge/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-gauge" }
 client_secret_songbook = { env_file = "services/songbook/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-songbook" }
+client_secret_mailroom = { env_file = "services/mailroom/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-mailroom" }
+client_secret_gatehouse_mailroom = { env_file = "services/gatehouse/service/.env", key = "CLIENT_SECRET_GATEHOUSE_MAILROOM", default = "forge-local-dev-secret-gatehouse-mailroom" }
 client_secret_genevia = { env_file = "services/genevia/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-genevia" }
 client_secret_workbench = { env_file = "services/workbench/service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-workbench" }
 client_secret_sage_switchboard = { env_file = "services/sage/service/.env", key = "CLIENT_SECRET_SAGE_SWITCHBOARD", default = "forge-local-dev-secret-sage-switchboard" }
@@ -306,6 +308,8 @@ CLIENT_SECRET_GANTRY = "${client_secret_gantry}"
 CLIENT_SECRET_GAUGE = "${client_secret_gauge}"
 CLIENT_SECRET_SONGBOOK = "${client_secret_songbook}"
 CLIENT_SECRET_GENEVIA = "${client_secret_genevia}"
+CLIENT_SECRET_MAILROOM = "${client_secret_mailroom}"
+CLIENT_SECRET_GATEHOUSE_MAILROOM = "${client_secret_gatehouse_mailroom}"
 CLIENT_SECRET_GANTRY_WAREHOUSE = "${client_secret_gantry_warehouse}"
 CLIENT_SECRET_LECTERN_WAREHOUSE = "${client_secret_lectern_warehouse}"
 CLIENT_SECRET_SAGE_SWITCHBOARD = "${client_secret_sage_switchboard}"
@@ -325,6 +329,7 @@ GANTRY_UI_URL = "https://localhost:11443/gantry/ui/home"
 GAUGE_UI_URL = "https://localhost:13443/gauge/ui/home"
 SONGBOOK_UI_URL = "https://localhost:16443/songbook/ui"
 GENEVIA_UI_URL = "https://localhost:17443/genevia/ui"
+MAILROOM_UI_URL = "https://localhost:18443/mailroom/ui"
 LECTERN_UI_URL = "https://localhost:15443/lectern/"
 DAYBOOK_UI_URL = "https://localhost:12443/daybook/ui"
 
@@ -552,3 +557,20 @@ command = ["cargo", "run", "--package", "forge-bdd", "--"]
 service_arg = ["--service", "${service}"]
 stop_services = true
 note = "the development environment is down; `foreman` brings it back"
+
+# Mailroom: the estate's mail. The state is the `mailroom` schema in Postgres (Foundry module `mailroom`). Locally the sending server is
+# unset (the panel or MAILROOM_SMTP_* sets it) and gatehouse keeps logging its mail unless MAILROOM_URL is given to it. To try the
+# client with fake providers: `cargo run -p mail-testkit --example serve`, then add me@provider.example (localhost:12993 / 12525).
+[[services]]
+name = "mailroom"
+package = "mailroom"
+port = 18443
+base_path = "/mailroom"
+needs = ["gatehouse"]
+
+[services.env]
+GATEHOUSE_CLIENT_SECRET = "${client_secret_mailroom}"
+SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:18080"
+MAILROOM_ALLOW_EPHEMERAL_KEY = "true"
+MAILROOM_PRIVATE_HOSTS = "localhost"
+MAILROOM_EXTRA_PORTS = "12525,12993"

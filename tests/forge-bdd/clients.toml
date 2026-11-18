@@ -41,3 +41,15 @@ secret_env = "CLIENT_SECRET_WORKBENCH"
 client_id = "sage-switchboard"
 allowed_scopes = ["switchboard"]
 secret_env = "CLIENT_SECRET_SAGE_SWITCHBOARD"
+
+# Mailroom: its own sign-in, and gatehouse's machine identity toward it (client_credentials only; the audience is mailroom).
+[[client]]
+client_id = "mailroom"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["mailroom"]
+secret_env = "CLIENT_SECRET_MAILROOM"
+
+[[client]]
+client_id = "gatehouse-mailroom"
+allowed_scopes = ["mailroom"]
+secret_env = "CLIENT_SECRET_GATEHOUSE_MAILROOM"

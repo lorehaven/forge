@@ -88,6 +88,20 @@ allowed_scopes = ["songbook"]
 secret_env = "CLIENT_SECRET_SONGBOOK"
 
 [[client]]
+client_id = "mailroom"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["mailroom"]
+secret_env = "CLIENT_SECRET_MAILROOM"
+
+# gatehouse's machine identity toward Mailroom - client_credentials only: every verification, reset, invitation and
+# notification mail is handed to Mailroom, which queues and sends it. `allowed_scopes` is the audience; the token's actual
+# scope is the fixed wildcard `service` role, which Mailroom accepts for its send endpoint and nothing else.
+[[client]]
+client_id = "gatehouse-mailroom"
+allowed_scopes = ["mailroom"]
+secret_env = "CLIENT_SECRET_GATEHOUSE_MAILROOM"
+
+[[client]]
 client_id = "genevia"
 redirect_path = "/ui/auth/callback"
 allowed_scopes = ["genevia"]

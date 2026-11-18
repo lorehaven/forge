@@ -40,6 +40,7 @@ quench-config = { workspace = true }
 quench-db = { workspace = true }
 quench-http = { workspace = true }
 quench-mail = { workspace = true }
+mailroom-client = { workspace = true }
 quench-starter = { workspace = true }
 tokio = { workspace = true }
 

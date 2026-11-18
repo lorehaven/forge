@@ -5,10 +5,12 @@
 //! [`sender_from_env`] picks one: SMTP when `SMTP_HOST` is set, the log otherwise.
 
 mod budget;
+mod mailroom;
 mod smtp;
 mod templates;
 
 pub use budget::BudgetedSender;
+pub use mailroom::MailroomSender;
 pub use smtp::{SmtpConfig, SmtpSender, TlsMode};
 pub use templates::{
     Kind, Rendered, Vars, fill_with, html as render_html, language, render, render_with,
@@ -173,6 +175,26 @@ pub trait Sender: Send + Sync {
     }
 }
 
+/// What a message says: the notification's template, or the account message's.
+///
+/// # Errors
+///
+/// A permanent [`SendError`] for a notification template that does not exist.
+pub fn render_mail(mail: &Mail<'_>, to: &Recipient<'_>) -> Result<Rendered, SendError> {
+    match mail {
+        Mail::Notification {
+            template,
+            vars,
+            unsubscribe,
+        } => crate::notify::catalog::find(template)
+            .map(|found| found.render(to.locale, to.username, vars, unsubscribe))
+            .ok_or_else(|| {
+                SendError::permanent(format!("no such notification template: {template}"))
+            }),
+        _ => Ok(render_with(mail.kind(), to.locale, &mail.vars(to.username))),
+    }
+}
+
 /// Logs the message instead of emailing it - dev/BDD only, never a real
 /// deployment. The `visit <link> to ...` shape of the verification and reset
 /// lines is what the BDD suite reads the links back from.
@@ -234,6 +256,24 @@ pub fn daily_mail_limit(get: &dyn Fn(&str) -> Option<String>) -> Result<usize, S
 /// that comes up and silently cannot send a reset link.
 #[must_use]
 pub fn sender_from_env(limiter: &RateLimiter) -> Arc<dyn Sender> {
+    // Mailroom is the estate's mail service: with MAILROOM_URL set, everything goes through it and gatehouse holds no SMTP
+    // credentials. Without it the older direct SMTP settings (and then the log) apply.
+    if let Some(config) = mailroom_client::Config::from_env() {
+        let per_day = daily_mail_limit(&|key| std::env::var(key).ok())
+            .unwrap_or_else(|err| panic!("invalid mail configuration: {err}"));
+        quench_log::info!(
+            "mail: sending through Mailroom at {} as {}; at most {per_day} emails per day",
+            config.base_url,
+            config.client_id
+        );
+        let sender = MailroomSender::new(&config)
+            .unwrap_or_else(|e| panic!("invalid mail configuration: {e}"));
+        return Arc::new(BudgetedSender::new(
+            Arc::new(sender),
+            limiter.clone(),
+            per_day,
+        ));
+    }
     match SmtpConfig::from_env() {
         Ok(Some(config)) => {
             quench_log::info!("mail: sending through {config:?}");

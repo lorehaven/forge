@@ -288,11 +288,14 @@ dependencies = [
 name = "forge-bdd"
 version = "0.1.0"
 dependencies = [
+ "mail-client",
+ "mail-testkit",
  "quench-args",
  "quench-client",
  "quench-core",
  "quench-crypto",
  "quench-http",
+ "quench-pg",
  "quench-serde",
  "quench-test-bdd",
  "tokio",
@@ -507,6 +510,7 @@ dependencies = [
  "forge-web",
  "gatehouse-core",
  "gatehouse-web",
+ "mailroom-client",
  "quench-auth",
  "quench-cache",
  "quench-client",
@@ -886,6 +890,96 @@ dependencies = [
  "quench-tex",
  "quench-text",
  "tokio",
+]
+
+[[package]]
+name = "mail-client"
+version = "0.1.0"
+dependencies = [
+ "mail-testkit",
+ "quench-core",
+ "quench-html",
+ "quench-mail",
+ "quench-test",
+ "quench-tls",
+ "tokio",
+]
+
+[[package]]
+name = "mail-testkit"
+version = "0.1.0"
+dependencies = [
+ "quench-core",
+ "quench-test",
+ "quench-tls",
+ "tokio",
+]
+
+[[package]]
+name = "mailroom"
+version = "0.1.0"
+dependencies = [
+ "forge-web",
+ "mail-client",
+ "mail-testkit",
+ "mailroom-core",
+ "mailroom-web",
+ "quench-auth",
+ "quench-core",
+ "quench-crypto",
+ "quench-http",
+ "quench-log",
+ "quench-mail",
+ "quench-pg",
+ "quench-serde",
+ "quench-starter",
+ "quench-test",
+ "tokio",
+]
+
+[[package]]
+name = "mailroom-app"
+version = "0.1.0"
+dependencies = [
+ "forge-shell",
+ "mailroom-core",
+ "quench-serde",
+ "quench-test",
+ "quench-ui",
+]
+
+[[package]]
+name = "mailroom-client"
+version = "0.1.0"
+dependencies = [
+ "mailroom-core",
+ "quench-client",
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+ "tokio",
+]
+
+[[package]]
+name = "mailroom-core"
+version = "0.1.0"
+dependencies = [
+ "quench-serde",
+ "quench-test",
+]
+
+[[package]]
+name = "mailroom-web"
+version = "0.1.0"
+dependencies = [
+ "mailroom-app",
+ "mailroom-core",
+ "quench-core",
+ "quench-serde",
+ "quench-test",
+ "quench-tz",
+ "quench-ui",
+ "quench-ui-web",
 ]
 
 [[package]]

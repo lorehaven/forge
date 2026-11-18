@@ -19,6 +19,7 @@ packages = [
     "songbook",
     "hoist",
     "lectern",
+    "mailroom",
 ]
 
 [docker.modules.docker.conveyor]
@@ -120,3 +121,10 @@ image_name = "lectern"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 # No translations and no browser client: the books are the pages. The image still wants a directory beside `config`.
 build_args = { RESOURCE_DIR = "config" }
+
+[docker.modules.docker.mailroom]
+module_name = "mailroom"
+image_name = "mailroom"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+# The browser client: the image builds `mailroom-web` and ships it in `web/` (the service serves it at /ui).
+build_args = { RESOURCE_DIR = "web", WASM_PACKAGE = "mailroom-web" }

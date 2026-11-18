@@ -1,0 +1,231 @@
+//! The screens, as functions from the state to a view.
+
+pub mod accounts;
+pub mod admin;
+pub mod compose;
+pub mod inbox;
+pub mod reader;
+
+use std::rc::Rc;
+
+use mailroom_core::{Contact, Folder};
+use quench_ui::form::Field;
+use quench_ui::i18n::I18n;
+use quench_ui::prelude::*;
+use quench_ui::router::{Router, link};
+
+use crate::live::{Problem, Request, State};
+
+/// What every screen needs of the app.
+#[derive(Clone)]
+pub struct Env {
+    pub t: Rc<I18n>,
+    pub base: String,
+    pub ask: Rc<dyn Fn(Request)>,
+    /// The current Unix time, and how far the reader's zone is east of UTC.
+    pub now: i64,
+    pub offset: i32,
+}
+
+impl std::fmt::Debug for Env {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Env")
+            .field("base", &self.base)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Env {
+    pub(crate) fn path(&self, rest: &str) -> String {
+        format!("{}/ui{rest}", self.base)
+    }
+
+    pub(crate) fn api(&self, rest: &str) -> String {
+        format!("{}/api/v1{rest}", self.base)
+    }
+
+    /// The time of a list row.
+    pub(crate) fn when(&self, seconds: i64) -> String {
+        mailroom_core::time::short(seconds, self.now, self.offset)
+    }
+
+    /// The full time of a message.
+    pub(crate) fn stamp(&self, seconds: i64) -> String {
+        mailroom_core::time::stamp(seconds, self.offset)
+    }
+}
+
+pub(crate) fn waiting(env: &Env) -> View {
+    p().attr("id", "waiting")
+        .class("fui-empty")
+        .text(env.t.t("ui_loading"))
+        .into_view()
+}
+
+#[must_use]
+pub fn not_found(env: &Env) -> View {
+    div()
+        .class("mr-page")
+        .child(
+            p().attr("id", "not-found")
+                .class("fui-empty")
+                .text(env.t.t("ui_not_found")),
+        )
+        .child(link(&env.path("/home")).text(env.t.t("mr_nav_inbox")))
+        .into_view()
+}
+
+/// The screen for a problem the page can say (not found), or `None` to go on.
+pub(crate) fn problem_view(env: &Env, state: &State) -> Option<View> {
+    (state.problem.get() == Some(Problem::NotFound)).then(|| not_found(env))
+}
+
+/// A folder's name for people: the well-known ones are translated.
+pub(crate) fn folder_name(env: &Env, folder: &Folder) -> String {
+    match folder.role.as_str() {
+        "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" => {
+            env.t.t(&format!("mr_role_{}", folder.role))
+        }
+        _ => folder.name.clone(),
+    }
+}
+
+/// A person for a list: the name, or the address.
+pub(crate) fn person(contact: &Contact) -> String {
+    if contact.address.is_empty() && contact.name.is_empty() {
+        "—".to_string()
+    } else {
+        contact.label().to_string()
+    }
+}
+
+/// The side panel: write, the unified inbox, each mailbox with its folders, the mailboxes page, the panel for administrators.
+#[must_use]
+pub(crate) fn sidebar(env: &Env, state: &State, router: &Router) -> View {
+    let (env, state, router) = (env.clone(), state.clone(), router.clone());
+    View::dynamic(move || {
+        let here = router.location().path;
+        let current = |href: &str| here == href || here == format!("{href}/");
+        let mut nav = div()
+            .child(
+                link(&env.path("/compose"))
+                    .class("fui-nav-item mr-write")
+                    .attr("id", "nav-compose")
+                    .child(forge_shell::icon("pen"))
+                    .child(span().text(env.t.t("mr_nav_compose"))),
+            )
+            .child(
+                link(&env.path("/home"))
+                    .class("fui-nav-item")
+                    .attr("id", "nav-inbox")
+                    .child(forge_shell::icon("envelope"))
+                    .child(span().text(env.t.t("mr_nav_all_inboxes"))),
+            );
+        let accounts = state.accounts.get().unwrap_or_default();
+        let folders = state.folders.get();
+        for account in &accounts {
+            let mut subs = div()
+                .class("fui-nav-sub")
+                .attr("data-account", account.id.clone());
+            subs = subs.child(span().class("mr-account-name").text(account.label.clone()));
+            let theirs = folders
+                .iter()
+                .find(|(id, _)| *id == account.id)
+                .map(|(_, f)| f.clone())
+                .unwrap_or_default();
+            for folder in theirs {
+                let href = env.path(&format!("/folder/{}", folder.id));
+                let mut item = link(&href)
+                    .class("fui-nav-subitem")
+                    .attr("data-folder", folder.id.clone())
+                    .child(span().text(folder_name(&env, &folder)));
+                if folder.unread > 0 && folder.role != "junk" && folder.role != "trash" {
+                    item = item.child(span().class("mr-count").text(folder.unread.to_string()));
+                }
+                if current(&href) {
+                    item = item.attr("aria-current", "page").class("mr-current");
+                }
+                subs = subs.child(item);
+            }
+            nav = nav.child(subs);
+        }
+        nav = nav.child(
+            link(&env.path("/accounts"))
+                .class("fui-nav-item")
+                .attr("id", "nav-accounts")
+                .child(forge_shell::icon("gear"))
+                .child(span().text(env.t.t("mr_nav_mailboxes"))),
+        );
+        if state.me.get().is_some_and(|me| me.admin) {
+            nav = nav.child(
+                link(&env.path("/admin"))
+                    .class("fui-nav-item")
+                    .attr("id", "nav-admin")
+                    .child(forge_shell::icon("shield"))
+                    .child(span().text(env.t.t("mr_nav_admin"))),
+            );
+        }
+        nav.into_view()
+    })
+}
+
+pub(crate) fn labelled(id: &str, text: &str, control: Element) -> Element {
+    div()
+        .class("mr-field")
+        .child(label().attr("for", id.to_string()).text(text.to_string()))
+        .child(control)
+}
+
+pub(crate) fn text_box(field: &Field) -> Element {
+    field.input().class("mr-input")
+}
+
+pub(crate) fn secret_box(field: &Field) -> Element {
+    field
+        .input()
+        .attr("type", "password")
+        .attr("autocomplete", "off")
+        .class("mr-input")
+}
+
+pub(crate) fn area(field: &Field) -> Element {
+    field.bind(textarea()).class("mr-input mr-area")
+}
+
+/// A `<select>` bound to `field`; `options` are `(value, text)`.
+pub(crate) fn choice(field: &Field, options: Vec<(String, String)>) -> Element {
+    let pick = field.clone();
+    let rows = options.into_iter().map(|(value, text)| {
+        let (field, v) = (field.clone(), value.clone());
+        option()
+            .attr("value", value)
+            .attr_bool("selected", move || field.value() == v)
+            .text(text)
+            .into_view()
+    });
+    select()
+        .class("mr-input")
+        .attr("id", field.name().to_string())
+        .attr("name", field.name().to_string())
+        .on_input(move |v| pick.set(v))
+        .children(rows)
+}
+
+/// A line under a form that says why it was not sent.
+pub(crate) fn form_error(error: &Signal<Option<&'static str>>) -> View {
+    let error = error.clone();
+    View::dynamic(move || {
+        error.get().map_or(View::Empty, |why| {
+            p().class("mr-error")
+                .attr("role", "alert")
+                .text(why)
+                .into_view()
+        })
+    })
+}
+
+pub(crate) fn badge(text: &str, tone: &str) -> Element {
+    span()
+        .class(format!("mr-badge mr-{tone}"))
+        .text(text.to_string())
+}

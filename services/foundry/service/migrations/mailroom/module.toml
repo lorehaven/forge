@@ -1,0 +1,5 @@
+name = "mailroom"
+version = "0.1.0"
+description = "Mailroom - mail client accounts, cached folders and messages, the outgoing queue, uploads, settings and the admin audit log"
+default_schema = "mailroom"
+requires = ["quench-core@^0.1"]

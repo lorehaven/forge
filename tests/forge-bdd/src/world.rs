@@ -21,6 +21,7 @@ pub enum Target {
     Conveyor,
     Workbench,
     Daybook,
+    Mailroom,
 }
 
 impl Target {
@@ -34,10 +35,11 @@ impl Target {
             Self::Conveyor => "conveyor",
             Self::Workbench => "workbench",
             Self::Daybook => "daybook",
+            Self::Mailroom => "mailroom",
         }
     }
 
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Sage,
         Self::Switchboard,
         Self::Warehouse,
@@ -45,6 +47,7 @@ impl Target {
         Self::Conveyor,
         Self::Workbench,
         Self::Daybook,
+        Self::Mailroom,
     ];
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -75,6 +78,8 @@ pub struct ForgeWorld {
     pub workbench_url: String,
     pub daybook_base_url: String,
     pub daybook_url: String,
+    pub mailroom_base_url: String,
+    pub mailroom_url: String,
 
     pub client: quench_client::transport::Client,
 
@@ -119,6 +124,23 @@ pub struct ForgeWorld {
     /// The base32 secret from the last MFA enrollment, kept aside so a later
     /// step can compute a fresh TOTP code from it for the login challenge.
     pub mfa_secret: Option<String>,
+
+    // mailroom
+    pub mailroom: MailroomState,
+}
+
+/// What a Mailroom scenario carries from step to step.
+#[derive(Debug, Default)]
+pub struct MailroomState {
+    /// The bearer token the next requests present.
+    pub token: Option<String>,
+    pub user: String,
+    /// Mailboxes added in this scenario, by the label they were given.
+    pub accounts: std::collections::HashMap<String, String>,
+    /// The message opened last.
+    pub message: Option<String>,
+    /// A message id kept across a change of person.
+    pub remembered: Option<String>,
 }
 
 impl ForgeWorld {
@@ -130,6 +152,7 @@ impl ForgeWorld {
         let conveyor_base_url = service_url("CONVEYOR_API_URL", "http://127.0.0.1:9999");
         let workbench_base_url = service_url("WORKBENCH_API_URL", "http://127.0.0.1:10443");
         let daybook_base_url = service_url("DAYBOOK_API_URL", "http://127.0.0.1:12443");
+        let mailroom_base_url = service_url("MAILROOM_API_URL", "http://127.0.0.1:18443");
 
         let client = quench_client::transport::Client::builder()
             .danger_accept_invalid_certs(true)
@@ -170,6 +193,8 @@ impl ForgeWorld {
             workbench_base_url,
             daybook_url: format!("{daybook_base_url}/daybook"),
             daybook_base_url,
+            mailroom_url: format!("{mailroom_base_url}/mailroom"),
+            mailroom_base_url,
             client,
             last_status: None,
             last_json: None,
@@ -193,6 +218,7 @@ impl ForgeWorld {
             refresh_token: None,
             admin_token: None,
             mfa_secret: None,
+            mailroom: MailroomState::default(),
         }
     }
 
@@ -206,6 +232,7 @@ impl ForgeWorld {
             Target::Conveyor => &self.conveyor_url,
             Target::Workbench => &self.workbench_url,
             Target::Daybook => &self.daybook_url,
+            Target::Mailroom => &self.mailroom_url,
         }
     }
 
@@ -219,6 +246,7 @@ impl ForgeWorld {
             Target::Conveyor => &self.conveyor_base_url,
             Target::Workbench => &self.workbench_base_url,
             Target::Daybook => &self.daybook_base_url,
+            Target::Mailroom => &self.mailroom_base_url,
         }
     }
 

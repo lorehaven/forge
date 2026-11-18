@@ -47,6 +47,10 @@ members = [
   "services/klaxon/core",
   "services/klaxon/surface",
   "services/lectern/service",
+  "services/mailroom/app",
+  "services/mailroom/core",
+  "services/mailroom/service",
+  "services/mailroom/web",
   "services/songbook/app",
   "services/songbook/core",
   "services/songbook/native",
@@ -92,6 +96,9 @@ forge-ui = { path = "libs/forge-ui", version = "0.1.0" }
 forge-tui = { path = "libs/forge-tui", registry = "ennor", version = "0.1.0" }
 forge-shell = { path = "libs/forge-shell" }
 forge-web = { path = "libs/forge-web" }
+mail-client = { path = "libs/mail-client" }
+mail-testkit = { path = "libs/mail-testkit" }
+mailroom-client = { path = "libs/mailroom-client" }
 libc = { version = "0.2" }
 quench-android-surface = { registry = "ennor", version = "0.1.12" }
 quench-desktop-native = { registry = "ennor", version = "0.1.14" }
@@ -190,6 +197,9 @@ hoist-core = { path = "services/hoist/core" }
 hoist-desktop = { path = "services/hoist/desktop", default-features = false }
 hoist-net = { path = "services/hoist/net" }
 hoist = { path = "services/hoist/service" }
+mailroom-app = { path = "services/mailroom/app" }
+mailroom-core = { path = "services/mailroom/core" }
+mailroom-web = { path = "services/mailroom/web" }
 rivet-package = { path = "libs/rivet-package", registry = "ennor", version = "0.1.0" }
 kube-cluster = { path = "libs/kube-cluster", registry = "ennor", version = "0.1.0" }
 docs-book = { path = "libs/docs-book", registry = "ennor", version = "0.1.0" }

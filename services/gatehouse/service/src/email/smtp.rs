@@ -1,7 +1,6 @@
 //! Real delivery: submit to an SMTP server (in this estate, the in-cluster
 //! Stalwart) through `quench-mail`.
 
-use super::templates::render_with;
 use super::{Mail, Recipient, SendError, Sender};
 use quench_core::async_trait;
 use quench_mail::{Address, Mailbox, Mailer, Message, Security};
@@ -170,21 +169,7 @@ impl SmtpSender {
 
     async fn deliver(&self, mail: &Mail<'_>, to: &Recipient<'_>) -> Result<(), SendError> {
         let kind = mail.kind();
-        let content = match mail {
-            Mail::Notification {
-                template,
-                vars,
-                unsubscribe,
-            } => match crate::notify::catalog::find(template) {
-                Some(found) => found.render(to.locale, to.username, vars, unsubscribe),
-                None => {
-                    return Err(SendError::permanent(format!(
-                        "no such notification template: {template}"
-                    )));
-                }
-            },
-            _ => render_with(kind, to.locale, &mail.vars(to.username)),
-        };
+        let content = super::render_mail(mail, to)?;
         let mut builder = Message::builder()
             .from_mailbox(self.from.clone())
             .to(to.address)

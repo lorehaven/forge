@@ -16,6 +16,7 @@ use quench_test_bdd::{Feature, Options, Runner, Scenario, Stats, Summary};
 use std::panic::AssertUnwindSafe;
 use world::{ForgeWorld, Target};
 
+mod mail;
 mod mocks;
 mod services;
 mod steps;
@@ -38,6 +39,7 @@ struct Cli {
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     quench_core::dotenv::load_from(std::path::Path::new(manifest_dir).join(".env")).ok();
@@ -63,6 +65,26 @@ async fn main() {
     let fixture = services::Fixture::new(manifest_dir);
     let mut running = Vec::new();
 
+    // Mailroom needs a database and the mail fakes. With a database configured, a run that includes gatehouse or mailroom
+    // starts them: gatehouse then sends its mail through Mailroom, and its scenarios read the mail from the fake relay.
+    let wants_mail = !opts.no_spawn
+        && mail::enabled()
+        && selected
+            .iter()
+            .any(|t| matches!(t, Target::Gatehouse | Target::Mailroom));
+    if wants_mail {
+        mail::prepare_schema().await;
+        mail::start().await;
+    } else if selected.contains(&Target::Mailroom) && !opts.no_spawn {
+        eprintln!(
+            "skipping the mailroom suite: set MAILROOM_BDD_DATABASE_URL to a Postgres it may make a schema in"
+        );
+    }
+    let selected: Vec<Target> = selected
+        .into_iter()
+        .filter(|t| *t != Target::Mailroom || opts.no_spawn || wants_mail)
+        .collect();
+
     // Every service verifies its tokens against gatehouse's JWKS now, and
     // `ForgeWorld::new()` mints a token that way for every scenario - so
     // gatehouse has to be running and answering before anything else starts,
@@ -81,6 +103,15 @@ async fn main() {
         {
             running.push(fixture.start(*target).await);
         }
+        // Gatehouse sends through Mailroom when it can, so Mailroom runs even when only gatehouse's suite was asked for.
+        if wants_mail && !selected.contains(&Target::Mailroom) {
+            running.push(fixture.start(Target::Mailroom).await);
+            services::wait_until_ready(&[(
+                Target::Mailroom,
+                "http://127.0.0.1:18443/mailroom/health/live".to_string(),
+            )])
+            .await;
+        }
     }
 
     let probe = ForgeWorld::new().await;
@@ -95,6 +126,7 @@ async fn main() {
                 Target::Conveyor => format!("{}/health", probe.conveyor_url),
                 Target::Workbench => format!("{}/health", probe.workbench_url),
                 Target::Daybook => format!("{}/health", probe.daybook_url),
+                Target::Mailroom => format!("{}/health/live", probe.mailroom_url),
             };
             (*target, url)
         })
