@@ -13,17 +13,17 @@
 
 mod support;
 
-#[path = "unit/accounts_tests.rs"]
-mod accounts_tests;
+#[path = "unit/admin_tests.rs"]
+mod admin_tests;
 #[path = "unit/api_tests.rs"]
 mod api_tests;
+#[path = "unit/delivery_tests.rs"]
+mod delivery_tests;
 #[path = "unit/mailbox_tests.rs"]
 mod mailbox_tests;
 #[path = "unit/outgoing_tests.rs"]
 mod outgoing_tests;
 #[path = "unit/pure_tests.rs"]
 mod pure_tests;
-#[path = "unit/sync_tests.rs"]
-mod sync_tests;
 
 quench_test::main!();

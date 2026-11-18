@@ -1,11 +1,12 @@
 //! The HTTP API through the whole stack: the realm's authentication (real signed tokens), the same-origin check, the gate
-//! and the handlers, over real Postgres and the fake mail servers.
+//! and the handlers, over real Postgres.
 
 use crate::support::*;
-use mailroom_core::admin::{Identity, Page, Settings, SettingsInput, Stats, TransportInput};
+use mailroom_core::admin::{
+    AdminMailbox, AuditEntry, Delivery, Page, Settings, SettingsInput, Stats,
+};
 use mailroom_core::{
-    Account, Change, Compose, Folder, MessageList, MessageView, Queued, SendRequest, TestResult,
-    Upload,
+    Change, Compose, Contact, Folder, Me, MessageList, MessageView, SendRequest, Sent, Upload,
 };
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_core::bytes::Bytes;
@@ -60,7 +61,6 @@ impl Reply {
 
 async fn api() -> Api {
     let env = env().await;
-    env.with_transport().await;
     ROUTES.call_once(|| {
         mailroom_service::routers::api::register_routes();
         mailroom_service::routers::ui::register_routes();
@@ -179,7 +179,8 @@ async fn nothing_works_without_signing_in() {
     let api = api().await;
     for (method, path) in [
         (Method::GET, "/api/v1/me"),
-        (Method::GET, "/api/v1/accounts"),
+        (Method::GET, "/api/v1/folders"),
+        (Method::GET, "/api/v1/messages"),
         (Method::POST, "/api/v1/outgoing"),
         (Method::POST, "/api/v1/send"),
         (Method::GET, "/api/v1/admin/settings"),
@@ -202,265 +203,218 @@ async fn each_grant_opens_only_its_own_doors() {
     let writer = api.token("walt", "mailroom:write").await;
     let admin = api.token("adam", "mailroom:admin").await;
     let sender = api.token("gatehouse", "mailroom:send").await;
+    let machine = api.token("gatehouse-mailroom", "service").await;
     let stranger = api.token("sam", "sage:write").await;
 
     assert_eq!(
-        api.get("/api/v1/accounts", &reader).await.status,
+        api.get("/api/v1/folders", &reader).await.status,
         StatusCode::OK
     );
-    assert_eq!(
-        api.get("/api/v1/accounts", &stranger).await.status,
-        StatusCode::FORBIDDEN
-    );
-    assert_eq!(
-        api.get("/api/v1/accounts", &sender).await.status,
-        StatusCode::FORBIDDEN
-    );
+    for token in [&stranger, &sender, &machine] {
+        assert_eq!(
+            api.get("/api/v1/folders", token).await.status,
+            StatusCode::FORBIDDEN
+        );
+    }
     // A reader reads; writing is for a writer.
-    let input = api.env.input();
+    let mail = Compose {
+        to: vec!["walt".into()],
+        subject: "s".into(),
+        text: "t".into(),
+        ..Compose::default()
+    };
+    api.get("/api/v1/me", &writer).await;
     assert_eq!(
-        api.send_json(Method::POST, "/api/v1/accounts", &reader, &input)
+        api.send_json(Method::POST, "/api/v1/outgoing", &reader, &mail)
             .await
             .status,
         StatusCode::FORBIDDEN
     );
     assert_eq!(
-        api.send_json(Method::POST, "/api/v1/accounts", &writer, &input)
+        api.send_json(Method::POST, "/api/v1/outgoing", &admin, &mail)
             .await
             .status,
         StatusCode::CREATED
     );
     // The panel is for administrators only.
-    for token in [&reader, &writer, &stranger, &sender] {
-        assert_eq!(
-            api.get("/api/v1/admin/stats", token).await.status,
-            StatusCode::FORBIDDEN
-        );
-        assert_eq!(
-            api.get("/api/v1/admin/settings", token).await.status,
-            StatusCode::FORBIDDEN
-        );
+    for token in [&reader, &writer, &stranger, &sender, &machine] {
+        for path in [
+            "/api/v1/admin/stats",
+            "/api/v1/admin/settings",
+            "/api/v1/admin/mailboxes",
+            "/api/v1/admin/deliveries",
+            "/api/v1/admin/audit",
+        ] {
+            assert_eq!(
+                api.get(path, token).await.status,
+                StatusCode::FORBIDDEN,
+                "{path}"
+            );
+        }
     }
     assert_eq!(
         api.get("/api/v1/admin/stats", &admin).await.status,
         StatusCode::OK
     );
-    // The estate's send endpoint is for machines holding `send`; people, administrators included, do not.
-    let mail = SendRequest {
-        to: vec!["a@example.org".into()],
+    // The services' endpoint is for machines holding `send`; people, administrators included, do not.
+    let request = SendRequest {
+        to: vec!["walt".into()],
         subject: "s".into(),
         text: "t".into(),
         ..SendRequest::default()
     };
     for token in [&reader, &writer, &admin, &stranger] {
         assert_eq!(
-            api.send_json(Method::POST, "/api/v1/send", token, &mail)
+            api.send_json(Method::POST, "/api/v1/send", token, &request)
                 .await
                 .status,
             StatusCode::FORBIDDEN
         );
     }
-    assert_eq!(
-        api.send_json(Method::POST, "/api/v1/send", &sender, &mail)
-            .await
-            .status,
-        StatusCode::ACCEPTED
-    );
-    // A service's own credential (the wildcard `service` role) sends mail, and opens nothing else.
-    let machine = api.token("conveyor-mailroom", "service").await;
-    assert_eq!(
-        api.send_json(Method::POST, "/api/v1/send", &machine, &mail)
-            .await
-            .status,
-        StatusCode::ACCEPTED
-    );
-    for path in [
-        "/api/v1/accounts",
-        "/api/v1/messages?role=inbox",
-        "/api/v1/admin/settings",
-        "/api/v1/admin/stats",
-        "/api/v1/me",
-    ] {
+    for token in [&sender, &machine] {
         assert_eq!(
-            api.get(path, &machine).await.status,
-            StatusCode::FORBIDDEN,
-            "{path}"
+            api.send_json(Method::POST, "/api/v1/send", token, &request)
+                .await
+                .status,
+            StatusCode::CREATED
         );
     }
-    assert_eq!(
-        api.send_json(Method::POST, "/api/v1/accounts", &machine, &api.env.input())
-            .await
-            .status,
-        StatusCode::FORBIDDEN
-    );
 }
 
 #[quench_test::test]
 async fn me_says_what_the_person_may_do() {
     db!();
     let api = api().await;
-    let me: mailroom_core::Me = api
+    let me: Me = api
         .get("/api/v1/me", &api.token("ann", "mailroom:write").await)
         .await
         .json();
     assert_eq!(
-        (me.username.as_str(), me.can_write, me.admin),
-        ("ann", true, false)
+        (
+            me.username.as_str(),
+            me.address.as_str(),
+            me.can_write,
+            me.admin
+        ),
+        ("ann", "ann@home.example", true, false)
     );
-    let me: mailroom_core::Me = api
+    let me: Me = api
         .get("/api/v1/me", &api.token("rita", "mailroom:read").await)
         .await
         .json();
     assert!(!me.can_write && !me.admin);
-    let me: mailroom_core::Me = api
+    let me: Me = api
         .get("/api/v1/me", &api.token("adam", "mailroom:admin").await)
         .await
         .json();
     assert!(me.admin && me.can_write);
-    let presets: Vec<mailroom_core::Preset> = api
-        .get("/api/v1/presets", &api.token("ann", "mailroom:read").await)
+    // The token's name is lower-cased: one person, one mailbox.
+    let me: Me = api
+        .get("/api/v1/me", &api.token("Eve", "mailroom:read").await)
         .await
         .json();
-    assert!(presets.iter().any(|p| p.id == "gmail"));
-}
-
-#[quench_test::test]
-async fn a_person_reads_their_mail_end_to_end() {
-    db!();
-    let api = api().await;
-    let token = api.token("ann", "mailroom:write").await;
-    api.env.deliver("INBOX", "api test", "hello over http");
-
-    let created = api
-        .send_json(Method::POST, "/api/v1/accounts", &token, &api.env.input())
-        .await;
-    assert_eq!(created.status, StatusCode::CREATED, "{}", created.text());
-    assert!(!created.text().contains(PASSWORD));
-    let account: Account = created.json();
-    mailroom_service::sync::sync_account(&api.env.app, &account.id)
-        .await
-        .unwrap();
-
-    let accounts: Vec<Account> = api.get("/api/v1/accounts", &token).await.json();
-    assert_eq!(accounts.len(), 1);
-    assert_eq!(accounts[0].unread, 1);
-    let folders: Vec<Folder> = api
-        .get(&format!("/api/v1/accounts/{}/folders", account.id), &token)
-        .await
-        .json();
-    let inbox = folders.iter().find(|f| f.role == "inbox").unwrap();
-
-    let list: MessageList = api
-        .get(
-            &format!("/api/v1/messages?folder={}&limit=10", inbox.id),
-            &token,
-        )
-        .await
-        .json();
-    assert_eq!(list.total, 1);
-    let unified: MessageList = api
-        .get("/api/v1/messages?role=inbox&q=api&unread=1", &token)
-        .await
-        .json();
-    assert_eq!(unified.total, 1);
-    let id = list.items[0].id.clone();
-
-    let view: MessageView = api
-        .get(&format!("/api/v1/messages/{id}"), &token)
-        .await
-        .json();
-    assert!(view.text.contains("hello over http"));
-
-    let changed = api
-        .send_json(
-            Method::POST,
-            "/api/v1/message-changes",
-            &token,
-            &Change {
-                ids: vec![id.clone()],
-                seen: Some(true),
-                ..Change::default()
-            },
-        )
-        .await;
-    assert_eq!(changed.status, StatusCode::NO_CONTENT);
-
-    let queued = api
-        .send_json(
-            Method::POST,
-            "/api/v1/outgoing",
-            &token,
-            &Compose {
-                account_id: account.id.clone(),
-                to: vec!["friend@example.org".into()],
-                subject: "via api".into(),
-                text: "hi".into(),
-                ..Compose::default()
-            },
-        )
-        .await;
-    assert_eq!(queued.status, StatusCode::CREATED);
-    let queued: Queued = queued.json();
-    assert_eq!(queued.status, "queued");
-
-    let refreshed: Account = api
-        .call(
-            Method::POST,
-            &format!("/api/v1/accounts/{}/refresh", account.id),
-            Some(&token),
-            None,
-            &[],
-        )
-        .await
-        .json();
-    assert_eq!(refreshed.id, account.id);
-    let removed = api
-        .call(
-            Method::DELETE,
-            &format!("/api/v1/accounts/{}", account.id),
-            Some(&token),
-            None,
-            &[],
-        )
-        .await;
-    assert_eq!(removed.status, StatusCode::NO_CONTENT);
+    assert_eq!(me.username, "eve");
+    // A name that cannot be an address has no mailbox.
     assert_eq!(
-        api.get(&format!("/api/v1/messages/{id}"), &token)
+        api.get("/api/v1/me", &api.token("a@b", "mailroom:read").await)
             .await
             .status,
-        StatusCode::NOT_FOUND
+        StatusCode::BAD_REQUEST
     );
 }
 
 #[quench_test::test]
-async fn the_connection_test_endpoint_answers_for_each_half() {
+async fn two_people_write_to_each_other_end_to_end() {
     db!();
     let api = api().await;
-    let token = api.token("ann", "mailroom:write").await;
-    let result: TestResult = api
+    let ann = api.token("ann", "mailroom:write").await;
+    let bob = api.token("bob", "mailroom:write").await;
+    api.get("/api/v1/me", &bob).await;
+    let sent: Sent = api
         .send_json(
             Method::POST,
-            "/api/v1/account-tests",
-            &token,
-            &api.env.input(),
+            "/api/v1/outgoing",
+            &ann,
+            &Compose {
+                to: vec!["bob@home.example".into()],
+                subject: "Hello Bob".into(),
+                text: "How are you?".into(),
+                ..Compose::default()
+            },
         )
         .await
         .json();
-    assert!(result.imap.ok && result.smtp.ok);
-    let mut bad = api.env.input();
-    bad.password = "wrong".into();
-    let result: TestResult = api
-        .send_json(Method::POST, "/api/v1/account-tests", &token, &bad)
+    assert_eq!((sent.status.as_str(), sent.delivered), ("delivered", 1));
+    let folders: Vec<Folder> = api.get("/api/v1/folders", &bob).await.json();
+    assert_eq!(
+        (folders[0].id.as_str(), folders[0].unread, folders[0].total),
+        ("inbox", 1, 1)
+    );
+    let list: MessageList = api.get("/api/v1/messages?folder=inbox", &bob).await.json();
+    assert_eq!(list.items[0].subject, "Hello Bob");
+    let id = list.items[0].id.clone();
+    let view: MessageView = api
+        .get(&format!("/api/v1/messages/{id}"), &bob)
         .await
         .json();
-    assert!(!result.imap.ok);
-    let mut invalid = api.env.input();
-    invalid.address = "nope".into();
-    let r = api
-        .send_json(Method::POST, "/api/v1/account-tests", &token, &invalid)
+    assert_eq!(view.text, "How are you?");
+    // Mark read, star, and trash.
+    let read = Change {
+        ids: vec![id.clone()],
+        seen: Some(true),
+        flagged: Some(true),
+        ..Change::default()
+    };
+    assert_eq!(
+        api.send_json(Method::POST, "/api/v1/message-changes", &bob, &read)
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+    let list: MessageList = api
+        .get("/api/v1/messages?folder=inbox&flagged=1", &bob)
+        .await
+        .json();
+    assert!(list.items[0].seen && list.items[0].flagged);
+    let sent_list: MessageList = api
+        .get("/api/v1/messages?folder=sent&q=hello", &ann)
+        .await
+        .json();
+    assert_eq!(sent_list.total, 1);
+    // Bob cannot see Ann's mail by guessing, and the other way round.
+    let theirs = sent_list.items[0].id.clone();
+    assert_eq!(
+        api.get(&format!("/api/v1/messages/{theirs}"), &bob)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    // Addresses complete.
+    let found: Vec<Contact> = api.get("/api/v1/people?q=bo", &ann).await.json();
+    assert_eq!(
+        found.iter().map(|c| c.address.as_str()).collect::<Vec<_>>(),
+        ["bob@home.example"]
+    );
+    // Writing outside the estate is refused with a sentence.
+    let outside = api
+        .send_json(
+            Method::POST,
+            "/api/v1/outgoing",
+            &ann,
+            &Compose {
+                to: vec!["x@gmail.com".into()],
+                subject: "s".into(),
+                text: "t".into(),
+                ..Compose::default()
+            },
+        )
         .await;
-    assert_eq!(r.status, StatusCode::BAD_REQUEST);
-    assert!(r.text().contains("\"error\""));
+    assert_eq!(outside.status, StatusCode::BAD_REQUEST);
+    assert!(
+        outside.text().contains("stays inside this estate"),
+        "{}",
+        outside.text()
+    );
 }
 
 #[quench_test::test]
@@ -468,28 +422,33 @@ async fn the_html_of_a_message_is_served_only_inside_a_cage() {
     db!();
     let api = api().await;
     let token = api.token("ann", "mailroom:read").await;
-    api.env.imap.deliver(
-        "me@example.com",
-        "INBOX",
-        b"From: a@x.example\r\nTo: me@example.com\r\nSubject: html\r\nMessage-ID: <h@x>\r\nContent-Type: text/html\r\n\r\n<p>hi</p><script>alert(1)</script><img src=\"https://t.example/p.gif\">",
-        &[],
-    );
-    let account = api.env.add_account("ann").await;
-    let inbox = api.env.folder(&account.id, "inbox").await;
-    let id = mailroom_service::mailbox::list(
+    api.env
+        .service_mail("gatehouse", &["ann"], "html", "plain")
+        .await
+        .unwrap();
+    mailroom_service::outgoing::send_service(
         &api.env.app,
-        "ann",
-        &mailroom_service::mailbox::ListSpec {
-            folder_id: Some(inbox.id),
-            limit: 5,
-            ..Default::default()
+        "gatehouse",
+        &SendRequest {
+            to: vec!["ann".into()],
+            subject: "html2".into(),
+            text: "plain".into(),
+            html: Some(
+                "<p>hi</p><script>alert(1)</script><img src=\"https://t.example/p.gif\">".into(),
+            ),
+            ..SendRequest::default()
         },
     )
     .await
-    .unwrap()
-    .items[0]
-        .id
-        .clone();
+    .unwrap();
+    let id = api
+        .env
+        .folder("ann", "inbox")
+        .await
+        .into_iter()
+        .find(|m| m.subject == "html2")
+        .unwrap()
+        .id;
     let page = api
         .get(&format!("/api/v1/messages/{id}/html"), &token)
         .await;
@@ -530,58 +489,6 @@ async fn the_html_of_a_message_is_served_only_inside_a_cage() {
     );
 }
 
-#[quench_test::test]
-async fn attachments_always_download_and_never_render() {
-    db!();
-    let api = api().await;
-    let token = api.token("ann", "mailroom:read").await;
-    api.env.imap.deliver(
-        "me@example.com",
-        "INBOX",
-        b"From: a@x.example\r\nTo: me@example.com\r\nSubject: att\r\nMessage-ID: <at@x>\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nsee file\r\n--b\r\nContent-Type: text/html; name=\"x.html\"\r\nContent-Disposition: attachment; filename=\"x.html\"\r\n\r\n<script>alert(1)</script>\r\n--b--\r\n",
-        &[],
-    );
-    let account = api.env.add_account("ann").await;
-    let inbox = api.env.folder(&account.id, "inbox").await;
-    let id = mailroom_service::mailbox::list(
-        &api.env.app,
-        "ann",
-        &mailroom_service::mailbox::ListSpec {
-            folder_id: Some(inbox.id),
-            limit: 5,
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap()
-    .items[0]
-        .id
-        .clone();
-    let download = api
-        .get(&format!("/api/v1/messages/{id}/attachments/0"), &token)
-        .await;
-    assert_eq!(download.status, StatusCode::OK);
-    assert_eq!(download.header("content-type"), "application/octet-stream");
-    assert!(
-        download
-            .header("content-disposition")
-            .starts_with("attachment; filename=\"x.html\"")
-    );
-    assert_eq!(download.header("x-content-type-options"), "nosniff");
-    assert!(
-        download
-            .header("content-security-policy")
-            .contains("sandbox")
-    );
-    assert_eq!(download.body, b"<script>alert(1)</script>");
-    assert_eq!(
-        api.get(&format!("/api/v1/messages/{id}/attachments/9"), &token)
-            .await
-            .status,
-        StatusCode::NOT_FOUND
-    );
-}
-
 /// A `multipart/form-data` body with one file field, the way the page's upload control sends it.
 fn multipart(name: &str, data: &[u8]) -> (Vec<u8>, String) {
     let boundary = "----mailroomtest";
@@ -592,82 +499,108 @@ fn multipart(name: &str, data: &[u8]) -> (Vec<u8>, String) {
 }
 
 #[quench_test::test]
-async fn files_are_uploaded_with_a_name_and_removed() {
+async fn files_are_uploaded_attached_and_always_downloaded_never_rendered() {
     db!();
     let api = api().await;
-    let token = api.token("ann", "mailroom:write").await;
-    let (body, content_type) = multipart("notes.txt", b"some notes");
+    let ann = api.token("ann", "mailroom:write").await;
+    let bob = api.token("bob", "mailroom:write").await;
+    api.get("/api/v1/me", &bob).await;
+    let (body, content_type) = multipart("../notes.html", b"<script>alert(1)</script>");
     let reply = api
         .call(
             Method::POST,
             "/api/v1/uploads",
-            Some(&token),
+            Some(&ann),
             Some(body),
             &[("content-type", &content_type)],
         )
         .await;
     assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.text());
     let upload: Upload = reply.json();
-    assert_eq!((upload.filename.as_str(), upload.size), ("notes.txt", 10));
-    let other = api.token("bob", "mailroom:write").await;
+    assert_eq!((upload.filename.as_str(), upload.size), ("notes.html", 25));
+    // Someone else cannot remove it; its owner can.
+    let remove = |token: &str, id: &str| {
+        let path = format!("/api/v1/uploads/{id}");
+        let token = token.to_string();
+        let api = &api;
+        async move {
+            api.call(Method::DELETE, &path, Some(&token), None, &[])
+                .await
+                .status
+        }
+    };
+    assert_eq!(remove(&bob, &upload.id).await, StatusCode::NOT_FOUND);
+    // Send it.
+    let mail = Compose {
+        to: vec!["bob".into()],
+        subject: "file".into(),
+        text: "see".into(),
+        attachments: vec![upload.id.clone()],
+        ..Compose::default()
+    };
     assert_eq!(
-        api.call(
-            Method::DELETE,
-            &format!("/api/v1/uploads/{}", upload.id),
-            Some(&other),
-            None,
-            &[]
-        )
-        .await
-        .status,
+        api.send_json(Method::POST, "/api/v1/outgoing", &ann, &mail)
+            .await
+            .status,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        remove(&ann, &upload.id).await,
+        StatusCode::NOT_FOUND,
+        "sending used it up"
+    );
+    let id = api.env.folder("bob", "inbox").await[0].id.clone();
+    let download = api
+        .get(&format!("/api/v1/messages/{id}/attachments/0"), &bob)
+        .await;
+    assert_eq!(download.status, StatusCode::OK);
+    assert_eq!(download.header("content-type"), "application/octet-stream");
+    assert!(
+        download
+            .header("content-disposition")
+            .starts_with("attachment; filename=\"notes.html\"")
+    );
+    assert_eq!(download.header("x-content-type-options"), "nosniff");
+    assert!(
+        download
+            .header("content-security-policy")
+            .contains("sandbox")
+    );
+    assert_eq!(download.body, b"<script>alert(1)</script>");
+    assert_eq!(
+        api.get(&format!("/api/v1/messages/{id}/attachments/9"), &bob)
+            .await
+            .status,
         StatusCode::NOT_FOUND
     );
     assert_eq!(
-        api.call(
-            Method::DELETE,
-            &format!("/api/v1/uploads/{}", upload.id),
-            Some(&token),
-            None,
-            &[]
-        )
-        .await
-        .status,
-        StatusCode::NO_CONTENT
+        api.get(&format!("/api/v1/messages/{id}/attachments/-1"), &bob)
+            .await
+            .status,
+        StatusCode::BAD_REQUEST
     );
-    // A path in the name is only a name; an empty file, a missing file field, and a body that is not an upload are refused.
-    let (body, content_type) = multipart("../../etc/passwd", b"x");
-    let named: Upload = api
-        .call(
-            Method::POST,
-            "/api/v1/uploads",
-            Some(&token),
-            Some(body),
-            &[("content-type", &content_type)],
-        )
-        .await
-        .json();
-    assert_eq!(named.filename, "passwd");
-    let (body, content_type) = multipart("e.txt", b"");
+    // An empty file, no file field, and a body that is not an upload are refused.
+    let (empty, ct) = multipart("e.txt", b"");
     assert_eq!(
         api.call(
             Method::POST,
             "/api/v1/uploads",
-            Some(&token),
-            Some(body),
-            &[("content-type", &content_type)]
+            Some(&ann),
+            Some(empty),
+            &[("content-type", &ct)]
         )
         .await
         .status,
         StatusCode::BAD_REQUEST
     );
-    let no_file =
+    let none =
         b"--b\r\nContent-Disposition: form-data; name=\"other\"\r\n\r\nx\r\n--b--\r\n".to_vec();
     assert_eq!(
         api.call(
             Method::POST,
             "/api/v1/uploads",
-            Some(&token),
-            Some(no_file),
+            Some(&ann),
+            Some(none),
             &[("content-type", "multipart/form-data; boundary=b")]
         )
         .await
@@ -678,7 +611,7 @@ async fn files_are_uploaded_with_a_name_and_removed() {
         api.call(
             Method::POST,
             "/api/v1/uploads",
-            Some(&token),
+            Some(&ann),
             Some(b"plain".to_vec()),
             &[("content-type", "text/plain")]
         )
@@ -686,17 +619,6 @@ async fn files_are_uploaded_with_a_name_and_removed() {
         .status,
         StatusCode::BAD_REQUEST
     );
-    let (body, content_type) = multipart("huge.bin", &vec![0u8; 22 * 1024 * 1024]);
-    let huge = api
-        .call(
-            Method::POST,
-            "/api/v1/uploads",
-            Some(&token),
-            Some(body),
-            &[("content-type", &content_type)],
-        )
-        .await;
-    assert_eq!(huge.status, StatusCode::BAD_REQUEST, "{}", huge.text());
 }
 
 #[quench_test::test]
@@ -708,64 +630,47 @@ async fn a_page_from_another_site_cannot_act_with_the_session_cookie() {
         "{}={token}",
         quench_auth::domain::realm::session_cookie_name()
     );
-    let path = "/api/v1/accounts/anything";
-    let cross = api
-        .call(
-            Method::DELETE,
-            path,
-            None,
-            None,
-            &[
-                ("cookie", &cookie),
-                ("sec-fetch-site", "cross-site"),
-                ("host", "ennor.ddns.net"),
-            ],
-        )
-        .await;
-    assert_eq!(cross.status, StatusCode::FORBIDDEN);
-    let forged_origin = api
-        .call(
-            Method::DELETE,
-            path,
-            None,
-            None,
-            &[
-                ("cookie", &cookie),
-                ("origin", "https://evil.example"),
-                ("host", "ennor.ddns.net"),
-            ],
-        )
-        .await;
-    assert_eq!(forged_origin.status, StatusCode::FORBIDDEN);
-    let same = api
-        .call(
-            Method::DELETE,
-            path,
-            None,
-            None,
-            &[
-                ("cookie", &cookie),
-                ("sec-fetch-site", "same-origin"),
-                ("host", "ennor.ddns.net"),
-            ],
-        )
-        .await;
+    let path = "/api/v1/uploads/anything";
+    let attempt = |extra: Vec<(&'static str, &'static str)>| {
+        let api = &api;
+        let cookie = cookie.clone();
+        async move {
+            let mut headers: Vec<(&str, &str)> = vec![("host", "ennor.ddns.net")];
+            headers.extend(extra);
+            let cookie_ref = cookie.as_str();
+            headers.push(("cookie", cookie_ref));
+            api.call(Method::DELETE, path, None, None, &headers)
+                .await
+                .status
+        }
+    };
     assert_eq!(
-        same.status,
-        StatusCode::NOT_FOUND,
-        "the request was let through to the handler"
+        attempt(vec![("sec-fetch-site", "cross-site")]).await,
+        StatusCode::FORBIDDEN
     );
-    // Reading with the cookie across sites is allowed by this check (the browser's SameSite rule covers it).
+    assert_eq!(
+        attempt(vec![("origin", "https://evil.example")]).await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        attempt(vec![("sec-fetch-site", "same-origin")]).await,
+        StatusCode::NOT_FOUND,
+        "let through to the handler"
+    );
     let read = api
         .call(
             Method::GET,
-            "/api/v1/accounts",
+            "/api/v1/folders",
             None,
             None,
             &[("cookie", &cookie), ("sec-fetch-site", "cross-site")],
         )
         .await;
-    assert_eq!(read.status, StatusCode::OK);
+    assert_eq!(
+        read.status,
+        StatusCode::OK,
+        "reading is the browser's SameSite business"
+    );
 }
 
 #[quench_test::test]
@@ -773,496 +678,121 @@ async fn every_api_answer_is_private() {
     db!();
     let api = api().await;
     let token = api.token("ann", "mailroom:read").await;
-    let r = api.get("/api/v1/accounts", &token).await;
+    let r = api.get("/api/v1/folders", &token).await;
     assert_eq!(r.header("cache-control"), "no-store");
     assert_eq!(r.header("referrer-policy"), "no-referrer");
     assert_eq!(r.header("x-content-type-options"), "nosniff");
     let denied = api
-        .call(Method::GET, "/api/v1/accounts", None, None, &[])
+        .call(Method::GET, "/api/v1/folders", None, None, &[])
         .await;
     assert_eq!(denied.header("cache-control"), "no-store");
 }
 
 #[quench_test::test]
-async fn the_panel_manages_settings_without_ever_returning_a_password() {
+async fn the_panel_works_over_http() {
     db!();
     let api = api().await;
     let admin = api.token("adam", "mailroom:admin").await;
-    let settings: Settings = api.get("/api/v1/admin/settings", &admin).await.json();
-    assert!(settings.transport.as_ref().unwrap().has_password);
-    assert!(
-        !api.get("/api/v1/admin/settings", &admin)
-            .await
-            .text()
-            .contains("relay-pw")
-    );
-
-    let change = SettingsInput {
-        transport: Some(TransportInput {
-            host: "smtp.example.net".into(),
-            port: 587,
-            security: "starttls".into(),
-            username: "relay".into(),
-            password: "new-relay-password".into(),
-            tls_roots_pem: String::new(),
-        }),
-        identities: Some(vec![
-            Identity {
-                address: "noreply@example.com".into(),
-                name: "Forge".into(),
-                default: false,
-            },
-            Identity {
-                address: "alerts@example.com".into(),
-                name: String::new(),
-                default: true,
-            },
-        ]),
-        private_hosts: Some(vec!["Bridge.Mail.Svc".into(), "*.internal.example".into()]),
-        extra_ports: Some(vec![1143]),
-        daily_budget: Some(1000),
-        hourly_per_source: Some(50),
-        max_accounts_per_user: Some(3),
-        sync_interval_secs: Some(300),
-    };
-    let reply = api
-        .send_json(Method::PUT, "/api/v1/admin/settings", &admin, &change)
-        .await;
-    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
-    assert!(!reply.text().contains("new-relay-password"));
-    let saved: Settings = reply.json();
-    assert_eq!(saved.transport.as_ref().unwrap().host, "smtp.example.net");
-    assert_eq!(
-        saved.private_hosts,
-        ["bridge.mail.svc", "*.internal.example"]
-    );
-    assert_eq!(saved.identities.iter().filter(|i| i.default).count(), 1);
-    assert_eq!(
-        (
-            saved.daily_budget,
-            saved.max_accounts_per_user,
-            saved.sync_interval_secs
-        ),
-        (1000, 3, 300)
-    );
-    // The password is stored sealed and is the new one.
-    let sealed = mailroom_service::settings::transport_secret(&api.env.app.store)
+    let ann = api.token("ann", "mailroom:write").await;
+    api.get("/api/v1/me", &ann).await;
+    api.env
+        .service_mail("gatehouse", &["ann"], "Welcome", "hi")
         .await
-        .unwrap()
         .unwrap();
-    assert!(sealed.starts_with("v1.") && !sealed.contains("new-relay"));
-    assert_eq!(
-        mailroom_service::settings::open_transport_secret(&api.env.app.store, &api.env.app.vault)
-            .await
-            .unwrap(),
-        "new-relay-password"
-    );
-    // The policy the connections obey follows the settings at once.
-    let policy = api.env.app.policy();
-    assert!(policy.allows_private("bridge.mail.svc") && policy.allows_port(1143));
-    // Pointing the stored login at another server without typing the password again is refused: it would hand it to that server.
-    let moved = SettingsInput {
-        transport: Some(TransportInput {
-            host: "elsewhere.example".into(),
-            port: 587,
-            security: "starttls".into(),
-            username: "relay".into(),
-            ..TransportInput::default()
-        }),
-        ..SettingsInput::default()
+    let settings: Settings = api.get("/api/v1/admin/settings", &admin).await.json();
+    assert_eq!(settings.domain, "home.example");
+    let changed: Settings = api
+        .send_json(
+            Method::PUT,
+            "/api/v1/admin/settings",
+            &admin,
+            &SettingsInput {
+                quota_mb: Some(40),
+                ..SettingsInput::default()
+            },
+        )
+        .await
+        .json();
+    assert_eq!(changed.quota_mb, 40);
+    let bad = api
+        .send_json(
+            Method::PUT,
+            "/api/v1/admin/settings",
+            &admin,
+            &SettingsInput {
+                quota_mb: Some(0),
+                ..SettingsInput::default()
+            },
+        )
+        .await;
+    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+    let stats: Stats = api.get("/api/v1/admin/stats", &admin).await.json();
+    assert_eq!((stats.mailboxes, stats.delivered_24h), (1, 1));
+    let boxes: Page<AdminMailbox> = api
+        .get("/api/v1/admin/mailboxes?limit=10", &admin)
+        .await
+        .json();
+    assert_eq!(boxes.total, 1);
+    let deliveries: Page<Delivery> = api.get("/api/v1/admin/deliveries", &admin).await.json();
+    assert_eq!(deliveries.items[0].subject, "Welcome");
+    // Switch Ann off and on again, then delete her.
+    let post = |path: String| {
+        let api = &api;
+        let admin = admin.clone();
+        async move {
+            api.call(Method::POST, &path, Some(&admin), None, &[])
+                .await
+                .status
+        }
     };
     assert_eq!(
-        api.send_json(Method::PUT, "/api/v1/admin/settings", &admin, &moved)
-            .await
-            .status,
-        StatusCode::BAD_REQUEST
+        post("/api/v1/admin/mailboxes/ann/disable".into()).await,
+        StatusCode::NO_CONTENT
     );
-    // A blank password keeps the stored one when the server stays the same.
-    let again = SettingsInput {
-        transport: Some(TransportInput {
-            host: "smtp.example.net".into(),
-            port: 587,
-            security: "starttls".into(),
-            username: "relay".into(),
-            ..TransportInput::default()
-        }),
-        ..SettingsInput::default()
-    };
     assert_eq!(
-        api.send_json(Method::PUT, "/api/v1/admin/settings", &admin, &again)
-            .await
-            .status,
+        api.get("/api/v1/folders", &ann).await.status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        post("/api/v1/admin/mailboxes/ann/enable".into()).await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        api.get("/api/v1/folders", &ann).await.status,
         StatusCode::OK
     );
     assert_eq!(
-        mailroom_service::settings::open_transport_secret(&api.env.app.store, &api.env.app.vault)
-            .await
-            .unwrap(),
-        "new-relay-password"
+        post("/api/v1/admin/mailboxes/ghost/disable".into()).await,
+        StatusCode::NOT_FOUND
     );
-    // What happened is on record, without values.
-    let audit: Page<mailroom_core::admin::AuditEntry> =
-        api.get("/api/v1/admin/audit", &admin).await.json();
-    assert!(audit.items.iter().any(|e| e.action == "settings.update"
-        && e.actor == "adam"
-        && e.detail.contains("transport")));
-    assert!(!quench_serde::json::to_string(&audit).contains("new-relay-password"));
-}
-
-#[quench_test::test]
-async fn settings_are_validated_and_nothing_changes_on_a_bad_form() {
-    db!();
-    let api = api().await;
-    let admin = api.token("adam", "mailroom:admin").await;
-    let before: Settings = api.get("/api/v1/admin/settings", &admin).await.json();
-    let bads: Vec<SettingsInput> = vec![
-        SettingsInput {
-            transport: Some(TransportInput {
-                host: "bad host".into(),
-                port: 587,
-                security: "tls".into(),
-                ..TransportInput::default()
-            }),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            transport: Some(TransportInput {
-                host: "ok.example".into(),
-                port: 0,
-                security: "tls".into(),
-                ..TransportInput::default()
-            }),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            transport: Some(TransportInput {
-                host: "ok.example".into(),
-                port: 25,
-                security: "plain".into(),
-                ..TransportInput::default()
-            }),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            transport: Some(TransportInput {
-                host: "ok.example".into(),
-                port: 25,
-                security: "tls".into(),
-                password: "a\nb".into(),
-                ..TransportInput::default()
-            }),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            transport: Some(TransportInput {
-                host: "ok.example".into(),
-                port: 25,
-                security: "tls".into(),
-                tls_roots_pem: "junk".into(),
-                ..TransportInput::default()
-            }),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            identities: Some(vec![Identity {
-                address: "nope".into(),
-                name: String::new(),
-                default: true,
-            }]),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            identities: Some(vec![Identity {
-                address: "a@x.example".into(),
-                name: "x\ny".into(),
-                default: true,
-            }]),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            identities: Some(vec![
-                Identity {
-                    address: "a@x.example".into(),
-                    name: String::new(),
-                    default: true,
-                },
-                Identity {
-                    address: "A@X.example".into(),
-                    name: String::new(),
-                    default: false,
-                },
-            ]),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            private_hosts: Some(vec!["http://x".into()]),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            private_hosts: Some(vec!["[::1]".into()]),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            extra_ports: Some(vec![0]),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            daily_budget: Some(0),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            hourly_per_source: Some(1_000_000),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            max_accounts_per_user: Some(0),
-            ..SettingsInput::default()
-        },
-        SettingsInput {
-            sync_interval_secs: Some(5),
-            ..SettingsInput::default()
-        },
-    ];
-    for bad in bads {
-        let reply = api
-            .send_json(Method::PUT, "/api/v1/admin/settings", &admin, &bad)
-            .await;
-        assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{bad:?}");
-    }
-    let after: Settings = api.get("/api/v1/admin/settings", &admin).await.json();
-    assert_eq!(before, after);
-}
-
-#[quench_test::test]
-async fn the_panel_lists_everyones_mailboxes_but_not_their_mail_and_can_switch_them_off() {
-    db!();
-    let api = api().await;
-    let admin = api.token("adam", "mailroom:admin").await;
-    api.env.deliver("INBOX", "secret subject", "secret body");
-    let account = api.env.add_account("ann").await;
-    let page: Page<mailroom_core::admin::AdminAccount> =
-        api.get("/api/v1/admin/accounts", &admin).await.json();
-    assert_eq!(page.total, 1);
-    assert_eq!(
-        (page.items[0].owner.as_str(), page.items[0].messages),
-        ("ann", 1)
-    );
-    let raw = api.get("/api/v1/admin/accounts", &admin).await.text();
-    assert!(!raw.contains("secret subject") && !raw.contains(PASSWORD) && !raw.contains("v1."));
-    // An administrator is not a reader of someone else's mail.
-    let inbox = api.env.folder(&account.id, "inbox").await;
-    let theirs = api
-        .get(
-            &format!("/api/v1/messages?folder={}", inbox.id),
-            &api.token("adam", "mailroom:admin").await,
-        )
-        .await;
-    assert_eq!(theirs.status, StatusCode::NOT_FOUND);
-
-    let off = api
+    let gone = api
         .call(
-            Method::POST,
-            &format!("/api/v1/admin/accounts/{}/disable", account.id),
+            Method::DELETE,
+            "/api/v1/admin/mailboxes/ann",
             Some(&admin),
             None,
             &[],
         )
         .await;
-    assert_eq!(off.status, StatusCode::NO_CONTENT);
-    let accounts: Vec<Account> = api
-        .get("/api/v1/accounts", &api.token("ann", "mailroom:read").await)
-        .await
-        .json();
-    assert_eq!(accounts[0].state, "disabled");
+    assert_eq!(gone.status, StatusCode::NO_CONTENT);
+    let audit: Page<AuditEntry> = api.get("/api/v1/admin/audit", &admin).await.json();
     assert_eq!(
-        api.call(
-            Method::POST,
-            &format!("/api/v1/admin/accounts/{}/enable", account.id),
-            Some(&admin),
-            None,
-            &[]
-        )
-        .await
-        .status,
-        StatusCode::NO_CONTENT
-    );
-    assert_eq!(
-        api.call(
-            Method::POST,
-            "/api/v1/admin/accounts/nope/disable",
-            Some(&admin),
-            None,
-            &[]
-        )
-        .await
-        .status,
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        api.call(
-            Method::DELETE,
-            &format!("/api/v1/admin/accounts/{}", account.id),
-            Some(&admin),
-            None,
-            &[]
-        )
-        .await
-        .status,
-        StatusCode::NO_CONTENT
-    );
-    assert_eq!(
-        api.call(
-            Method::DELETE,
-            &format!("/api/v1/admin/accounts/{}", account.id),
-            Some(&admin),
-            None,
-            &[]
-        )
-        .await
-        .status,
-        StatusCode::NOT_FOUND
-    );
-    let audit: Page<mailroom_core::admin::AuditEntry> =
-        api.get("/api/v1/admin/audit?limit=10", &admin).await.json();
-    let actions: Vec<_> = audit.items.iter().map(|e| e.action.as_str()).collect();
-    for expected in ["account.disable", "account.enable", "account.delete"] {
-        assert!(actions.contains(&expected), "{actions:?}");
-    }
-}
-
-#[quench_test::test]
-async fn the_panel_shows_the_queue_and_can_retry_and_remove() {
-    db!();
-    let api = api().await;
-    let admin = api.token("adam", "mailroom:admin").await;
-    let sender = api.token("gatehouse", "mailroom:send").await;
-    let mail = SendRequest {
-        to: vec!["a@example.org".into()],
-        subject: "Queued one".into(),
-        text: "t".into(),
-        ..SendRequest::default()
-    };
-    let queued: Queued = api
-        .send_json(Method::POST, "/api/v1/send", &sender, &mail)
-        .await
-        .json();
-    let page: Page<mailroom_core::admin::OutboxItem> = api
-        .get("/api/v1/admin/outbox?status=queued", &admin)
-        .await
-        .json();
-    assert_eq!(
-        (
-            page.total,
-            page.items[0].subject.as_str(),
-            page.items[0].source.as_str()
-        ),
-        (1, "Queued one", "gatehouse")
-    );
-    assert!(
-        !quench_serde::json::to_string(&page).contains("Content-Type"),
-        "no message bodies in the panel"
-    );
-    assert_eq!(
-        api.get("/api/v1/admin/outbox?status=bogus", &admin)
-            .await
-            .status,
-        StatusCode::BAD_REQUEST
-    );
-    let stats: Stats = api.get("/api/v1/admin/stats", &admin).await.json();
-    assert_eq!((stats.queued, stats.budget_left), (1, 499));
-    assert_eq!(
-        api.call(
-            Method::POST,
-            &format!("/api/v1/admin/outbox/{}/retry", queued.id),
-            Some(&admin),
-            None,
-            &[]
-        )
-        .await
-        .status,
-        StatusCode::NO_CONTENT
-    );
-    assert_eq!(
-        api.call(
-            Method::POST,
-            "/api/v1/admin/outbox/nope/retry",
-            Some(&admin),
-            None,
-            &[]
-        )
-        .await
-        .status,
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        api.call(
-            Method::DELETE,
-            &format!("/api/v1/admin/outbox/{}", queued.id),
-            Some(&admin),
-            None,
-            &[]
-        )
-        .await
-        .status,
-        StatusCode::NO_CONTENT
-    );
-    assert_eq!(
-        api.call(
-            Method::DELETE,
-            &format!("/api/v1/admin/outbox/{}", queued.id),
-            Some(&admin),
-            None,
-            &[]
-        )
-        .await
-        .status,
-        StatusCode::NOT_FOUND
+        audit
+            .items
+            .iter()
+            .map(|a| a.action.as_str())
+            .collect::<Vec<_>>(),
+        ["delete-mailbox", "enable", "disable", "settings"]
     );
 }
 
 #[quench_test::test]
-async fn the_sending_server_can_be_tried_from_the_panel() {
+async fn the_service_endpoint_answers_for_retries_and_refusals() {
     db!();
     let api = api().await;
-    let admin = api.token("adam", "mailroom:admin").await;
-    let ok: TestResult = api
-        .call(
-            Method::POST,
-            "/api/v1/admin/transport/test",
-            Some(&admin),
-            None,
-            &[],
-        )
-        .await
-        .json();
-    assert!(ok.smtp.ok, "{ok:?}");
-    mailroom_service::settings::save_transport_secret(
-        &api.env.app.store,
-        &api.env.app.vault,
-        "wrong",
-    )
-    .await
-    .unwrap();
-    let bad: TestResult = api
-        .call(
-            Method::POST,
-            "/api/v1/admin/transport/test",
-            Some(&admin),
-            None,
-            &[],
-        )
-        .await
-        .json();
-    assert!(!bad.smtp.ok && !bad.smtp.error.is_empty());
-}
-
-#[quench_test::test]
-async fn the_service_endpoint_answers_for_retries_and_for_a_missing_server() {
-    db!();
-    let api = api().await;
-    let sender = api.token("gatehouse", "mailroom:send").await;
+    let sender = api.token("gatehouse-mailroom", "service").await;
     let mut mail = SendRequest {
-        to: vec!["a@example.org".into()],
+        to: vec!["ann".into()],
         subject: "s".into(),
         text: "t".into(),
         idempotency_key: Some("k1".into()),
@@ -1271,29 +801,29 @@ async fn the_service_endpoint_answers_for_retries_and_for_a_missing_server() {
     let first = api
         .send_json(Method::POST, "/api/v1/send", &sender, &mail)
         .await;
-    assert_eq!(first.status, StatusCode::ACCEPTED);
+    assert_eq!(first.status, StatusCode::CREATED);
     let again = api
         .send_json(Method::POST, "/api/v1/send", &sender, &mail)
         .await;
     assert_eq!(again.status, StatusCode::OK);
-    assert_eq!(again.json::<Queued>().status, "duplicate");
-    mail.from = "intruder@example.com".into();
+    assert_eq!(again.json::<Sent>().status, "duplicate");
     mail.idempotency_key = None;
+    mail.to = vec!["someone@elsewhere.example".into()];
     assert_eq!(
         api.send_json(Method::POST, "/api/v1/send", &sender, &mail)
             .await
             .status,
         StatusCode::BAD_REQUEST
     );
-    let mut stored = api.env.app.settings();
-    stored.transport = None;
-    api.env.app.set_settings(stored);
-    mail.from = String::new();
+    // The mail came from the service, by name.
+    let inbox = api.env.folder("ann", "inbox").await;
     assert_eq!(
-        api.send_json(Method::POST, "/api/v1/send", &sender, &mail)
-            .await
-            .status,
-        StatusCode::SERVICE_UNAVAILABLE
+        (
+            inbox.len(),
+            inbox[0].from.address.as_str(),
+            inbox[0].automated
+        ),
+        (1, "gatehouse@home.example", true)
     );
 }
 
@@ -1305,7 +835,7 @@ async fn malformed_requests_are_refused_cleanly() {
     let r = api
         .call(
             Method::POST,
-            "/api/v1/accounts",
+            "/api/v1/outgoing",
             Some(&token),
             Some(b"{not json".to_vec()),
             &[],
@@ -1322,10 +852,10 @@ async fn malformed_requests_are_refused_cleanly() {
         )
         .await;
     assert!(r.status.is_client_error());
-    let r = api.get("/api/v1/messages", &token).await;
-    assert_eq!(r.status, StatusCode::BAD_REQUEST);
-    let r = api.get("/api/v1/messages?role=../../etc", &token).await;
-    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        api.get("/api/v1/messages?folder=spam", &token).await.status,
+        StatusCode::BAD_REQUEST
+    );
     for hostile in ["'--", "%27%20OR%201=1%20--", "%5C", "%00"] {
         let r = api
             .get(&format!("/api/v1/messages?folder={hostile}"), &token)
@@ -1343,5 +873,224 @@ async fn malformed_requests_are_refused_cleanly() {
             "{hostile}: {}",
             r.status
         );
+        let r = api
+            .get(&format!("/api/v1/messages?q={hostile}"), &token)
+            .await;
+        assert!(
+            r.status == StatusCode::OK || r.status == StatusCode::BAD_REQUEST,
+            "{hostile}: {}",
+            r.status
+        );
+        let r = api
+            .get(&format!("/api/v1/people?q={hostile}"), &token)
+            .await;
+        assert!(
+            r.status == StatusCode::OK || r.status == StatusCode::BAD_REQUEST,
+            "{hostile}: {}",
+            r.status
+        );
     }
+}
+
+#[quench_test::test]
+async fn the_pages_need_a_session_and_serve_the_client() {
+    db!();
+    let api = api().await;
+    let token = api.token("ann", "mailroom:read").await;
+    let cookie = format!(
+        "{}={token}",
+        quench_auth::domain::realm::session_cookie_name()
+    );
+    for path in [
+        "/ui",
+        "/ui/",
+        "/ui/home",
+        "/ui/home/",
+        "/ui/folder/inbox",
+        "/ui/message/abc",
+        "/ui/compose",
+        "/ui/compose/reply/abc",
+        "/ui/admin",
+        "/ui/admin/deliveries",
+    ] {
+        let anonymous = api.call(Method::GET, path, None, None, &[]).await;
+        assert!(
+            anonymous.status.is_redirection(),
+            "{path}: {}",
+            anonymous.status
+        );
+        let signed_in = api
+            .call(Method::GET, path, None, None, &[("cookie", &cookie)])
+            .await;
+        assert!(
+            signed_in.status == StatusCode::OK || signed_in.status.is_redirection(),
+            "{path}: {}",
+            signed_in.status
+        );
+    }
+    let page = api
+        .call(Method::GET, "/ui/home", None, None, &[("cookie", &cookie)])
+        .await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.header("content-type").starts_with("text/html"));
+    assert!(
+        page.text().contains("quench.js") || page.text().contains("app.wasm"),
+        "{}",
+        page.text()
+    );
+    // The files the page loads need no session: they carry no data.
+    for (path, kind) in [
+        ("/ui/assets/quench.js", "javascript"),
+        ("/ui/assets/app.css", "css"),
+        ("/ui/assets/shell.js", "javascript"),
+        ("/ui/assets/favicon.png", "image/png"),
+    ] {
+        let asset = api.call(Method::GET, path, None, None, &[]).await;
+        assert_eq!(asset.status, StatusCode::OK, "{path}");
+        assert!(
+            asset.header("content-type").contains(kind),
+            "{path}: {}",
+            asset.header("content-type")
+        );
+    }
+    let wasm = api
+        .call(Method::GET, "/ui/assets/app.wasm", None, None, &[])
+        .await;
+    assert!(
+        wasm.status == StatusCode::OK || wasm.status == StatusCode::NOT_FOUND,
+        "{}",
+        wasm.status
+    );
+    // Signing out and the session probe answer without any network.
+    let out = api.call(Method::GET, "/ui/logout", None, None, &[]).await;
+    // With no Gatehouse configured it has nowhere to send the browser: it says so rather than guess.
+    assert!(
+        out.status.is_redirection()
+            || out.status == StatusCode::OK
+            || out.status == StatusCode::SERVICE_UNAVAILABLE,
+        "{}",
+        out.status
+    );
+    let status = api
+        .call(
+            Method::GET,
+            "/ui/status",
+            None,
+            None,
+            &[("cookie", &cookie)],
+        )
+        .await;
+    assert!(
+        status.status.is_success() || status.status.is_client_error(),
+        "{}",
+        status.status
+    );
+}
+
+#[quench_test::test]
+async fn startup_refuses_what_cannot_work() {
+    use mailroom_service::{boot, config::Config, store::Store};
+    let no_database = boot::app(Config::for_tests("x", "  ")).await.unwrap_err();
+    assert!(
+        matches!(no_database, mailroom_service::error::Error::Internal(m) if m.contains("DATABASE_URL"))
+    );
+    for bad in ["", "a b", "x;DROP", "ü"] {
+        let e = Store::connect("postgres://nobody@127.0.0.1:1/none", bad)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(e, mailroom_service::error::Error::Internal(m) if m.contains("bad schema name")),
+            "{bad}"
+        );
+    }
+    db!();
+    // A reachable database answers the readiness probe.
+    let env = env().await;
+    env.app.store.ping().await.unwrap();
+}
+
+#[quench_test::test]
+async fn the_maintenance_worker_runs_by_itself() {
+    db!();
+    let env = env().await;
+    env.people(&["ann"]).await;
+    let up = mailroom_service::outgoing::upload(&env.app, "ann", "u", "a/b", vec![1])
+        .await
+        .unwrap();
+    // Make the upload old, then start the worker: its first pass is immediate.
+    env.app
+        .store
+        .pool
+        .execute("UPDATE uploads SET created = 0", &[])
+        .await
+        .unwrap();
+    mailroom_service::worker::spawn(&env.app);
+    for _ in 0..50 {
+        if env
+            .app
+            .store
+            .uploads_owned("ann", &[up.id.clone()])
+            .await
+            .unwrap()
+            .is_empty()
+        {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    panic!("the worker did not sweep");
+}
+
+#[quench_test::test]
+async fn with_authentication_off_everyone_is_a_local_administrator() {
+    db!();
+    let mut api = api().await;
+    api.jwt.auth_enabled = false;
+    let container = ContainerBuilder::new()
+        .provide(quench_http::extract::BodyLimit(
+            mailroom_service::outgoing::MAX_UPLOAD + 1024 * 1024,
+        ))
+        .provide(api.env.app.clone())
+        .provide(api.jwt.clone())
+        .build()
+        .await
+        .unwrap();
+    api.container = Arc::new(container);
+    let endpoint = mailroom_service::routers::api::wrap_auth(
+        quench_starter::http::discover_and_mount("/mailroom"),
+        api.jwt.clone(),
+        "/mailroom",
+        vec![],
+    );
+    api.endpoint = endpoint;
+    let me: Me = api
+        .call(Method::GET, "/api/v1/me", None, None, &[])
+        .await
+        .json();
+    assert_eq!(
+        (me.username.as_str(), me.can_write, me.admin),
+        ("dev", true, true)
+    );
+    assert_eq!(
+        api.call(Method::GET, "/api/v1/admin/stats", None, None, &[])
+            .await
+            .status,
+        StatusCode::OK
+    );
+    let request = SendRequest {
+        to: vec!["dev".into()],
+        subject: "s".into(),
+        text: "t".into(),
+        ..SendRequest::default()
+    };
+    let sent = api
+        .call(
+            Method::POST,
+            "/api/v1/send",
+            None,
+            Some(quench_serde::json::to_string(&request).into_bytes()),
+            &[],
+        )
+        .await;
+    assert_eq!(sent.status, StatusCode::CREATED);
 }

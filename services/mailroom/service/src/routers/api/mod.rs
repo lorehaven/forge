@@ -14,7 +14,6 @@ pub const JSON_LIMIT: usize = 2 * 1024 * 1024;
 /// What the services' send request may weigh: a megabyte of text, two of HTML, headers.
 pub const SEND_LIMIT: usize = 4 * 1024 * 1024;
 
-pub mod accounts;
 pub mod admin;
 pub mod gate;
 pub mod messages;
@@ -48,7 +47,6 @@ pub fn wrap_auth(
 }
 
 pub fn register_routes() {
-    accounts::register_routes();
     admin::register_routes();
     messages::register_routes();
     send::register_routes();
@@ -86,7 +84,7 @@ impl FromRequest for Caller {
         Ok(Self {
             admin: claims.can(service, "admin"),
             write: claims.can(service, "write") || claims.can(service, "admin"),
-            name: claims.sub,
+            name: claims.sub.to_ascii_lowercase(),
         })
     }
 }

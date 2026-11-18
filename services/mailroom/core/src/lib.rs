@@ -12,5 +12,5 @@ pub mod draft;
 pub mod model;
 pub mod time;
 
-pub use draft::{AccountDraft, ComposeDraft, DraftError, TransportDraft};
+pub use draft::{ComposeDraft, DraftError, local_part_ok, recipient_name};
 pub use model::*;

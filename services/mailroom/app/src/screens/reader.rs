@@ -8,7 +8,7 @@ use std::rc::Rc;
 use super::{Env, badge, person, problem_view, waiting};
 use crate::live::{Request, State};
 
-/// The first `https` address in a `List-Unsubscribe` header (`<mailto:...>, <https://...>`), if there is one. Only `https` is
+/// The first `https` address in what the sender gave to stop its mail (`<mailto:...>, <https://...>` or a bare link), if there is one. Only `https` is
 /// offered: the link is the sender's, and it is opened in a new window with no way back to this page.
 #[must_use]
 pub fn unsubscribe_link(header: &str) -> Option<String> {
@@ -39,98 +39,82 @@ fn header_line(env: &Env, key: &str, text: String) -> Element {
         .child(span().class("mr-header-value").text(text))
 }
 
-fn actions(env: &Env, state: &State, view: &MessageView, remote: &Signal<bool>) -> Element {
+fn actions(env: &Env, view: &MessageView, remote: &Signal<bool>) -> Element {
     let id = view.summary.id.clone();
     let go = |mode: &'static str| {
         link(&env.path(&format!("/compose/{mode}/{id}")))
             .class("mr-btn")
             .attr("data-action", mode)
     };
-    let mover = |label: &str, key: &'static str, target: &'static str| {
+    let seen = view.summary.seen;
+    let flagged = view.summary.flagged;
+    let change = |key: &'static str, label: String, change: Change| {
         let (ask, id) = (Rc::clone(&env.ask), id.clone());
         button()
             .attr("type", "button")
-            .class("mr-btn")
+            .class(if key == "delete" {
+                "mr-btn mr-danger"
+            } else {
+                "mr-btn"
+            })
             .attr("data-action", key)
             .on_click(move || {
                 ask(Request::Change(Change {
                     ids: vec![id.clone()],
-                    move_to: Some(target.into()),
-                    ..Change::default()
-                }));
-            })
-            .text(label.to_string())
-    };
-    let seen = view.summary.seen;
-    let flagged = view.summary.flagged;
-    let toggle_unread = {
-        let (ask, id) = (Rc::clone(&env.ask), id.clone());
-        button()
-            .attr("type", "button")
-            .class("mr-btn")
-            .attr("data-action", "unread")
-            .on_click(move || {
-                ask(Request::Change(Change {
-                    ids: vec![id.clone()],
-                    seen: Some(!seen),
-                    ..Change::default()
+                    ..change.clone()
                 }))
-            })
-            .text(env.t.t(if seen {
-                "mr_mark_unread"
-            } else {
-                "mr_mark_read"
-            }))
-    };
-    let star = {
-        let (ask, id) = (Rc::clone(&env.ask), id.clone());
-        button()
-            .attr("type", "button")
-            .class("mr-btn")
-            .attr("data-action", "star")
-            .on_click(move || {
-                ask(Request::Change(Change {
-                    ids: vec![id.clone()],
-                    flagged: Some(!flagged),
-                    ..Change::default()
-                }))
-            })
-            .text(env.t.t(if flagged { "mr_unstar" } else { "mr_star" }))
-    };
-    let in_trash = state
-        .folders
-        .get_untracked()
-        .iter()
-        .flat_map(|(_, list)| list.iter())
-        .any(|f| f.id == view.summary.folder_id && matches!(f.role.as_str(), "trash" | "junk"));
-    let remove = {
-        let (ask, id) = (Rc::clone(&env.ask), id.clone());
-        let label = env.t.t(if in_trash {
-            "mr_delete_forever"
-        } else {
-            "mr_to_trash"
-        });
-        button()
-            .attr("type", "button")
-            .class("mr-btn mr-danger")
-            .attr("data-action", "delete")
-            .on_click(move || {
-                let change = if in_trash {
-                    Change {
-                        ids: vec![id.clone()],
-                        delete: true,
-                        ..Change::default()
-                    }
-                } else {
-                    Change {
-                        ids: vec![id.clone()],
-                        move_to: Some("trash".into()),
-                        ..Change::default()
-                    }
-                };
-                ask(Request::Change(change));
             })
             .text(label)
+    };
+    let in_trash = view.summary.folder == "trash";
+    let toggle_unread = change(
+        "unread",
+        env.t.t(if seen {
+            "mr_mark_unread"
+        } else {
+            "mr_mark_read"
+        }),
+        Change {
+            seen: Some(!seen),
+            ..Change::default()
+        },
+    );
+    let star = change(
+        "star",
+        env.t.t(if flagged { "mr_unstar" } else { "mr_star" }),
+        Change {
+            flagged: Some(!flagged),
+            ..Change::default()
+        },
+    );
+    let restore = in_trash.then(|| {
+        change(
+            "restore",
+            env.t.t("mr_list_restore"),
+            Change {
+                move_to: Some("inbox".into()),
+                ..Change::default()
+            },
+        )
+    });
+    let remove = if in_trash {
+        change(
+            "delete",
+            env.t.t("mr_delete_forever"),
+            Change {
+                delete: true,
+                ..Change::default()
+            },
+        )
+    } else {
+        change(
+            "delete",
+            env.t.t("mr_to_trash"),
+            Change {
+                move_to: Some("trash".into()),
+                ..Change::default()
+            },
+        )
     };
     let images = (view.remote_images > 0).then(|| {
         let remote = remote.clone();
@@ -145,15 +129,20 @@ fn actions(env: &Env, state: &State, view: &MessageView, remote: &Signal<bool>) 
                 view.remote_images
             ))
     });
+    // A service has no mailbox to answer to: an automated message offers no reply.
+    let replies = (!view.summary.automated).then(|| {
+        div()
+            .class("mr-actions")
+            .child(go("reply").text(env.t.t("mr_reply")))
+            .child(go("replyall").text(env.t.t("mr_reply_all")))
+    });
     div()
         .class("mr-actions")
-        .child(go("reply").text(env.t.t("mr_reply")))
-        .child(go("replyall").text(env.t.t("mr_reply_all")))
+        .child(replies)
         .child(go("forward").text(env.t.t("mr_forward")))
         .child(toggle_unread)
         .child(star)
-        .child(mover(&env.t.t("mr_to_archive"), "archive", "archive"))
-        .child(mover(&env.t.t("mr_to_junk"), "junk", "junk"))
+        .child(restore)
         .child(remove)
         .child(images)
 }
@@ -199,8 +188,8 @@ pub(crate) fn page(env: &Env, state: &State, id: String) -> View {
                 ..Change::default()
             }));
         }
-        let back = env.path(&format!("/folder/{}", message.summary.folder_id));
-        let attachments = message.attachments.iter().filter(|a| !a.inline).map(|a| {
+        let back = env.path(&format!("/folder/{}", message.summary.folder));
+        let attachments = message.attachments.iter().map(|a| {
             link(&env.api(&format!("/messages/{id}/attachments/{}", a.index)))
                 .class("mr-attachment")
                 .attr("download", a.filename.clone())
@@ -213,8 +202,8 @@ pub(crate) fn page(env: &Env, state: &State, id: String) -> View {
                 )))
                 .into_view()
         });
-        let has_attachments = message.attachments.iter().any(|a| !a.inline);
-        let unsubscribe = unsubscribe_link(&message.list_unsubscribe);
+        let has_attachments = !message.attachments.is_empty();
+        let unsubscribe = unsubscribe_link(&message.unsubscribe);
         let body: View = if message.has_html && !show_text.get() {
             html_frame(&env, &id, &remote).into_view()
         } else {
@@ -255,7 +244,7 @@ pub(crate) fn page(env: &Env, state: &State, id: String) -> View {
                         message.summary.subject.clone()
                     }),
             )
-            .child(actions(&env, &state, &message, &remote))
+            .child(actions(&env, &message, &remote))
             .child(
                 div()
                     .class("mr-card mr-headers")
@@ -265,11 +254,6 @@ pub(crate) fn page(env: &Env, state: &State, id: String) -> View {
                         div()
                     } else {
                         header_line(&env, "mr_cc", contacts(&message.cc))
-                    })
-                    .child(if message.reply_to.is_empty() {
-                        div()
-                    } else {
-                        header_line(&env, "mr_reply_to", contacts(&message.reply_to))
                     })
                     .child(header_line(
                         &env,
@@ -281,6 +265,11 @@ pub(crate) fn page(env: &Env, state: &State, id: String) -> View {
                             .class("mr-meta")
                             .child(if message.summary.answered {
                                 badge(&env.t.t("mr_answered"), "green")
+                            } else {
+                                badge("", "none")
+                            })
+                            .child(if message.summary.automated {
+                                badge(&env.t.t("mr_automated"), "blue")
                             } else {
                                 badge("", "none")
                             })

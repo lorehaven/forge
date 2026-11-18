@@ -1,6 +1,5 @@
 //! The screens, as functions from the state to a view.
 
-pub mod accounts;
 pub mod admin;
 pub mod compose;
 pub mod inbox;
@@ -8,7 +7,7 @@ pub mod reader;
 
 use std::rc::Rc;
 
-use mailroom_core::{Contact, Folder};
+use mailroom_core::{Contact, FOLDERS};
 use quench_ui::form::Field;
 use quench_ui::i18n::I18n;
 use quench_ui::prelude::*;
@@ -80,14 +79,9 @@ pub(crate) fn problem_view(env: &Env, state: &State) -> Option<View> {
     (state.problem.get() == Some(Problem::NotFound)).then(|| not_found(env))
 }
 
-/// A folder's name for people: the well-known ones are translated.
-pub(crate) fn folder_name(env: &Env, folder: &Folder) -> String {
-    match folder.role.as_str() {
-        "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" => {
-            env.t.t(&format!("mr_role_{}", folder.role))
-        }
-        _ => folder.name.clone(),
-    }
+/// A folder's name for people.
+pub(crate) fn folder_name(env: &Env, id: &str) -> String {
+    env.t.t(&format!("mr_role_{id}"))
 }
 
 /// A person for a list: the name, or the address.
@@ -99,63 +93,39 @@ pub(crate) fn person(contact: &Contact) -> String {
     }
 }
 
-/// The side panel: write, the unified inbox, each mailbox with its folders, the mailboxes page, the panel for administrators.
+/// The side panel: write, the three folders with what is unread, the panel for administrators.
 #[must_use]
 pub(crate) fn sidebar(env: &Env, state: &State, router: &Router) -> View {
     let (env, state, router) = (env.clone(), state.clone(), router.clone());
     View::dynamic(move || {
         let here = router.location().path;
         let current = |href: &str| here == href || here == format!("{href}/");
-        let mut nav = div()
-            .child(
-                link(&env.path("/compose"))
-                    .class("fui-nav-item mr-write")
-                    .attr("id", "nav-compose")
-                    .child(forge_shell::icon("pen"))
-                    .child(span().text(env.t.t("mr_nav_compose"))),
-            )
-            .child(
-                link(&env.path("/home"))
-                    .class("fui-nav-item")
-                    .attr("id", "nav-inbox")
-                    .child(forge_shell::icon("envelope"))
-                    .child(span().text(env.t.t("mr_nav_all_inboxes"))),
-            );
-        let accounts = state.accounts.get().unwrap_or_default();
-        let folders = state.folders.get();
-        for account in &accounts {
-            let mut subs = div()
-                .class("fui-nav-sub")
-                .attr("data-account", account.id.clone());
-            subs = subs.child(span().class("mr-account-name").text(account.label.clone()));
-            let theirs = folders
-                .iter()
-                .find(|(id, _)| *id == account.id)
-                .map(|(_, f)| f.clone())
-                .unwrap_or_default();
-            for folder in theirs {
-                let href = env.path(&format!("/folder/{}", folder.id));
-                let mut item = link(&href)
-                    .class("fui-nav-subitem")
-                    .attr("data-folder", folder.id.clone())
-                    .child(span().text(folder_name(&env, &folder)));
-                if folder.unread > 0 && folder.role != "junk" && folder.role != "trash" {
-                    item = item.child(span().class("mr-count").text(folder.unread.to_string()));
-                }
-                if current(&href) {
-                    item = item.attr("aria-current", "page").class("mr-current");
-                }
-                subs = subs.child(item);
-            }
-            nav = nav.child(subs);
-        }
-        nav = nav.child(
-            link(&env.path("/accounts"))
-                .class("fui-nav-item")
-                .attr("id", "nav-accounts")
-                .child(forge_shell::icon("gear"))
-                .child(span().text(env.t.t("mr_nav_mailboxes"))),
+        let mut nav = div().child(
+            link(&env.path("/compose"))
+                .class("fui-nav-item mr-write")
+                .attr("id", "nav-compose")
+                .child(forge_shell::icon("pen"))
+                .child(span().text(env.t.t("mr_nav_compose"))),
         );
+        let counts = state.folders.get();
+        let mut subs = div().class("fui-nav-sub");
+        for id in FOLDERS {
+            let href = env.path(&format!("/folder/{id}"));
+            let mut item = link(&href)
+                .class("fui-nav-subitem")
+                .attr("data-folder", id)
+                .child(span().text(folder_name(&env, id)));
+            // Only the inbox says how much is waiting: unread mail in "sent" or "trash" is not news.
+            let unread = counts.iter().find(|f| f.id == id).map_or(0, |f| f.unread);
+            if id == "inbox" && unread > 0 {
+                item = item.child(span().class("mr-count").text(unread.to_string()));
+            }
+            if current(&href) || (id == "inbox" && current(&env.path("/home"))) {
+                item = item.attr("aria-current", "page").class("mr-current");
+            }
+            subs = subs.child(item);
+        }
+        nav = nav.child(subs);
         if state.me.get().is_some_and(|me| me.admin) {
             nav = nav.child(
                 link(&env.path("/admin"))
@@ -180,35 +150,8 @@ pub(crate) fn text_box(field: &Field) -> Element {
     field.input().class("mr-input")
 }
 
-pub(crate) fn secret_box(field: &Field) -> Element {
-    field
-        .input()
-        .attr("type", "password")
-        .attr("autocomplete", "off")
-        .class("mr-input")
-}
-
 pub(crate) fn area(field: &Field) -> Element {
     field.bind(textarea()).class("mr-input mr-area")
-}
-
-/// A `<select>` bound to `field`; `options` are `(value, text)`.
-pub(crate) fn choice(field: &Field, options: Vec<(String, String)>) -> Element {
-    let pick = field.clone();
-    let rows = options.into_iter().map(|(value, text)| {
-        let (field, v) = (field.clone(), value.clone());
-        option()
-            .attr("value", value)
-            .attr_bool("selected", move || field.value() == v)
-            .text(text)
-            .into_view()
-    });
-    select()
-        .class("mr-input")
-        .attr("id", field.name().to_string())
-        .attr("name", field.name().to_string())
-        .on_input(move |v| pick.set(v))
-        .children(rows)
 }
 
 /// A line under a form that says why it was not sent.

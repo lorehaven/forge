@@ -1,66 +1,84 @@
 @mailroom
 Feature: The administrator's panel
-  The panel shows and changes the estate's sending server, who services may send as, and the limits; it lists everybody's
-  mailboxes as metadata and never their mail; and it keeps a record of what was done.
+  The panel shows how the estate's mail is doing and manages mailboxes, but it never shows anybody's mail: not the subjects of
+  what people wrote to each other, not the text of anything.
 
   Background:
     Given mailroom API is available
-    And I am signed in to mailroom as "panel-admin" with "mailroom:admin"
+    And I am signed in to mailroom as "panel-adam" with "mailroom:admin"
 
-  Scenario: The settings never show the sending server's password
-    When I read "/api/v1/admin/settings" on the mailroom panel
+  Scenario: The overview counts what is there
+    When I read "/api/v1/admin/stats" on the mailroom panel
     Then response status should be 200
-    And response should contain "\"has_password\":true"
-    And response should contain "noreply@bdd.example"
-    And response should not contain "bdd-relay-password"
+    And response should contain "mailboxes"
+    And response should contain "budget_left"
 
-  Scenario: Changing a limit is recorded
+  Scenario: Settings are shown and changed, and a bad value changes nothing
+    When I read "/api/v1/admin/settings" on the mailroom panel
+    Then response should contain "bdd.example"
     When I set the mailroom daily budget to 777
     Then response status should be 200
-    And response should contain "\"daily_budget\":777"
-    When I read "/api/v1/admin/audit" on the mailroom panel
-    Then response should contain "settings.update"
-    And response should contain "panel-admin"
-    When I set the mailroom daily budget to 500
-    Then response status should be 200
-
-  Scenario: Nonsense settings are refused
+    And response should contain "777"
     When I set the mailroom daily budget to 0
     Then response status should be 400
-
-  Scenario: The sending server can be tried
-    When I post "/api/v1/admin/transport/test" on the mailroom panel
+    When I read "/api/v1/admin/settings" on the mailroom panel
+    Then response should contain "777"
+    When I set the mailroom daily budget to 2000
     Then response status should be 200
-    And response should contain "\"ok\":true"
 
-  Scenario: The panel lists mailboxes but never the mail in them
-    Given the provider mailbox holds a message "Confidential merger plans" from "Alice <alice@provider.example>"
-    And I am signed in to mailroom as "panel-user" with "mailroom:write"
-    When I add my provider mailbox as "Main"
-    And I refresh the mailbox "Main"
-    Given I am signed in to mailroom as "panel-admin" with "mailroom:admin"
-    When I read "/api/v1/admin/accounts" on the mailroom panel
+  Scenario: The mailboxes are listed with their size, never their mail
+    Given "panel-ann" has a mailbox
+    And "panel-bob" has a mailbox
+    And I am signed in to mailroom as "panel-ann" with "mailroom:write"
+    When I write "A very private subject" to "panel-bob"
+    And "panel-adam" signs in to mailroom with "mailroom:admin"
+    And I read "/api/v1/admin/mailboxes?limit=200" on the mailroom panel
     Then response status should be 200
-    And response should contain "panel-user"
-    And response should not contain "Confidential merger plans"
-    And the response should not contain the mailbox password
+    And response should contain "panel-bob@bdd.example"
+    And response should not contain "A very private subject"
+    And response should not contain "Text of"
 
-  Scenario: The queue shows what the estate sent, without the messages
-    When a service sends "Queue visibility check" to "queue@example.org" through mailroom
-    Then response status should be 202
-    Given I am signed in to mailroom as "panel-admin" with "mailroom:admin"
-    When I read "/api/v1/admin/outbox" on the mailroom panel
-    Then response status should be 200
-    And response should contain "Queue visibility check"
-    And response should not contain "Text of Queue visibility check"
+  Scenario: What the services delivered is listed, what people wrote to each other is not
+    Given "log-ann" has a mailbox
+    And "log-bob" has a mailbox
+    And I am signed in to mailroom as "log-ann" with "mailroom:write"
+    When I write "Between friends" to "log-bob"
+    And a service sends "From a service" to "log-bob" through mailroom
+    And "panel-adam" signs in to mailroom with "mailroom:admin"
+    And I read "/api/v1/admin/deliveries?limit=200" on the mailroom panel
+    Then response should contain "From a service"
+    And response should not contain "Between friends"
 
-  Scenario: Only a sender address the administrator allowed can be used
-    When a service sends "Spoof attempt" to "victim@example.org" as "ceo@bdd.example" through mailroom
-    Then response status should be 400
-    And response should contain "not allowed"
-    Given I am signed in to mailroom as "panel-admin" with "mailroom:admin"
-    When I allow the sender address "alerts@bdd.example"
+  Scenario: A mailbox can be switched off, still receives mail, and can be switched on again
+    Given "off-ann" has a mailbox
+    When I post "/api/v1/admin/mailboxes/off-ann/disable" on the mailroom panel
+    Then response status should be 204
+    When a service sends "While you were off" to "off-ann" through mailroom
+    Then response status should be 201
+    When "off-ann" signs in to mailroom with "mailroom:write"
+    And I list my folders
+    Then response status should be 403
+    When "panel-adam" signs in to mailroom with "mailroom:admin"
+    And I post "/api/v1/admin/mailboxes/off-ann/enable" on the mailroom panel
+    And "off-ann" signs in to mailroom with "mailroom:write"
+    And I list the messages in my inbox
+    Then the message list should show 1 message
+
+  Scenario: A mailbox is deleted with everything in it, and the deletion is in the audit log
+    Given "gone-ann" has a mailbox
+    When a service sends "Soon gone" to "gone-ann" through mailroom
+    And I delete "/api/v1/admin/mailboxes/gone-ann" on the mailroom panel
+    Then response status should be 204
+    When I delete "/api/v1/admin/mailboxes/gone-ann" on the mailroom panel
+    Then response status should be 404
+    When I read "/api/v1/admin/audit" on the mailroom panel
+    Then response should contain "delete-mailbox"
+    And response should contain "gone-ann"
+
+  Scenario: The size of a mailbox is limited
+    Given "full-ann" has a mailbox
+    When I set the mailroom mailbox size to 1 megabytes
+    And a service sends "First" to "full-ann" through mailroom
+    Then response status should be 201
+    When I set the mailroom mailbox size to 500 megabytes
     Then response status should be 200
-    When a service sends "Allowed sender" to "victim@example.org" as "alerts@bdd.example" through mailroom
-    Then response status should be 202
-    And the message to "victim@example.org" with the subject "Allowed sender" should be sent as "alerts@bdd.example"

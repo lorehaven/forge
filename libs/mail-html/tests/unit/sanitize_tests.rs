@@ -1,10 +1,10 @@
-use mail_client::sanitize::{Options, safe_link, sanitize, to_text};
+use mail_html::sanitize::{Options, safe_link, sanitize, to_text};
 
 fn clean(html: &str) -> String {
     sanitize(html, &Options::default(), |_| None).html
 }
 
-fn clean_with(html: &str, remote: bool) -> mail_client::sanitize::Sanitized {
+fn clean_with(html: &str, remote: bool) -> mail_html::sanitize::Sanitized {
     sanitize(
         html,
         &Options {

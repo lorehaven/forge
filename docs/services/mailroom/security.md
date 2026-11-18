@@ -1,75 +1,70 @@
 # Mailroom: security assessment
 
-Scope: `libs/mail-client`, `services/mailroom/{core,app,web,service}`, Gatehouse's `MailroomSender`, the homecloud overlay.
-Method: threat model (below), attack tests in the suites named in each row, an independent read-only code review (section
-"Review"), and the BDD scenarios in `tests/forge-bdd/features/mailroom/`.
+Scope: `services/mailroom` (service, core, app, web), `libs/mail-html`, `libs/mailroom-client`, Gatehouse's `MailroomSender`, the
+Foundry migration and the homecloud overlay. Mailroom is the estate's **own** mail: a mailbox per Gatehouse user in Postgres,
+people writing to each other, services writing to people. It has no connection to any mail server and stores no credential of
+anybody's. That removes the largest attack surface a mail product has (parsing hostile servers' protocols, SSRF through
+user-chosen hosts, sealed third-party passwords); what is left is below.
 
-## What is at stake
+## Assets
 
-| Asset | Why it matters |
-|---|---|
-| Passwords of people's mailboxes at other providers | a credential for someone's whole mail life (and password resets everywhere) |
-| People's mail | private |
-| The estate's sending identity and relay login | spam / phishing from `noreply@…`, relay credit |
-| The cluster network | a service that dials user-chosen hosts is an SSRF primitive |
-| Gatehouse tokens | machine tokens that may send mail |
+1. **The content of people's mail** (text, HTML, attachments).
+2. **Who may write as whom**: a message from `gatehouse@<domain>` must really be from Gatehouse.
+3. **The services' ability to write to people** (verification and reset messages ride on it).
+4. The estate's availability (Postgres space, the process).
 
-## Threats and controls
+## Threat model and controls
 
-| # | Threat | Control | Evidence |
-|---|---|---|---|
-| 1 | **SSRF**: a user adds a mailbox on `10.43.0.1:6443`, `169.254.169.254`, Postgres, Redis, another service's admin port | `netguard`: public addresses only (loopback, private, link-local, CGNAT, documentation, multicast, IPv4-mapped/NAT64/6to4 forms refused), mail ports only (143, 993, 465, 587, 2525 + administrator's), **connect to the addresses that were checked** (no second resolution, so no DNS rebinding), same path for IMAP and SMTP; private hosts only by administrator allow-list; the connection test is rate-limited (12/min/person) | `mail-client` netguard tests, `accounts_tests::internal_hosts_…`, BDD `mailboxes.feature` (5 hosts) |
-| 2 | Stored mailbox passwords leak (DB dump, API, logs) | XChaCha20-Poly1305 under a key derived (HKDF) from `MAILROOM_VAULT_KEY`; associated data = account id + owner, so a sealed value copied to another row does not open; never returned by any API (`Account` has no secret field), never in errors (`Auth` Debug is redacted; upstream errors are rewritten to fixed sentences), key rotation via `_PREVIOUS` with re-sealing on use | `pure_tests` vault tests, `api_tests`, BDD "password is not echoed" |
-| 3 | Another person reads/changes my mail (IDOR) | every read goes through `*_owned` queries joining `accounts.owner`; ids are random UUIDs but never the only guard; administrators see mailbox **metadata only** (no message endpoint accepts anyone but the owner) | `accounts_tests::nobody_else…`, `mailbox_tests::nobody_else…`, `api_tests` admin case, BDD "Nobody else can read my mail" |
-| 4 | **XSS / active content in a stranger's HTML mail** | two layers: (a) server-side allow-list sanitiser writes a *new* document (no script/style/iframe/forms/svg/event handlers, `href` only http(s)/mailto/tel, filtered inline CSS, remote images removed and counted, `data:` images only png/jpeg/gif/webp); (b) shown only inside `<iframe sandbox="allow-popups allow-popups-to-escape-sandbox">` (no scripts, no same-origin) served with its own CSP `default-src 'none'; img-src data:; sandbox …; form-action 'none'; base-uri 'none'`; inline images are inlined as `data:` so the frame needs no network; remote images only on the reader's click | sanitiser XSS corpus tests, `api_tests::the_html_…`, BDD reading scenario |
-| 5 | Tracking pixels / read receipts | remote content blocked by default and counted | sanitiser + CSP tests |
-| 6 | Malicious attachment (HTML/SVG served inline, path in the name) | always `Content-Type: application/octet-stream`, `Content-Disposition: attachment` (RFC 2231 name), `nosniff`, `CSP: sandbox`; filenames stripped of paths/controls | `pure_tests`, `api_tests::attachments_always_download…` |
-| 7 | **Header / command injection** (CRLF in subject, address, header names; IMAP argument injection) | compose builds only from strictly parsed addresses and one-line values; extra headers limited to `List-*`, `Auto-Submitted`, `X-*`; IMAP user strings only via quoted/literal builders, UID sets and flags validated | compose tests, `imap_server_tests::arguments_that_could_inject…`, BDD sending |
-| 8 | **Open relay / spoofed sender** via `/send` | `From` must be an administrator-defined identity; machine tokens only; ≤20 recipients, size caps, hourly per-service and daily estate budgets, idempotency keys, `Auto-Submitted`, source recorded; persons cannot call it at all | `outgoing_tests`, `api_tests::each_grant…`, BDD admin/access |
-| 9 | A service credential used as a person (privilege escalation: the `service` role is a wildcard) | gate treats `service` tokens as send-only; `send` is not granted by a person's wildcard `admin` | `pure_tests::grants_map…`, BDD "service credential opens nothing else" |
-| 10 | **CSRF** (cookie-authenticated browser) | session cookie is `SameSite=Lax`; plus `SameOrigin` middleware refuses state-changing requests with `Sec-Fetch-Site: cross-site` or a foreign `Origin`; bearer-token calls are exempt | `pure_tests`, `api_tests::a_page_from_another_site…` |
-| 11 | Hostile mail server / hostile mail (DoS) | IMAP reader limits: line 256 KiB, response 64 MiB, literal ≤ response cap, list depth 32; MIME: depth 12, 1000 parts, 4 MiB text, header caps; sanitiser depth 64 and 2 MiB output; timeouts on every read; sync bounded (300 first look, 500 per run); messages > 40 MB are not opened | `imap_server_tests::endless_lines…`, `message_tests::deep_nesting…`, sanitiser tests |
-| 12 | MITM on the mail connection | TLS mandatory (implicit or STARTTLS **before** the password; plaintext refused; leftover buffered bytes after STARTTLS rejected); certificate verified against the real host name even though the checked IP is dialled; a per-mailbox trusted certificate (PEM) for a bridge/private CA, never "accept any" | `imap_server_tests` (starttls order, untrusted cert), smtp tests |
-| 13 | Brute force / abuse of the connection test | per-person rate limits (test 12/min, refresh 20/min, send 60/h) | `accounts_tests`, `sync_tests`, `outgoing_tests` |
-| 14 | SQL injection | every statement is parameterised; the one dynamic clause (search words) only adds `$n` placeholders, `LIKE` metacharacters escaped | `sync_tests::searching…` (incl. `%`, `_`, `\`, `' OR 1=1`), `api_tests::malformed_requests…` |
-| 15 | Lost updates / races | settings changes serialised; queue claim uses `FOR UPDATE SKIP LOCKED`; one sync per mailbox | `outgoing_tests::messages_stuck…`, BDD (parallel scenarios) |
-| 16 | Error detail leaks | internal failures logged, caller sees "something went wrong"; SQLSTATE class 22 → 400; upstream text is rewritten or stripped of control characters | `pure_tests::errors_tell_the_caller_little…` |
-| 17 | Admin abuse | panel actions are audited (names of changed settings, never values); admins cannot read mail; disabling/deleting a mailbox is logged | `api_tests` admin tests, BDD admin.feature |
-| 18 | Inbound attack surface | none: no listening mail port, no router rule; HTTP only behind the existing ingress | overlay |
+| Threat | Control | Where |
+|---|---|---|
+| Unauthenticated access | `Auth` (realm JWT, bearer or session cookie) over all of `/api/v1`, including unmapped paths (401); health is the only open route | `routers/api/mod.rs` |
+| A person reading another's mail (IDOR) | every query is scoped by `owner`; `message_get_owned`, `attachment_data` via the owned message; the owner is the token's lower-cased `sub`, never a request field | `store/messages.rs`, `mailbox.rs` |
+| Privilege confusion | `Gate`: reads need any `mailroom` grant, changes need `write`, `/admin` needs `admin`, `/send` is for machine identities and an explicit `send` grant only; a machine (`service` role, a wildcard) can do nothing else, a person can never call `/send`; the gate decides on the raw path so encoding cannot move a path into another class | `routers/api/gate.rs` |
+| Administrator reading mail | the panel lists mailboxes (owner, size, last seen) and the services' delivery log; there is no endpoint that returns a message of a person, and the delivery log contains only service mail (a person's mail is never written to it) | `admin.rs` |
+| CSRF | state-changing requests carrying a cookie are refused when `Sec-Fetch-Site`/`Origin` say another site; bearer requests are exempt; cookies are `SameSite=Lax` | `gate::SameOrigin` |
+| XSS from mail HTML | an allow-list **writer** (not a stripper): known tags and attributes, a safe CSS subset, links only `http(s)`/`mailto`/`tel`, images only `data:`/`cid:` unless the reader allows remote ones; served in a sandboxed iframe (no `allow-scripts`, no `allow-same-origin`) with its own CSP (`default-src 'none'`, `img-src data:`), `nosniff`, `no-referrer`, never cached | `libs/mail-html`, `mailbox::html_policy` |
+| XSS in the client | typed `text()`/`attr()` nodes, no `innerHTML`; the unsubscribe link is shown only if `https` | `app/` |
+| Hostile attachments | always `application/octet-stream` + `Content-Disposition: attachment` with a header-safe file name, `nosniff`, CSP `sandbox`; names are cleaned (no path, no control characters) | `routers/api/messages.rs`, `outgoing::clean_filename` |
+| Header or log injection | there are no mail headers any more: a message is a row. Subject and unsubscribe link reject CR/LF/NUL; recipients are reduced to a valid user name; text with NUL is refused (Postgres cannot store it) | `delivery::check`, `draft::recipient_name` |
+| SQL injection | every statement is parameterised; the only built SQL is the column list and `$n` placeholders in `messages_page`; search terms are bound parameters with LIKE escaped | `store/` |
+| Mail leaving the estate | nothing can: no SMTP/IMAP client exists. A recipient with another domain is refused with a sentence | `outgoing::names` |
+| Spoofing a service | a person's message always carries an empty `source`; a service's carries its token-derived name and the reader shows "Automatic message"; nobody can write to `gatehouse@` (a service has no mailbox unless a person has that user name) | `delivery.rs` |
+| A service abusing its credential | per-service hourly and estate daily budgets, idempotency keys, ≤50 recipients, size caps; a service cannot read anything | `outgoing::send_service`, `limits.rs` |
+| Spam or flooding between people | per-person hourly send limit, ≤50 recipients, per-mailbox quota (default 500 MB), upload cap (60 MB per person, 60 uploads/hour), attachments ≤20 MB / 10 files | `settings.rs` |
+| Upload quota race | the cap check and insert run under a per-person advisory lock inside one transaction (a bare `INSERT … SELECT` is not enough under READ COMMITTED: the test that found it runs four uploads in parallel) | `store/uploads.rs` |
+| Unbounded storage | trash emptied after 30 days, unsent uploads after a day, orphaned attachment bytes after an hour, delivery records after 30 days | `worker.rs` |
+| Search / paging amplification | ≤8 search terms of ≤100 characters, pages ≤100, change lists ≤200 | `mailbox.rs` |
+| Error leakage | database and internal errors become "something went wrong" (details go to the log); data errors (NUL) become 400 | `error.rs` |
+| Secrets | none stored. The only secrets are the two Gatehouse client secrets, in the age-encrypted `secrets.yaml` |  |
+| Open ports | none. No `hostPort`, no router rule; HTTP only inside the cluster and through the existing HTTPS ingress | homecloud overlay |
 
-## Residual risks and decisions to know about
+## Gatehouse's account links
 
-- **No OAuth**: Gmail/Outlook/iCloud need app passwords, which are broader than a scoped token. They are sealed, but a database
-  *and* vault-key compromise exposes them. Keep the vault key out of the database backup's reach.
-- **An administrator who can change the vault key or the deployment** can read stored passwords: Mailroom is as trusted as its
-  operator. The panel itself cannot.
-- **Sanitiser is allow-list, not proof**: defence in depth (CSP sandbox, no same-origin) is what protects against a bypass.
-- **In-memory rate limits** reset on restart and are per replica (the service is a single replica by design).
-- The web app page itself has no CSP of its own yet (the shell's inline bootstrap needs a separate pass).
-- `MAILROOM_PRIVATE_HOSTS` widens the SSRF boundary: list only names you control; ports stay restricted to mail ports plus those
-  you add.
-- Sent-mail copies and cached headers are plaintext in Postgres (disk encryption is the operator's layer).
+A person cannot read a mailbox before they can sign in, so the verification, password-reset and invitation links could never be
+read there. Gatehouse therefore also writes every message to its log in the logging sender's shape (`visit <link> to ...`), for
+the administrator to hand over. These lines contain single-use tokens: anyone who can read Gatehouse's log can take over the
+account the token belongs to. The administrator can already do that, but **log aggregation extends the audience**: if Gatehouse's
+logs are shipped somewhere wider, set `GATEHOUSE_LOG_ACCOUNT_LINKS=false` and accept that these messages are then unreadable until
+a way to hand links over exists. This is the largest residual risk of the design.
+
+## Residual risks (accepted, with the reason)
+
+- **Mailbox identity is the user name.** A new Gatehouse user with the name of a deleted one would inherit that mailbox. Delete
+  the mailbox in the panel when deleting the user (the runbook says so).
+- **Anyone with a grant can list user names** (`/people` completes names; writing to a missing name says "has no mailbox"). A
+  home estate's user list is not secret; a public one would need an allow-list.
+- **Quota is soft under concurrency**: two simultaneous deliveries to the same mailbox may both pass the check and exceed it by one
+  message. The next delivery is refused.
+- **Rate limits are in memory** (per process): a restart resets them. One replica is the deployment.
+- **A compromised service credential** can write anything to anybody as that service, within its budget, until revoked.
+- **Mail between people is not encrypted at rest** (Postgres holds it as text); an administrator with database access can read it.
+  Encrypting rows would need a key the service holds, which protects only against database theft.
+
+## Not covered
+
+`quench-auth`'s token validation and cookie flags, `quench-html`'s parser on pathological input, and Gatehouse's assignment of the
+`service` role are relied on as shipped; the framework has its own tests.
 
 ## Review
 
-A read-only review by a separate reviewer (not the author) found no SQL injection, IDOR, gate bypass or SSRF escape, and these
-issues. Fixed means code and a test changed.
-
-| # | Finding | Result |
-|---|---|---|
-| 1 | Hostile IMAP server streams responses until the pod runs out of memory | **Fixed**: ≤200k untagged responses and a 5-minute deadline per command |
-| 2 | Slow-drip server pins the 4 sync slots | **Fixed**: 5-minute command deadline, 15-minute cap per sync run |
-| 3 | Admin repoints the stored relay login at their own host and reads the password back by connecting | **Fixed**: changing host, port or user name requires typing the password again; host change is audited; test added |
-| 4 | Admin panel showed subjects/recipients of users' sent mail | **Fixed**: only service mail shows them; a person's own rows show no recipients/subject |
-| 5 | Flag/move/delete used UIDs without checking UIDVALIDITY (wrong mail changed after a renumbering) | **Fixed**: refused with a conflict and a refresh is queued |
-| 6 | Mailroom can be used as a login/port probe against public hosts on mail ports | **Mitigated, not closed**: mail ports only, 12 tests/min/person, 10 mailboxes/person. A global per-destination limit would need shared state; accepted for a single-replica home estate |
-| 7 | Upload quota race; uploads buffered in memory | **Fixed**: quota check and insert are one SQL statement; 60 uploads/hour/person (memory per upload stays ≤21 MB) |
-| 8 | Unbounded subject/name sizes stored | **Fixed**: truncated (1000/200/320) |
-| 9 | Reply flag could target another mailbox's message | **Fixed**: the replied-to message must be in the sending mailbox |
-| 10 | Ownership is the token's `sub` (username): a re-used username inherits mailboxes | **Open**: depends on Gatehouse never re-using a deleted username; delete a person's mailboxes when deleting the user |
-| 11 | Disabled mailbox could still be changed (login retried) | **Fixed** for change; test/create never touch a stored mailbox |
-| 12 | Any service token may send arbitrary content as the estate's address | **Partly**: `X-Mailroom-*` headers are now reserved; per-service budgets bound it. A compromised service can still phish: give each service its own client and revoke it |
-| 13 | Auth off means everyone is an admin | **By design for local runs** (`SERVICE_AUTH_ENABLED`); the homecloud config sets it to `true` and the README says it must stay so |
-
-Not covered by the review (assumed from the framework): `quench-mail`'s SMTP limits, `quench-html` on pathological nesting,
-`quench-auth` audience enforcement, and Gatehouse's assignment of the `service` role.
+An independent read-only review of the reworked code was run; its findings and what became of them are in the next section.

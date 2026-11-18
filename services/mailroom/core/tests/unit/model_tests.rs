@@ -1,34 +1,38 @@
 use mailroom_core::admin::{Page, Settings, SettingsInput};
-use mailroom_core::{Account, ApiError, Change, Compose, Contact, MessageList, SendRequest};
+use mailroom_core::{ApiError, Change, Compose, Contact, FOLDERS, MessageList, SendRequest};
 use quench_serde::json;
 
 #[quench_test::test]
 fn contacts_show_a_name_or_the_address() {
     let named = Contact {
         name: "Ann".into(),
-        address: "a@b.cc".into(),
+        address: "ann@home.example".into(),
     };
     assert_eq!(
         (named.label(), named.full().as_str()),
-        ("Ann", "Ann <a@b.cc>")
+        ("Ann", "Ann <ann@home.example>")
     );
     let bare = Contact {
         name: String::new(),
-        address: "a@b.cc".into(),
+        address: "ann@home.example".into(),
     };
-    assert_eq!((bare.label(), bare.full().as_str()), ("a@b.cc", "a@b.cc"));
+    assert_eq!(
+        (bare.label(), bare.full().as_str()),
+        ("ann@home.example", "ann@home.example")
+    );
 }
 
 #[quench_test::test]
 fn optional_fields_may_be_missing_from_the_json() {
-    let c: Compose =
-        json::from_str(r#"{"account_id":"a","to":["x@y.zz"],"subject":"s","text":"t"}"#).unwrap();
-    assert!(c.cc.is_empty() && c.in_reply_to.is_none() && c.attachments.is_empty());
-    let r: SendRequest = json::from_str(r#"{"to":["x@y.zz"],"subject":"s","text":"t"}"#).unwrap();
+    let c: Compose = json::from_str(r#"{"to":["ann"],"subject":"s","text":"t"}"#).unwrap();
     assert!(
-        r.from.is_empty()
-            && r.html.is_none()
-            && r.headers.is_empty()
+        c.cc.is_empty() && c.bcc.is_empty() && c.in_reply_to.is_none() && c.attachments.is_empty()
+    );
+    let r: SendRequest = json::from_str(r#"{"to":["ann"],"subject":"s","text":"t"}"#).unwrap();
+    assert!(
+        r.html.is_none()
+            && r.unsubscribe.is_none()
+            && r.kind.is_none()
             && r.idempotency_key.is_none()
     );
     let change: Change = json::from_str(r#"{"ids":["1"],"seen":true}"#).unwrap();
@@ -48,6 +52,7 @@ fn models_round_trip_through_json() {
     let err = ApiError { error: "no".into() };
     assert_eq!(json::to_string(&err), r#"{"error":"no"}"#);
     let settings = Settings {
+        domain: "home.example".into(),
         daily_budget: 5,
         ..Settings::default()
     };
@@ -66,25 +71,6 @@ fn models_round_trip_through_json() {
 }
 
 #[quench_test::test]
-fn an_account_never_carries_a_password_field() {
-    let json = json::to_string(&Account {
-        id: "1".into(),
-        label: "l".into(),
-        address: "a@b.cc".into(),
-        username: "u".into(),
-        imap_host: "i".into(),
-        imap_port: 993,
-        imap_security: "tls".into(),
-        smtp_host: "s".into(),
-        smtp_port: 465,
-        smtp_security: "tls".into(),
-        state: "ok".into(),
-        last_error: None,
-        last_sync: None,
-        unread: 0,
-        signature: String::new(),
-        custom_certificate: false,
-        save_sent: true,
-    });
-    assert!(!json.contains("password") && !json.contains("secret"));
+fn a_mailbox_has_three_folders() {
+    assert_eq!(FOLDERS, ["inbox", "sent", "trash"]);
 }

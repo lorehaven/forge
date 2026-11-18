@@ -2,7 +2,7 @@
 
 use mailroom_core::draft::ComposeDraft;
 use mailroom_core::time::{forward_subject, quote, reply_subject};
-use mailroom_core::{Account, Contact, MessageView, Upload};
+use mailroom_core::{Contact, MessageView, Upload};
 use quench_ui::form::Field;
 use quench_ui::prelude::*;
 use quench_ui::router::link;
@@ -46,19 +46,31 @@ pub struct Prefill {
     pub subject: String,
     pub body: String,
     pub in_reply_to: Option<String>,
-    pub account_id: String,
 }
 
 /// The starting text of a draft for `mode` (`new`, `reply`, `replyall`, `forward`) from the message it answers, written by
-/// the mailbox `me` (so that a reply to all does not include the writer).
+/// the person whose address is `me` (so that a reply to all does not include the writer, and a reply to something they sent
+/// goes to whom they sent it).
 #[must_use]
-pub fn prefill(mode: &str, original: Option<&MessageView>, me: &[String], offset: i32) -> Prefill {
+pub fn prefill(mode: &str, original: Option<&MessageView>, me: &str, offset: i32) -> Prefill {
     let Some(m) = original else {
         return Prefill::default();
     };
     let who = m.summary.from.label().to_string();
     let quoted = quote(&m.text, &who, m.summary.date, offset);
-    let mine = |c: &Contact| me.iter().any(|a| a.eq_ignore_ascii_case(&c.address));
+    let mine = |c: &Contact| c.address.eq_ignore_ascii_case(me);
+    // The ones an answer goes to: the writer, or (when the writer is me) the ones I wrote to.
+    let answer_to: Vec<Contact> = if mine(&m.summary.from) && !m.summary.to.is_empty() {
+        m.summary.to.clone()
+    } else {
+        vec![m.summary.from.clone()]
+    };
+    let full = |list: &[Contact]| {
+        list.iter()
+            .map(Contact::full)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     match mode {
         "forward" => Prefill {
             subject: forward_subject(&m.summary.subject),
@@ -68,55 +80,51 @@ pub fn prefill(mode: &str, original: Option<&MessageView>, me: &[String], offset
                 m.summary.subject,
                 m.text
             ),
-            account_id: m.summary.account_id.clone(),
             ..Prefill::default()
         },
         "replyall" => {
-            let first = if m.reply_to.is_empty() {
-                m.summary.from.clone()
-            } else {
-                m.reply_to[0].clone()
-            };
-            let others: Vec<String> = m
+            let others: Vec<Contact> = m
                 .summary
                 .to
                 .iter()
                 .chain(&m.cc)
-                .filter(|c| !mine(c) && c.address != first.address)
-                .map(Contact::full)
+                .filter(|c| !mine(c) && !answer_to.iter().any(|a| a.address == c.address))
+                .cloned()
                 .collect();
             Prefill {
-                to: first.full(),
-                cc: others.join(", "),
+                to: full(&answer_to),
+                cc: full(&others),
                 subject: reply_subject(&m.summary.subject),
                 body: quoted,
                 in_reply_to: Some(m.summary.id.clone()),
-                account_id: m.summary.account_id.clone(),
             }
         }
-        _ => {
-            let first = if m.reply_to.is_empty() {
-                m.summary.from.clone()
-            } else {
-                m.reply_to[0].clone()
-            };
-            Prefill {
-                to: first.full(),
-                subject: reply_subject(&m.summary.subject),
-                body: quoted,
-                in_reply_to: Some(m.summary.id.clone()),
-                account_id: m.summary.account_id.clone(),
-                ..Prefill::default()
-            }
-        }
+        _ => Prefill {
+            to: full(&answer_to),
+            subject: reply_subject(&m.summary.subject),
+            body: quoted,
+            in_reply_to: Some(m.summary.id.clone()),
+            ..Prefill::default()
+        },
     }
 }
 
-fn account_options(accounts: &[Account]) -> Vec<(String, String)> {
-    accounts
-        .iter()
-        .map(|a| (a.id.clone(), format!("{} <{}>", a.label, a.address)))
-        .collect()
+/// `text` with its last recipient (after the last comma) replaced by `address`, ready for the next one.
+#[must_use]
+pub fn complete(text: &str, address: &str) -> String {
+    let head = text.rfind([',', ';']).map_or("", |at| &text[..=at]);
+    if head.is_empty() {
+        format!("{address}, ")
+    } else {
+        format!("{} {address}, ", head.trim_end())
+    }
+}
+
+/// What is being typed as the last recipient, when it could still become a user name (no `@`, no name part).
+#[must_use]
+pub fn typing(text: &str) -> Option<String> {
+    let token = text.rsplit([',', ';']).next().unwrap_or("").trim();
+    (!token.is_empty() && !token.contains(['@', '<', '>', ' ', '"'])).then(|| token.to_string())
 }
 
 /// The compose page.
@@ -127,7 +135,9 @@ pub(crate) fn page(env: &Env, state: &State, mode: &str, id: String) -> View {
         if let Some(view) = problem_view(&env, &state) {
             return view;
         }
-        let accounts = state.accounts.get().unwrap_or_default();
+        let Some(me) = state.me.get() else {
+            return waiting(&env);
+        };
         let original = if mode == "new" {
             None
         } else {
@@ -136,29 +146,12 @@ pub(crate) fn page(env: &Env, state: &State, mode: &str, id: String) -> View {
         if mode != "new" && original.is_none() {
             return waiting(&env);
         }
-        if accounts.is_empty() {
-            return div()
-                .class("mr-page")
-                .child(
-                    p().attr("id", "no-mailbox")
-                        .class("fui-empty")
-                        .text(env.t.t("mr_compose_no_mailbox")),
-                )
-                .child(
-                    link(&env.path("/accounts"))
-                        .class("mr-btn mr-primary")
-                        .text(env.t.t("mr_account_add")),
-                )
-                .into_view();
-        }
-        let mine: Vec<String> = accounts.iter().map(|a| a.address.clone()).collect();
-        let start = prefill(&mode, original.as_ref(), &mine, env.offset);
-        let chosen = if accounts.iter().any(|a| a.id == start.account_id) {
-            start.account_id.clone()
-        } else {
-            accounts[0].id.clone()
-        };
-        let from = Field::new("compose-from", &chosen);
+        let start = prefill(&mode, original.as_ref(), &me.address, env.offset);
+        let domain = me
+            .address
+            .split_once('@')
+            .map_or("", |(_, d)| d)
+            .to_string();
         let to = Field::new("compose-to", &start.to);
         let cc = Field::new("compose-cc", &start.cc);
         let bcc = Field::new("compose-bcc", "");
@@ -168,10 +161,45 @@ pub(crate) fn page(env: &Env, state: &State, mode: &str, id: String) -> View {
         let more = create_signal(!start.cc.is_empty());
         let in_reply_to = start.in_reply_to.clone();
 
+        // As the last recipient is typed, ask who it could be.
+        state.people.set(Vec::new());
+        create_effect({
+            let (to, ask, people) = (to.clone(), Rc::clone(&env.ask), state.people.clone());
+            move || match typing(&to.value()) {
+                Some(token) => ask(Request::People(token)),
+                None => people.set(Vec::new()),
+            }
+        });
+        let suggestions = {
+            let (to, people) = (to.clone(), state.people.clone());
+            View::dynamic(move || {
+                let list = people.get();
+                if list.is_empty() {
+                    return View::Empty;
+                }
+                div()
+                    .class("mr-actions")
+                    .attr("id", "people")
+                    .children(list.into_iter().map(|c| {
+                        let (to, people, address) = (to.clone(), people.clone(), c.address.clone());
+                        button()
+                            .attr("type", "button")
+                            .class("mr-btn mr-small")
+                            .attr("data-person", c.address.clone())
+                            .on_click(move || {
+                                to.set(&complete(&to.value_untracked(), &address));
+                                people.set(Vec::new());
+                            })
+                            .text(c.address)
+                            .into_view()
+                    }))
+                    .into_view()
+            })
+        };
+
         let send = {
             let (env, state, error) = (env.clone(), state.clone(), error.clone());
-            let (from, to, cc, bcc, subject, body) = (
-                from.clone(),
+            let (to, cc, bcc, subject, body) = (
                 to.clone(),
                 cc.clone(),
                 bcc.clone(),
@@ -180,7 +208,6 @@ pub(crate) fn page(env: &Env, state: &State, mode: &str, id: String) -> View {
             );
             move || {
                 let draft = ComposeDraft {
-                    account_id: from.value_untracked(),
                     to: to.value_untracked(),
                     cc: cc.value_untracked(),
                     bcc: bcc.value_untracked(),
@@ -302,15 +329,16 @@ pub(crate) fn page(env: &Env, state: &State, mode: &str, id: String) -> View {
                     .class("mr-card mr-form")
                     .on_submit(send)
                     .child(labelled(
-                        "compose-from",
-                        &env.t.t("mr_compose_from"),
-                        super::choice(&from, account_options(&accounts)),
-                    ))
-                    .child(labelled(
                         "compose-to",
                         &env.t.t("mr_compose_to"),
                         text_box(&to),
                     ))
+                    .child(
+                        p().attr("id", "compose-hint")
+                            .class("mr-muted")
+                            .text(format!("{} @{domain}", env.t.t("mr_compose_hint"))),
+                    )
+                    .child(suggestions)
                     .child(more_fields)
                     .child(labelled(
                         "compose-subject",

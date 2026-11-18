@@ -1,4 +1,5 @@
-//! `/api/v1/messages`: lists, one message, its safe HTML, its attachments, changes, and sending from a mailbox.
+//! `/api/v1/me`, `/folders`, `/people` and `/messages`: who is asking, the mailbox, one message, its safe HTML, its attachments,
+//! changes, and sending.
 
 use super::{Caller, created, done, reply};
 use crate::app::App;
@@ -17,8 +18,6 @@ pub struct ListQuery {
     #[serde(default)]
     pub folder: Option<String>,
     #[serde(default)]
-    pub role: Option<String>,
-    #[serde(default)]
     pub q: Option<String>,
     #[serde(default)]
     pub unread: Option<String>,
@@ -34,6 +33,32 @@ fn truthy(value: Option<&str>) -> bool {
     matches!(value, Some("1" | "true" | "yes"))
 }
 
+#[get("/api/v1/me")]
+pub async fn me(Inject(app): Inject<App>, caller: Caller) -> Response {
+    reply(mailbox::me(&app, &caller.name, caller.write, caller.admin).await)
+}
+
+#[get("/api/v1/folders")]
+pub async fn folders(Inject(app): Inject<App>, caller: Caller) -> Response {
+    reply(mailbox::folders(&app, &caller.name).await)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PeopleQuery {
+    #[serde(default)]
+    pub q: Option<String>,
+}
+
+/// Addresses that start like what is being typed, to complete a recipient.
+#[get("/api/v1/people")]
+pub async fn people(
+    Inject(app): Inject<App>,
+    caller: Caller,
+    Query(q): Query<PeopleQuery>,
+) -> Response {
+    reply(mailbox::people(&app, &caller.name, &q.q.unwrap_or_default()).await)
+}
+
 #[get("/api/v1/messages")]
 pub async fn list(
     Inject(app): Inject<App>,
@@ -41,8 +66,7 @@ pub async fn list(
     Query(q): Query<ListQuery>,
 ) -> Response {
     let spec = ListSpec {
-        folder_id: q.folder.filter(|f| !f.is_empty()),
-        role: q.role.filter(|r| !r.is_empty()),
+        folder: q.folder.unwrap_or_default(),
         text: q.q.unwrap_or_default(),
         unread: truthy(q.unread.as_deref()),
         flagged: truthy(q.flagged.as_deref()),
@@ -196,6 +220,9 @@ pub async fn remove_upload(
 }
 
 pub fn register_routes() {
+    let _ = me as fn(_, _) -> _;
+    let _ = folders as fn(_, _) -> _;
+    let _ = people as fn(_, _, _) -> _;
     let _ = list as fn(_, _, _) -> _;
     let _ = change as fn(_, _, _) -> _;
     let _ = send as fn(_, _, _) -> _;

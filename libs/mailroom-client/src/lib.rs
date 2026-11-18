@@ -1,8 +1,8 @@
-//! How a forge service sends mail.
+//! How a forge service writes to a person.
 //!
-//! No service holds SMTP credentials or an address book: it asks Mailroom to send, with a machine token Gatehouse issued for
-//! it (`client_credentials`, audience `mailroom`). Mailroom queues the message, retries it, and owns the sender address and
-//! the budgets. One call:
+//! Mail never leaves the estate: a service asks Mailroom to put a message into a person's mailbox (`name` or `name@<domain>`),
+//! with a machine token Gatehouse issued for it (`client_credentials`, audience `mailroom`). Mailroom owns the sender address
+//! (the service's own, `gatehouse@<domain>`), the budgets and the delivery log. One call:
 //!
 //! ```no_run
 //! # async fn demo() -> Result<(), mailroom_client::Failure> {
@@ -10,7 +10,7 @@
 //! let client = Client::new(&Config::from_env().expect("MAILROOM_URL is set"))?;
 //! client
 //!     .send(&SendRequest {
-//!         to: vec!["ann@example.org".into()],
+//!         to: vec!["ann".into()],
 //!         subject: "Build finished".into(),
 //!         text: "It passed.".into(),
 //!         idempotency_key: Some("run-42".into()),
@@ -23,7 +23,7 @@
 
 #![allow(clippy::doc_markdown, clippy::too_long_first_doc_paragraph)]
 
-pub use mailroom_core::{Queued, SendRequest};
+pub use mailroom_core::{SendRequest, Sent};
 use quench_client::ClientCredentialsClient;
 use std::fmt;
 
@@ -87,7 +87,7 @@ impl Config {
 pub struct Failure {
     /// What went wrong, for a log.
     pub message: String,
-    /// Whether trying again later could work (Mailroom busy or down, over its limit) or not (a refused request).
+    /// Whether trying again later could work (Mailroom busy or down, over its limit) or not (a refused request, an unknown name).
     pub transient: bool,
 }
 
@@ -146,14 +146,14 @@ impl Client {
         Ok(Self { http })
     }
 
-    /// Asks Mailroom to send a message. Returns once it is queued.
+    /// Asks Mailroom to deliver a message. Returns once it is in the mailboxes.
     ///
     /// # Errors
     ///
     /// A [`Failure`], transient when Mailroom or Gatehouse could not be reached or is over its limits.
-    pub async fn send(&self, request: &SendRequest) -> Result<Queued, Failure> {
+    pub async fn send(&self, request: &SendRequest) -> Result<Sent, Failure> {
         self.http
-            .post::<SendRequest, Queued>("/api/v1/send", request)
+            .post::<SendRequest, Sent>("/api/v1/send", request)
             .await
             .map_err(|e| classify(&e.to_string()))
     }

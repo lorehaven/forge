@@ -1,4 +1,4 @@
-//! Mailroom's screens: the mail client (a unified inbox, folders, the reader, compose, mailboxes) and the administrator's panel.
+//! Mailroom's screens: the mail client (the inbox, sent mail and the trash, the reader, compose) and the administrator's panel.
 //! The app does no I/O: it asks its host for the data and for every change (`live::Request`) and is told what came
 //! (`live::Msg`), so the same screens run in the browser and in tests.
 

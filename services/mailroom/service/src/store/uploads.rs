@@ -15,17 +15,22 @@ pub struct UploadRow {
 }
 
 impl Store {
-    /// Stores the file unless the owner's files would then weigh more than `cap` bytes; the check and the insert are one
-    /// statement, so parallel uploads cannot each pass it. Returns whether it was stored.
+    /// Stores the file unless the owner's files would then weigh more than `cap` bytes. The check and the insert happen under a
+    /// lock of the owner's (held to the end of the transaction), so parallel uploads cannot each pass it. Returns whether it was
+    /// stored.
     pub async fn upload_insert(&self, u: &UploadRow, cap: i64) -> Result<bool> {
-        let n = self
-            .pool
+        let mut conn = self.pool.get().await?;
+        let mut tx = conn.begin().await?;
+        tx.execute("SELECT pg_advisory_xact_lock(hashtext($1))", &[&u.owner])
+            .await?;
+        let n = tx
             .execute(
                 "INSERT INTO uploads (id, owner, filename, media_type, data, size, created) \
                  SELECT $1,$2,$3,$4,$5,$6::integer,$7 WHERE (SELECT COALESCE(SUM(size), 0) FROM uploads WHERE owner = $2) + $6::integer <= $8::bigint",
                 &[&u.id, &u.owner, &u.filename, &u.media_type, &u.data, &u.size, &u.created, &cap],
             )
             .await?;
+        tx.commit().await?;
         Ok(n > 0)
     }
 

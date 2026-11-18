@@ -232,8 +232,7 @@ impl Fixture {
         }
     }
 
-    /// Mailroom, over a Postgres schema of its own and the mail fakes of `mail.rs`: the sending server the estate's mail goes
-    /// to, and the provider mailbox a person adds. Both are on local ports Mailroom is told to allow, as an administrator would.
+    /// Mailroom, over a Postgres schema of its own. It opens no connection to any mail server, so there is nothing else to fake.
     async fn start_mailroom(&self) -> Service {
         self.build("mailroom-service").await;
         println!("Starting mailroom-service...");
@@ -254,24 +253,9 @@ impl Fixture {
             .env("SERVICE_AUTH_ENABLED", "true")
             .env("SERVER_CERT_PATH", "missing.pem")
             .env("SERVER_KEY_PATH", "missing.pem")
-            .env(
-                "MAILROOM_VAULT_KEY",
-                "forge-bdd-mailroom-vault-key-0123456789",
-            )
-            .env("MAILROOM_PRIVATE_HOSTS", "localhost")
-            .env(
-                "MAILROOM_EXTRA_PORTS",
-                format!("{},{}", crate::mail::SMTP_PORT, crate::mail::IMAP_PORT),
-            )
-            .env("MAILROOM_SMTP_HOST", "localhost")
-            .env("MAILROOM_SMTP_PORT", crate::mail::SMTP_PORT.to_string())
-            .env("MAILROOM_SMTP_SECURITY", "tls")
-            .env("MAILROOM_SMTP_USERNAME", crate::mail::RELAY_USER)
-            .env("MAILROOM_SMTP_PASSWORD", crate::mail::RELAY_PASSWORD)
-            .env("MAILROOM_SMTP_TLS_ROOTS_PEM", crate::mail::certificate())
-            .env("MAILROOM_FROM", "Forge <noreply@bdd.example>")
-            // The scenarios drive the mailbox sync themselves, so the background schedule stays out of the way.
-            .env("MAILROOM_SYNC_SECS", "3600");
+            .env("MAILROOM_DOMAIN", crate::mail::DOMAIN)
+            // The scenarios do not wait for the sweeper.
+            .env("MAILROOM_BACKGROUND", "false");
 
         Service {
             target: Target::Mailroom,
@@ -503,7 +487,7 @@ impl Fixture {
                 "bdd-client-secret-gatehouse-mailroom",
             )
             .stdout(Stdio::piped());
-        // With Mailroom in the run, gatehouse hands its mail to it (`mail.rs` reads what reaches the sending server).
+        // With Mailroom in the run, gatehouse writes its mail into it (and still logs the links, which its own scenarios read).
         if crate::mail::enabled() {
             command
                 .env("MAILROOM_URL", "http://127.0.0.1:18443/mailroom")

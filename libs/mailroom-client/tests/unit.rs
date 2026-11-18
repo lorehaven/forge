@@ -29,7 +29,7 @@ async fn token(server: &MockServer) {
 
 fn request() -> SendRequest {
     SendRequest {
-        to: vec!["a@example.org".into()],
+        to: vec!["ann".into()],
         subject: "Hi".into(),
         text: "Body".into(),
         ..SendRequest::default()
@@ -104,18 +104,17 @@ async fn a_send_gets_a_token_and_posts_the_message() {
     Mock::given(method("POST"))
         .and(path("/mailroom/api/v1/send"))
         .and(header("authorization", "Bearer tok-1"))
-        .respond_with(
-            ResponseTemplate::new(202)
-                .set_body_json(quench_serde::json!({"id": "m1", "status": "queued"})),
-        )
+        .respond_with(ResponseTemplate::new(201).set_body_json(
+            quench_serde::json!({"id": "m1", "status": "delivered", "delivered": 1}),
+        ))
         .expect(2)
         .mount(&server)
         .await;
     let client = Client::new(&config(&server)).unwrap();
-    let queued = client.send(&request()).await.unwrap();
+    let sent = client.send(&request()).await.unwrap();
     assert_eq!(
-        (queued.id.as_str(), queued.status.as_str()),
-        ("m1", "queued")
+        (sent.id.as_str(), sent.status.as_str(), sent.delivered),
+        ("m1", "delivered", 1)
     );
     // The token is kept for the next call.
     client.send(&request()).await.unwrap();
@@ -129,7 +128,7 @@ async fn a_send_gets_a_token_and_posts_the_message() {
     );
     let sent = requests.iter().find(|r| r.path.ends_with("/send")).unwrap();
     let body = sent.body_string();
-    assert!(body.contains("\"subject\":\"Hi\"") && body.contains("a@example.org"));
+    assert!(body.contains("\"subject\":\"Hi\"") && body.contains("\"ann\""));
     server.verify().await;
 }
 

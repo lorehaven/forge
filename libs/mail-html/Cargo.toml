@@ -1,9 +1,9 @@
 [package]
-name = "mail-client"
+name = "mail-html"
 version = "0.1.0"
 edition = { workspace = true }
 authors = { workspace = true }
-description = "Mail client protocols: IMAP, MIME parsing and composing, HTML sanitising, outbound address policy"
+description = "Safe display of mail HTML: an allow-list sanitiser and an HTML-to-text conversion"
 homepage = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
@@ -11,22 +11,17 @@ publish = false
 autotests = false
 
 [lib]
-name = "mail_client"
+name = "mail_html"
 path = "src/lib.rs"
 
 [lints]
 workspace = true
 
 [dependencies]
-quench-core = { workspace = true }
 quench-html = { workspace = true }
-quench-mail = { workspace = true }
-quench-tls = { workspace = true }
-tokio = { workspace = true }
 
 [dev-dependencies]
 quench-test = { workspace = true }
-mail-testkit = { workspace = true }
 
 [[test]]
 name = "unit"

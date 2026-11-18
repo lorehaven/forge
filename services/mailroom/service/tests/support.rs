@@ -1,16 +1,13 @@
-//! Shared helpers: a Postgres schema of its own with the Foundry migrations applied, fake mail servers, and an `App` over them.
+//! Shared helpers: a Postgres schema of its own with the Foundry migrations applied, and an `App` over it.
 //!
 //! The tests that need the database run when `MAILROOM_TEST_DATABASE_URL` points at a Postgres (any database; each test makes a
 //! schema of its own and drops it) and skip themselves otherwise.
 
 #![allow(dead_code)]
 
-use mail_testkit::{CERT_PEM, ImapOptions, ImapServer, SmtpOptions, SmtpServer};
-use mailroom_core::AccountInput;
 use mailroom_service::app::App;
 use mailroom_service::boot;
 use mailroom_service::config::Config;
-use mailroom_service::settings::{self, StoredTransport};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -108,20 +105,11 @@ pub async fn scratch() -> Scratch {
     scratch
 }
 
-/// Everything a test needs: the database, a mail server to read from, one to send through, and the app.
+/// Everything a test needs: the database and the app over it.
 pub struct Env {
     pub app: App,
-    pub imap: ImapServer,
-    pub smtp: SmtpServer,
     _scratch: Scratch,
 }
-
-pub fn raw(subject: &str, from: &str, body: &str) -> Vec<u8> {
-    format!("From: {from}\r\nTo: me@example.com\r\nSubject: {subject}\r\nDate: Tue, 29 Sep 2026 12:00:00 +0000\r\nMessage-ID: <{subject}@x.example>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}\r\n").into_bytes()
-}
-
-pub const OWNER: &str = "ann";
-pub const PASSWORD: &str = "s3cret-app-password";
 
 pub async fn env() -> Env {
     env_with(|_| {}).await
@@ -129,96 +117,81 @@ pub async fn env() -> Env {
 
 pub async fn env_with(customize: impl FnOnce(&mut Config)) -> Env {
     let scratch = scratch().await;
-    let imap = ImapServer::start(ImapOptions::default()).await;
-    imap.add_account("me@example.com", PASSWORD);
-    imap.add_folder("me@example.com", "Sent", &["\\Sent"]);
-    imap.add_folder("me@example.com", "Trash", &["\\Trash"]);
-    imap.add_folder("me@example.com", "Archive", &["\\Archive"]);
-    let smtp = SmtpServer::start(SmtpOptions::default()).await;
-    smtp.add_user("me@example.com", PASSWORD);
-    smtp.add_user("noreply@example.com", "relay-pw");
     let mut config = Config::for_tests(&scratch.schema, &database_url().unwrap());
-    config.private_hosts = vec!["localhost".into()];
-    config.extra_ports = vec![imap.port(), smtp.port()];
     customize(&mut config);
     let app = boot::app(config).await.unwrap();
     Env {
         app,
-        imap,
-        smtp,
         _scratch: scratch,
     }
 }
 
 impl Env {
-    /// The form for the fake servers.
-    pub fn input(&self) -> AccountInput {
-        AccountInput {
-            label: "Test".into(),
-            address: "me@example.com".into(),
-            username: "me@example.com".into(),
-            password: PASSWORD.into(),
-            imap_host: "localhost".into(),
-            imap_port: self.imap.port(),
-            imap_security: "tls".into(),
-            smtp_host: "localhost".into(),
-            smtp_port: self.smtp.port(),
-            smtp_security: "tls".into(),
-            signature: String::new(),
-            tls_roots_pem: CERT_PEM.to_string(),
-            save_sent: true,
+    /// Opens (makes) the mailbox of each name.
+    pub async fn people(&self, names: &[&str]) {
+        for name in names {
+            mailroom_service::mailbox::open_mailbox(&self.app, name)
+                .await
+                .unwrap();
         }
     }
 
-    /// Adds the mailbox for `owner` and syncs it.
-    pub async fn add_account(&self, owner: &str) -> mailroom_core::Account {
-        let account = mailroom_service::accounts::create(&self.app, owner, &self.input())
-            .await
-            .unwrap();
-        mailroom_service::sync::sync_account(&self.app, &account.id)
-            .await
-            .unwrap();
-        account
-    }
-
-    pub fn deliver(&self, folder: &str, subject: &str, body: &str) -> u32 {
-        self.imap.deliver(
-            "me@example.com",
-            folder,
-            &raw(subject, "Alice <alice@x.example>", body),
-            &[],
+    /// `from` writes to `to` (names), as a person.
+    pub async fn write(
+        &self,
+        from: &str,
+        to: &[&str],
+        subject: &str,
+        text: &str,
+    ) -> mailroom_core::Sent {
+        mailroom_service::outgoing::send_user(
+            &self.app,
+            from,
+            &mailroom_core::Compose {
+                to: to.iter().map(|t| (*t).to_string()).collect(),
+                subject: subject.into(),
+                text: text.into(),
+                ..mailroom_core::Compose::default()
+            },
         )
+        .await
+        .unwrap()
     }
 
-    /// Gives the estate a sending server (the SMTP fake) and a sender address.
-    pub async fn with_transport(&self) {
-        let mut stored = self.app.settings();
-        stored.transport = Some(StoredTransport {
-            host: "localhost".into(),
-            port: self.smtp.port(),
-            security: "tls".into(),
-            username: "noreply@example.com".into(),
-            tls_roots_pem: CERT_PEM.to_string(),
-        });
-        stored.identities = vec![mailroom_core::admin::Identity {
-            address: "noreply@example.com".into(),
-            name: "Forge".into(),
-            default: true,
-        }];
-        settings::save(&self.app.store, &stored).await.unwrap();
-        settings::save_transport_secret(&self.app.store, &self.app.vault, "relay-pw")
-            .await
-            .unwrap();
-        self.app.set_settings(stored);
+    /// A service writes to people.
+    pub async fn service_mail(
+        &self,
+        service: &str,
+        to: &[&str],
+        subject: &str,
+        text: &str,
+    ) -> mailroom_service::error::Result<mailroom_core::Sent> {
+        mailroom_service::outgoing::send_service(
+            &self.app,
+            service,
+            &mailroom_core::SendRequest {
+                to: to.iter().map(|t| (*t).to_string()).collect(),
+                subject: subject.into(),
+                text: text.into(),
+                ..mailroom_core::SendRequest::default()
+            },
+        )
+        .await
     }
 
-    /// The folder of the mailbox with this role.
-    pub async fn folder(&self, account_id: &str, role: &str) -> mailroom_core::Folder {
-        mailroom_service::mailbox::folders(&self.app, OWNER, account_id)
-            .await
-            .unwrap()
-            .into_iter()
-            .find(|f| f.role == role)
-            .unwrap_or_else(|| panic!("no {role} folder"))
+    /// The messages in a folder of `owner`.
+    pub async fn folder(&self, owner: &str, folder: &str) -> Vec<mailroom_core::MessageSummary> {
+        mailroom_service::mailbox::list(
+            &self.app,
+            owner,
+            &mailroom_service::mailbox::ListSpec {
+                folder: folder.into(),
+                limit: 100,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .items
     }
 }

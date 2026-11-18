@@ -5,8 +5,8 @@ use std::future::Future;
 use std::pin::Pin;
 
 use mailroom_app::{ListQuery, Msg, Request};
-use mailroom_core::admin::{AdminAccount, AuditEntry, OutboxItem, Page, Settings, Stats};
-use mailroom_core::{Account, Folder, Me, MessageList, MessageView, Preset, TestResult};
+use mailroom_core::admin::{AdminMailbox, AuditEntry, Delivery, Page, Settings, Stats};
+use mailroom_core::{Contact, Folder, Me, MessageList, MessageView};
 use quench_serde::json;
 use quench_serde::{Deserialize, Serialize};
 
@@ -14,7 +14,7 @@ use quench_serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpRequest {
     pub method: &'static str,
-    /// Under the service (`/api/v1/accounts`); the transport adds the prefix.
+    /// Under the service (`/api/v1/messages`); the transport adds the prefix.
     pub path: String,
     pub body: Option<String>,
 }
@@ -63,17 +63,17 @@ pub fn base_of(path: &str) -> String {
 #[must_use]
 pub fn list_path(query: &ListQuery) -> String {
     let mut parts = Vec::new();
-    if let Some(folder) = &query.folder {
-        parts.push(format!("folder={}", segment(folder)));
-    }
-    if let Some(role) = &query.role {
-        parts.push(format!("role={}", segment(role)));
+    if !query.folder.is_empty() {
+        parts.push(format!("folder={}", segment(&query.folder)));
     }
     if !query.text.trim().is_empty() {
         parts.push(format!("q={}", segment(query.text.trim())));
     }
     if query.unread {
         parts.push("unread=1".to_string());
+    }
+    if query.flagged {
+        parts.push("flagged=1".to_string());
     }
     parts.push(format!("offset={}", query.offset));
     parts.push("limit=50".to_string());
@@ -97,9 +97,6 @@ impl Failure {
             Self::Other(403, _) => {
                 Msg::Failed("this account may not use Mailroom: ask for access in gatehouse".into())
             }
-            Self::Other(502, body) => Msg::Failed(
-                error_text(&body).unwrap_or_else(|| "the mail server did not answer".into()),
-            ),
             Self::Other(status, _) => Msg::Failed(format!("the service answered {status}")),
             Self::Offline(why) => Msg::Failed(format!("cannot reach the service: {why}")),
         }
@@ -196,61 +193,32 @@ impl<T: Transport> Client<T> {
             .map(|_| ())
     }
 
-    async fn admin_accounts(&self, offset: u32) -> Vec<Msg> {
+    async fn mailboxes(&self, offset: u32) -> Vec<Msg> {
         vec![match self
-            .get::<Page<AdminAccount>>(format!("/api/v1/admin/accounts?offset={offset}&limit=50"))
+            .get::<Page<AdminMailbox>>(format!("/api/v1/admin/mailboxes?offset={offset}&limit=50"))
             .await
         {
-            Ok(page) => Msg::AdminAccounts(page),
+            Ok(page) => Msg::Mailboxes(page),
             Err(failure) => failure.read(),
         }]
     }
 
-    async fn outbox(&self, status: &str, offset: u32) -> Vec<Msg> {
-        let path = format!(
-            "/api/v1/admin/outbox?status={}&offset={offset}&limit=50",
-            segment(status)
-        );
-        vec![match self.get::<Page<OutboxItem>>(path).await {
-            Ok(page) => Msg::Outbox(page),
+    async fn folders(&self) -> Msg {
+        match self.get::<Vec<Folder>>("/api/v1/folders".into()).await {
+            Ok(folders) => Msg::Folders(folders),
             Err(failure) => failure.read(),
-        }]
+        }
     }
 
     /// What the host tells the app about a request. `Language` is the browser's own business.
     #[allow(clippy::too_many_lines)]
     pub async fn execute(&self, request: Request) -> Vec<Msg> {
         match request {
-            Request::Startup => {
-                let mut out = Vec::new();
-                match self.get::<Me>("/api/v1/me".into()).await {
-                    Ok(me) => out.push(Msg::Me(me)),
-                    Err(Failure::SignedOut) => return vec![Msg::SignedOut],
-                    Err(failure) => return vec![failure.read()],
-                }
-                if let Ok(presets) = self.get::<Vec<Preset>>("/api/v1/presets".into()).await {
-                    out.push(Msg::Presets(presets));
-                }
-                match self.get::<Vec<Account>>("/api/v1/accounts".into()).await {
-                    Ok(accounts) => out.push(Msg::Accounts(accounts)),
-                    Err(failure) => out.push(failure.read()),
-                }
-                out
-            }
-            Request::Accounts => vec![match self
-                .get::<Vec<Account>>("/api/v1/accounts".into())
-                .await
-            {
-                Ok(accounts) => Msg::Accounts(accounts),
-                Err(failure) => failure.read(),
-            }],
-            Request::Folders(account) => {
-                let path = format!("/api/v1/accounts/{}/folders", segment(&account));
-                vec![match self.get::<Vec<Folder>>(path).await {
-                    Ok(folders) => Msg::Folders { account, folders },
-                    Err(failure) => failure.read(),
-                }]
-            }
+            Request::Startup => match self.get::<Me>("/api/v1/me".into()).await {
+                Ok(me) => vec![Msg::Me(me), self.folders().await],
+                Err(failure) => vec![failure.read()],
+            },
+            Request::Folders => vec![self.folders().await],
             Request::List(query) => vec![match self.get::<MessageList>(list_path(&query)).await {
                 Ok(list) => Msg::Messages(list),
                 Err(failure) => failure.read(),
@@ -279,49 +247,23 @@ impl<T: Transport> Client<T> {
                 Ok(()) => vec![Msg::Sent],
                 Err(failure) => vec![failure.write()],
             },
-            Request::Refresh(id) => {
-                let path = format!("/api/v1/accounts/{}/refresh", segment(&id));
-                match self.act::<()>("POST", path, None).await {
-                    Ok(()) => vec![Msg::Changed],
-                    Err(failure) => vec![failure.write()],
-                }
-            }
-            Request::AddAccount(input) => vec![match self
-                .send::<_, Account>("POST", "/api/v1/accounts".into(), &input)
-                .await
-            {
-                Ok(account) => Msg::AccountSaved(Box::new(account)),
-                Err(failure) => failure.write(),
-            }],
-            Request::UpdateAccount { id, input } => {
-                let path = format!("/api/v1/accounts/{}", segment(&id));
-                vec![match self.send::<_, Account>("PUT", path, &input).await {
-                    Ok(account) => Msg::AccountSaved(Box::new(account)),
-                    Err(failure) => failure.write(),
-                }]
-            }
-            Request::TestAccount(input) => vec![match self
-                .send::<_, TestResult>("POST", "/api/v1/account-tests".into(), &input)
-                .await
-            {
-                Ok(result) => Msg::Tested(Box::new(result)),
-                Err(failure) => failure.write(),
-            }],
-            Request::RemoveAccount(id) => {
-                match self
-                    .act::<()>("DELETE", format!("/api/v1/accounts/{}", segment(&id)), None)
-                    .await
-                {
-                    Ok(()) => vec![Msg::AccountRemoved(id)],
-                    Err(failure) => vec![failure.write()],
-                }
-            }
             Request::RemoveUpload(id) => {
                 // Best effort: the page already forgot it, and unused uploads expire.
                 let _ = self
                     .act::<()>("DELETE", format!("/api/v1/uploads/{}", segment(&id)), None)
                     .await;
                 vec![]
+            }
+            Request::People(prefix) => {
+                // Completion is a convenience: when it does not work, the person types the whole name.
+                match self
+                    .get::<Vec<Contact>>(format!("/api/v1/people?q={}", segment(&prefix)))
+                    .await
+                {
+                    Ok(list) => vec![Msg::People(list)],
+                    Err(Failure::SignedOut) => vec![Msg::SignedOut],
+                    Err(_) => vec![],
+                }
             }
             Request::Stats => vec![
                 match self.get::<Stats>("/api/v1/admin/stats".into()).await {
@@ -345,72 +287,44 @@ impl<T: Transport> Client<T> {
                     Err(failure) => failure.write(),
                 }]
             }
-            Request::TestTransport => {
-                let result = self
-                    .call("POST", "/api/v1/admin/transport/test".into(), None)
-                    .await;
-                vec![match result.and_then(|body| {
-                    json::from_str::<TestResult>(&body)
-                        .map_err(|e| Failure::Offline(format!("the answer is unreadable: {e}")))
-                }) {
-                    Ok(result) => Msg::TransportTested(Box::new(result)),
-                    Err(failure) => failure.write(),
-                }]
-            }
-            Request::AdminAccounts { offset } => self.admin_accounts(offset).await,
-            Request::SetDisabled { id, disabled } => {
+            Request::Mailboxes { offset } => self.mailboxes(offset).await,
+            Request::SetDisabled { owner, disabled } => {
                 let verb = if disabled { "disable" } else { "enable" };
                 match self
                     .act::<()>(
                         "POST",
-                        format!("/api/v1/admin/accounts/{}/{verb}", segment(&id)),
+                        format!("/api/v1/admin/mailboxes/{}/{verb}", segment(&owner)),
                         None,
                     )
                     .await
                 {
-                    Ok(()) => self.admin_accounts(0).await,
+                    Ok(()) => self.mailboxes(0).await,
                     Err(failure) => vec![failure.write()],
                 }
             }
-            Request::AdminRemoveAccount(id) => {
+            Request::RemoveMailbox(owner) => {
                 match self
                     .act::<()>(
                         "DELETE",
-                        format!("/api/v1/admin/accounts/{}", segment(&id)),
+                        format!("/api/v1/admin/mailboxes/{}", segment(&owner)),
                         None,
                     )
                     .await
                 {
-                    Ok(()) => self.admin_accounts(0).await,
+                    Ok(()) => self.mailboxes(0).await,
                     Err(failure) => vec![failure.write()],
                 }
             }
-            Request::Outbox { status, offset } => self.outbox(&status, offset).await,
-            Request::Retry(id) => {
-                match self
-                    .act::<()>(
-                        "POST",
-                        format!("/api/v1/admin/outbox/{}/retry", segment(&id)),
-                        None,
-                    )
+            Request::Deliveries { offset } => {
+                vec![match self
+                    .get::<Page<Delivery>>(format!(
+                        "/api/v1/admin/deliveries?offset={offset}&limit=50"
+                    ))
                     .await
                 {
-                    Ok(()) => self.outbox("", 0).await,
-                    Err(failure) => vec![failure.write()],
-                }
-            }
-            Request::RemoveQueued(id) => {
-                match self
-                    .act::<()>(
-                        "DELETE",
-                        format!("/api/v1/admin/outbox/{}", segment(&id)),
-                        None,
-                    )
-                    .await
-                {
-                    Ok(()) => self.outbox("", 0).await,
-                    Err(failure) => vec![failure.write()],
-                }
+                    Ok(page) => Msg::Deliveries(page),
+                    Err(failure) => failure.read(),
+                }]
             }
             Request::Audit { offset } => {
                 vec![match self

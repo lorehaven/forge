@@ -135,8 +135,6 @@ pub struct MailroomState {
     /// The bearer token the next requests present.
     pub token: Option<String>,
     pub user: String,
-    /// Mailboxes added in this scenario, by the label they were given.
-    pub accounts: std::collections::HashMap<String, String>,
     /// The message opened last.
     pub message: Option<String>,
     /// A message id kept across a change of person.

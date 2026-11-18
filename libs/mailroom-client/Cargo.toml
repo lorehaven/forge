@@ -20,7 +20,6 @@ workspace = true
 [dependencies]
 mailroom-core = { workspace = true }
 quench-client = { workspace = true }
-quench-core = { workspace = true }
 quench-serde = { workspace = true }
 
 [dev-dependencies]

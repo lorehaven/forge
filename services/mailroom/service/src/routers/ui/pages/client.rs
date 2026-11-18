@@ -26,11 +26,8 @@ pub(super) async fn home_slash(who: ActorOrRedirect) -> Response {
     page(who)
 }
 
-#[get("/ui/mail/{account}/{folder}")]
-pub(super) async fn folder(
-    who: ActorOrRedirect,
-    Path((_account, _folder)): Path<(String, String)>,
-) -> Response {
+#[get("/ui/folder/{id}")]
+pub(super) async fn folder(who: ActorOrRedirect, Path(_id): Path<String>) -> Response {
     page(who)
 }
 
@@ -44,8 +41,11 @@ pub(super) async fn compose(who: ActorOrRedirect) -> Response {
     page(who)
 }
 
-#[get("/ui/accounts")]
-pub(super) async fn accounts(who: ActorOrRedirect) -> Response {
+#[get("/ui/compose/{mode}/{id}")]
+pub(super) async fn compose_from(
+    who: ActorOrRedirect,
+    Path((_mode, _id)): Path<(String, String)>,
+) -> Response {
     page(who)
 }
 
@@ -91,7 +91,7 @@ pub(super) fn register_routes() {
     let _ = folder as fn(_, _) -> _;
     let _ = message as fn(_, _) -> _;
     let _ = compose as fn(_) -> _;
-    let _ = accounts as fn(_) -> _;
+    let _ = compose_from as fn(_, _) -> _;
     let _ = admin as fn(_) -> _;
     let _ = admin_section as fn(_, _) -> _;
     let _ = script as fn() -> _;

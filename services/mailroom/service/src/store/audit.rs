@@ -25,7 +25,7 @@ impl Store {
         let rows = self
             .pool
             .query(
-                "SELECT id, at, actor, action, target, detail FROM audit ORDER BY at DESC, id OFFSET $1 LIMIT $2",
+                "SELECT id, at, actor, action, target, detail FROM audit ORDER BY at DESC, seq DESC OFFSET $1 LIMIT $2",
                 &[&offset, &limit],
             )
             .await?;

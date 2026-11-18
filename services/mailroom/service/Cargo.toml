@@ -3,8 +3,8 @@ name = "mailroom"
 version = "0.1.0"
 edition = { workspace = true }
 authors = { workspace = true }
-description = "Mailroom - the estate's mail: a web mail client over any IMAP/SMTP provider, and the one place forge services send mail from"
-keywords = ["mail", "imap", "smtp"]
+description = "Mailroom - the estate's own mail: a mailbox for every person, and the place forge services write to them"
+keywords = ["mail"]
 categories = ["email"]
 homepage = { workspace = true }
 repository = { workspace = true }
@@ -25,22 +25,19 @@ path = "src/main.rs"
 
 [dependencies]
 forge-web = { workspace = true }
-mail-client = { workspace = true }
+mail-html = { workspace = true }
 mailroom-core = { workspace = true }
 mailroom-web = { workspace = true }
 quench-auth = { workspace = true }
 quench-core = { workspace = true }
-quench-crypto = { workspace = true }
 quench-http = { workspace = true }
 quench-log = { workspace = true }
-quench-mail = { workspace = true }
 quench-pg = { workspace = true }
 quench-serde = { workspace = true }
 quench-starter = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
-mail-testkit = { workspace = true }
 quench-test = { workspace = true }
 
 [[test]]

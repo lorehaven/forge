@@ -256,13 +256,13 @@ pub fn daily_mail_limit(get: &dyn Fn(&str) -> Option<String>) -> Result<usize, S
 /// that comes up and silently cannot send a reset link.
 #[must_use]
 pub fn sender_from_env(limiter: &RateLimiter) -> Arc<dyn Sender> {
-    // Mailroom is the estate's mail service: with MAILROOM_URL set, everything goes through it and gatehouse holds no SMTP
-    // credentials. Without it the older direct SMTP settings (and then the log) apply.
+    // Mailroom is the estate's own mail: with MAILROOM_URL set, what gatehouse writes lands in people's Mailroom inboxes (nothing
+    // leaves the estate). Without it the older direct SMTP settings (and then the log) apply.
     if let Some(config) = mailroom_client::Config::from_env() {
         let per_day = daily_mail_limit(&|key| std::env::var(key).ok())
             .unwrap_or_else(|err| panic!("invalid mail configuration: {err}"));
         quench_log::info!(
-            "mail: sending through Mailroom at {} as {}; at most {per_day} emails per day",
+            "mail: delivering through Mailroom at {} as {}; at most {per_day} messages per day",
             config.base_url,
             config.client_id
         );

@@ -8,12 +8,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use mailroom_core::admin::{
-    AdminAccount, AuditEntry, OutboxItem, Page, Settings, SettingsInput, Stats,
+    AdminMailbox, AuditEntry, Delivery, Page, Settings, SettingsInput, Stats,
 };
-use mailroom_core::{
-    Account, AccountInput, Change, Compose, Folder, Me, MessageList, MessageView, Preset,
-    TestResult, Upload,
-};
+use mailroom_core::{Change, Compose, Contact, Folder, Me, MessageList, MessageView, Upload};
 use quench_ui::i18n::I18n;
 use quench_ui::prelude::*;
 use quench_ui::router::{History, RouteContext, Router, Routes};
@@ -23,55 +20,42 @@ use crate::screens::{self, Env};
 /// What a message list is asked for.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ListQuery {
-    /// One folder...
-    pub folder: Option<String>,
-    /// ...or every folder with this role across the person's mailboxes.
-    pub role: Option<String>,
+    /// `inbox`, `sent` or `trash`.
+    pub folder: String,
     pub text: String,
     pub unread: bool,
+    pub flagged: bool,
     pub offset: u32,
 }
 
 /// What the app asks its host for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
-    /// Who the person is, their mailboxes and the provider suggestions: once, when the app starts.
+    /// Who the person is and their folders: once, when the app starts.
     Startup,
-    Accounts,
-    Folders(String),
+    Folders,
     List(ListQuery),
     Open(String),
     Change(Change),
     Send(Compose),
-    /// Look at a mailbox's server now.
-    Refresh(String),
-    AddAccount(AccountInput),
-    UpdateAccount {
-        id: String,
-        input: AccountInput,
-    },
-    TestAccount(AccountInput),
-    RemoveAccount(String),
     RemoveUpload(String),
+    /// Addresses that start with these letters, to complete a recipient.
+    People(String),
     // The panel.
     Stats,
     Settings,
     SaveSettings(SettingsInput),
-    TestTransport,
-    AdminAccounts {
+    Mailboxes {
         offset: u32,
     },
     SetDisabled {
-        id: String,
+        owner: String,
         disabled: bool,
     },
-    AdminRemoveAccount(String),
-    Outbox {
-        status: String,
+    RemoveMailbox(String),
+    Deliveries {
         offset: u32,
     },
-    Retry(String),
-    RemoveQueued(String),
     Audit {
         offset: u32,
     },
@@ -83,12 +67,7 @@ pub enum Request {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
     Me(Me),
-    Presets(Vec<Preset>),
-    Accounts(Vec<Account>),
-    Folders {
-        account: String,
-        folders: Vec<Folder>,
-    },
+    Folders(Vec<Folder>),
     Messages(MessageList),
     Message(Box<MessageView>),
     /// A change was made (read, starred): the app asks for the list, and for the message when one is open.
@@ -96,20 +75,17 @@ pub enum Msg {
     /// Messages were moved or deleted: they are not where they were.
     Moved,
     Sent,
-    AccountSaved(Box<Account>),
-    AccountRemoved(String),
-    Tested(Box<TestResult>),
     Uploaded(Upload),
+    People(Vec<Contact>),
     Stats(Stats),
     Settings(Box<Settings>),
     SettingsSaved(Box<Settings>),
-    TransportTested(Box<TestResult>),
-    AdminAccounts(Page<AdminAccount>),
-    Outbox(Page<OutboxItem>),
+    Mailboxes(Page<AdminMailbox>),
+    Deliveries(Page<Delivery>),
     Audit(Page<AuditEntry>),
     /// The service refused or failed a change; the text is for the person.
     Rejected(String),
-    /// There is no such message or mailbox.
+    /// There is no such message.
     NotFound,
     /// The service could not be reached, or answered something else.
     Failed(String),
@@ -186,21 +162,17 @@ pub(crate) enum Problem {
 #[derive(Clone)]
 pub(crate) struct State {
     pub me: Signal<Option<Me>>,
-    pub presets: Signal<Vec<Preset>>,
-    pub accounts: Signal<Option<Vec<Account>>>,
-    /// Folders by mailbox, as they arrive.
-    pub folders: Signal<Vec<(String, Vec<Folder>)>>,
+    pub folders: Signal<Vec<Folder>>,
     pub list: Signal<Option<MessageList>>,
     /// What the list on screen was asked for: a change asks for it again.
     pub asked: Signal<Option<ListQuery>>,
     pub message: Signal<Option<MessageView>>,
-    pub tested: Signal<Option<TestResult>>,
     pub uploads: Signal<Vec<Upload>>,
+    pub people: Signal<Vec<Contact>>,
     pub stats: Signal<Option<Stats>>,
     pub settings: Signal<Option<Settings>>,
-    pub transport_test: Signal<Option<TestResult>>,
-    pub admin_accounts: Signal<Option<Page<AdminAccount>>>,
-    pub outbox: Signal<Option<Page<OutboxItem>>>,
+    pub mailboxes: Signal<Option<Page<AdminMailbox>>>,
+    pub deliveries: Signal<Option<Page<Delivery>>>,
     pub audit: Signal<Option<Page<AuditEntry>>>,
     pub problem: Signal<Option<Problem>>,
     /// A refused change, until the person does something else.
@@ -235,17 +207,7 @@ fn receive(
 ) {
     match m {
         Msg::Me(me) => state.me.set(Some(me)),
-        Msg::Presets(list) => state.presets.set(list),
-        Msg::Accounts(list) => {
-            for account in &list {
-                requests(Request::Folders(account.id.clone()));
-            }
-            state.accounts.set(Some(list));
-        }
-        Msg::Folders { account, folders } => state.folders.update(|all| {
-            all.retain(|(id, _)| *id != account);
-            all.push((account, folders));
-        }),
+        Msg::Folders(list) => state.folders.set(list),
         Msg::Messages(list) => {
             state.problem.set(None);
             state.list.set(Some(list));
@@ -263,42 +225,30 @@ fn receive(
             if let Some(open) = state.message.get_untracked() {
                 requests(Request::Open(open.summary.id));
             }
-            requests(Request::Accounts);
+            requests(Request::Folders);
         }
         Msg::Moved => {
             state.notice.set(None);
-            state.message.set(None);
-            requests(Request::Accounts);
-            router.navigate(&format!("{base}/ui/home"));
+            requests(Request::Folders);
+            // From a message: back to the folder it was in. From a list: the list again, without what left it.
+            if let Some(open) = state.message.get_untracked() {
+                state.message.set(None);
+                router.navigate(&format!("{base}/ui/folder/{}", open.summary.folder));
+            } else if let Some(query) = state.asked.get_untracked() {
+                requests(Request::List(query));
+            }
         }
         Msg::Sent => {
             state.notice.set(None);
             state.uploads.set(Vec::new());
+            state.people.set(Vec::new());
+            requests(Request::Folders);
             // The page it goes to starts clean, so what is said is said after the move.
-            router.navigate(&format!("{base}/ui/home"));
+            router.navigate(&format!("{base}/ui/folder/sent"));
             state.done.set(Some(i18n.t("mr_compose_sent")));
         }
-        Msg::AccountSaved(account) => {
-            state.notice.set(None);
-            state.tested.set(None);
-            state.done.set(Some(i18n.t("mr_account_saved")));
-            state.accounts.update(|list| {
-                let list = list.get_or_insert_with(Vec::new);
-                list.retain(|a| a.id != account.id);
-                list.push(*account);
-            });
-            requests(Request::Accounts);
-        }
-        Msg::AccountRemoved(id) => {
-            state.accounts.update(|list| {
-                if let Some(list) = list {
-                    list.retain(|a| a.id != id);
-                }
-            });
-            state.folders.update(|all| all.retain(|(a, _)| *a != id));
-        }
-        Msg::Tested(result) => state.tested.set(Some(*result)),
         Msg::Uploaded(upload) => state.uploads.update(|list| list.push(upload)),
+        Msg::People(list) => state.people.set(list),
         Msg::Stats(stats) => state.stats.set(Some(stats)),
         Msg::Settings(settings) => state.settings.set(Some(*settings)),
         Msg::SettingsSaved(settings) => {
@@ -306,9 +256,8 @@ fn receive(
             state.done.set(Some(i18n.t("mr_admin_saved")));
             state.settings.set(Some(*settings));
         }
-        Msg::TransportTested(result) => state.transport_test.set(Some(*result)),
-        Msg::AdminAccounts(page) => state.admin_accounts.set(Some(page)),
-        Msg::Outbox(page) => state.outbox.set(Some(page)),
+        Msg::Mailboxes(page) => state.mailboxes.set(Some(page)),
+        Msg::Deliveries(page) => state.deliveries.set(Some(page)),
         Msg::Audit(page) => state.audit.set(Some(page)),
         Msg::Rejected(why) => state.notice.set(Some(why)),
         Msg::NotFound => state.problem.set(Some(Problem::NotFound)),
@@ -322,19 +271,16 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     let i18n = Rc::new(I18n::new(&LOCALES, &setup.language).expect("the translations parse"));
     let state = State {
         me: create_signal(None),
-        presets: create_signal(Vec::new()),
-        accounts: create_signal(None),
         folders: create_signal(Vec::new()),
         list: create_signal(None),
         asked: create_signal(None),
         message: create_signal(None),
-        tested: create_signal(None),
         uploads: create_signal(Vec::new()),
+        people: create_signal(Vec::new()),
         stats: create_signal(None),
         settings: create_signal(None),
-        transport_test: create_signal(None),
-        admin_accounts: create_signal(None),
-        outbox: create_signal(None),
+        mailboxes: create_signal(None),
+        deliveries: create_signal(None),
         audit: create_signal(None),
         problem: create_signal(None),
         notice: create_signal(None),
@@ -373,34 +319,28 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         state.done.set(None);
     };
 
-    let home = {
+    // A list page: the folder `id` (the inbox for `/ui/home`).
+    let list_page = {
         let (env, state) = (env.clone(), state.clone());
-        move |_: &RouteContext| -> View {
+        move |id: String| -> View {
             fresh(&state);
             let query = ListQuery {
-                role: Some("inbox".into()),
+                folder: id.clone(),
                 ..ListQuery::default()
             };
             state.list.set(None);
+            state.message.set(None);
             state.asked.set(Some(query.clone()));
             (env.ask)(Request::List(query));
-            screens::inbox::page(&env, &state, None)
+            screens::inbox::page(&env, &state, id)
         }
     };
-    let folder = {
-        let (env, state) = (env.clone(), state.clone());
-        move |ctx: &RouteContext| -> View {
-            let id = ctx.param("id").unwrap_or_default();
-            fresh(&state);
-            let query = ListQuery {
-                folder: Some(id.clone()),
-                ..ListQuery::default()
-            };
-            state.list.set(None);
-            state.asked.set(Some(query.clone()));
-            (env.ask)(Request::List(query));
-            screens::inbox::page(&env, &state, Some(id))
-        }
+    let home = {
+        let list_page = list_page.clone();
+        move |_: &RouteContext| -> View { list_page("inbox".into()) }
+    };
+    let folder = move |ctx: &RouteContext| -> View {
+        list_page(ctx.param("id").unwrap_or_else(|| "inbox".into()))
     };
     let message = {
         let (env, state) = (env.clone(), state.clone());
@@ -426,15 +366,6 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             screens::compose::page(&env, &state, &mode, id)
         }
     };
-    let accounts = {
-        let (env, state) = (env.clone(), state.clone());
-        move |_: &RouteContext| -> View {
-            fresh(&state);
-            state.tested.set(None);
-            (env.ask)(Request::Accounts);
-            screens::accounts::page(&env, &state)
-        }
-    };
     let admin = {
         let (env, state) = (env.clone(), state.clone());
         move |ctx: &RouteContext| -> View {
@@ -452,7 +383,6 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         .route(&format!("{base}/ui/message/:id"), message)
         .route(&format!("{base}/ui/compose"), compose.clone())
         .route(&format!("{base}/ui/compose/:mode/:id"), compose)
-        .route(&format!("{base}/ui/accounts"), accounts)
         .route(&format!("{base}/ui/admin"), admin.clone())
         .route(&format!("{base}/ui/admin/:section"), admin)
         .not_found({

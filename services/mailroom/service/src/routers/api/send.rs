@@ -1,8 +1,7 @@
-//! `POST /api/v1/send`: how a service sends mail.
+//! `POST /api/v1/send`: how a service writes to people.
 
 use super::reply;
 use crate::app::App;
-use crate::error::Error;
 use crate::outgoing;
 use mailroom_core::SendRequest;
 use quench_auth::domain::jwt::{Claims, JwtConfig};
@@ -38,22 +37,16 @@ pub async fn send(
     Sender(source): Sender,
     Limited(Json(body)): Limited<Json<SendRequest>, { super::SEND_LIMIT }>,
 ) -> Response {
-    let result = outgoing::send_service(&app, &source, &body).await;
-    match result {
-        Ok(queued) => {
-            let status = if queued.status == "duplicate" {
+    match outgoing::send_service(&app, &source, &body).await {
+        Ok(sent) => {
+            let status = if sent.status == "duplicate" {
                 StatusCode::OK
             } else {
-                StatusCode::ACCEPTED
+                StatusCode::CREATED
             };
-            Response::json(status, &queued)
+            Response::json(status, &sent)
                 .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
         }
-        Err(Error::Upstream(text)) => Response::json(
-            StatusCode::SERVICE_UNAVAILABLE,
-            &mailroom_core::ApiError { error: text },
-        )
-        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(e) => reply::<()>(Err(e)),
     }
 }

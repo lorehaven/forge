@@ -65,8 +65,8 @@ async fn main() {
     let fixture = services::Fixture::new(manifest_dir);
     let mut running = Vec::new();
 
-    // Mailroom needs a database and the mail fakes. With a database configured, a run that includes gatehouse or mailroom
-    // starts them: gatehouse then sends its mail through Mailroom, and its scenarios read the mail from the fake relay.
+    // Mailroom needs a database. With one configured, a run that includes gatehouse or mailroom uses it: gatehouse then writes
+    // its mail into Mailroom, and its scenarios still read the links from its log.
     let wants_mail = !opts.no_spawn
         && mail::enabled()
         && selected
@@ -74,7 +74,6 @@ async fn main() {
             .any(|t| matches!(t, Target::Gatehouse | Target::Mailroom));
     if wants_mail {
         mail::prepare_schema().await;
-        mail::start().await;
     } else if selected.contains(&Target::Mailroom) && !opts.no_spawn {
         eprintln!(
             "skipping the mailroom suite: set MAILROOM_BDD_DATABASE_URL to a Postgres it may make a schema in"

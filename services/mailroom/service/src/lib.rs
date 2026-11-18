@@ -1,6 +1,6 @@
-//! Mailroom - the estate's mail. A web mail client over any IMAP/SMTP provider (the person adds a mailbox, Mailroom keeps a
-//! cache of its headers and fetches bodies on demand), the one place forge services send mail from (a queue with retries,
-//! sender identities, budgets), and the administrator's panel. It opens connections out to mail servers and takes none in.
+//! Mailroom - the estate's own mail. Every Gatehouse user has a mailbox (`name@<domain>`) with an inbox, sent mail and a trash;
+//! people write to each other, and forge services (Gatehouse first) write to people through `POST /api/v1/send`. Mail lives in
+//! Postgres. Nothing leaves the cluster: Mailroom opens no connection to any mail server and takes no mail from outside.
 
 // Router `Result<T, Response>` early-returns trip this; boxing buys nothing.
 #![allow(clippy::result_large_err)]
@@ -19,12 +19,11 @@
     clippy::option_if_let_else
 )]
 
-pub mod accounts;
 pub mod admin;
 pub mod app;
 pub mod boot;
 pub mod config;
-pub mod connect;
+pub mod delivery;
 pub mod error;
 pub mod limits;
 pub mod mailbox;
@@ -32,6 +31,4 @@ pub mod outgoing;
 pub mod routers;
 pub mod settings;
 pub mod store;
-pub mod sync;
-pub mod vault;
 pub mod worker;

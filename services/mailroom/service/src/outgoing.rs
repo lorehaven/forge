@@ -1,31 +1,62 @@
-//! Writing mail: a person's messages from their mailboxes, and the estate's from the services.
+//! Sending: a person writes to other people, a service writes to people. Both end in [`delivery::deliver`].
 
 use crate::app::App;
+use crate::delivery::{self, Author, File, Letter};
 use crate::error::{Error, Result, new_id, now};
-use crate::store::outbox::OutboxRow;
+use crate::mailbox::open_mailbox;
+use crate::store::deliveries::DeliveryRow;
 use crate::store::uploads::UploadRow;
-use mail_client::compose::{self, Attachment, Draft};
-use mailroom_core::{Compose, Queued, SendRequest, Upload};
+use mailroom_core::{Compose, SendRequest, Sent, Upload, draft};
 
 /// Largest file uploaded for a message; most bytes of uploads a person may have waiting.
 pub const MAX_UPLOAD: usize = 20 * 1024 * 1024;
-pub const MAX_UPLOADS_PER_USER: i64 = 60 * 1024 * 1024;
-/// Most recipients of one service message.
-pub const MAX_SERVICE_RECIPIENTS: usize = 20;
-/// A person's messages per hour.
-const USER_PER_HOUR: u32 = 60;
-const MAX_TEXT: usize = 1024 * 1024;
-const MAX_HTML: usize = 2 * 1024 * 1024;
+const MAX_UPLOADS_PER_USER: i64 = 60 * 1024 * 1024;
 
-fn compose_error(e: &compose::ComposeError) -> Error {
-    Error::Invalid(e.to_string())
+/// A name that is safe to show and to put in a download header: no path, no control characters, not too long.
+#[must_use]
+pub fn clean_filename(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let cleaned: String = base
+        .chars()
+        .filter(|c| !c.is_control() && !matches!(c, '"' | '<' | '>' | ':' | '|' | '?' | '*'))
+        .take(120)
+        .collect();
+    let cleaned = cleaned.trim().trim_start_matches('.').trim().to_string();
+    if cleaned.is_empty() {
+        "attachment".into()
+    } else {
+        cleaned
+    }
 }
 
-/// Keeps a file a person chose to attach.
+/// `type/subtype` or `application/octet-stream`.
+#[must_use]
+pub fn clean_media_type(media_type: &str) -> String {
+    let t = media_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    let ok = t.len() <= 100
+        && t.split_once('/').is_some_and(|(a, b)| {
+            !a.is_empty()
+                && !b.is_empty()
+                && t.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '+' | '.' | '_'))
+        });
+    if ok {
+        t
+    } else {
+        "application/octet-stream".into()
+    }
+}
+
+/// Stores a file the person will attach.
 ///
 /// # Errors
 ///
-/// [`Error::Invalid`] for an empty or oversized file or a full upload quota.
+/// [`Error::Invalid`] for an empty or too large file or too many waiting files, [`Error::Limited`] for too many uploads.
 pub async fn upload(
     app: &App,
     owner: &str,
@@ -33,6 +64,7 @@ pub async fn upload(
     media_type: &str,
     data: Vec<u8>,
 ) -> Result<Upload> {
+    open_mailbox(app, owner).await?;
     if data.is_empty() {
         return Err(Error::Invalid("the file is empty".into()));
     }
@@ -44,12 +76,11 @@ pub async fn upload(
     app.limits
         .hit(&format!("upload:{owner}"), 60, 3600, now())
         .map_err(Error::Limited)?;
-    let filename = mail_client::entity::clean_filename(filename);
     let row = UploadRow {
         id: new_id(),
         owner: owner.to_string(),
-        filename: filename.clone(),
-        media_type: media_type.chars().take(100).collect(),
+        filename: clean_filename(filename),
+        media_type: clean_media_type(media_type),
         size: i32::try_from(data.len()).unwrap_or(i32::MAX),
         data,
         created: now(),
@@ -61,253 +92,265 @@ pub async fn upload(
     }
     Ok(Upload {
         id: row.id,
-        filename,
+        filename: row.filename,
         size: u32::try_from(row.size).unwrap_or(0),
     })
 }
 
-/// Queues a person's message from one of their mailboxes.
+/// The user names in a list of recipients as typed, each at this estate's domain (or without one).
+fn names(app: &App, entries: &[String]) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    for entry in entries {
+        let name = draft::recipient_name(entry).ok_or_else(|| {
+            Error::Invalid(format!("{} is not a user name or address", shorten(entry)))
+        })?;
+        let inner = entry
+            .rsplit_once('<')
+            .and_then(|(_, rest)| rest.strip_suffix('>'))
+            .unwrap_or(entry)
+            .trim();
+        if let Some((_, domain)) = inner.split_once('@')
+            && !domain.eq_ignore_ascii_case(&app.config.domain)
+        {
+            return Err(Error::Invalid(format!(
+                "mail stays inside this estate: write to name@{}, not {}",
+                app.config.domain,
+                shorten(inner)
+            )));
+        }
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    Ok(out)
+}
+
+fn shorten(text: &str) -> String {
+    text.chars().take(60).collect()
+}
+
+/// A person sends a message.
 ///
 /// # Errors
 ///
-/// [`Error::Invalid`] for a bad draft, [`Error::Limited`] when sending too much, [`Error::NotFound`] for an unknown mailbox.
-pub async fn send_user(app: &App, owner: &str, request: &Compose) -> Result<Queued> {
+/// [`Error::Invalid`] for a bad message or a recipient with no mailbox (nothing is sent then), [`Error::Limited`] for too
+/// many sent in an hour, [`Error::NotFound`] for a reply to or an attachment that is not theirs.
+pub async fn send_user(app: &App, owner: &str, compose: &Compose) -> Result<Sent> {
+    let mailbox = open_mailbox(app, owner).await?;
+    let per_hour = app.settings().hourly_per_person;
     app.limits
-        .hit(&format!("send:{owner}"), USER_PER_HOUR, 3600, now())
+        .hit(&format!("send:{owner}"), per_hour, 3600, now())
         .map_err(Error::Limited)?;
-    let account = app
-        .store
-        .account_get_owned(&request.account_id, owner)
-        .await?
-        .ok_or(Error::NotFound)?;
-    if account.disabled {
-        return Err(Error::Forbidden);
+    let letter_to = names(app, &compose.to)?;
+    let letter_cc = names(app, &compose.cc)?;
+    let letter_bcc = names(app, &compose.bcc)?;
+    let original = match compose.in_reply_to.as_deref().filter(|r| !r.is_empty()) {
+        Some(reply_id) => Some(
+            app.store
+                .message_get_owned(reply_id, owner)
+                .await?
+                .ok_or(Error::NotFound)?,
+        ),
+        None => None,
+    };
+    let in_reply_to = original
+        .as_ref()
+        .map(|row| row.message_id.clone())
+        .unwrap_or_default();
+    let uploads = app.store.uploads_owned(owner, &compose.attachments).await?;
+    if uploads.len() != compose.attachments.len() {
+        return Err(Error::NotFound);
     }
-    if request.text.len() > MAX_TEXT {
-        return Err(Error::Invalid("the message is too long".into()));
-    }
-    let uploads = app.store.uploads_owned(owner, &request.attachments).await?;
-    if uploads.len() != request.attachments.len() {
-        return Err(Error::Invalid(
-            "an attachment is no longer available; attach it again".into(),
-        ));
-    }
-    let mut draft = Draft {
-        from: account.address.clone(),
-        to: request.to.clone(),
-        cc: request.cc.clone(),
-        bcc: request.bcc.clone(),
-        subject: request.subject.clone(),
-        text: Some(with_signature(&request.text, &account.signature)),
-        attachments: uploads
+    let letter = Letter {
+        to: letter_to,
+        cc: letter_cc,
+        bcc: letter_bcc,
+        subject: compose.subject.trim().to_string(),
+        text: compose.text.clone(),
+        html: None,
+        unsubscribe: String::new(),
+        in_reply_to,
+        files: uploads
             .iter()
-            .map(|u| Attachment {
+            .map(|u| File {
                 filename: u.filename.clone(),
                 media_type: u.media_type.clone(),
                 data: u.data.clone(),
             })
             .collect(),
-        ..Draft::default()
     };
-    let reply_to_message = if let Some(reply_id) = &request.in_reply_to {
-        let original = app
-            .store
-            .message_get_owned(reply_id, owner)
-            .await?
-            .ok_or(Error::NotFound)?;
-        // A Message-ID with spaces or line breaks (some senders write them) cannot be threaded on; the reply still goes.
-        if well_formed_message_id(&original.message_id) {
-            draft.in_reply_to = Some(original.message_id.clone());
-            draft.references = vec![original.message_id];
-        }
-        Some(original.id)
-    } else {
-        None
+    let author = Author {
+        name: String::new(),
+        address: mailbox.address,
+        source: String::new(),
+        owner: Some(owner.to_string()),
     };
-    let built = compose::build(&draft, now()).map_err(|e| compose_error(&e))?;
-    let recipients: Vec<String> = built.envelope.to.iter().map(ToString::to_string).collect();
-    let row = OutboxRow {
-        id: new_id(),
-        kind: "user".into(),
-        source: owner.to_string(),
-        account_id: Some(account.id.clone()),
-        envelope_from: built.envelope.from.to_string(),
-        recipients: quench_serde::json::to_string(&recipients),
-        subject: request.subject.chars().take(200).collect(),
-        raw: Some(built.raw),
-        status: "queued".into(),
-        attempts: 0,
-        last_error: None,
-        created: now(),
-        next_attempt: Some(now()),
-        sent: None,
-        idem_key: None,
-        reply_to_message,
-    };
-    app.store.outbox_insert(&row).await?;
-    app.wake.notify_one();
+    let outcome = delivery::deliver(app, &author, &letter).await?;
     app.store
-        .uploads_delete(owner, &request.attachments)
+        .uploads_delete(owner, &compose.attachments)
         .await?;
-    Ok(Queued {
-        id: row.id,
-        status: "queued".into(),
+    if let Some(original) = original {
+        app.store.message_mark_answered(&original.id, owner).await?;
+    }
+    Ok(Sent {
+        id: outcome.sent_id.unwrap_or_default(),
+        status: "delivered".into(),
+        delivered: outcome.delivered,
     })
 }
 
-/// `<local@domain>`: one token, no spaces, no control characters.
+/// The name a service writes under: its client name without the `-mailroom` suffix (`gatehouse-mailroom` is `gatehouse`).
 #[must_use]
-pub fn well_formed_message_id(id: &str) -> bool {
-    let id = id.trim();
-    id.len() > 2
-        && id.len() <= 998
-        && id.starts_with('<')
-        && id.ends_with('>')
-        && !id.chars().any(|c| c.is_whitespace() || c.is_control())
-        && id.contains('@')
-}
-
-fn with_signature(text: &str, signature: &str) -> String {
-    if signature.trim().is_empty() {
-        text.to_string()
+pub fn service_name(subject: &str) -> String {
+    let lower = subject.trim().to_ascii_lowercase();
+    let base = lower.strip_suffix("-mailroom").unwrap_or(&lower);
+    if draft::local_part_ok(base) {
+        base.to_string()
     } else {
-        format!("{text}\r\n\r\n-- \r\n{signature}")
+        "service".to_string()
     }
 }
 
-/// Queues a message from a service, sent through the estate's transport.
+/// The display name of a service: its name with a capital.
+#[must_use]
+pub fn display_name(service: &str) -> String {
+    let mut chars = service.chars();
+    chars
+        .next()
+        .map(|c| c.to_uppercase().collect::<String>() + chars.as_str())
+        .unwrap_or_default()
+}
+
+/// A service writes to people.
 ///
 /// # Errors
 ///
-/// [`Error::Invalid`] for a bad request or an unknown sender identity, [`Error::Limited`] over the hourly or daily budget,
-/// [`Error::Upstream`] when no sending server is configured.
-pub async fn send_service(app: &App, source: &str, request: &SendRequest) -> Result<Queued> {
+/// [`Error::Invalid`] for a bad request or one nobody could receive, [`Error::Limited`] over the service's or the estate's
+/// budget.
+pub async fn send_service(app: &App, source: &str, request: &SendRequest) -> Result<Sent> {
+    let service = service_name(source);
+    let stamp = now();
     let settings = app.settings();
-    if settings.transport.is_none() {
-        return Err(Error::Upstream("no sending server is configured".into()));
-    }
-    let identity = settings
-        .identity(&request.from)
-        .ok_or_else(|| Error::Invalid("that sender address is not allowed".into()))?
-        .clone();
-    if request.to.is_empty() || request.to.len() > MAX_SERVICE_RECIPIENTS {
+    app.limits
+        .hit(
+            &format!("source:{service}"),
+            settings.hourly_per_source,
+            3600,
+            stamp,
+        )
+        .map_err(Error::Limited)?;
+    let recipients = names(app, &request.to)?;
+    if recipients.is_empty() || recipients.len() > delivery::MAX_RECIPIENTS {
         return Err(Error::Invalid(format!(
-            "give 1 to {MAX_SERVICE_RECIPIENTS} recipients"
+            "write to 1 to {} people",
+            delivery::MAX_RECIPIENTS
         )));
-    }
-    if request.text.len() > MAX_TEXT || request.html.as_ref().is_some_and(|h| h.len() > MAX_HTML) {
-        return Err(Error::Invalid("the message is too long".into()));
     }
     let key = request
         .idempotency_key
         .as_deref()
         .map(str::trim)
         .filter(|k| !k.is_empty());
-    if let Some(key) = key {
-        if key.len() > 128 || key.chars().any(char::is_control) {
-            return Err(Error::Invalid("the idempotency key is not valid".into()));
-        }
-        // A retry of something already queued is answered with what was queued, and counts for nothing.
-        if let Some(id) = app.store.outbox_by_key(source, key).await? {
-            return Ok(Queued {
-                id,
-                status: "duplicate".into(),
-            });
-        }
+    if key.is_some_and(|k| k.len() > 128 || k.chars().any(char::is_control)) {
+        return Err(Error::Invalid("the idempotency key is too long".into()));
     }
-    let now = now();
-    app.limits
-        .hit(
-            &format!("service:{source}"),
-            settings.hourly_per_source,
-            3600,
-            now,
-        )
-        .map_err(Error::Limited)?;
-    if app
-        .store
-        .outbox_count_since("", "service", now - 86_400)
-        .await?
-        >= i64::from(settings.daily_budget)
-    {
-        return Err(Error::Limited(3600));
-    }
-
-    let from = if identity.name.is_empty() {
-        identity.address.clone()
-    } else {
-        format!(
-            "\"{}\" <{}>",
-            identity.name.replace(['\\', '"', '\r', '\n'], ""),
-            identity.address
-        )
-    };
-    // The estate's own tags are not the caller's to set.
-    let mut headers: Vec<(String, String)> = request
-        .headers
-        .iter()
-        .filter(|(n, _)| !n.to_ascii_lowercase().starts_with("x-mailroom-"))
-        .cloned()
+    let kind: String = request
+        .kind
+        .as_deref()
+        .unwrap_or("")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+        .take(40)
         .collect();
-    if !headers
-        .iter()
-        .any(|(n, _)| n.eq_ignore_ascii_case("auto-submitted"))
-    {
-        headers.push(("Auto-Submitted".into(), "auto-generated".into()));
-    }
-    headers.push((
-        "X-Mailroom-Source".into(),
-        source
-            .chars()
-            .filter(char::is_ascii_graphic)
-            .take(64)
-            .collect(),
-    ));
-    let draft = Draft {
-        from,
-        to: request.to.clone(),
-        subject: request.subject.clone(),
-        text: Some(request.text.clone()),
+    let letter = Letter {
+        to: recipients.clone(),
+        cc: Vec::new(),
+        bcc: Vec::new(),
+        subject: request.subject.trim().to_string(),
+        text: request.text.clone(),
         html: request.html.clone(),
-        reply_to: request.reply_to.clone().filter(|r| !r.trim().is_empty()),
-        headers,
-        ..Draft::default()
+        unsubscribe: request.unsubscribe.clone().unwrap_or_default(),
+        in_reply_to: String::new(),
+        files: Vec::new(),
     };
-    let built = compose::build(&draft, now).map_err(|e| compose_error(&e))?;
-    let recipients: Vec<String> = built.envelope.to.iter().map(ToString::to_string).collect();
-    let row = OutboxRow {
-        id: new_id(),
-        kind: "service".into(),
-        source: source.to_string(),
-        account_id: None,
-        envelope_from: built.envelope.from.to_string(),
-        recipients: quench_serde::json::to_string(&recipients),
-        subject: request.subject.chars().take(200).collect(),
-        raw: Some(built.raw),
-        status: "queued".into(),
-        attempts: 0,
-        last_error: None,
-        created: now,
-        next_attempt: Some(now),
-        sent: None,
+    delivery::check(&letter)?;
+    app.limits
+        .hit("estate", settings.daily_budget, 86_400, stamp)
+        .map_err(Error::Limited)?;
+    let id = new_id();
+    let row = DeliveryRow {
+        id: id.clone(),
+        source: service.clone(),
+        kind,
+        recipients: recipients.iter().map(|n| app.address_of(n)).collect(),
+        subject: letter.subject.chars().take(300).collect(),
+        status: "delivering".into(),
+        delivered: 0,
+        error: None,
+        created: stamp,
         idem_key: key.map(str::to_string),
-        reply_to_message: None,
     };
-    if !app.store.outbox_insert(&row).await? {
-        // Two requests with the same key raced.
-        let id = app
+    if !app.store.delivery_begin(&row).await? {
+        let (earlier, delivered) = app
             .store
-            .outbox_by_key(source, key.unwrap_or(""))
+            .delivery_by_key(&service, key.unwrap_or_default())
             .await?
-            .unwrap_or(row.id);
-        return Ok(Queued {
-            id,
+            .unwrap_or_default();
+        return Ok(Sent {
+            id: earlier,
             status: "duplicate".into(),
+            delivered: u32::try_from(delivered).unwrap_or(0),
         });
     }
-    app.wake.notify_one();
-    Ok(Queued {
-        id: row.id,
-        status: "queued".into(),
-    })
+    let author = Author {
+        name: display_name(&service),
+        address: app.address_of(&service),
+        source: service,
+        owner: None,
+    };
+    match delivery::deliver(app, &author, &letter).await {
+        Ok(outcome) => {
+            let status = if outcome.refused.is_empty() {
+                "delivered"
+            } else if outcome.delivered == 0 {
+                "failed"
+            } else {
+                "partial"
+            };
+            let why: Vec<String> = outcome
+                .refused
+                .iter()
+                .map(|(n, w)| format!("{n} {w}"))
+                .collect();
+            let why = (!why.is_empty()).then(|| why.join("; "));
+            app.store
+                .delivery_finish(
+                    &id,
+                    status,
+                    i32::try_from(outcome.delivered).unwrap_or(0),
+                    why.as_deref(),
+                )
+                .await?;
+            if outcome.delivered == 0 {
+                return Err(Error::Invalid(format!(
+                    "nobody received it: {}",
+                    why.unwrap_or_default()
+                )));
+            }
+            Ok(Sent {
+                id,
+                status: status.into(),
+                delivered: outcome.delivered,
+            })
+        }
+        Err(e) => {
+            let (_, text) = e.parts();
+            app.store
+                .delivery_finish(&id, "failed", 0, Some(&text))
+                .await?;
+            // The attempt failed: the same key may be tried again.
+            app.store.delivery_release_key(&id).await?;
+            Err(e)
+        }
+    }
 }

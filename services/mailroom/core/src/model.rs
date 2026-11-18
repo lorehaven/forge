@@ -1,56 +1,33 @@
 //! The JSON the API speaks. Times are Unix seconds.
+//!
+//! Mailroom is the estate's own mail: every Gatehouse user has one mailbox (`username@<domain>`), services write to people
+//! through it, and nothing leaves the cluster. A mailbox has three folders, `inbox`, `sent` and `trash`.
 
 use quench_serde::{Deserialize, Serialize};
 
-/// What the API says about a person's mailbox. Never carries the password.
+/// The folders of a mailbox, in the order they are shown.
+pub const FOLDERS: [&str; 3] = ["inbox", "sent", "trash"];
+
+/// Who the signed-in person is to Mailroom, for the client to decide what to show.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Account {
-    pub id: String,
-    /// The name the person gave it ("Work").
-    pub label: String,
-    pub address: String,
+pub struct Me {
     pub username: String,
-    pub imap_host: String,
-    pub imap_port: u16,
-    /// `tls` or `starttls`.
-    pub imap_security: String,
-    pub smtp_host: String,
-    pub smtp_port: u16,
-    pub smtp_security: String,
-    /// `ok`, `syncing`, `error` or `disabled`.
-    pub state: String,
-    /// What went wrong last time, in words for a person.
-    #[serde(default)]
-    pub last_error: Option<String>,
-    #[serde(default)]
-    pub last_sync: Option<i64>,
-    pub unread: u32,
-    #[serde(default)]
-    pub signature: String,
-    /// Whether the account trusts a certificate of its own (a bridge, a private CA).
-    #[serde(default)]
-    pub custom_certificate: bool,
-    /// Whether a sent message is copied to the Sent folder by Mailroom (not needed where the provider does it).
-    #[serde(default)]
-    pub save_sent: bool,
+    /// Their address here (`ann@<domain>`).
+    pub address: String,
+    pub can_write: bool,
+    pub admin: bool,
 }
 
-/// A mailbox folder.
+/// A mailbox folder with its counts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Folder {
+    /// `inbox`, `sent` or `trash`.
     pub id: String,
-    pub account_id: String,
-    /// The server's name for it (`INBOX`, `[Gmail]/Sent Mail`).
-    pub path: String,
-    /// The last part of the path, for showing.
-    pub name: String,
-    /// `inbox`, `sent`, `drafts`, `trash`, `junk`, `archive`, or empty.
-    pub role: String,
     pub unread: u32,
     pub total: u32,
 }
 
-/// A person or a mailbox.
+/// A person or a service that writes mail.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Contact {
     #[serde(default)]
@@ -84,14 +61,14 @@ impl Contact {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageSummary {
     pub id: String,
-    pub account_id: String,
-    pub folder_id: String,
+    /// The folder it is in.
+    pub folder: String,
     pub subject: String,
     pub from: Contact,
     #[serde(default)]
     pub to: Vec<Contact>,
     pub date: i64,
-    /// The first words of the body, when known.
+    /// The first words of the body.
     #[serde(default)]
     pub preview: String,
     pub seen: bool,
@@ -99,6 +76,9 @@ pub struct MessageSummary {
     pub answered: bool,
     pub attachments: bool,
     pub size: u32,
+    /// Written by a service (Gatehouse, ...) rather than a person.
+    #[serde(default)]
+    pub automated: bool,
 }
 
 /// A page of messages.
@@ -117,8 +97,6 @@ pub struct AttachmentInfo {
     pub filename: String,
     pub media_type: String,
     pub size: u32,
-    /// Shown inside the message already.
-    pub inline: bool,
 }
 
 /// An opened message.
@@ -127,24 +105,22 @@ pub struct MessageView {
     pub summary: MessageSummary,
     #[serde(default)]
     pub cc: Vec<Contact>,
-    #[serde(default)]
-    pub reply_to: Vec<Contact>,
     pub message_id: String,
     /// The text of the message (made from the HTML when there is no text part).
     pub text: String,
-    /// Whether there is an HTML version to show (fetched safely from `html_url`).
+    /// Whether there is an HTML version to show (fetched safely from the message's `/html` endpoint).
     pub has_html: bool,
     /// Remote images the HTML would load, held back until the person allows them.
     pub remote_images: u32,
     pub attachments: Vec<AttachmentInfo>,
+    /// The link that stops this kind of automated mail, when the sender gave one.
     #[serde(default)]
-    pub list_unsubscribe: String,
+    pub unsubscribe: String,
 }
 
-/// What a person sends from a mailbox.
+/// What a person sends.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Compose {
-    pub account_id: String,
     pub to: Vec<String>,
     #[serde(default)]
     pub cc: Vec<String>,
@@ -162,10 +138,13 @@ pub struct Compose {
 
 /// The answer to a send.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Queued {
+pub struct Sent {
+    /// The message's id in the sender's `sent` folder (a service has none: the delivery's id).
     pub id: String,
-    /// `queued`, or `duplicate` when the idempotency key was seen before.
+    /// `delivered`, or `duplicate` when the idempotency key was seen before.
     pub status: String,
+    /// How many mailboxes it reached.
+    pub delivered: u32,
 }
 
 /// A file uploaded to attach.
@@ -184,7 +163,7 @@ pub struct Change {
     pub seen: Option<bool>,
     #[serde(default)]
     pub flagged: Option<bool>,
-    /// Move to the folder with this role (`trash`, `archive`, `junk`, `inbox`), or to a folder id.
+    /// Move to `inbox` or `trash`.
     #[serde(default)]
     pub move_to: Option<String>,
     /// Delete for good (only from the trash).
@@ -192,90 +171,24 @@ pub struct Change {
     pub delete: bool,
 }
 
-/// A suggestion for the add-account form.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Preset {
-    pub id: String,
-    pub name: String,
-    pub imap_host: String,
-    pub imap_port: u16,
-    pub imap_security: String,
-    pub smtp_host: String,
-    pub smtp_port: u16,
-    pub smtp_security: String,
-    pub note: String,
-    /// The provider's default for the Sent copy.
-    pub save_sent: bool,
-}
-
-/// What the person typed to add or change a mailbox.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct AccountInput {
-    pub label: String,
-    pub address: String,
-    pub username: String,
-    /// Empty on a change means "keep the one stored".
-    #[serde(default)]
-    pub password: String,
-    pub imap_host: String,
-    pub imap_port: u16,
-    pub imap_security: String,
-    pub smtp_host: String,
-    pub smtp_port: u16,
-    pub smtp_security: String,
-    #[serde(default)]
-    pub signature: String,
-    /// PEM of a certificate to trust for this server; empty means the public roots only.
-    #[serde(default)]
-    pub tls_roots_pem: String,
-    #[serde(default)]
-    pub save_sent: bool,
-}
-
-/// The result of trying a mailbox's settings.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TestResult {
-    pub imap: Step,
-    pub smtp: Step,
-}
-
-/// One half of a connection test.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Step {
-    pub ok: bool,
-    /// What failed, for a person; empty when `ok`.
-    #[serde(default)]
-    pub error: String,
-}
-
-/// What the machine-to-machine send endpoint takes.
+/// What the machine-to-machine send endpoint takes. The sender is the calling service (`gatehouse@<domain>`).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct SendRequest {
-    /// One of the administrator's sender identities (its address); the default identity when empty.
-    #[serde(default)]
-    pub from: String,
+    /// Usernames or `username@<domain>`; nothing outside this estate.
     pub to: Vec<String>,
     pub subject: String,
     pub text: String,
     #[serde(default)]
     pub html: Option<String>,
+    /// The link that stops this kind of mail (shown by the reader).
     #[serde(default)]
-    pub reply_to: Option<String>,
-    /// Extra headers: `List-Unsubscribe`, `List-Unsubscribe-Post`, `Auto-Submitted`, `X-*`.
+    pub unsubscribe: Option<String>,
+    /// What sort of message it is (`verification`, `notification`, ...), for the people reading the delivery log.
     #[serde(default)]
-    pub headers: Vec<(String, String)>,
-    /// A retry with the same key does not send twice (kept for a day).
+    pub kind: Option<String>,
+    /// A retry with the same key does not deliver twice (kept for a day).
     #[serde(default)]
     pub idempotency_key: Option<String>,
-}
-
-/// Who the signed-in person is to Mailroom, for the client to decide what to show.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Me {
-    pub username: String,
-    pub can_write: bool,
-    pub admin: bool,
-    pub max_accounts: u32,
 }
 
 /// An error the API sends: `{"error": "..."}`.

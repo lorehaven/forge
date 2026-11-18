@@ -10,8 +10,6 @@ use quench_serde::Serialize;
 pub enum Error {
     #[error("database: {0}")]
     Db(#[from] quench_pg::Error),
-    #[error("{0}")]
-    Vault(#[from] crate::vault::VaultError),
     #[error("not found")]
     NotFound,
     #[error("forbidden")]
@@ -24,9 +22,6 @@ pub enum Error {
     /// Too many requests: try again after this many seconds.
     #[error("slow down")]
     Limited(u64),
-    /// The mail server (or the network to it) failed; the text is safe to show.
-    #[error("{0}")]
-    Upstream(String),
     #[error("{0}")]
     Internal(String),
 }
@@ -51,7 +46,6 @@ impl Error {
                 StatusCode::TOO_MANY_REQUESTS,
                 "too many requests, try again later".into(),
             ),
-            Self::Upstream(m) => (StatusCode::BAD_GATEWAY, m.clone()),
             // SQLSTATE class 22 is "data exception": the request carried something a column cannot hold (a NUL byte, a number
             // out of range). That is the caller's mistake, not ours.
             Self::Db(e) if e.code().is_some_and(|c| c.starts_with("22")) => {
@@ -59,13 +53,6 @@ impl Error {
             }
             Self::Db(e) => {
                 quench_log::error!("database error: {e}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "something went wrong".into(),
-                )
-            }
-            Self::Vault(e) => {
-                quench_log::error!("vault error: {e}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "something went wrong".into(),

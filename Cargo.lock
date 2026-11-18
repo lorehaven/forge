@@ -288,8 +288,6 @@ dependencies = [
 name = "forge-bdd"
 version = "0.1.0"
 dependencies = [
- "mail-client",
- "mail-testkit",
  "quench-args",
  "quench-client",
  "quench-core",
@@ -893,26 +891,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "mail-client"
+name = "mail-html"
 version = "0.1.0"
 dependencies = [
- "mail-testkit",
- "quench-core",
  "quench-html",
- "quench-mail",
  "quench-test",
- "quench-tls",
- "tokio",
-]
-
-[[package]]
-name = "mail-testkit"
-version = "0.1.0"
-dependencies = [
- "quench-core",
- "quench-test",
- "quench-tls",
- "tokio",
 ]
 
 [[package]]
@@ -920,16 +903,13 @@ name = "mailroom"
 version = "0.1.0"
 dependencies = [
  "forge-web",
- "mail-client",
- "mail-testkit",
+ "mail-html",
  "mailroom-core",
  "mailroom-web",
  "quench-auth",
  "quench-core",
- "quench-crypto",
  "quench-http",
  "quench-log",
- "quench-mail",
  "quench-pg",
  "quench-serde",
  "quench-starter",
@@ -954,7 +934,6 @@ version = "0.1.0"
 dependencies = [
  "mailroom-core",
  "quench-client",
- "quench-core",
  "quench-serde",
  "quench-test",
  "tokio",

@@ -1,4 +1,4 @@
-//! The administrator's settings, one JSON document, and the sealed transport password.
+//! The administrator's settings, one JSON document.
 
 use super::Store;
 use crate::error::Result;
@@ -20,17 +20,5 @@ impl Store {
             )
             .await?;
         Ok(())
-    }
-
-    /// Writes only when nothing is there (the first-start seed); returns whether it wrote.
-    pub async fn setting_put_if_absent(&self, key: &str, value: &str) -> Result<bool> {
-        Ok(self
-            .pool
-            .execute(
-                "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
-                &[&key, &value],
-            )
-            .await?
-            > 0)
     }
 }

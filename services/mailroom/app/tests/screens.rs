@@ -9,16 +9,15 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use mailroom_app::screens::admin::{identities_text, parse_identities};
-use mailroom_app::screens::compose::{Uploaded, prefill, upload_outcome};
+use mailroom_app::screens::admin::megabytes;
+use mailroom_app::screens::compose::{Uploaded, complete, prefill, typing, upload_outcome};
 use mailroom_app::screens::reader::unsubscribe_link;
 use mailroom_app::{ListQuery, Mailroom, Msg, Request, Setup, mailroom};
 use mailroom_core::admin::{
-    AdminAccount, AuditEntry, Identity, OutboxItem, Page, Settings, Stats, Transport,
+    AdminMailbox, AuditEntry, Delivery, Page, Settings, SettingsInput, Stats,
 };
 use mailroom_core::{
-    Account, AttachmentInfo, Change, Contact, Folder, Me, MessageList, MessageSummary, MessageView,
-    Preset, Step, TestResult, Upload,
+    AttachmentInfo, Change, Contact, Folder, Me, MessageList, MessageSummary, MessageView, Upload,
 };
 use quench_ui::Event;
 use quench_ui::prelude::*;
@@ -42,13 +41,6 @@ fn present(r: &TestRenderer, id: &str) -> bool {
     r.document_order()
         .into_iter()
         .any(|n| r.attr(n, "id").as_deref() == Some(id))
-}
-
-fn count(r: &TestRenderer, attr: &str) -> usize {
-    r.document_order()
-        .into_iter()
-        .filter(|n| r.attr(*n, attr).is_some())
-        .count()
 }
 
 struct Live {
@@ -125,54 +117,43 @@ fn live(path: &str) -> Live {
     }
 }
 
-fn account(id: &str, label: &str, address: &str) -> Account {
-    Account {
-        id: id.into(),
-        label: label.into(),
-        address: address.into(),
-        username: address.into(),
-        imap_host: "imap.example.com".into(),
-        imap_port: 993,
-        imap_security: "tls".into(),
-        smtp_host: "smtp.example.com".into(),
-        smtp_port: 465,
-        smtp_security: "tls".into(),
-        state: "ok".into(),
-        last_error: None,
-        last_sync: Some(NOW - 600),
-        unread: 2,
-        signature: "Ann".into(),
-        custom_certificate: false,
-        save_sent: true,
-    }
+fn folders() -> Vec<Folder> {
+    vec![
+        Folder {
+            id: "inbox".into(),
+            unread: 2,
+            total: 10,
+        },
+        Folder {
+            id: "sent".into(),
+            unread: 0,
+            total: 4,
+        },
+        Folder {
+            id: "trash".into(),
+            unread: 5,
+            total: 5,
+        },
+    ]
 }
 
-fn folder(id: &str, account: &str, role: &str, name: &str, unread: u32) -> Folder {
-    Folder {
-        id: id.into(),
-        account_id: account.into(),
-        path: name.into(),
-        name: name.into(),
-        role: role.into(),
-        unread,
-        total: 10,
+fn person(address: &str) -> Contact {
+    Contact {
+        name: String::new(),
+        address: address.into(),
     }
 }
 
 fn message(id: &str, subject: &str, seen: bool) -> MessageSummary {
     MessageSummary {
         id: id.into(),
-        account_id: "a1".into(),
-        folder_id: "f1".into(),
+        folder: "inbox".into(),
         subject: subject.into(),
         from: Contact {
             name: "Alice".into(),
-            address: "alice@x.example".into(),
+            address: "alice@home.example".into(),
         },
-        to: vec![Contact {
-            name: String::new(),
-            address: "me@example.com".into(),
-        }],
+        to: vec![person("ann@home.example")],
         date: NOW - 3600,
         preview: "the first words".into(),
         seen,
@@ -180,6 +161,7 @@ fn message(id: &str, subject: &str, seen: bool) -> MessageSummary {
         answered: false,
         attachments: false,
         size: 1200,
+        automated: false,
     }
 }
 
@@ -188,57 +170,25 @@ fn open_view(id: &str, seen: bool) -> MessageView {
         summary: message(id, "Hello there", seen),
         cc: vec![Contact {
             name: "Carol".into(),
-            address: "carol@x.example".into(),
+            address: "carol@home.example".into(),
         }],
-        reply_to: vec![],
-        message_id: "<m1@x.example>".into(),
+        message_id: "<m1@home.example>".into(),
         text: "line one\nline two".into(),
         has_html: false,
         remote_images: 0,
         attachments: vec![],
-        list_unsubscribe: String::new(),
-    }
-}
-
-fn preset() -> Preset {
-    Preset {
-        id: "gmail".into(),
-        name: "Gmail".into(),
-        imap_host: "imap.gmail.com".into(),
-        imap_port: 993,
-        imap_security: "tls".into(),
-        smtp_host: "smtp.gmail.com".into(),
-        smtp_port: 465,
-        smtp_security: "tls".into(),
-        note: "Create an app password first.".into(),
-        save_sent: false,
+        unsubscribe: String::new(),
     }
 }
 
 fn start(l: &Live, admin: bool) {
     l.send(Msg::Me(Me {
         username: "ann".into(),
+        address: "ann@home.example".into(),
         can_write: true,
         admin,
-        max_accounts: 10,
     }));
-    l.send(Msg::Presets(vec![preset()]));
-    l.send(Msg::Accounts(vec![
-        account("a1", "Personal", "me@example.com"),
-        account("a2", "Work", "ann@work.example"),
-    ]));
-    l.send(Msg::Folders {
-        account: "a1".into(),
-        folders: vec![
-            folder("f1", "a1", "inbox", "INBOX", 2),
-            folder("f2", "a1", "sent", "Sent", 0),
-            folder("f3", "a1", "trash", "Trash", 5),
-        ],
-    });
-    l.send(Msg::Folders {
-        account: "a2".into(),
-        folders: vec![folder("g1", "a2", "inbox", "INBOX", 0)],
-    });
+    l.send(Msg::Folders(folders()));
 }
 
 fn list(items: Vec<MessageSummary>, total: u32, offset: u32) -> MessageList {
@@ -249,49 +199,72 @@ fn list(items: Vec<MessageSummary>, total: u32, offset: u32) -> MessageList {
     }
 }
 
+fn query(folder: &str) -> ListQuery {
+    ListQuery {
+        folder: folder.into(),
+        ..ListQuery::default()
+    }
+}
+
 // -- the shell ---------------------------------------------------------------
 
 #[quench_test::test]
 fn the_app_starts_by_asking_who_and_what() {
     let l = live("/mailroom/ui/home");
     assert_eq!(l.asked()[0], Request::Startup);
-    assert!(matches!(&l.asked()[1], Request::List(q) if q.role.as_deref() == Some("inbox")));
+    assert_eq!(l.asked()[1], Request::List(query("inbox")));
     assert!(present(&l.r, "waiting"));
 }
 
 #[quench_test::test]
-fn the_sidebar_lists_mailboxes_and_folders_with_unread_counts() {
+fn the_sidebar_lists_the_three_folders_and_only_the_inbox_counts_unread() {
     let l = live("/mailroom/ui/home");
+    // Before anything is known the folders are still there.
+    for id in ["inbox", "sent", "trash"] {
+        find(&l.r, "a", ("data-folder", id));
+    }
     start(&l, false);
-    // The folders of each mailbox were asked for as the mailboxes arrived.
-    let asked = l.asked();
-    assert!(
-        asked.contains(&Request::Folders("a1".into()))
-            && asked.contains(&Request::Folders("a2".into()))
-    );
     let text = l.text();
-    for needle in ["Personal", "Work", "Inbox", "Sent", "Trash"] {
+    for needle in ["Inbox", "Sent", "Trash"] {
         assert!(text.contains(needle), "{needle}: {text}");
     }
-    let inbox = find(&l.r, "a", ("data-folder", "f1"));
+    let inbox = find(&l.r, "a", ("data-folder", "inbox"));
     assert_eq!(
         l.r.attr(inbox, "href").as_deref(),
-        Some("/mailroom/ui/folder/f1")
+        Some("/mailroom/ui/folder/inbox")
     );
     assert!(
         l.r.text_of(inbox).contains('2'),
         "the unread count is shown"
     );
-    // Trash is not shouted about: its unread count stays out.
     assert!(
-        !l.r.text_of(find(&l.r, "a", ("data-folder", "f3")))
+        l.r.attr(inbox, "aria-current").is_some(),
+        "home is the inbox"
+    );
+    // Unread mail in the trash is not news.
+    assert!(
+        !l.r.text_of(find(&l.r, "a", ("data-folder", "trash")))
             .contains('5')
     );
-    assert!(present(&l.r, "nav-compose") && present(&l.r, "nav-accounts"));
+    assert!(present(&l.r, "nav-compose"));
     assert!(
         !present(&l.r, "nav-admin"),
         "no administration for an ordinary person"
     );
+    assert!(
+        !present(&l.r, "nav-accounts"),
+        "there are no outside mailboxes to manage"
+    );
+}
+
+#[quench_test::test]
+fn the_current_folder_is_marked() {
+    let l = live("/mailroom/ui/folder/sent");
+    start(&l, false);
+    let sent = find(&l.r, "a", ("data-folder", "sent"));
+    assert!(l.r.attr(sent, "aria-current").is_some());
+    let inbox = find(&l.r, "a", ("data-folder", "inbox"));
+    assert!(l.r.attr(inbox, "aria-current").is_none());
 }
 
 #[quench_test::test]
@@ -318,10 +291,40 @@ fn problems_are_said_in_words() {
     assert!(present(&l.r, "not-found"));
 }
 
+#[quench_test::test]
+fn a_refused_change_is_shown_until_the_next_page() {
+    let l = live("/mailroom/ui/home");
+    l.send(Msg::Rejected("the mailbox is full".into()));
+    assert!(present(&l.r, "notice") && l.text().contains("the mailbox is full"));
+    l.send(Msg::Messages(list(vec![message("m1", "x", true)], 1, 0)));
+    // A page that arrives does not clear it; a change that worked does.
+    assert!(present(&l.r, "notice"));
+    l.send(Msg::Changed);
+    assert!(!present(&l.r, "notice"));
+}
+
+#[quench_test::test]
+fn the_language_choice_is_handed_to_the_host() {
+    let l = live("/mailroom/ui/home");
+    assert!(!l.asked().iter().any(|r| matches!(r, Request::Language(_))));
+    // The bar offers every language the app has; picking one is the host's to remember.
+    let options: Vec<_> =
+        l.r.document_order()
+            .into_iter()
+            .filter(|n| l.r.attr(*n, "data-lang").is_some())
+            .collect();
+    assert!(
+        options.is_empty() || options.len() == mailroom_app::LANGUAGES.len(),
+        "{}",
+        options.len()
+    );
+    assert_eq!(mailroom_app::LANGUAGES[0].0, "en-US");
+}
+
 // -- lists ---------------------------------------------------------------
 
 #[quench_test::test]
-fn the_unified_inbox_lists_messages_newest_first_with_unread_in_bold() {
+fn the_inbox_lists_messages_with_unread_in_bold() {
     let l = live("/mailroom/ui/home");
     start(&l, false);
     l.send(Msg::Messages(list(
@@ -356,9 +359,41 @@ fn the_unified_inbox_lists_messages_newest_first_with_unread_in_bold() {
         .unwrap(),
         "mr-row-link"
     );
-    assert_eq!(
-        l.r.text_of(find(&l.r, "h1", ("id", "list-title"))),
-        "All inboxes"
+    assert_eq!(l.r.text_of(find(&l.r, "h1", ("id", "list-title"))), "Inbox");
+}
+
+#[quench_test::test]
+fn a_row_marks_service_mail_attachments_and_nameless_subjects() {
+    let l = live("/mailroom/ui/home");
+    let mut auto = message("m1", "", true);
+    auto.automated = true;
+    auto.attachments = true;
+    auto.preview = String::new();
+    l.send(Msg::Messages(list(vec![auto], 1, 0)));
+    let row = find(&l.r, "div", ("data-message", "m1"));
+    let text = l.r.text_of(row);
+    assert!(text.contains("mr_automated"), "{text}");
+    assert!(text.contains('—'), "an empty subject is a dash: {text}");
+}
+
+#[quench_test::test]
+fn a_sent_row_names_who_it_went_to() {
+    let l = live("/mailroom/ui/folder/sent");
+    let mut sent = message("s1", "Plans", true);
+    sent.folder = "sent".into();
+    sent.from = person("ann@home.example");
+    sent.to = vec![person("bob@home.example")];
+    let mut nobody = message("s2", "Draft", true);
+    nobody.folder = "sent".into();
+    nobody.to = vec![];
+    l.send(Msg::Messages(list(vec![sent, nobody], 2, 0)));
+    assert!(
+        l.r.text_of(find(&l.r, "div", ("data-message", "s1")))
+            .contains("bob@home.example")
+    );
+    assert!(
+        l.r.text_of(find(&l.r, "div", ("data-message", "s2")))
+            .contains('—')
     );
 }
 
@@ -371,16 +406,21 @@ fn an_empty_list_says_so() {
 
 #[quench_test::test]
 fn a_folder_page_asks_for_its_folder_and_is_titled_by_it() {
-    let l = live("/mailroom/ui/folder/f2");
+    let l = live("/mailroom/ui/folder/sent");
     start(&l, false);
-    assert!(l.asked().contains(&Request::List(ListQuery {
-        folder: Some("f2".into()),
-        ..ListQuery::default()
-    })));
-    assert_eq!(
-        l.r.text_of(find(&l.r, "h1", ("id", "list-title"))),
-        "Personal · Sent"
-    );
+    assert!(l.asked().contains(&Request::List(query("sent"))));
+    assert_eq!(l.r.text_of(find(&l.r, "h1", ("id", "list-title"))), "Sent");
+    let l = live("/mailroom/ui/folder/trash");
+    assert_eq!(l.r.text_of(find(&l.r, "h1", ("id", "list-title"))), "Trash");
+}
+
+#[quench_test::test]
+fn a_list_that_fails_says_so_instead_of_waiting() {
+    let l = live("/mailroom/ui/home");
+    assert!(present(&l.r, "waiting"));
+    l.send(Msg::Failed("the service answered 500".into()));
+    assert!(present(&l.r, "problem"));
+    assert!(l.text().contains("the service answered 500"));
 }
 
 #[quench_test::test]
@@ -401,7 +441,7 @@ fn searching_filtering_and_paging_ask_again() {
     assert_eq!(
         l.last(),
         Request::List(ListQuery {
-            role: Some("inbox".into()),
+            folder: "inbox".into(),
             text: "invoice".into(),
             ..ListQuery::default()
         })
@@ -411,22 +451,33 @@ fn searching_filtering_and_paging_ask_again() {
     assert_eq!(
         l.last(),
         Request::List(ListQuery {
-            folder: None,
-            role: Some("inbox".into()),
+            folder: "inbox".into(),
             text: "invoice".into(),
             unread: true,
+            ..ListQuery::default()
+        })
+    );
+    // So does starred only.
+    l.click("button", "starred-toggle");
+    assert_eq!(
+        l.last(),
+        Request::List(ListQuery {
+            folder: "inbox".into(),
+            text: "invoice".into(),
+            unread: true,
+            flagged: true,
             offset: 0
         })
     );
-    // The next page keeps both.
+    // The next page keeps all of them.
     l.click("button", "older");
     assert_eq!(
         l.last(),
         Request::List(ListQuery {
-            folder: None,
-            role: Some("inbox".into()),
+            folder: "inbox".into(),
             text: "invoice".into(),
             unread: true,
+            flagged: true,
             offset: 50
         })
     );
@@ -440,6 +491,9 @@ fn searching_filtering_and_paging_ask_again() {
     assert!(l.text().contains("51–100 / 120"));
     l.click("button", "newer");
     assert!(matches!(l.last(), Request::List(q) if q.offset == 0));
+    // Switching a filter off asks again too.
+    l.click("button", "starred-toggle");
+    assert!(matches!(l.last(), Request::List(q) if !q.flagged && q.unread));
 }
 
 #[quench_test::test]
@@ -481,135 +535,289 @@ fn the_star_asks_for_a_change_and_a_change_asks_for_the_list_again() {
             .iter()
             .any(|r| matches!(r, Request::List(_)))
     );
-    assert!(after[before..].contains(&Request::Accounts));
+    assert!(after[before..].contains(&Request::Folders));
+    // A starred message offers to take the star away.
+    let mut starred = message("m2", "Starred", true);
+    starred.flagged = true;
+    l.send(Msg::Messages(list(vec![starred], 1, 0)));
+    l.click_attr("button", ("data-star", "m2"));
+    assert!(matches!(l.last(), Request::Change(c) if c.flagged == Some(false)));
 }
 
 #[quench_test::test]
-fn refresh_asks_the_mailboxes_of_the_folder_or_all_of_them() {
+fn selecting_messages_offers_what_can_be_done_with_them() {
+    let l = live("/mailroom/ui/home");
+    l.send(Msg::Messages(list(
+        vec![
+            message("m1", "One", false),
+            message("m2", "Two", true),
+            message("m3", "Three", true),
+        ],
+        3,
+        0,
+    )));
+    assert!(!present(&l.r, "bulk"), "nothing is selected yet");
+    l.click_attr("input", ("data-select", "m1"));
+    l.click_attr("input", ("data-select", "m2"));
+    l.click_attr("input", ("data-select", "m3"));
+    // Clicking again takes a message out of the selection.
+    l.click_attr("input", ("data-select", "m3"));
+    assert!(present(&l.r, "bulk"));
+    assert!(
+        l.r.text_of(find(&l.r, "span", ("id", "selected-count")))
+            .starts_with('2')
+    );
+    assert!(!present(&l.r, "bulk-delete") && !present(&l.r, "bulk-restore"));
+    for (button, expected) in [
+        (
+            "bulk-read",
+            Change {
+                ids: vec!["m1".into(), "m2".into()],
+                seen: Some(true),
+                ..Change::default()
+            },
+        ),
+        (
+            "bulk-unread",
+            Change {
+                ids: vec!["m1".into(), "m2".into()],
+                seen: Some(false),
+                ..Change::default()
+            },
+        ),
+        (
+            "bulk-star",
+            Change {
+                ids: vec!["m1".into(), "m2".into()],
+                flagged: Some(true),
+                ..Change::default()
+            },
+        ),
+        (
+            "bulk-trash",
+            Change {
+                ids: vec!["m1".into(), "m2".into()],
+                move_to: Some("trash".into()),
+                ..Change::default()
+            },
+        ),
+    ] {
+        l.click("button", button);
+        assert_eq!(l.last(), Request::Change(expected), "{button}");
+        // Asking for the change empties the selection; select the two again for the next.
+        assert!(!present(&l.r, "bulk"));
+        l.click_attr("input", ("data-select", "m1"));
+        l.click_attr("input", ("data-select", "m2"));
+    }
+}
+
+#[quench_test::test]
+fn the_trash_offers_restoring_and_deleting_for_good() {
+    let l = live("/mailroom/ui/folder/trash");
+    let mut gone = message("t1", "Old", true);
+    gone.folder = "trash".into();
+    l.send(Msg::Messages(list(vec![gone], 1, 0)));
+    l.click_attr("input", ("data-select", "t1"));
+    assert!(!present(&l.r, "bulk-trash"));
+    l.click("button", "bulk-restore");
+    assert_eq!(
+        l.last(),
+        Request::Change(Change {
+            ids: vec!["t1".into()],
+            move_to: Some("inbox".into()),
+            ..Change::default()
+        })
+    );
+    l.click_attr("input", ("data-select", "t1"));
+    l.click("button", "bulk-delete");
+    assert_eq!(
+        l.last(),
+        Request::Change(Change {
+            ids: vec!["t1".into()],
+            delete: true,
+            ..Change::default()
+        })
+    );
+}
+
+#[quench_test::test]
+fn a_new_search_or_page_forgets_the_selection() {
+    let l = live("/mailroom/ui/home");
+    l.send(Msg::Messages(list(
+        (0..50)
+            .map(|i| message(&format!("m{i}"), "x", true))
+            .collect(),
+        80,
+        0,
+    )));
+    l.click_attr("input", ("data-select", "m1"));
+    assert!(present(&l.r, "bulk"));
+    l.submit("search-form");
+    assert!(!present(&l.r, "bulk"));
+    l.click_attr("input", ("data-select", "m1"));
+    l.click("button", "older");
+    assert!(!present(&l.r, "bulk"));
+}
+
+#[quench_test::test]
+fn moving_from_the_list_asks_for_the_list_and_the_folders_again() {
     let l = live("/mailroom/ui/home");
     start(&l, false);
-    l.click("button", "refresh");
-    let asked = l.asked();
-    assert!(
-        asked.contains(&Request::Refresh("a1".into()))
-            && asked.contains(&Request::Refresh("a2".into()))
-    );
-    let l = live("/mailroom/ui/folder/g1");
-    start(&l, false);
-    l.click("button", "refresh");
-    let refreshes: Vec<_> = l
-        .asked()
-        .into_iter()
-        .filter(|r| matches!(r, Request::Refresh(_)))
-        .collect();
-    assert_eq!(refreshes, [Request::Refresh("a2".into())]);
+    l.send(Msg::Messages(list(vec![message("m1", "x", true)], 1, 0)));
+    let before = l.asked().len();
+    l.send(Msg::Moved);
+    let after = l.asked();
+    assert!(after[before..].contains(&Request::Folders));
+    assert!(after[before..].contains(&Request::List(query("inbox"))));
+    assert_eq!(l.path(), "/mailroom/ui/home", "the list stays where it is");
 }
 
 // -- the reader ---------------------------------------------------------------
 
 #[quench_test::test]
-fn opening_a_message_shows_it_and_marks_it_read() {
+fn opening_a_message_asks_for_it_and_shows_it() {
     let l = live("/mailroom/ui/message/m1");
-    assert_eq!(l.asked()[1], Request::Open("m1".into()));
+    assert!(l.asked().contains(&Request::Open("m1".into())));
     assert!(present(&l.r, "waiting"));
-    l.send(Msg::Message(Box::new(open_view("m1", false))));
+    l.send(Msg::Message(Box::new(open_view("m1", true))));
+    assert_eq!(
+        l.r.text_of(find(&l.r, "h1", ("id", "subject"))),
+        "Hello there"
+    );
     let text = l.text();
     for needle in [
-        "Hello there",
-        "Alice <alice@x.example>",
-        "Carol <carol@x.example>",
-        "line one",
-        "2026-09-29 11:00",
+        "Alice <alice@home.example>",
+        "Carol <carol@home.example>",
+        "line one\nline two",
     ] {
         assert!(text.contains(needle), "{needle}: {text}");
     }
-    assert_eq!(
-        l.last(),
-        Request::Change(Change {
-            ids: vec!["m1".into()],
-            seen: Some(true),
-            ..Change::default()
-        })
-    );
-    // A message that is read already is not marked again.
+    assert!(present(&l.r, "message-text") && !present(&l.r, "message-html"));
+    let back = find(&l.r, "a", ("href", "/mailroom/ui/folder/inbox"));
+    assert!(l.r.tag(back).is_some());
+}
+
+#[quench_test::test]
+fn a_message_with_no_subject_shows_a_dash_and_an_answered_one_says_so() {
     let l = live("/mailroom/ui/message/m1");
-    let before = l.asked().len();
-    l.send(Msg::Message(Box::new(open_view("m1", true))));
-    assert_eq!(l.asked().len(), before);
+    let mut view = open_view("m1", true);
+    view.summary.subject = String::new();
+    view.summary.answered = true;
+    view.cc = vec![];
+    l.send(Msg::Message(Box::new(view)));
+    assert_eq!(l.r.text_of(find(&l.r, "h1", ("id", "subject"))), "—");
+    assert!(l.text().contains("Answered"));
+}
+
+#[quench_test::test]
+fn opening_an_unread_message_reads_it_once() {
+    let l = live("/mailroom/ui/message/m1");
+    l.send(Msg::Message(Box::new(open_view("m1", false))));
+    let marks = |l: &Live| {
+        l.asked()
+            .iter()
+            .filter(|r| matches!(r, Request::Change(c) if c.seen == Some(true)))
+            .count()
+    };
+    assert_eq!(marks(&l), 1);
+    // The same unread view arriving again (before the change is made) does not ask twice.
+    l.send(Msg::Message(Box::new(open_view("m1", false))));
+    assert_eq!(marks(&l), 1);
+    l.send(Msg::Changed);
+    assert!(
+        l.asked()
+            .iter()
+            .filter(|r| **r == Request::Open("m1".into()))
+            .count()
+            >= 2
+    );
 }
 
 #[quench_test::test]
 fn the_reader_acts_on_the_message() {
     let l = live("/mailroom/ui/message/m1");
-    start(&l, false);
     l.send(Msg::Message(Box::new(open_view("m1", true))));
-    let change = |c: Change| Request::Change(c);
-    l.click_attr("button", ("data-action", "star"));
+    let reply = find(&l.r, "a", ("data-action", "reply"));
     assert_eq!(
-        l.last(),
-        change(Change {
-            ids: vec!["m1".into()],
-            flagged: Some(true),
-            ..Change::default()
-        })
+        l.r.attr(reply, "href").as_deref(),
+        Some("/mailroom/ui/compose/reply/m1")
     );
+    find(&l.r, "a", ("data-action", "replyall"));
+    find(&l.r, "a", ("data-action", "forward"));
     l.click_attr("button", ("data-action", "unread"));
     assert_eq!(
         l.last(),
-        change(Change {
+        Request::Change(Change {
             ids: vec!["m1".into()],
             seen: Some(false),
             ..Change::default()
         })
     );
-    l.click_attr("button", ("data-action", "archive"));
-    assert_eq!(
-        l.last(),
-        change(Change {
-            ids: vec!["m1".into()],
-            move_to: Some("archive".into()),
-            ..Change::default()
-        })
-    );
-    l.click_attr("button", ("data-action", "junk"));
-    assert_eq!(
-        l.last(),
-        change(Change {
-            ids: vec!["m1".into()],
-            move_to: Some("junk".into()),
-            ..Change::default()
-        })
-    );
+    l.click_attr("button", ("data-action", "star"));
+    assert!(matches!(l.last(), Request::Change(c) if c.flagged == Some(true)));
     l.click_attr("button", ("data-action", "delete"));
     assert_eq!(
         l.last(),
-        change(Change {
+        Request::Change(Change {
             ids: vec!["m1".into()],
             move_to: Some("trash".into()),
             ..Change::default()
         })
     );
-    // Reply, reply to all and forward are pages of their own.
-    for (mode, href) in [
-        ("reply", "/mailroom/ui/compose/reply/m1"),
-        ("replyall", "/mailroom/ui/compose/replyall/m1"),
-        ("forward", "/mailroom/ui/compose/forward/m1"),
-    ] {
-        assert_eq!(
-            l.r.attr(find(&l.r, "a", ("data-action", mode)), "href")
-                .as_deref(),
-            Some(href)
-        );
-    }
+    assert!(!present(&l.r, "show-images"));
+    assert!(
+        l.r.document_order()
+            .into_iter()
+            .all(|n| l.r.attr(n, "data-action").as_deref() != Some("restore"))
+    );
 }
 
 #[quench_test::test]
-fn in_the_trash_delete_is_for_good() {
+fn a_read_message_offers_to_be_marked_unread_and_an_unread_one_read() {
     let l = live("/mailroom/ui/message/m1");
-    start(&l, false);
     let mut view = open_view("m1", true);
-    view.summary.folder_id = "f3".into();
+    view.summary.flagged = true;
     l.send(Msg::Message(Box::new(view)));
+    l.click_attr("button", ("data-action", "star"));
+    assert!(matches!(l.last(), Request::Change(c) if c.flagged == Some(false)));
+    // An unread message (already asked to be read) offers "read".
+    let l = live("/mailroom/ui/message/m2");
+    l.send(Msg::Message(Box::new(open_view("m2", false))));
+    l.click_attr("button", ("data-action", "unread"));
+    assert!(matches!(l.last(), Request::Change(c) if c.seen == Some(true)));
+}
+
+#[quench_test::test]
+fn service_mail_offers_no_reply() {
+    let l = live("/mailroom/ui/message/m1");
+    let mut view = open_view("m1", true);
+    view.summary.automated = true;
+    l.send(Msg::Message(Box::new(view)));
+    let has = |action: &str| {
+        l.r.document_order()
+            .into_iter()
+            .any(|n| l.r.attr(n, "data-action").as_deref() == Some(action))
+    };
+    assert!(!has("reply") && !has("replyall"));
+    assert!(has("forward") && has("delete"));
+    assert!(l.text().contains("mr_automated"));
+}
+
+#[quench_test::test]
+fn in_the_trash_a_message_can_be_restored_or_deleted_for_good() {
+    let l = live("/mailroom/ui/message/m1");
+    let mut view = open_view("m1", true);
+    view.summary.folder = "trash".into();
+    l.send(Msg::Message(Box::new(view)));
+    l.click_attr("button", ("data-action", "restore"));
+    assert_eq!(
+        l.last(),
+        Request::Change(Change {
+            ids: vec!["m1".into()],
+            move_to: Some("inbox".into()),
+            ..Change::default()
+        })
+    );
     l.click_attr("button", ("data-action", "delete"));
     assert_eq!(
         l.last(),
@@ -622,15 +830,19 @@ fn in_the_trash_delete_is_for_good() {
 }
 
 #[quench_test::test]
-fn a_move_leaves_the_message_for_the_list() {
+fn a_move_from_the_reader_goes_back_to_the_folder() {
     let l = live("/mailroom/ui/message/m1");
-    l.send(Msg::Message(Box::new(open_view("m1", true))));
+    start(&l, false);
+    let mut view = open_view("m1", true);
+    view.summary.folder = "sent".into();
+    l.send(Msg::Message(Box::new(view)));
     l.send(Msg::Moved);
-    assert_eq!(l.path(), "/mailroom/ui/home");
+    assert_eq!(l.path(), "/mailroom/ui/folder/sent");
+    assert!(l.asked().contains(&Request::Folders));
 }
 
 #[quench_test::test]
-fn html_is_shown_only_in_a_sandboxed_frame_and_images_are_the_readers_choice() {
+fn html_is_shown_in_a_sandboxed_frame_and_remote_images_wait_for_a_click() {
     let l = live("/mailroom/ui/message/m1");
     let mut view = open_view("m1", true);
     view.has_html = true;
@@ -657,40 +869,37 @@ fn html_is_shown_only_in_a_sandboxed_frame_and_images_are_the_readers_choice() {
             .as_deref(),
         Some("/mailroom/api/v1/messages/m1/html?remote=1")
     );
-    // The plain text is one click away.
+    // The plain text is one click away, and the HTML one click back.
     l.click("button", "switch-view");
     assert!(present(&l.r, "message-text"));
     assert!(!present(&l.r, "message-html"));
+    l.click("button", "switch-view");
+    assert!(present(&l.r, "message-html"));
 }
 
 #[quench_test::test]
-fn attachments_are_downloads_and_inline_pictures_are_not_listed() {
+fn attachments_are_downloads() {
     let l = live("/mailroom/ui/message/m1");
     let mut view = open_view("m1", true);
-    view.attachments = vec![
-        AttachmentInfo {
-            index: 0,
-            filename: "report.pdf".into(),
-            media_type: "application/pdf".into(),
-            size: 340 * 1024,
-            inline: false,
-        },
-        AttachmentInfo {
-            index: 1,
-            filename: "logo.png".into(),
-            media_type: "image/png".into(),
-            size: 100,
-            inline: true,
-        },
-    ];
+    view.attachments = vec![AttachmentInfo {
+        index: 0,
+        filename: "report.pdf".into(),
+        media_type: "application/pdf".into(),
+        size: 340 * 1024,
+    }];
     l.send(Msg::Message(Box::new(view)));
     let link = find(&l.r, "a", ("download", "report.pdf"));
     assert_eq!(
         l.r.attr(link, "href").as_deref(),
         Some("/mailroom/api/v1/messages/m1/attachments/0")
     );
+    assert_eq!(l.r.attr(link, "rel").as_deref(), Some("noopener"));
     assert!(l.text().contains("report.pdf (340 KB)"));
-    assert!(!l.text().contains("logo.png"));
+    assert!(present(&l.r, "attachments"));
+    // A message without them has no such box.
+    let l = live("/mailroom/ui/message/m1");
+    l.send(Msg::Message(Box::new(open_view("m1", true))));
+    assert!(!present(&l.r, "attachments"));
 }
 
 #[quench_test::test]
@@ -699,13 +908,21 @@ fn the_unsubscribe_link_is_https_only() {
         unsubscribe_link("<mailto:u@x.example>, <https://x.example/u?id=1>").as_deref(),
         Some("https://x.example/u?id=1")
     );
+    assert_eq!(
+        unsubscribe_link("https://x.example/u").as_deref(),
+        Some("https://x.example/u")
+    );
     assert_eq!(unsubscribe_link("<http://x.example/u>"), None);
     assert_eq!(unsubscribe_link("<javascript:alert(1)>"), None);
     assert_eq!(unsubscribe_link("<https://x.example/ u>"), None);
+    assert_eq!(
+        unsubscribe_link(&format!("https://x.example/{}", "a".repeat(2000))),
+        None
+    );
     assert_eq!(unsubscribe_link(""), None);
     let l = live("/mailroom/ui/message/m1");
     let mut view = open_view("m1", true);
-    view.list_unsubscribe = "<https://x.example/u>".into();
+    view.unsubscribe = "<https://x.example/u>".into();
     l.send(Msg::Message(Box::new(view)));
     let link = find(&l.r, "a", ("id", "unsubscribe"));
     assert_eq!(
@@ -722,17 +939,35 @@ fn a_message_that_is_not_the_one_asked_for_is_not_shown() {
     assert!(present(&l.r, "waiting"));
 }
 
+#[quench_test::test]
+fn a_message_that_is_gone_says_so() {
+    let l = live("/mailroom/ui/message/m1");
+    l.send(Msg::NotFound);
+    assert!(present(&l.r, "not-found"));
+}
+
 // -- compose --------------------------------------------------------------------
 
 #[quench_test::test]
-fn composing_needs_a_mailbox() {
+fn composing_waits_for_who_is_writing() {
     let l = live("/mailroom/ui/compose");
-    l.send(Msg::Accounts(vec![]));
-    assert!(present(&l.r, "no-mailbox"));
+    assert!(present(&l.r, "waiting"));
+    start(&l, false);
+    assert!(present(&l.r, "compose"));
 }
 
 #[quench_test::test]
-fn a_new_message_is_checked_then_sent_from_the_chosen_mailbox() {
+fn the_form_says_which_domain_stays_inside() {
+    let l = live("/mailroom/ui/compose");
+    start(&l, false);
+    assert!(
+        l.r.text_of(find(&l.r, "p", ("id", "compose-hint")))
+            .ends_with("@home.example")
+    );
+}
+
+#[quench_test::test]
+fn a_new_message_is_checked_then_sent() {
     let l = live("/mailroom/ui/compose");
     start(&l, false);
     // Nothing to send yet.
@@ -741,351 +976,256 @@ fn a_new_message_is_checked_then_sent_from_the_chosen_mailbox() {
     assert!(!l.asked().iter().any(|r| matches!(r, Request::Send(_))));
     l.type_into("input", "compose-to", "not an address");
     l.submit("compose");
-    assert!(l.text().contains("not an email address"));
-    l.type_into(
-        "input",
-        "compose-to",
-        "bob@example.org, Carol <carol@example.org>",
-    );
+    assert!(l.text().contains("user name or name@domain"));
+    l.type_into("input", "compose-to", "bob, Carol <carol@home.example>");
     l.type_into("input", "compose-subject", "Plans");
     l.type_into("textarea", "compose-body", "See you friday.");
-    l.type_into("select", "compose-from", "a2");
     l.submit("compose");
     let Request::Send(compose) = l.last() else {
         panic!("not sent: {:?}", l.asked())
     };
-    assert_eq!(compose.account_id, "a2");
-    assert_eq!(compose.to, ["bob@example.org", "Carol <carol@example.org>"]);
+    assert_eq!(compose.to, ["bob", "Carol <carol@home.example>"]);
     assert_eq!(
         (compose.subject.as_str(), compose.text.as_str()),
         ("Plans", "See you friday.")
     );
-    assert!(compose.in_reply_to.is_none());
+    assert!(compose.in_reply_to.is_none() && compose.attachments.is_empty());
 }
 
 #[quench_test::test]
-fn sending_returns_to_the_inbox_and_says_so() {
+fn what_was_sent_goes_to_the_sent_folder_and_is_said() {
     let l = live("/mailroom/ui/compose");
     start(&l, false);
+    l.send(Msg::Uploaded(Upload {
+        id: "u1".into(),
+        filename: "a.txt".into(),
+        size: 3,
+    }));
     l.send(Msg::Sent);
-    assert_eq!(l.path(), "/mailroom/ui/home");
+    assert_eq!(l.path(), "/mailroom/ui/folder/sent");
     assert!(l.text().contains("The message is on its way."));
+    assert!(l.asked().contains(&Request::Folders));
+    // The next compose starts without the old attachment.
+    let l2 = live("/mailroom/ui/compose");
+    start(&l2, false);
+    assert!(!present(&l2.r, "attached"));
+}
+
+#[quench_test::test]
+fn a_refused_send_is_shown_on_the_page() {
+    let l = live("/mailroom/ui/compose");
+    start(&l, false);
+    l.send(Msg::Rejected(
+        "not sent: zed@home.example has no mailbox here".into(),
+    ));
+    assert!(l.text().contains("has no mailbox here"));
 }
 
 #[quench_test::test]
 fn a_reply_starts_from_the_message_and_is_threaded() {
     let l = live("/mailroom/ui/compose/reply/m1");
-    start(&l, false);
     assert!(l.asked().contains(&Request::Open("m1".into())));
     assert!(present(&l.r, "waiting"));
+    start(&l, false);
     l.send(Msg::Message(Box::new(open_view("m1", true))));
     let to = find(&l.r, "input", ("id", "compose-to"));
     assert_eq!(
         l.r.attr(to, "value").as_deref(),
-        Some("Alice <alice@x.example>")
-    );
-    let subject = find(&l.r, "input", ("id", "compose-subject"));
-    assert_eq!(
-        l.r.attr(subject, "value").as_deref(),
-        Some("Re: Hello there")
+        Some("Alice <alice@home.example>")
     );
     l.submit("compose");
     let Request::Send(compose) = l.last() else {
-        panic!()
+        panic!("{:?}", l.asked())
     };
+    assert_eq!(compose.subject, "Re: Hello there");
     assert_eq!(compose.in_reply_to.as_deref(), Some("m1"));
-    assert_eq!(compose.account_id, "a1");
-    assert!(compose.text.contains("> line one"), "{}", compose.text);
+    assert!(compose.text.contains("> line one"));
+    assert!(compose.cc.is_empty());
+}
+
+#[quench_test::test]
+fn a_reply_to_all_opens_the_cc_line() {
+    let l = live("/mailroom/ui/compose/replyall/m1");
+    start(&l, false);
+    l.send(Msg::Message(Box::new(open_view("m1", true))));
+    assert!(present(&l.r, "compose-cc"));
+    l.submit("compose");
+    let Request::Send(compose) = l.last() else {
+        panic!("{:?}", l.asked())
+    };
+    assert_eq!(compose.cc, ["Carol <carol@home.example>"]);
+    assert_eq!(compose.to, ["Alice <alice@home.example>"]);
+}
+
+#[quench_test::test]
+fn a_forward_has_no_recipient_and_keeps_the_text() {
+    let l = live("/mailroom/ui/compose/forward/m1");
+    start(&l, false);
+    l.send(Msg::Message(Box::new(open_view("m1", true))));
+    l.type_into("input", "compose-to", "bob");
+    l.submit("compose");
+    let Request::Send(compose) = l.last() else {
+        panic!("{:?}", l.asked())
+    };
+    assert_eq!(compose.subject, "Fwd: Hello there");
+    assert!(compose.in_reply_to.is_none());
+    assert!(compose.text.contains("Forwarded message") && compose.text.contains("line two"));
 }
 
 #[quench_test::test]
 fn the_pure_prefill_rules() {
+    let me = "ann@home.example";
+    assert_eq!(prefill("new", None, me, 0), Default::default());
+    assert_eq!(prefill("reply", None, me, 0), Default::default());
     let mut view = open_view("m1", true);
-    view.summary.to = vec![
-        Contact {
-            name: String::new(),
-            address: "me@example.com".into(),
-        },
-        Contact {
-            name: "Dave".into(),
-            address: "dave@x.example".into(),
-        },
-    ];
-    let me = vec!["me@example.com".to_string()];
-    let reply = prefill("reply", Some(&view), &me, 0);
-    assert_eq!(reply.to, "Alice <alice@x.example>");
-    assert!(reply.cc.is_empty());
-    let all = prefill("replyall", Some(&view), &me, 0);
-    assert_eq!(all.to, "Alice <alice@x.example>");
+    view.summary.to = vec![person("ann@home.example"), person("bob@home.example")];
+    // A reply goes to the writer.
+    let reply = prefill("reply", Some(&view), me, 0);
+    assert_eq!(reply.to, "Alice <alice@home.example>");
+    assert_eq!(reply.cc, "");
+    assert_eq!(reply.in_reply_to.as_deref(), Some("m1"));
+    // A reply to all adds everybody else, but not me and not the writer twice.
+    let all = prefill("replyall", Some(&view), me, 0);
+    assert_eq!(all.to, "Alice <alice@home.example>");
+    assert_eq!(all.cc, "bob@home.example, Carol <carol@home.example>");
+    // Answering something I sent goes to whom I sent it to.
+    let mut mine = open_view("m2", true);
+    mine.summary.from = person("ann@home.example");
+    mine.summary.to = vec![person("bob@home.example")];
+    mine.cc = vec![];
+    assert_eq!(prefill("reply", Some(&mine), me, 0).to, "bob@home.example");
+    assert_eq!(prefill("replyall", Some(&mine), me, 0).cc, "");
+    // ...unless it went to nobody I can name: then it comes back to me.
+    mine.summary.to = vec![];
+    assert_eq!(prefill("reply", Some(&mine), me, 0).to, "ann@home.example");
+    // A forward starts without a recipient.
+    let fwd = prefill("forward", Some(&view), me, 0);
+    assert_eq!((fwd.to.as_str(), fwd.in_reply_to), ("", None));
+    assert_eq!(fwd.subject, "Fwd: Hello there");
+    // Re: does not stack.
+    view.summary.subject = "Re: Hello there".into();
     assert_eq!(
-        all.cc, "Dave <dave@x.example>, Carol <carol@x.example>",
-        "not the writer's own address"
+        prefill("reply", Some(&view), me, 0).subject,
+        "Re: Hello there"
     );
-    let forward = prefill("forward", Some(&view), &me, 0);
-    assert_eq!(forward.subject, "Fwd: Hello there");
-    assert!(
-        forward.body.contains("line one")
-            && forward.body.contains("Forwarded message")
-            && forward.in_reply_to.is_none()
-    );
-    view.reply_to = vec![Contact {
-        name: String::new(),
-        address: "list@x.example".into(),
-    }];
-    assert_eq!(prefill("reply", Some(&view), &me, 0).to, "list@x.example");
-    assert_eq!(
-        prefill("new", None, &me, 0),
-        mailroom_app::screens::compose::Prefill::default()
-    );
-}
-
-#[quench_test::test]
-fn what_the_upload_control_reports_is_read() {
-    let ok = r#"{"name":"a.txt","status":201,"body":"{\"id\":\"u1\",\"filename\":\"a.txt\",\"size\":5}"}"#;
-    assert_eq!(
-        upload_outcome(ok),
-        Uploaded::Done(Upload {
-            id: "u1".into(),
-            filename: "a.txt".into(),
-            size: 5
-        })
-    );
-    let refused = r#"{"name":"a.txt","status":400,"body":"{\"error\":\"the file is too large\"}"}"#;
-    assert_eq!(
-        upload_outcome(refused),
-        Uploaded::Failed("the file is too large".into())
-    );
-    assert!(
-        matches!(upload_outcome(r#"{"name":"a","status":0,"body":"Failed to fetch"}"#), Uploaded::Failed(t) if t.contains("(0)"))
-    );
-    assert!(matches!(upload_outcome("not json"), Uploaded::Failed(_)));
-    assert!(matches!(
-        upload_outcome(r#"{"status":201,"body":"junk"}"#),
-        Uploaded::Failed(_)
-    ));
-}
-
-#[quench_test::test]
-fn an_uploaded_file_is_listed_removable_and_sent_with_the_message() {
-    let l = live("/mailroom/ui/compose");
-    start(&l, false);
-    let report = find(&l.r, "input", ("id", "upload-result"));
-    let picker = find(&l.r, "input", ("id", "attach"));
-    assert_eq!(
-        l.r.attr(picker, "data-upload-url").as_deref(),
-        Some("/mailroom/api/v1/uploads")
-    );
-    assert_eq!(
-        l.r.attr(picker, "data-upload-result").as_deref(),
-        Some("upload-result")
-    );
-    l.r.fire(report, &Event::Input(r#"{"name":"a.txt","status":201,"body":"{\"id\":\"u1\",\"filename\":\"a.txt\",\"size\":2048}"}"#.into()));
-    assert!(l.text().contains("a.txt (2 KB)"));
-    l.type_into("input", "compose-to", "bob@example.org");
-    l.type_into("textarea", "compose-body", "see attached");
-    l.submit("compose");
-    let Request::Send(compose) = l.last() else {
-        panic!()
-    };
-    assert_eq!(compose.attachments, ["u1"]);
-    // Taking it off asks the service to forget it.
-    l.click_attr("button", ("aria-label", "Remove the attachment"));
-    assert!(l.asked().contains(&Request::RemoveUpload("u1".into())));
-    assert!(!l.text().contains("a.txt"));
-    // A refused upload is said.
-    l.r.fire(
-        report,
-        &Event::Input(r#"{"name":"b","status":400,"body":"{\"error\":\"no room\"}"}"#.into()),
-    );
-    assert!(l.text().contains("no room"));
 }
 
 #[quench_test::test]
 fn the_extra_address_fields_open_on_request() {
     let l = live("/mailroom/ui/compose");
     start(&l, false);
-    assert!(
-        !present(&l.r, "compose-cc")
-            || l.r
-                .document_order()
-                .iter()
-                .all(|n| l.r.attr(*n, "id").as_deref() != Some("compose-cc"))
-    );
+    assert!(!present(&l.r, "compose-cc"));
     l.click("button", "more-fields");
-    l.type_into("input", "compose-cc", "cc@example.org");
-    l.type_into("input", "compose-bcc", "bcc@example.org");
-    l.type_into("input", "compose-to", "to@example.org");
-    l.type_into("textarea", "compose-body", "x");
+    assert!(present(&l.r, "compose-cc") && present(&l.r, "compose-bcc"));
+    l.type_into("input", "compose-to", "bob");
+    l.type_into("input", "compose-cc", "carol");
+    l.type_into("input", "compose-bcc", "dave");
+    l.type_into("input", "compose-subject", "s");
+    l.type_into("textarea", "compose-body", "hello");
     l.submit("compose");
     let Request::Send(compose) = l.last() else {
-        panic!()
+        panic!("{:?}", l.asked())
     };
     assert_eq!(
         (compose.cc, compose.bcc),
-        (
-            vec!["cc@example.org".to_string()],
-            vec!["bcc@example.org".to_string()]
-        )
+        (vec!["carol".to_string()], vec!["dave".to_string()])
     );
 }
 
-// -- mailboxes -----------------------------------------------------------------
-
 #[quench_test::test]
-fn the_mailboxes_page_shows_each_one_and_how_it_is_doing() {
-    let l = live("/mailroom/ui/accounts");
-    assert_eq!(l.asked()[1], Request::Accounts);
-    let mut broken = account("a2", "Work", "ann@work.example");
-    broken.state = "error".into();
-    broken.last_error = Some("the mail server refused the login".into());
-    l.send(Msg::Accounts(vec![
-        account("a1", "Personal", "me@example.com"),
-        broken,
-    ]));
-    let text = l.text();
-    for needle in [
-        "Personal · me@example.com",
-        "imap.example.com:993",
-        "Working",
-        "Problem",
-        "the mail server refused the login",
-        "2026-09-29 11:50",
-    ] {
-        assert!(text.contains(needle), "{needle}: {text}");
-    }
-    l.send(Msg::Accounts(vec![]));
-    assert!(present(&l.r, "no-accounts"));
-}
-
-#[quench_test::test]
-fn a_provider_fills_the_servers_and_a_good_form_is_sent() {
-    let l = live("/mailroom/ui/accounts");
-    start(&l, false);
-    l.type_into("select", "account-preset", "gmail");
-    assert!(l.text().contains("Create an app password first."));
+fn the_upload_control_reports_into_the_page() {
     assert_eq!(
-        l.r.attr(find(&l.r, "input", ("id", "account-imap-host")), "value")
-            .as_deref(),
-        Some("imap.gmail.com")
-    );
-    // An incomplete form is not sent.
-    l.submit("account-form");
-    assert!(l.text().contains("not an email address"));
-    assert!(
-        !l.asked()
-            .iter()
-            .any(|r| matches!(r, Request::AddAccount(_)))
-    );
-    l.type_into("input", "account-label", "Gmail");
-    l.type_into("input", "account-address", "ann@gmail.com");
-    l.type_into("input", "account-password", "abcd efgh ijkl mnop");
-    l.submit("account-form");
-    let Request::AddAccount(input) = l.last() else {
-        panic!("{:?}", l.last())
-    };
-    assert_eq!(
-        (
-            input.imap_host.as_str(),
-            input.imap_port,
-            input.smtp_host.as_str(),
-            input.smtp_port
+        upload_outcome(
+            r#"{"name":"a.txt","status":201,"body":"{\"id\":\"u1\",\"filename\":\"a.txt\",\"size\":3}"}"#
         ),
-        ("imap.gmail.com", 993, "smtp.gmail.com", 465)
+        Uploaded::Done(Upload {
+            id: "u1".into(),
+            filename: "a.txt".into(),
+            size: 3
+        })
     );
     assert_eq!(
-        (input.username.as_str(), input.password.as_str()),
-        ("ann@gmail.com", "abcd efgh ijkl mnop")
+        upload_outcome(r#"{"status":400,"body":"{\"error\":\"the file is empty\"}"}"#),
+        Uploaded::Failed("the file is empty".into())
     );
-    assert!(!input.save_sent, "Gmail keeps its own copy");
-}
-
-#[quench_test::test]
-fn the_settings_can_be_tried_and_the_result_is_shown_per_half() {
-    let l = live("/mailroom/ui/accounts");
-    start(&l, false);
-    l.type_into("input", "account-label", "Work");
-    l.type_into("input", "account-address", "ann@work.example");
-    l.type_into("input", "account-password", "pw");
-    l.type_into("input", "account-imap-host", "imap.work.example");
-    l.type_into("input", "account-smtp-host", "smtp.work.example");
-    l.click("button", "test-account");
-    assert!(matches!(l.last(), Request::TestAccount(i) if i.imap_host == "imap.work.example"));
-    l.send(Msg::Tested(Box::new(TestResult {
-        imap: Step {
-            ok: true,
-            error: String::new(),
-        },
-        smtp: Step {
-            ok: false,
-            error: "authentication failed".into(),
-        },
-    })));
-    let text = l.text();
-    assert!(
-        text.contains("IMAP: works") && text.contains("SMTP: failed — authentication failed"),
-        "{text}"
-    );
-}
-
-#[quench_test::test]
-fn removing_a_mailbox_takes_two_clicks() {
-    let l = live("/mailroom/ui/accounts");
-    start(&l, false);
-    l.click_attr("button", ("data-action", "remove"));
-    assert!(
-        !l.asked()
-            .iter()
-            .any(|r| matches!(r, Request::RemoveAccount(_)))
-    );
-    assert!(l.text().contains("Really remove?"));
-    l.click_attr("button", ("data-action", "remove"));
-    assert_eq!(l.last(), Request::RemoveAccount("a1".into()));
-    l.send(Msg::AccountRemoved("a1".into()));
-    assert!(!l.text().contains("me@example.com"));
-}
-
-#[quench_test::test]
-fn changing_a_mailbox_starts_from_what_it_is_and_may_keep_the_password() {
-    let l = live("/mailroom/ui/accounts");
-    start(&l, false);
-    l.click_attr("button", ("data-action", "edit"));
     assert_eq!(
-        l.r.attr(find(&l.r, "input", ("id", "account-address")), "value")
-            .as_deref(),
-        Some("me@example.com")
+        upload_outcome(r#"{"status":502,"body":"<html>"}"#),
+        Uploaded::Failed("the upload failed (502)".into())
     );
-    assert!(l.text().contains("leave empty to keep it"));
-    l.type_into("input", "account-label", "Renamed");
-    l.submit("account-form");
-    let Request::UpdateAccount { id, input } = l.last() else {
-        panic!("{:?}", l.last())
+    assert!(matches!(upload_outcome("nope"), Uploaded::Failed(_)));
+    assert!(matches!(
+        upload_outcome(r#"{"status":201,"body":"garbage"}"#),
+        Uploaded::Failed(_)
+    ));
+    let l = live("/mailroom/ui/compose");
+    start(&l, false);
+    let picker = find(&l.r, "input", ("id", "attach"));
+    assert_eq!(
+        l.r.attr(picker, "data-upload-url").as_deref(),
+        Some("/mailroom/api/v1/uploads")
+    );
+    l.type_into(
+        "input",
+        "upload-result",
+        r#"{"status":201,"body":"{\"id\":\"u1\",\"filename\":\"a.txt\",\"size\":3}"}"#,
+    );
+    assert!(l.text().contains("a.txt (3 B)"), "{}", l.text());
+    l.type_into(
+        "input",
+        "upload-result",
+        r#"{"status":400,"body":"{\"error\":\"too big\"}"}"#,
+    );
+    assert!(l.text().contains("too big"));
+    l.type_into("input", "compose-to", "bob");
+    l.submit("compose");
+    let Request::Send(compose) = l.last() else {
+        panic!("{:?}", l.asked())
     };
     assert_eq!(
-        (id.as_str(), input.label.as_str(), input.password.as_str()),
-        ("a1", "Renamed", "")
+        compose.attachments,
+        ["u1"],
+        "an attachment alone is a message"
     );
+    // Removing it asks the service to forget it and takes it off the page.
+    l.click_attr("button", ("aria-label", "Remove the attachment"));
+    assert_eq!(l.last(), Request::RemoveUpload("u1".into()));
+    assert!(!present(&l.r, "attached"));
 }
 
 #[quench_test::test]
-fn a_saved_mailbox_is_said_and_asked_again() {
-    let l = live("/mailroom/ui/accounts");
-    let before = l.asked().len();
-    l.send(Msg::AccountSaved(Box::new(account(
-        "a3",
-        "New",
-        "new@example.com",
-    ))));
-    assert!(l.text().contains("The mailbox is saved."));
-    assert!(l.asked()[before..].contains(&Request::Accounts));
-}
-
-#[quench_test::test]
-fn a_refused_change_is_shown_until_the_next_page() {
-    let l = live("/mailroom/ui/accounts");
-    l.send(Msg::Rejected(
-        "the mail server refused the login: check the password".into(),
-    ));
-    assert!(present(&l.r, "notice") && l.text().contains("check the password"));
+fn the_last_recipient_typed_is_completed_from_the_people_there_are() {
+    assert_eq!(typing("bo").as_deref(), Some("bo"));
+    assert_eq!(typing("ann@home.example, bo").as_deref(), Some("bo"));
+    assert_eq!(typing("ann; b").as_deref(), Some("b"));
+    for none in ["", "  ", "ann@home", "Ann <a@b.cc>", "two words", "a, "] {
+        assert_eq!(typing(none), None, "{none:?}");
+    }
+    assert_eq!(complete("bo", "bob@home.example"), "bob@home.example, ");
+    assert_eq!(
+        complete("ann@home.example, bo", "bob@home.example"),
+        "ann@home.example, bob@home.example, "
+    );
+    let l = live("/mailroom/ui/compose");
+    start(&l, false);
+    assert!(!present(&l.r, "people"));
+    l.type_into("input", "compose-to", "bo");
+    assert_eq!(l.last(), Request::People("bo".into()));
+    l.send(Msg::People(vec![
+        person("bob@home.example"),
+        person("bo2@home.example"),
+    ]));
+    assert!(present(&l.r, "people"));
+    l.click_attr("button", ("data-person", "bob@home.example"));
+    let to = find(&l.r, "input", ("id", "compose-to"));
+    assert_eq!(l.r.attr(to, "value").as_deref(), Some("bob@home.example, "));
+    assert!(
+        !present(&l.r, "people"),
+        "the suggestions go once one is taken"
+    );
+    // Typing a whole address or leaving the field ends the asking.
+    l.send(Msg::People(vec![person("x@home.example")]));
+    l.type_into("input", "compose-to", "bob@home.example");
+    assert!(!present(&l.r, "people"));
 }
 
 // -- the panel -------------------------------------------------------------------
@@ -1093,12 +1233,8 @@ fn a_refused_change_is_shown_until_the_next_page() {
 #[quench_test::test]
 fn the_panel_is_not_offered_to_everybody() {
     let l = live("/mailroom/ui/admin");
-    l.send(Msg::Me(Me {
-        username: "ann".into(),
-        can_write: true,
-        admin: false,
-        max_accounts: 10,
-    }));
+    assert!(present(&l.r, "waiting"));
+    start(&l, false);
     assert!(present(&l.r, "not-allowed"));
     assert!(!l.asked().contains(&Request::Stats));
 }
@@ -1108,63 +1244,58 @@ fn the_overview_shows_the_numbers() {
     let l = live("/mailroom/ui/admin");
     start(&l, true);
     assert!(l.asked().contains(&Request::Stats));
+    assert!(present(&l.r, "waiting"));
     l.send(Msg::Stats(Stats {
-        accounts: 4,
-        accounts_failing: 1,
-        messages: 1234,
-        queued: 2,
-        sent_24h: 40,
-        failed_24h: 3,
-        budget_left: 460,
+        mailboxes: 3,
+        messages: 120,
+        bytes: 5 * 1024 * 1024 + 300 * 1024,
+        delivered_24h: 7,
+        failed_24h: 2,
+        budget_left: 1990,
     }));
-    for (key, value) in [
-        ("mr_admin_stat_accounts", "4"),
-        ("mr_admin_stat_failing", "1"),
-        ("mr_admin_stat_messages", "1234"),
-        ("mr_admin_stat_budget", "460"),
-    ] {
-        let card = find(&l.r, "div", ("data-stat", key));
-        assert!(
-            l.r.text_of(card).starts_with(value),
-            "{key}: {}",
-            l.r.text_of(card)
-        );
+    let stat = |key: &str| l.r.text_of(find(&l.r, "div", ("data-stat", key)));
+    assert!(stat("mr_admin_stat_mailboxes").starts_with('3'));
+    assert!(stat("mr_admin_stat_messages").starts_with("120"));
+    assert!(stat("mr_admin_stat_storage").starts_with("5.2 MB"));
+    assert!(stat("mr_admin_stat_delivered").starts_with('7'));
+    assert!(stat("mr_admin_stat_failed").starts_with('2'));
+    assert!(stat("mr_admin_stat_budget").starts_with("1990"));
+    let failed = find(&l.r, "div", ("data-stat", "mr_admin_stat_failed"));
+    assert!(l.r.attr(failed, "class").unwrap().contains("mr-red"));
+    l.send(Msg::Stats(Stats {
+        failed_24h: 0,
+        ..Stats::default()
+    }));
+    let failed = find(&l.r, "div", ("data-stat", "mr_admin_stat_failed"));
+    assert!(!l.r.attr(failed, "class").unwrap().contains("mr-red"));
+    // The tabs.
+    for section in ["overview", "settings", "mailboxes", "deliveries", "audit"] {
+        find(&l.r, "a", ("data-section", section));
     }
-    assert_eq!(
-        l.r.attr(find(&l.r, "a", ("data-section", "queue")), "href")
-            .as_deref(),
-        Some("/mailroom/ui/admin/queue")
+    assert!(
+        l.r.attr(
+            find(&l.r, "a", ("data-section", "overview")),
+            "aria-current"
+        )
+        .is_some()
     );
+}
+
+#[quench_test::test]
+fn sizes_are_shown_in_megabytes() {
+    assert_eq!(megabytes(0), "0.0 MB");
+    assert_eq!(megabytes(1024 * 1024), "1.0 MB");
+    assert_eq!(megabytes(1536 * 1024), "1.5 MB");
+    assert_eq!(megabytes(u64::MAX), megabytes(u64::MAX));
 }
 
 fn settings() -> Settings {
     Settings {
-        transport: Some(Transport {
-            host: "smtp.relay.example".into(),
-            port: 587,
-            security: "starttls".into(),
-            username: "relay".into(),
-            has_password: true,
-            custom_certificate: false,
-        }),
-        identities: vec![
-            Identity {
-                address: "noreply@example.com".into(),
-                name: "Forge".into(),
-                default: true,
-            },
-            Identity {
-                address: "alerts@example.com".into(),
-                name: String::new(),
-                default: false,
-            },
-        ],
-        private_hosts: vec!["bridge.mail.svc".into()],
-        extra_ports: vec![1143],
-        daily_budget: 500,
-        hourly_per_source: 120,
-        max_accounts_per_user: 10,
-        sync_interval_secs: 120,
+        domain: "home.example".into(),
+        daily_budget: 2000,
+        hourly_per_source: 600,
+        hourly_per_person: 120,
+        quota_mb: 500,
     }
 }
 
@@ -1173,193 +1304,226 @@ fn the_settings_form_shows_what_is_set_and_saves_what_was_changed() {
     let l = live("/mailroom/ui/admin/settings");
     start(&l, true);
     assert!(l.asked().contains(&Request::Settings));
+    assert!(present(&l.r, "waiting"));
     l.send(Msg::Settings(Box::new(settings())));
-    assert_eq!(
-        l.r.attr(find(&l.r, "input", ("id", "transport-host")), "value")
-            .as_deref(),
-        Some("smtp.relay.example")
-    );
-    assert!(
-        l.text().contains("leave empty to keep it"),
-        "a stored password is kept, not shown"
-    );
-    l.type_into("input", "daily-budget", "900");
-    l.type_into(
-        "textarea",
-        "private-hosts",
-        "bridge.mail.svc\n*.internal.example",
-    );
-    l.type_into("input", "extra-ports", "1143, 1025");
-    l.submit("settings-form");
-    let Request::SaveSettings(input) = l.last() else {
-        panic!("{:?}", l.last())
+    assert!(l.text().contains("@home.example"));
+    let value = |id: &str| {
+        l.r.attr(find(&l.r, "input", ("id", id)), "value")
+            .unwrap_or_default()
     };
-    assert_eq!(input.daily_budget, Some(900));
-    assert_eq!(
-        input.private_hosts,
-        Some(vec![
-            "bridge.mail.svc".to_string(),
-            "*.internal.example".to_string()
-        ])
-    );
-    assert_eq!(input.extra_ports, Some(vec![1143, 1025]));
-    assert_eq!(
-        input
-            .transport
-            .as_ref()
-            .map(|t| (t.host.as_str(), t.port, t.password.as_str())),
-        Some(("smtp.relay.example", 587, ""))
-    );
-    assert_eq!(
-        input.identities.as_ref().map(|i| (i.len(), i[0].default)),
-        Some((2, true))
-    );
-    // A number that is not a number is not sent.
-    l.type_into("input", "daily-budget", "lots");
-    let sent = l.asked().len();
+    assert_eq!(value("daily-budget"), "2000");
+    assert_eq!(value("hourly-source"), "600");
+    assert_eq!(value("hourly-person"), "120");
+    assert_eq!(value("quota-mb"), "500");
+    l.type_into("input", "quota-mb", "1024");
+    l.type_into("input", "daily-budget", "x");
     l.submit("settings-form");
-    assert_eq!(l.asked().len(), sent);
-    assert!(l.text().contains("whole numbers"));
-}
-
-#[quench_test::test]
-fn the_sending_server_can_be_tried_and_saving_is_said() {
-    let l = live("/mailroom/ui/admin/settings");
-    start(&l, true);
-    l.send(Msg::Settings(Box::new(settings())));
-    l.click("button", "test-transport");
-    assert_eq!(l.last(), Request::TestTransport);
-    l.send(Msg::TransportTested(Box::new(TestResult {
-        imap: Step {
-            ok: true,
-            error: String::new(),
-        },
-        smtp: Step {
-            ok: false,
-            error: "authentication failed".into(),
-        },
+    assert!(l.text().contains("must be whole numbers"));
+    assert!(
+        !l.asked()
+            .iter()
+            .any(|r| matches!(r, Request::SaveSettings(_)))
+    );
+    l.type_into("input", "daily-budget", "3000");
+    l.submit("settings-form");
+    assert_eq!(
+        l.last(),
+        Request::SaveSettings(SettingsInput {
+            daily_budget: Some(3000),
+            hourly_per_source: Some(600),
+            hourly_per_person: Some(120),
+            quota_mb: Some(1024),
+        })
+    );
+    l.send(Msg::SettingsSaved(Box::new(Settings {
+        quota_mb: 1024,
+        daily_budget: 3000,
+        ..settings()
     })));
-    assert!(l.text().contains("failed — authentication failed"));
-    l.send(Msg::SettingsSaved(Box::new(settings())));
     assert!(l.text().contains("The settings are saved."));
 }
 
 #[quench_test::test]
-fn sender_addresses_are_written_and_read_as_lines() {
-    let list = settings().identities;
-    let text = identities_text(&list);
-    assert_eq!(text, "* Forge <noreply@example.com>\nalerts@example.com");
-    assert_eq!(parse_identities(&text), list);
-    assert_eq!(parse_identities("  \n"), vec![]);
-    assert_eq!(parse_identities("\"Q, A\" <a@x.example>")[0].name, "Q, A");
+fn a_refused_setting_is_shown() {
+    let l = live("/mailroom/ui/admin/settings");
+    start(&l, true);
+    l.send(Msg::Settings(Box::new(settings())));
+    l.submit("settings-form");
+    l.send(Msg::Rejected(
+        "the mailbox size must be from 1 to 100000".into(),
+    ));
+    assert!(l.text().contains("must be from 1 to 100000"));
+}
+
+fn mailbox(owner: &str, disabled: bool) -> AdminMailbox {
+    AdminMailbox {
+        owner: owner.into(),
+        address: format!("{owner}@home.example"),
+        messages: 12,
+        bytes: 2 * 1024 * 1024,
+        created: NOW - 86_400,
+        last_seen: Some(NOW - 60),
+        disabled,
+    }
 }
 
 #[quench_test::test]
 fn the_panel_lists_mailboxes_without_mail_and_can_switch_them_off() {
     let l = live("/mailroom/ui/admin/mailboxes");
     start(&l, true);
-    assert!(l.asked().contains(&Request::AdminAccounts { offset: 0 }));
-    let row = |id: &str, disabled: bool| AdminAccount {
-        id: id.into(),
-        owner: "ann".into(),
-        label: "Personal".into(),
-        address: "me@example.com".into(),
-        imap_host: "imap.example.com".into(),
-        state: if disabled {
-            "disabled".into()
-        } else {
-            "ok".into()
-        },
-        last_error: None,
-        last_sync: None,
-        messages: 120,
-        disabled,
-    };
-    l.send(Msg::AdminAccounts(Page {
-        items: vec![row("a1", false), row("a2", true)],
+    assert!(l.asked().contains(&Request::Mailboxes { offset: 0 }));
+    assert!(present(&l.r, "waiting"));
+    let mut never = mailbox("zed", true);
+    never.last_seen = None;
+    l.send(Msg::Mailboxes(Page {
+        items: vec![mailbox("bob", false), never],
         total: 2,
     }));
-    let first = find(&l.r, "tr", ("data-account", "a1"));
-    assert!(l.r.text_of(first).contains("ann") && l.r.text_of(first).contains("120"));
-    l.click_attr("button", ("data-action", "disable"));
+    let bob = l.r.text_of(find(&l.r, "tr", ("data-mailbox", "bob")));
+    assert!(
+        bob.contains("bob@home.example") && bob.contains("12") && bob.contains("2.0 MB"),
+        "{bob}"
+    );
+    let zed = l.r.text_of(find(&l.r, "tr", ("data-mailbox", "zed")));
+    assert!(
+        zed.contains("mr_admin_never") && zed.contains("mr_admin_off"),
+        "{zed}"
+    );
+    // Switching off, and on again.
+    let row = |owner: &str| {
+        l.r.document_order()
+            .into_iter()
+            .find(|n| l.r.attr(*n, "data-mailbox").as_deref() == Some(owner))
+            .unwrap()
+    };
+    let _ = row("bob");
+    let buttons = |action: &str| -> Vec<NodeId> {
+        l.r.document_order()
+            .into_iter()
+            .filter(|n| l.r.attr(*n, "data-action").as_deref() == Some(action))
+            .collect()
+    };
+    l.r.fire(buttons("disable")[0], &Event::Click);
     assert_eq!(
         l.last(),
         Request::SetDisabled {
-            id: "a1".into(),
+            owner: "bob".into(),
             disabled: true
         }
     );
-    l.click_attr("button", ("data-action", "enable"));
+    l.r.fire(buttons("enable")[0], &Event::Click);
     assert_eq!(
         l.last(),
         Request::SetDisabled {
-            id: "a2".into(),
+            owner: "zed".into(),
             disabled: false
         }
     );
-    // Deleting takes two clicks.
+}
+
+#[quench_test::test]
+fn deleting_a_mailbox_takes_two_clicks() {
+    let l = live("/mailroom/ui/admin/mailboxes");
+    start(&l, true);
+    l.send(Msg::Mailboxes(Page {
+        items: vec![mailbox("bob", false)],
+        total: 1,
+    }));
     l.click_attr("button", ("data-action", "delete"));
     assert!(
         !l.asked()
             .iter()
-            .any(|r| matches!(r, Request::AdminRemoveAccount(_)))
+            .any(|r| matches!(r, Request::RemoveMailbox(_)))
     );
+    assert!(l.text().contains("mr_admin_delete_confirm"));
     l.click_attr("button", ("data-action", "delete"));
-    assert!(matches!(l.last(), Request::AdminRemoveAccount(id) if id == "a1"));
+    assert_eq!(l.last(), Request::RemoveMailbox("bob".into()));
 }
 
 #[quench_test::test]
-fn the_queue_can_be_filtered_retried_and_cleared() {
-    let l = live("/mailroom/ui/admin/queue");
+fn the_lists_of_the_panel_page_and_remember_where_they_are() {
+    let l = live("/mailroom/ui/admin/mailboxes");
     start(&l, true);
-    assert!(l.asked().contains(&Request::Outbox {
-        status: String::new(),
-        offset: 0
+    let many: Vec<AdminMailbox> = (0..50).map(|i| mailbox(&format!("u{i}"), false)).collect();
+    l.send(Msg::Mailboxes(Page {
+        items: many.clone(),
+        total: 120,
     }));
-    let item = |id: &str, status: &str| OutboxItem {
-        id: id.into(),
-        source: "gatehouse-mailroom".into(),
-        kind: "service".into(),
-        recipients: vec!["a@example.org".into()],
-        subject: "Confirm your address".into(),
-        status: status.into(),
-        attempts: 2,
-        last_error: Some("451 try later".into()),
-        created: NOW - 60,
-        next_attempt: None,
-        sent: None,
-    };
-    l.send(Msg::Outbox(Page {
-        items: vec![item("o1", "queued"), item("o2", "failed")],
+    assert!(l.text().contains("1–50 / 120"));
+    l.click("button", "older");
+    assert_eq!(l.last(), Request::Mailboxes { offset: 50 });
+    l.send(Msg::Mailboxes(Page {
+        items: many,
+        total: 120,
+    }));
+    assert!(l.text().contains("51–100 / 120"), "{}", l.text());
+    l.click("button", "newer");
+    assert_eq!(l.last(), Request::Mailboxes { offset: 0 });
+    // An empty list reads 0–0.
+    l.send(Msg::Mailboxes(Page {
+        items: vec![],
+        total: 0,
+    }));
+    assert!(l.text().contains("0–0 / 0"));
+}
+
+#[quench_test::test]
+fn the_deliveries_of_the_services_are_listed() {
+    let l = live("/mailroom/ui/admin/deliveries");
+    start(&l, true);
+    assert!(l.asked().contains(&Request::Deliveries { offset: 0 }));
+    assert!(present(&l.r, "waiting"));
+    l.send(Msg::Deliveries(Page {
+        items: vec![
+            Delivery {
+                id: "d1".into(),
+                source: "gatehouse".into(),
+                kind: "verification".into(),
+                recipients: vec!["bob@home.example".into()],
+                subject: "Confirm your email".into(),
+                status: "delivered".into(),
+                delivered: 1,
+                error: None,
+                created: NOW - 30,
+            },
+            Delivery {
+                id: "d2".into(),
+                source: "conveyor".into(),
+                kind: String::new(),
+                recipients: vec!["a@home.example".into(), "b@home.example".into()],
+                subject: "Build".into(),
+                status: "partial".into(),
+                delivered: 1,
+                error: Some("b has no mailbox here".into()),
+                created: NOW - 20,
+            },
+        ],
         total: 2,
     }));
-    let text = l.text();
+    let first = l.r.text_of(find(&l.r, "tr", ("data-delivery", "d1")));
+    for needle in [
+        "gatehouse (verification)",
+        "bob@home.example",
+        "Confirm your email",
+        "delivered",
+    ] {
+        assert!(first.contains(needle), "{needle}: {first}");
+    }
+    let second = l.r.text_of(find(&l.r, "tr", ("data-delivery", "d2")));
+    for needle in [
+        "conveyor",
+        "a@home.example, b@home.example",
+        "b has no mailbox here",
+    ] {
+        assert!(second.contains(needle), "{needle}: {second}");
+    }
+    assert!(!second.contains("conveyor ("));
+    l.click("button", "older");
+    // 2 of 2: nothing older to ask for.
     assert!(
-        text.contains("gatehouse-mailroom (service)")
-            && text.contains("Confirm your address")
-            && text.contains("451 try later"),
-        "{text}"
+        l.r.attr(find(&l.r, "button", ("id", "older")), "disabled")
+            .is_some()
     );
-    // Only a queued message can be retried.
-    l.click_attr("button", ("data-action", "retry"));
-    assert_eq!(l.last(), Request::Retry("o1".into()));
-    assert_eq!(
-        l.r.document_order()
-            .into_iter()
-            .filter(|n| l.r.attr(*n, "data-action").as_deref() == Some("retry"))
-            .count(),
-        1
-    );
-    l.click_attr("button", ("data-status", "failed"));
-    assert_eq!(
-        l.last(),
-        Request::Outbox {
-            status: "failed".into(),
-            offset: 0
-        }
-    );
-    l.click_attr("button", ("data-action", "remove"));
-    assert!(matches!(l.last(), Request::RemoveQueued(_)));
 }
 
 #[quench_test::test]
@@ -1367,31 +1531,46 @@ fn the_audit_log_lists_what_was_done() {
     let l = live("/mailroom/ui/admin/audit");
     start(&l, true);
     assert!(l.asked().contains(&Request::Audit { offset: 0 }));
+    assert!(present(&l.r, "waiting"));
     l.send(Msg::Audit(Page {
         items: vec![AuditEntry {
-            id: "x".into(),
-            at: NOW - 30,
-            actor: "adam".into(),
-            action: "settings.update".into(),
-            target: String::new(),
-            detail: "daily_budget".into(),
+            id: "e1".into(),
+            at: NOW - 100,
+            actor: "ann".into(),
+            action: "disable".into(),
+            target: "bob".into(),
+            detail: "".into(),
         }],
         total: 1,
     }));
-    let text = l.text();
-    assert!(
-        text.contains("adam") && text.contains("settings.update") && text.contains("daily_budget"),
-        "{text}"
-    );
-    assert_eq!(count(&l.r, "data-queued"), 0);
+    let table = l.r.text_of(find(&l.r, "table", ("id", "admin-audit")));
+    for needle in ["ann", "disable", "bob"] {
+        assert!(table.contains(needle), "{needle}: {table}");
+    }
+    let l = live("/mailroom/ui/admin/audit");
+    start(&l, true);
+    l.send(Msg::Audit(Page {
+        items: (0..50)
+            .map(|i| AuditEntry {
+                id: format!("e{i}"),
+                at: NOW,
+                actor: "ann".into(),
+                action: "x".into(),
+                target: "y".into(),
+                detail: String::new(),
+            })
+            .collect(),
+        total: 60,
+    }));
+    l.click("button", "older");
+    assert_eq!(l.last(), Request::Audit { offset: 50 });
 }
 
 #[quench_test::test]
-fn the_language_choice_is_handed_to_the_host() {
-    let l = live("/mailroom/ui/home");
-    let _ = &l;
-    // The host keeps the choice itself; the app only forwards it (the picker is the shell's).
-    assert!(l.asked().iter().all(|r| !matches!(r, Request::Language(_))));
+fn an_unknown_panel_section_is_the_overview() {
+    let l = live("/mailroom/ui/admin/whatever");
+    start(&l, true);
+    assert!(l.asked().contains(&Request::Stats));
 }
 
 quench_test::main!();

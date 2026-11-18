@@ -1,1 +1,0 @@
-quench_test::main!();

@@ -37,11 +37,8 @@ fn an_account_message_becomes_a_send_request_with_the_rendered_text() {
         link: "https://ennor.example/gatehouse/ui/verify?token=abc",
     };
     let request = MailroomSender::request(&mail, &alice()).unwrap();
-    assert_eq!(request.to, ["alice@example.test"]);
-    assert!(
-        request.from.is_empty(),
-        "Mailroom picks the sender identity"
-    );
+    // The person is named by user name: the address in the account is not where mail goes.
+    assert_eq!(request.to, ["alice"]);
     assert_ne!(request.subject, "");
     assert!(
         request
@@ -55,15 +52,12 @@ fn an_account_message_becomes_a_send_request_with_the_rendered_text() {
             .unwrap()
             .contains("https://ennor.example/gatehouse/ui/verify?token=abc")
     );
-    assert_eq!(
-        request.headers,
-        [("X-Forge-Mail".to_string(), "verification".to_string())]
-    );
-    assert!(request.idempotency_key.is_none());
+    assert_eq!(request.kind.as_deref(), Some("verification"));
+    assert!(request.unsubscribe.is_none() && request.idempotency_key.is_none());
 }
 
 #[quench_test::test]
-fn a_notification_carries_the_one_click_unsubscribe_headers() {
+fn a_notification_carries_its_unsubscribe_link() {
     let vars = [("repo", "forge"), ("run", "42")];
     let mail = Mail::Notification {
         template: "conveyor.run.failed",
@@ -71,14 +65,11 @@ fn a_notification_carries_the_one_click_unsubscribe_headers() {
         unsubscribe: "https://ennor.example/gatehouse/ui/unsubscribe?t=1",
     };
     let request = MailroomSender::request(&mail, &alice()).unwrap();
-    assert!(request.headers.contains(&(
-        "List-Unsubscribe".to_string(),
-        "<https://ennor.example/gatehouse/ui/unsubscribe?t=1>".to_string()
-    )));
-    assert!(request.headers.contains(&(
-        "List-Unsubscribe-Post".to_string(),
-        "List-Unsubscribe=One-Click".to_string()
-    )));
+    assert_eq!(
+        request.unsubscribe.as_deref(),
+        Some("https://ennor.example/gatehouse/ui/unsubscribe?t=1")
+    );
+    assert_eq!(request.kind.as_deref(), Some("notification"));
 }
 
 #[quench_test::test]
@@ -100,10 +91,9 @@ async fn a_message_is_handed_to_mailroom_with_a_machine_token() {
     Mock::given(method("POST"))
         .and(path("/mailroom/api/v1/send"))
         .and(header("authorization", "Bearer tok"))
-        .respond_with(
-            ResponseTemplate::new(202)
-                .set_body_json(quench_serde::json!({"id": "m1", "status": "queued"})),
-        )
+        .respond_with(ResponseTemplate::new(201).set_body_json(
+            quench_serde::json!({"id": "m1", "status": "delivered", "delivered": 1}),
+        ))
         .expect(1)
         .mount(&server)
         .await;
@@ -123,7 +113,11 @@ async fn a_message_is_handed_to_mailroom_with_a_machine_token() {
         .find(|r| r.path.ends_with("/send"))
         .unwrap()
         .body_string();
-    assert!(body.contains("alice@example.test") && body.contains("https://x/reset?t=1"));
+    assert!(body.contains("\"alice\"") && body.contains("https://x/reset?t=1"));
+    assert!(
+        !body.contains("example.test"),
+        "the stored address is not used"
+    );
     server.verify().await;
 }
 

@@ -3,138 +3,118 @@ id = "0001-mail"
 author = "mailroom-service"
 since = "0.1.0"
 
-# A person's mailbox on a provider. `owner` is the person's user name (gatehouse). `secret` is the password sealed by the service
-# (XChaCha20-Poly1305 under MAILROOM_VAULT_KEY, the account id and owner as associated data): the database never holds it in the
-# clear. `disabled` is an administrator's switch; `state` is the sync worker's.
+# One mailbox per person (`owner` is the Gatehouse user name), made the first time the person signs in or a service writes to them.
+# A disabled mailbox still receives mail; its owner cannot open it or send from it.
 [[migrations.changes]]
 sql = """
-CREATE TABLE IF NOT EXISTS ${schema}.accounts (
-    id TEXT PRIMARY KEY,
-    owner TEXT NOT NULL,
-    label TEXT NOT NULL,
-    address TEXT NOT NULL,
-    username TEXT NOT NULL,
-    imap_host TEXT NOT NULL,
-    imap_port INTEGER NOT NULL,
-    imap_security TEXT NOT NULL,
-    smtp_host TEXT NOT NULL,
-    smtp_port INTEGER NOT NULL,
-    smtp_security TEXT NOT NULL,
-    secret TEXT NOT NULL,
-    tls_roots TEXT NOT NULL DEFAULT '',
-    signature TEXT NOT NULL DEFAULT '',
-    save_sent BOOLEAN NOT NULL DEFAULT TRUE,
-    state TEXT NOT NULL DEFAULT 'ok',
-    last_error TEXT,
-    last_sync BIGINT,
-    disabled BOOLEAN NOT NULL DEFAULT FALSE,
-    created BIGINT NOT NULL
+CREATE TABLE IF NOT EXISTS ${schema}.mailboxes (
+    owner TEXT PRIMARY KEY,
+    address TEXT NOT NULL UNIQUE,
+    created BIGINT NOT NULL,
+    last_seen BIGINT,
+    disabled BOOLEAN NOT NULL DEFAULT FALSE
 );
 """
 
-[[migrations.changes]]
-sql = "CREATE INDEX IF NOT EXISTS accounts_owner ON ${schema}.accounts (owner);"
-
-# Folders as the server lists them. A folder whose UIDVALIDITY changes is emptied and fetched again.
-[[migrations.changes]]
-sql = """
-CREATE TABLE IF NOT EXISTS ${schema}.folders (
-    id TEXT PRIMARY KEY,
-    account_id TEXT NOT NULL REFERENCES ${schema}.accounts (id) ON DELETE CASCADE,
-    path TEXT NOT NULL,
-    name TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT '',
-    uid_validity BIGINT NOT NULL DEFAULT 0,
-    uid_next BIGINT NOT NULL DEFAULT 0,
-    unread INTEGER NOT NULL DEFAULT 0,
-    total INTEGER NOT NULL DEFAULT 0,
-    UNIQUE (account_id, path)
-);
-"""
-
-# Message headers, flags and a preview: what the list needs. `to_json` is a JSON array of {name, address}. `search` is the
-# lower-cased text a search looks in (subject, sender, recipients, preview).
+# Mail, one row per mailbox it is in: a message to three people is three rows (and one more in the sender's `sent`). `folder` is
+# `inbox`, `sent` or `trash`; `moved` is when it came to that folder (the trash is emptied after a while). `source` is the name of
+# the service that wrote it, empty for a person's mail. `to_json`/`cc_json` are arrays of {name, address}. `search` is the
+# lower-cased text a search looks in. `size` counts the text, the HTML and the attachments.
 [[migrations.changes]]
 sql = """
 CREATE TABLE IF NOT EXISTS ${schema}.messages (
+    seq BIGINT GENERATED ALWAYS AS IDENTITY,
     id TEXT PRIMARY KEY,
-    account_id TEXT NOT NULL REFERENCES ${schema}.accounts (id) ON DELETE CASCADE,
-    folder_id TEXT NOT NULL REFERENCES ${schema}.folders (id) ON DELETE CASCADE,
-    uid BIGINT NOT NULL,
-    subject TEXT NOT NULL DEFAULT '',
-    from_name TEXT NOT NULL DEFAULT '',
-    from_address TEXT NOT NULL DEFAULT '',
-    to_json TEXT NOT NULL DEFAULT '[]',
-    date BIGINT NOT NULL DEFAULT 0,
-    preview TEXT NOT NULL DEFAULT '',
-    message_id TEXT NOT NULL DEFAULT '',
+    owner TEXT NOT NULL REFERENCES ${schema}.mailboxes (owner) ON DELETE CASCADE,
+    folder TEXT NOT NULL,
+    message_id TEXT NOT NULL,
     in_reply_to TEXT NOT NULL DEFAULT '',
+    from_name TEXT NOT NULL DEFAULT '',
+    from_address TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    to_json TEXT NOT NULL DEFAULT '[]',
+    cc_json TEXT NOT NULL DEFAULT '[]',
+    subject TEXT NOT NULL DEFAULT '',
+    unsubscribe TEXT NOT NULL DEFAULT '',
+    date BIGINT NOT NULL,
+    moved BIGINT NOT NULL,
+    preview TEXT NOT NULL DEFAULT '',
     seen BOOLEAN NOT NULL DEFAULT FALSE,
     flagged BOOLEAN NOT NULL DEFAULT FALSE,
     answered BOOLEAN NOT NULL DEFAULT FALSE,
     attachments BOOLEAN NOT NULL DEFAULT FALSE,
     size INTEGER NOT NULL DEFAULT 0,
-    search TEXT NOT NULL DEFAULT '',
-    UNIQUE (folder_id, uid)
+    search TEXT NOT NULL DEFAULT ''
 );
 """
 
 [[migrations.changes]]
-sql = "CREATE INDEX IF NOT EXISTS messages_folder_date ON ${schema}.messages (folder_id, date DESC, uid DESC);"
+sql = "CREATE INDEX IF NOT EXISTS messages_folder_date ON ${schema}.messages (owner, folder, date DESC, seq DESC);"
 
 [[migrations.changes]]
-sql = "CREATE INDEX IF NOT EXISTS messages_account ON ${schema}.messages (account_id);"
+sql = "CREATE INDEX IF NOT EXISTS messages_trash ON ${schema}.messages (moved) WHERE folder = 'trash';"
 
-# The body of a message the person opened, kept so reading it again needs no round trip. The HTML is stored as received: it
-# is sanitised every time it is served, so a better sanitiser applies to what is already stored.
+# The text and the HTML of a message, apart from the row the list reads.
 [[migrations.changes]]
 sql = """
 CREATE TABLE IF NOT EXISTS ${schema}.bodies (
     message_id TEXT PRIMARY KEY REFERENCES ${schema}.messages (id) ON DELETE CASCADE,
     text TEXT NOT NULL DEFAULT '',
-    html TEXT,
-    cc_json TEXT NOT NULL DEFAULT '[]',
-    reply_to_json TEXT NOT NULL DEFAULT '[]',
-    list_unsubscribe TEXT NOT NULL DEFAULT '',
-    attachments_json TEXT NOT NULL DEFAULT '[]',
-    inline_json TEXT NOT NULL DEFAULT '{}',
-    fetched BIGINT NOT NULL
+    html TEXT
 );
 """
 
-# Everything waiting to go out, and a short history. `raw` is the message ready for SMTP; it is dropped when the message is
-# sent. `kind` is `service` (the estate's mail) or `user` (a person's mailbox, `account_id` set). `idem_key` makes a retry
-# of the same request a no-op.
+# Attachment bytes are stored once (`blobs`) and every copy of the message points at them; a blob nobody points at any more is
+# removed by the maintenance pass.
 [[migrations.changes]]
 sql = """
-CREATE TABLE IF NOT EXISTS ${schema}.outbox (
+CREATE TABLE IF NOT EXISTS ${schema}.blobs (
     id TEXT PRIMARY KEY,
-    kind TEXT NOT NULL,
-    source TEXT NOT NULL,
-    account_id TEXT,
-    envelope_from TEXT NOT NULL,
-    recipients TEXT NOT NULL,
-    subject TEXT NOT NULL DEFAULT '',
-    raw BYTEA,
-    status TEXT NOT NULL DEFAULT 'queued',
-    attempts INTEGER NOT NULL DEFAULT 0,
-    last_error TEXT,
-    created BIGINT NOT NULL,
-    next_attempt BIGINT,
-    sent BIGINT,
-    idem_key TEXT,
-    reply_to_message TEXT
+    data BYTEA NOT NULL,
+    created BIGINT NOT NULL
 );
 """
 
 [[migrations.changes]]
-sql = "CREATE INDEX IF NOT EXISTS outbox_due ON ${schema}.outbox (status, next_attempt);"
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.attachments (
+    message_id TEXT NOT NULL REFERENCES ${schema}.messages (id) ON DELETE CASCADE,
+    idx INTEGER NOT NULL,
+    filename TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    blob_id TEXT NOT NULL,
+    PRIMARY KEY (message_id, idx)
+);
+"""
 
 [[migrations.changes]]
-sql = "CREATE INDEX IF NOT EXISTS outbox_created ON ${schema}.outbox (created DESC);"
+sql = "CREATE INDEX IF NOT EXISTS attachments_blob ON ${schema}.attachments (blob_id);"
+
+# What the services delivered (never what people wrote to each other): who asked, to whom, the subject, how it went. `idem_key`
+# makes a retry of the same request a no-op.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.deliveries (
+    seq BIGINT GENERATED ALWAYS AS IDENTITY,
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT '',
+    recipients TEXT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    delivered INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    created BIGINT NOT NULL,
+    idem_key TEXT
+);
+"""
 
 [[migrations.changes]]
-sql = "CREATE UNIQUE INDEX IF NOT EXISTS outbox_idem ON ${schema}.outbox (source, idem_key) WHERE idem_key IS NOT NULL;"
+sql = "CREATE INDEX IF NOT EXISTS deliveries_created ON ${schema}.deliveries (created DESC, seq DESC);"
+
+[[migrations.changes]]
+sql = "CREATE UNIQUE INDEX IF NOT EXISTS deliveries_idem ON ${schema}.deliveries (source, idem_key) WHERE idem_key IS NOT NULL;"
 
 # Files uploaded for a message being written; removed when sent or after a day.
 [[migrations.changes]]
@@ -153,7 +133,7 @@ CREATE TABLE IF NOT EXISTS ${schema}.uploads (
 [[migrations.changes]]
 sql = "CREATE INDEX IF NOT EXISTS uploads_owner ON ${schema}.uploads (owner);"
 
-# The administrator's settings (one JSON document under `main`) and the sealed transport password (`transport_secret`).
+# The administrator's settings (one JSON document under `main`).
 [[migrations.changes]]
 sql = """
 CREATE TABLE IF NOT EXISTS ${schema}.settings (
@@ -166,6 +146,7 @@ CREATE TABLE IF NOT EXISTS ${schema}.settings (
 [[migrations.changes]]
 sql = """
 CREATE TABLE IF NOT EXISTS ${schema}.audit (
+    seq BIGINT GENERATED ALWAYS AS IDENTITY,
     id TEXT PRIMARY KEY,
     at BIGINT NOT NULL,
     actor TEXT NOT NULL,
@@ -176,4 +157,4 @@ CREATE TABLE IF NOT EXISTS ${schema}.audit (
 """
 
 [[migrations.changes]]
-sql = "CREATE INDEX IF NOT EXISTS audit_at ON ${schema}.audit (at DESC);"
+sql = "CREATE INDEX IF NOT EXISTS audit_at ON ${schema}.audit (at DESC, seq DESC);"

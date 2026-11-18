@@ -42,12 +42,13 @@ h3{margin:0;font-size:1rem}
 .mr-preview{color:var(--mr-text-3)}
 .mr-time{font-size:.8125rem;color:var(--mr-text-3);white-space:nowrap}
 .mr-clip{color:var(--mr-text-3)}
+.mr-pick{margin:0 .25rem;cursor:pointer}
+.mr-bulk{padding:.25rem 0}
 .mr-star{background:none;border:0;cursor:pointer;color:var(--mr-text-3);padding:.25rem}
 .mr-star.mr-on{color:var(--mr-amber)}
 .mr-pager{display:flex;gap:.5rem;align-items:center;justify-content:flex-end;padding:.5rem 0}
 .mr-pager .mr-muted{margin-right:auto}
 .mr-count{margin-left:auto;font-size:.75rem;padding:0 .4rem;border-radius:999px;background:var(--mr-surface-2);color:var(--mr-text-2)}
-.mr-account-name{display:block;padding:.4rem .75rem .1rem;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--mr-text-3)}
 .mr-current{background:var(--mr-surface-2);color:var(--mr-text);font-weight:600}
 .mr-write{font-weight:600}
 .fui-nav-subitem{display:flex;align-items:center;gap:.5rem}

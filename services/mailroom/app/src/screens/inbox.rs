@@ -1,4 +1,4 @@
-//! A list of messages: the unified inbox, or one folder.
+//! A folder: its messages, a search, what is selected, and what can be done with the selection.
 
 use mailroom_core::{Change, MessageSummary};
 use quench_ui::form::Field;
@@ -6,35 +6,36 @@ use quench_ui::prelude::*;
 use quench_ui::router::link;
 use std::rc::Rc;
 
-use super::{Env, folder_name, person, problem_view, waiting};
+use super::{Env, badge, folder_name, person, problem_view, waiting};
 use crate::live::{ListQuery, Request, State};
 
 /// Messages per page (the service's own default).
 pub const PAGE: u32 = 50;
 
-fn title(env: &Env, state: &State, folder: Option<&String>) -> String {
-    let Some(id) = folder else {
-        return env.t.t("mr_nav_all_inboxes");
-    };
-    let folders = state.folders.get();
-    let accounts = state.accounts.get().unwrap_or_default();
-    for (account, list) in &folders {
-        if let Some(found) = list.iter().find(|f| f.id == *id) {
-            let label = accounts
-                .iter()
-                .find(|a| a.id == *account)
-                .map(|a| a.label.clone())
-                .unwrap_or_default();
-            return format!("{label} · {}", folder_name(env, found));
-        }
-    }
-    env.t.t("mr_nav_inbox")
-}
-
-fn row(env: &Env, message: &MessageSummary) -> View {
+fn row(env: &Env, message: &MessageSummary, selected: &Signal<Vec<String>>) -> View {
     let env = env.clone();
     let ask = Rc::clone(&env.ask);
     let (id, flagged) = (message.id.clone(), message.flagged);
+    let pick = {
+        let (on, toggle, id) = (selected.clone(), selected.clone(), id.clone());
+        let mine = id.clone();
+        input()
+            .attr("type", "checkbox")
+            .class("mr-pick")
+            .attr("data-select", id.clone())
+            .attr("aria-label", env.t.t("mr_list_select"))
+            .attr_bool("checked", move || on.get().contains(&mine))
+            .on_click(move || {
+                toggle.update(|list| {
+                    if let Some(at) = list.iter().position(|x| *x == id) {
+                        list.remove(at);
+                    } else {
+                        list.push(id.clone());
+                    }
+                });
+            })
+    };
+    let id = message.id.clone();
     let star = button()
         .attr("type", "button")
         .class(if flagged { "mr-star mr-on" } else { "mr-star" })
@@ -56,6 +57,12 @@ fn row(env: &Env, message: &MessageSummary) -> View {
     } else {
         format!(" — {}", message.preview)
     };
+    // In "sent" the row says who it went to; everywhere else, who wrote it.
+    let who = if message.folder == "sent" {
+        message.to.first().map_or_else(|| "—".to_string(), person)
+    } else {
+        person(&message.from)
+    };
     div()
         .class(if message.seen {
             "mr-row"
@@ -63,12 +70,13 @@ fn row(env: &Env, message: &MessageSummary) -> View {
             "mr-row mr-unread"
         })
         .attr("data-message", message.id.clone())
+        .child(pick)
         .child(star)
         .child(
             link(&env.path(&format!("/message/{}", message.id)))
                 .class("mr-row-link")
                 .attr("draggable", "false")
-                .child(span().class("mr-from").text(person(&message.from)))
+                .child(span().class("mr-from").text(who))
                 .child(
                     span()
                         .class("mr-subject")
@@ -81,6 +89,11 @@ fn row(env: &Env, message: &MessageSummary) -> View {
                         ))
                         .child(span().class("mr-preview").text(preview)),
                 )
+                .child(if message.automated {
+                    badge(&env.t.t("mr_automated"), "blue")
+                } else {
+                    span()
+                })
                 .child(if message.attachments {
                     span()
                         .class("mr-clip")
@@ -93,25 +106,120 @@ fn row(env: &Env, message: &MessageSummary) -> View {
         .into_view()
 }
 
-/// The list page. `folder` is the folder's id, or `None` for every inbox.
+/// What can be done with the selected messages.
+fn bulk(env: &Env, folder: &str, selected: &Signal<Vec<String>>) -> View {
+    let (env, folder, selected) = (env.clone(), folder.to_string(), selected.clone());
+    View::dynamic(move || {
+        let chosen = selected.get();
+        if chosen.is_empty() {
+            return View::Empty;
+        }
+        let act = |id: &'static str, label: String, change: Change, danger: bool| {
+            let (ask, selected) = (Rc::clone(&env.ask), selected.clone());
+            button()
+                .attr("type", "button")
+                .attr("id", id)
+                .class(if danger { "mr-btn mr-danger" } else { "mr-btn" })
+                .on_click({
+                    let ids = chosen.clone();
+                    move || {
+                        ask(Request::Change(Change {
+                            ids: ids.clone(),
+                            ..change.clone()
+                        }));
+                        selected.set(Vec::new());
+                    }
+                })
+                .text(label)
+        };
+        let mut bar = div()
+            .class("mr-actions mr-bulk")
+            .attr("id", "bulk")
+            .child(
+                span()
+                    .attr("id", "selected-count")
+                    .class("mr-muted")
+                    .text(format!("{} {}", chosen.len(), env.t.t("mr_list_selected"))),
+            )
+            .child(act(
+                "bulk-read",
+                env.t.t("mr_mark_read"),
+                Change {
+                    seen: Some(true),
+                    ..Change::default()
+                },
+                false,
+            ))
+            .child(act(
+                "bulk-unread",
+                env.t.t("mr_mark_unread"),
+                Change {
+                    seen: Some(false),
+                    ..Change::default()
+                },
+                false,
+            ))
+            .child(act(
+                "bulk-star",
+                env.t.t("mr_star"),
+                Change {
+                    flagged: Some(true),
+                    ..Change::default()
+                },
+                false,
+            ));
+        if folder == "trash" {
+            bar = bar
+                .child(act(
+                    "bulk-restore",
+                    env.t.t("mr_list_restore"),
+                    Change {
+                        move_to: Some("inbox".into()),
+                        ..Change::default()
+                    },
+                    false,
+                ))
+                .child(act(
+                    "bulk-delete",
+                    env.t.t("mr_delete_forever"),
+                    Change {
+                        delete: true,
+                        ..Change::default()
+                    },
+                    true,
+                ));
+        } else {
+            bar = bar.child(act(
+                "bulk-trash",
+                env.t.t("mr_to_trash"),
+                Change {
+                    move_to: Some("trash".into()),
+                    ..Change::default()
+                },
+                true,
+            ));
+        }
+        bar.into_view()
+    })
+}
+
+/// The list page for the folder `folder` (`inbox`, `sent` or `trash`).
 #[must_use]
-pub(crate) fn page(env: &Env, state: &State, folder: Option<String>) -> View {
+pub(crate) fn page(env: &Env, state: &State, folder: String) -> View {
     let (env, state) = (env.clone(), state.clone());
     let search = Field::new("search", "");
     let unread_only = create_signal(false);
+    let starred_only = create_signal(false);
+    let selected: Signal<Vec<String>> = create_signal(Vec::new());
 
     let ask_for = {
         let (env, state, folder) = (env.clone(), state.clone(), folder.clone());
-        move |text: String, unread: bool, offset: u32| {
+        move |text: String, unread: bool, flagged: bool, offset: u32| {
             let query = ListQuery {
                 folder: folder.clone(),
-                role: if folder.is_none() {
-                    Some("inbox".into())
-                } else {
-                    None
-                },
                 text,
                 unread,
+                flagged,
                 offset,
             };
             state.asked.set(Some(query.clone()));
@@ -120,42 +228,49 @@ pub(crate) fn page(env: &Env, state: &State, folder: Option<String>) -> View {
     };
 
     let toolbar = {
-        let (env, state, search, unread_only, ask_for, folder) = (
+        let (env, search, unread_only, starred_only, ask_for, selected) = (
             env.clone(),
-            state.clone(),
             search.clone(),
             unread_only.clone(),
+            starred_only.clone(),
             ask_for.clone(),
-            folder.clone(),
+            selected.clone(),
         );
         let go = {
-            let (search, unread_only, ask_for) =
-                (search.clone(), unread_only.clone(), ask_for.clone());
-            move || ask_for(search.value_untracked(), unread_only.get_untracked(), 0)
-        };
-        let refresh = {
-            let (env, state, folder) = (env.clone(), state.clone(), folder.clone());
+            let (search, unread_only, starred_only, ask_for) = (
+                search.clone(),
+                unread_only.clone(),
+                starred_only.clone(),
+                ask_for.clone(),
+            );
             move || {
-                let accounts = state.accounts.get_untracked().unwrap_or_default();
-                let wanted: Vec<String> = match &folder {
-                    Some(id) => state
-                        .folders
-                        .get_untracked()
-                        .iter()
-                        .find(|(_, list)| list.iter().any(|f| f.id == *id))
-                        .map(|(account, _)| vec![account.clone()])
-                        .unwrap_or_default(),
-                    None => accounts.iter().map(|a| a.id.clone()).collect(),
-                };
-                for account in wanted {
-                    (env.ask)(Request::Refresh(account));
-                }
+                selected.set(Vec::new());
+                ask_for(
+                    search.value_untracked(),
+                    unread_only.get_untracked(),
+                    starred_only.get_untracked(),
+                    0,
+                );
             }
         };
+        let toggle = |id: &'static str, label: String, flag: Signal<bool>, go: Rc<dyn Fn()>| {
+            let shown = flag.clone();
+            button()
+                .attr("type", "button")
+                .attr("id", id)
+                .class("mr-btn")
+                .class_if("mr-on", move || shown.get())
+                .on_click(move || {
+                    flag.update(|u| *u = !*u);
+                    go();
+                })
+                .text(label)
+        };
+        let go_rc: Rc<dyn Fn()> = Rc::new(go.clone());
         form()
             .attr("id", "search-form")
             .class("mr-toolbar")
-            .on_submit(go.clone())
+            .on_submit(go)
             .child(
                 search
                     .input()
@@ -170,38 +285,30 @@ pub(crate) fn page(env: &Env, state: &State, folder: Option<String>) -> View {
                     .attr("id", "search-button")
                     .text(env.t.t("mr_list_search")),
             )
-            .child(
-                button()
-                    .attr("type", "button")
-                    .attr("id", "unread-toggle")
-                    .class_if("mr-on", {
-                        let unread_only = unread_only.clone();
-                        move || unread_only.get()
-                    })
-                    .class("mr-btn")
-                    .on_click({
-                        let unread_only = unread_only.clone();
-                        move || {
-                            unread_only.update(|u| *u = !*u);
-                            go();
-                        }
-                    })
-                    .text(env.t.t("mr_list_unread_only")),
-            )
-            .child(
-                button()
-                    .attr("type", "button")
-                    .attr("id", "refresh")
-                    .class("mr-btn")
-                    .on_click(refresh)
-                    .child(forge_shell::icon("rotate"))
-                    .child(span().text(env.t.t("mr_list_refresh"))),
-            )
+            .child(toggle(
+                "unread-toggle",
+                env.t.t("mr_list_unread_only"),
+                unread_only,
+                Rc::clone(&go_rc),
+            ))
+            .child(toggle(
+                "starred-toggle",
+                env.t.t("mr_list_starred"),
+                starred_only,
+                go_rc,
+            ))
     };
 
     let body = {
-        let (env, state, search, unread_only, ask_for) =
-            (env.clone(), state.clone(), search, unread_only, ask_for);
+        let (env, state, search, unread_only, starred_only, ask_for, selected) = (
+            env.clone(),
+            state.clone(),
+            search,
+            unread_only,
+            starred_only,
+            ask_for,
+            selected.clone(),
+        );
         move || -> View {
             if let Some(view) = problem_view(&env, &state) {
                 return view;
@@ -216,16 +323,34 @@ pub(crate) fn page(env: &Env, state: &State, folder: Option<String>) -> View {
                     .text(env.t.t("mr_list_empty"))
                     .into_view();
             }
-            let rows = list.items.iter().map(|m| row(&env, m));
+            let rows = list.items.iter().map(|m| row(&env, m, &selected));
             let (older, newer) = (list.offset + PAGE < list.total, list.offset > 0);
             let pager = {
-                let (search, unread_only, ask_for) =
-                    (search.clone(), unread_only.clone(), ask_for.clone());
+                let (search, unread_only, starred_only, ask_for, selected) = (
+                    search.clone(),
+                    unread_only.clone(),
+                    starred_only.clone(),
+                    ask_for.clone(),
+                    selected.clone(),
+                );
                 let (offset, total) = (list.offset, list.total);
                 let page_to = move |to: u32| {
-                    let (search, unread_only, ask_for) =
-                        (search.clone(), unread_only.clone(), ask_for.clone());
-                    move || ask_for(search.value_untracked(), unread_only.get_untracked(), to)
+                    let (search, unread_only, starred_only, ask_for, selected) = (
+                        search.clone(),
+                        unread_only.clone(),
+                        starred_only.clone(),
+                        ask_for.clone(),
+                        selected.clone(),
+                    );
+                    move || {
+                        selected.set(Vec::new());
+                        ask_for(
+                            search.value_untracked(),
+                            unread_only.get_untracked(),
+                            starred_only.get_untracked(),
+                            to,
+                        );
+                    }
                 };
                 div()
                     .class("mr-pager")
@@ -264,14 +389,13 @@ pub(crate) fn page(env: &Env, state: &State, folder: Option<String>) -> View {
     div()
         .class("mr-page")
         .child(
-            div()
-                .class("mr-head")
-                .child(h1().attr("id", "list-title").text_fn({
-                    let (env, state, folder) = (env.clone(), state.clone(), folder);
-                    move || title(&env, &state, folder.as_ref())
-                })),
+            div().class("mr-head").child(
+                h1().attr("id", "list-title")
+                    .text(folder_name(&env, &folder)),
+            ),
         )
         .child(toolbar)
+        .child(bulk(&env, &folder, &selected))
         .child(View::dynamic(body))
         .into_view()
 }

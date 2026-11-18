@@ -558,9 +558,8 @@ service_arg = ["--service", "${service}"]
 stop_services = true
 note = "the development environment is down; `foreman` brings it back"
 
-# Mailroom: the estate's mail. The state is the `mailroom` schema in Postgres (Foundry module `mailroom`). Locally the sending server is
-# unset (the panel or MAILROOM_SMTP_* sets it) and gatehouse keeps logging its mail unless MAILROOM_URL is given to it. To try the
-# client with fake providers: `cargo run -p mail-testkit --example serve`, then add me@provider.example (localhost:12993 / 12525).
+# Mailroom: the estate's own mail (people and services write to each other; nothing leaves the cluster). The state is the `mailroom`
+# schema in Postgres (Foundry module `mailroom`). Gatehouse keeps logging its mail unless MAILROOM_URL is given to it.
 [[services]]
 name = "mailroom"
 package = "mailroom"
@@ -571,6 +570,3 @@ needs = ["gatehouse"]
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_mailroom}"
 SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:18080"
-MAILROOM_ALLOW_EPHEMERAL_KEY = "true"
-MAILROOM_PRIVATE_HOSTS = "localhost"
-MAILROOM_EXTRA_PORTS = "12525,12993"

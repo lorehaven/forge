@@ -1,11 +1,10 @@
 //! The tables, as typed functions. Every statement is parameterised; nothing from a request is ever put into SQL text.
 
-pub mod accounts;
+pub mod attachments;
 pub mod audit;
-pub mod bodies;
-pub mod folders;
+pub mod deliveries;
+pub mod mailboxes;
 pub mod messages;
-pub mod outbox;
 pub mod settings;
 pub mod uploads;
 

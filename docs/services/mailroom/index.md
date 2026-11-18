@@ -1,56 +1,65 @@
 # Mailroom
 
-The estate's mail: a web mail client over **any** IMAP/SMTP provider, an Android preview app, an administrator's panel, and the
-one place forge services send mail from. It replaces Stalwart and Roundcube.
+The estate's **own** mail. Every Gatehouse user has a mailbox, people write to each other in a web mail client, forge services
+write to people through it, and an administrator's panel manages the whole. It replaces Stalwart and Roundcube.
 
-**It is a client, not a mail server.** Nothing is exposed in the router: Mailroom opens connections *out* (to people's providers
-and to the estate's relay) and keeps a cache in Postgres. The consequence is deliberate: mail addressed to `@ennor.ddns.net` is no
-longer received (see the homecloud runbook for moving what you still want).
+**Nothing leaves the cluster.** Mailroom is not a mail server and not a mail client of anybody else's server: it opens no
+connection to any mail provider, relay or SMTP/IMAP server, and takes no mail in from outside. Mail to an outside address is
+refused with a clear message; mail from outside cannot arrive. No port is opened in the router. Mail lives in Postgres.
 
 | Part | Where | What |
 |---|---|---|
-| `mail-client` | `libs/mail-client` | IMAP client, MIME parser/composer, HTML sanitiser, outbound address policy, provider presets |
-| `mail-testkit` | `libs/mail-testkit` | in-process IMAP/SMTP servers (tests, BDD, `--example serve` for a browser demo) |
-| `mailroom-client` | `libs/mailroom-client` | how a service sends mail: machine token + `POST /api/v1/send` |
-| `mailroom-core/app/web` | `services/mailroom/` | wire model, quench-ui screens, wasm client |
+| `mail-html` | `libs/mail-html` | the HTML sanitiser (allow-list) and HTML-to-text, for showing a message safely |
+| `mailroom-client` | `libs/mailroom-client` | how a service writes to a person: machine token + `POST /api/v1/send` |
+| `mailroom-core/app/web` | `services/mailroom/` | wire model and forms, quench-ui screens, wasm client |
 | `mailroom` | `services/mailroom/service` | the server (`mailroom-service`) |
+
+## Addresses and folders
+
+A person's address is `<user name>@<MAILROOM_DOMAIN>` (the Gatehouse user name, lower-cased). A mailbox has three folders:
+**inbox**, **sent** and **trash** (emptied after 30 days). A message to three people is stored once per mailbox, with the
+attachment bytes shared. A mailbox is made the first time the person opens Mailroom or a service first writes to them; a person
+cannot write to someone who has neither (they have to sign in once). Writing `ann` and `ann@<domain>` is the same; any other
+domain is refused. Quota per mailbox: 500 MB by default (panel).
 
 ## People
 
-`mailroom:read` opens your mailboxes, `mailroom:write` adds mailboxes and sends from them, `mailroom:admin` is the panel (the sending
-server, sender addresses, host policy, queue, everyone's mailboxes **as metadata only**, audit log). `mailroom:send` is for machine
-identities. A service's own credential (the `service` role) can call `/send` and nothing else; a person can never call `/send`.
+`mailroom:read` opens your mailbox, `mailroom:write` sends and changes mail, `mailroom:admin` is the panel (settings, mailboxes
+**as metadata only** - owner, size, last seen -, the services' delivery log, audit log). `mailroom:send` is for machine identities.
+A service's own credential (the `service` role) can call `/send` and nothing else; a person can never call `/send`. An
+administrator cannot read anybody's mail, and the panel never lists mail between people.
 
-Providers: Gmail, Outlook, iCloud, Yahoo, Fastmail, GMX, Zoho, WP, Onet, o2, Interia have presets; anything else is typed in.
-Gmail/Outlook/iCloud need an *app password* (no OAuth yet). Proton needs Proton Mail Bridge (an administrator allows its host).
+## Services writing to people
 
-## Services sending mail
+`mailroom_client::Client::new(&Config::from_env()?)?.send(&SendRequest{ to: vec!["ann".into()], subject, text, html, .. })` with a
+machine client in Gatehouse (`<service>-mailroom`, audience `mailroom`). The sender is the service itself
+(`gatehouse@<domain>`, shown as automated; nobody can reply to it). Hourly per-service and daily estate budgets apply, and an
+`idempotency_key` makes a retry harmless. Delivery is immediate and all-or-nothing per message.
 
-Gatehouse (verification, reset, invitations, security notices, `/notify`) uses `MailroomSender` when `MAILROOM_URL` is set. Any other
-service: `mailroom_client::Client::new(&Config::from_env()?)?.send(&SendRequest{..})` with a machine client in Gatehouse
-(`<service>-mailroom`, audience `mailroom`). `From` must be one of the administrator's sender identities; hourly per-service and
-daily estate budgets apply; an `idempotency_key` makes a retry harmless; the queue retries transient failures (1 min, 5 min,
-30 min, 2 h, 6 h) and gives up after six.
+Gatehouse (verification, reset, invitations, security notices, `/notify`) uses `MailroomSender` when `MAILROOM_URL` is set. It
+addresses the person by **user name**, not by the address stored in the account. A person cannot read a mailbox before they can
+sign in, so the verification, password-reset and invitation links are *also* written to Gatehouse's log for the administrator to
+hand over (`GATEHOUSE_LOG_ACCOUNT_LINKS`, default on).
 
 ## Configuration (environment)
 
 | Variable | Meaning |
 |---|---|
 | `DATABASE_URL`, `DB_SCHEMA` | Postgres (schema `mailroom`, installed by Foundry module `mailroom`) |
-| `MAILROOM_VAULT_KEY` (+ `_PREVIOUS`) | seals mailbox passwords, 32+ chars; required (dev: `MAILROOM_ALLOW_EPHEMERAL_KEY=true`) |
-| `MAILROOM_SMTP_HOST/PORT/SECURITY/USERNAME/PASSWORD`, `MAILROOM_FROM` | estate relay + default sender, **seeded once** into settings |
-| `MAILROOM_PRIVATE_HOSTS`, `MAILROOM_EXTRA_PORTS` | private hosts / ports users may use (added to the panel's lists) |
-| `MAILROOM_SYNC_SECS`, `MAILROOM_INITIAL_MESSAGES`, `MAILROOM_BACKGROUND` | sync cadence, first-look size (300), workers on/off |
+| `MAILROOM_DOMAIN` | the part after the `@` (default `mailroom.local`) |
+| `MAILROOM_MAINTENANCE_SECS`, `MAILROOM_BACKGROUND` | sweep cadence (3600), worker on/off |
 | `MAILROOM_TRUSTED_ORIGINS` | extra browser origins allowed to call the API with a session cookie |
+
+There are no passwords, keys or relay settings: the only secrets are the two Gatehouse client secrets.
 
 ## Testing
 
-`cargo test -p mail-client -p mail-testkit -p mailroom-core -p mailroom-app -p mailroom-web -p mailroom-client`;
-the service tests need Postgres: `MAILROOM_TEST_DATABASE_URL=postgres://… cargo test -p mailroom`. BDD:
-`MAILROOM_BDD_DATABASE_URL=… cargo run -p forge-bdd -- --service mailroom` (47 scenarios, including real Gatehouse → Mailroom →
-SMTP). With that variable set, the gatehouse suite also sends its mail through Mailroom. See [security.md](security.md).
+`cargo test -p mail-html -p mailroom-core -p mailroom-app -p mailroom-web -p mailroom-client`; the service tests need Postgres:
+`MAILROOM_TEST_DATABASE_URL=postgres://… cargo test -p mailroom`. BDD: `MAILROOM_BDD_DATABASE_URL=… cargo run -p forge-bdd --
+--service mailroom` (people writing to each other, the services' mail, Gatehouse → Mailroom flows). See [security.md](security.md).
 
 ## Known limits
 
-No OAuth2/XOAUTH2 for SMTP (IMAP supports the mechanism); no IMAP IDLE push (polling every 2 minutes); no drafts folder sync; no
-S/MIME/PGP; the Android app is a read-only preview; HTML mail is shown without its own CSS (inline style subset only).
+Local mail only (by design); no drafts folder, folders other than the three, threads view, address book or mail rules; no push
+(the client refreshes when asked and on navigation); HTML mail is shown without its own CSS (inline style subset only); the Android
+app is not built yet.

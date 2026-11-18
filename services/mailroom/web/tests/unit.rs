@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use mailroom_app::{ListQuery, Msg, Request};
 use mailroom_core::admin::SettingsInput;
-use mailroom_core::{AccountInput, Change, Compose};
+use mailroom_core::{Change, Compose};
 use mailroom_web::client::{
     Boxed, Client, HttpRequest, HttpResponse, Transport, base_of, list_path, segment,
 };
@@ -55,26 +55,20 @@ fn client(
     )
 }
 
-const ACCOUNT: &str = r#"{"id":"a1","label":"Personal","address":"me@example.com","username":"me@example.com","imap_host":"imap.example.com","imap_port":993,"imap_security":"tls","smtp_host":"smtp.example.com","smtp_port":465,"smtp_security":"tls","state":"ok","last_error":null,"last_sync":null,"unread":1,"signature":"","custom_certificate":false,"save_sent":true}"#;
-const SUMMARY: &str = r#"{"id":"m1","account_id":"a1","folder_id":"f1","subject":"Hi","from":{"name":"Alice","address":"alice@x.example"},"to":[],"date":1,"preview":"","seen":false,"flagged":false,"answered":false,"attachments":false,"size":10}"#;
+const FOLDERS: &str = r#"[{"id":"inbox","unread":1,"total":2},{"id":"sent","unread":0,"total":1},{"id":"trash","unread":0,"total":0}]"#;
+const SUMMARY: &str = r#"{"id":"m1","folder":"inbox","subject":"Hi","from":{"name":"Alice","address":"alice@home.example"},"to":[],"date":1,"preview":"","seen":false,"flagged":false,"answered":false,"attachments":false,"size":10}"#;
 const OK: (u16, String) = (200, String::new());
 
 fn routes(request: &HttpRequest) -> (u16, String) {
     let body = match (request.method, request.path.split('?').next().unwrap()) {
-        ("GET", "/api/v1/me") => r#"{"username":"ann","can_write":true,"admin":true,"max_accounts":10}"#.to_string(),
-        ("GET", "/api/v1/presets") => "[]".to_string(),
-        ("GET", "/api/v1/accounts") => format!("[{ACCOUNT}]"),
-        ("POST", "/api/v1/accounts") | ("PUT", "/api/v1/accounts/a1") => ACCOUNT.to_string(),
-        ("GET", "/api/v1/accounts/a1/folders") => r#"[{"id":"f1","account_id":"a1","path":"INBOX","name":"INBOX","role":"inbox","unread":1,"total":2}]"#.to_string(),
+        ("GET", "/api/v1/me") => r#"{"username":"ann","address":"ann@home.example","can_write":true,"admin":true}"#.to_string(),
+        ("GET", "/api/v1/folders") => FOLDERS.to_string(),
         ("GET", "/api/v1/messages") => format!(r#"{{"items":[{SUMMARY}],"total":1,"offset":0}}"#),
-        ("GET", "/api/v1/messages/m1") => format!(r#"{{"summary":{SUMMARY},"cc":[],"reply_to":[],"message_id":"<m1@x>","text":"hello","has_html":false,"remote_images":0,"attachments":[],"list_unsubscribe":""}}"#),
-        ("POST", "/api/v1/account-tests") => r#"{"imap":{"ok":true,"error":""},"smtp":{"ok":false,"error":"nope"}}"#.to_string(),
-        ("GET", "/api/v1/admin/stats") => r#"{"accounts":1,"accounts_failing":0,"messages":2,"queued":0,"sent_24h":3,"failed_24h":0,"budget_left":497}"#.to_string(),
-        ("GET", "/api/v1/admin/settings") | ("PUT", "/api/v1/admin/settings") => r#"{"transport":null,"identities":[],"private_hosts":[],"extra_ports":[],"daily_budget":500,"hourly_per_source":120,"max_accounts_per_user":10,"sync_interval_secs":120}"#.to_string(),
-        ("POST", "/api/v1/admin/transport/test") => r#"{"imap":{"ok":true,"error":""},"smtp":{"ok":true,"error":""}}"#.to_string(),
-        ("GET", "/api/v1/admin/accounts") => r#"{"items":[],"total":0}"#.to_string(),
-        ("GET", "/api/v1/admin/outbox") => r#"{"items":[],"total":0}"#.to_string(),
-        ("GET", "/api/v1/admin/audit") => r#"{"items":[],"total":0}"#.to_string(),
+        ("GET", "/api/v1/messages/m1") => format!(r#"{{"summary":{SUMMARY},"cc":[],"message_id":"<m1@x>","text":"hello","has_html":false,"remote_images":0,"attachments":[],"unsubscribe":""}}"#),
+        ("GET", "/api/v1/people") => r#"[{"name":"","address":"bob@home.example"}]"#.to_string(),
+        ("GET", "/api/v1/admin/stats") => r#"{"mailboxes":3,"messages":9,"bytes":2097152,"delivered_24h":3,"failed_24h":0,"budget_left":497}"#.to_string(),
+        ("GET" | "PUT", "/api/v1/admin/settings") => r#"{"domain":"home.example","daily_budget":500,"hourly_per_source":120,"hourly_per_person":60,"quota_mb":500}"#.to_string(),
+        ("GET", "/api/v1/admin/mailboxes") | ("GET", "/api/v1/admin/deliveries") | ("GET", "/api/v1/admin/audit") => r#"{"items":[],"total":0}"#.to_string(),
         ("POST" | "DELETE", _) => return OK,
         _ => return (404, String::new()),
     };
@@ -83,6 +77,13 @@ fn routes(request: &HttpRequest) -> (u16, String) {
 
 fn run(client: &Client<Standin>, request: Request) -> Vec<Msg> {
     block_on(client.execute(request))
+}
+
+fn paths(seen: &Seen) -> Vec<String> {
+    seen.borrow()
+        .iter()
+        .map(|(m, p)| format!("{m} {p}"))
+        .collect()
 }
 
 #[quench_test::test]
@@ -109,37 +110,51 @@ fn values_in_a_path_cannot_break_out_of_it() {
 fn a_list_is_asked_for_with_its_filters() {
     assert_eq!(
         list_path(&ListQuery {
-            role: Some("inbox".into()),
+            folder: "inbox".into(),
             ..ListQuery::default()
         }),
-        "/api/v1/messages?role=inbox&offset=0&limit=50"
+        "/api/v1/messages?folder=inbox&offset=0&limit=50"
     );
     assert_eq!(
         list_path(&ListQuery {
-            folder: Some("f 1".into()),
+            folder: "sent".into(),
             text: " a&b ".into(),
             unread: true,
+            flagged: true,
             offset: 100,
-            ..ListQuery::default()
         }),
-        "/api/v1/messages?folder=f%201&q=a%26b&unread=1&offset=100&limit=50"
+        "/api/v1/messages?folder=sent&q=a%26b&unread=1&flagged=1&offset=100&limit=50"
+    );
+    // Without a folder the service takes the inbox.
+    assert_eq!(
+        list_path(&ListQuery::default()),
+        "/api/v1/messages?offset=0&limit=50"
     );
 }
 
 #[quench_test::test]
-fn startup_gives_who_the_providers_and_the_mailboxes() {
+fn startup_gives_who_and_the_folders() {
     let (c, seen, _) = client(routes);
     let msgs = run(&c, Request::Startup);
-    assert!(matches!(&msgs[0], Msg::Me(me) if me.username == "ann" && me.admin));
-    assert!(matches!(&msgs[1], Msg::Presets(p) if p.is_empty()));
-    assert!(matches!(&msgs[2], Msg::Accounts(a) if a[0].id == "a1"));
-    assert_eq!(seen.borrow().len(), 3);
+    assert!(
+        matches!(&msgs[0], Msg::Me(me) if me.username == "ann" && me.admin && me.address == "ann@home.example")
+    );
+    assert!(
+        matches!(&msgs[1], Msg::Folders(f) if f.len() == 3 && f[0].id == "inbox" && f[0].unread == 1)
+    );
+    assert_eq!(msgs.len(), 2);
+    assert_eq!(paths(&seen), ["GET /api/v1/me", "GET /api/v1/folders"]);
 }
 
 #[quench_test::test]
 fn startup_stops_at_a_signed_out_session_or_a_refusal() {
-    let (c, _, _) = client(|_| (401, String::new()));
+    let (c, seen, _) = client(|_| (401, String::new()));
     assert_eq!(run(&c, Request::Startup), [Msg::SignedOut]);
+    assert_eq!(
+        seen.borrow().len(),
+        1,
+        "nothing else is asked of a signed-out session"
+    );
     let (c, _, _) = client(|_| (403, String::new()));
     assert!(
         matches!(&run(&c, Request::Startup)[..], [Msg::Failed(t)] if t.contains("ask for access"))
@@ -149,19 +164,15 @@ fn startup_stops_at_a_signed_out_session_or_a_refusal() {
 #[quench_test::test]
 fn reads_become_messages() {
     let (c, seen, _) = client(routes);
+    assert!(matches!(&run(&c, Request::Folders)[0], Msg::Folders(f) if f[1].id == "sent"));
     assert!(
-        matches!(&run(&c, Request::Folders("a1".into()))[0], Msg::Folders { account, folders } if account == "a1" && folders[0].role == "inbox")
-    );
-    assert!(
-        matches!(&run(&c, Request::List(ListQuery { role: Some("inbox".into()), ..ListQuery::default() }))[0], Msg::Messages(l) if l.total == 1)
+        matches!(&run(&c, Request::List(ListQuery { folder: "inbox".into(), ..ListQuery::default() }))[0], Msg::Messages(l) if l.total == 1)
     );
     assert!(
         matches!(&run(&c, Request::Open("m1".into()))[0], Msg::Message(m) if m.text == "hello")
     );
     assert!(
-        seen.borrow()
-            .iter()
-            .any(|(m, p)| m == "GET" && p == "/api/v1/messages?role=inbox&offset=0&limit=50")
+        paths(&seen).contains(&"GET /api/v1/messages?folder=inbox&offset=0&limit=50".to_string())
     );
 }
 
@@ -169,19 +180,9 @@ fn reads_become_messages() {
 fn a_missing_message_and_a_server_that_is_down_are_told_apart() {
     let (c, _, _) = client(|_| (404, String::new()));
     assert_eq!(run(&c, Request::Open("x".into())), [Msg::NotFound]);
-    let (c, _, _) = client(|_| {
-        (
-            502,
-            r#"{"error":"the mail server did not answer in time"}"#.into(),
-        )
-    });
-    assert_eq!(
-        run(&c, Request::Open("x".into())),
-        [Msg::Failed("the mail server did not answer in time".into())]
-    );
     let (c, _, _) = client(|_| (500, "boom".into()));
     assert_eq!(
-        run(&c, Request::Accounts),
+        run(&c, Request::Folders),
         [Msg::Failed("the service answered 500".into())]
     );
 }
@@ -189,7 +190,7 @@ fn a_missing_message_and_a_server_that_is_down_are_told_apart() {
 #[quench_test::test]
 fn an_unreadable_answer_is_said_not_swallowed() {
     let (c, _, _) = client(|_| (200, "not json".into()));
-    assert!(matches!(&run(&c, Request::Accounts)[0], Msg::Failed(t) if t.contains("unreadable")));
+    assert!(matches!(&run(&c, Request::Folders)[0], Msg::Failed(t) if t.contains("unreadable")));
 }
 
 #[quench_test::test]
@@ -230,7 +231,7 @@ fn a_refused_change_carries_the_services_own_words() {
     let (c, _, _) = client(|_| {
         (
             400,
-            r#"{"error":"messages are deleted for good only from the trash"}"#.into(),
+            r#"{"error":"only what is in the trash is deleted for good"}"#.into(),
         )
     });
     let change = Change {
@@ -241,7 +242,7 @@ fn a_refused_change_carries_the_services_own_words() {
     assert_eq!(
         run(&c, Request::Change(change.clone())),
         [Msg::Rejected(
-            "messages are deleted for good only from the trash".into()
+            "only what is in the trash is deleted for good".into()
         )]
     );
     let (c, _, _) = client(|_| (404, String::new()));
@@ -255,33 +256,28 @@ fn a_refused_change_carries_the_services_own_words() {
 }
 
 #[quench_test::test]
-fn sending_and_refreshing() {
+fn sending_says_why_when_it_does_not_go() {
     let (c, seen, bodies) = client(routes);
     let compose = Compose {
-        account_id: "a1".into(),
-        to: vec!["bob@example.org".into()],
+        to: vec!["bob".into()],
         subject: "s".into(),
         text: "t".into(),
         ..Compose::default()
     };
-    assert_eq!(run(&c, Request::Send(compose)), [Msg::Sent]);
+    assert_eq!(run(&c, Request::Send(compose.clone())), [Msg::Sent]);
     assert_eq!(
         seen.borrow()[0],
         ("POST".to_string(), "/api/v1/outgoing".to_string())
     );
-    assert!(
-        bodies.borrow()[0]
-            .as_deref()
-            .unwrap()
-            .contains("bob@example.org")
-    );
-    assert_eq!(run(&c, Request::Refresh("a1".into())), [Msg::Changed]);
-    assert_eq!(
-        seen.borrow()[1],
+    assert!(bodies.borrow()[0].as_deref().unwrap().contains("bob"));
+    let (c, _, _) = client(|_| {
         (
-            "POST".to_string(),
-            "/api/v1/accounts/a1/refresh".to_string()
+            400,
+            r#"{"error":"not sent: bob@home.example has no mailbox here"}"#.into(),
         )
+    });
+    assert!(
+        matches!(&run(&c, Request::Send(compose.clone()))[0], Msg::Rejected(t) if t.contains("no mailbox"))
     );
     let (c, _, _) = client(|_| {
         (
@@ -290,90 +286,54 @@ fn sending_and_refreshing() {
         )
     });
     assert!(
-        matches!(&run(&c, Request::Refresh("a1".into()))[0], Msg::Rejected(t) if t.contains("too many"))
+        matches!(&run(&c, Request::Send(compose))[0], Msg::Rejected(t) if t.contains("too many"))
     );
 }
 
 #[quench_test::test]
-fn mailboxes_are_added_changed_tested_and_removed() {
+fn people_are_asked_for_and_a_failure_is_only_silence() {
     let (c, seen, _) = client(routes);
-    let input = AccountInput {
-        label: "Personal".into(),
-        address: "me@example.com".into(),
-        ..AccountInput::default()
-    };
     assert!(
-        matches!(&run(&c, Request::AddAccount(input.clone()))[0], Msg::AccountSaved(a) if a.id == "a1")
+        matches!(&run(&c, Request::People("b o".into()))[0], Msg::People(p) if p[0].address == "bob@home.example")
     );
-    assert!(matches!(
-        &run(
-            &c,
-            Request::UpdateAccount {
-                id: "a1".into(),
-                input: input.clone()
-            }
-        )[0],
-        Msg::AccountSaved(_)
-    ));
-    assert!(
-        matches!(&run(&c, Request::TestAccount(input))[0], Msg::Tested(t) if t.imap.ok && !t.smtp.ok)
-    );
-    assert_eq!(
-        run(&c, Request::RemoveAccount("a1".into())),
-        [Msg::AccountRemoved("a1".into())]
-    );
+    assert_eq!(paths(&seen), ["GET /api/v1/people?q=b%20o"]);
+    let (c, _, _) = client(|_| (500, String::new()));
+    assert!(run(&c, Request::People("b".into())).is_empty());
+    let (c, _, _) = client(|_| (404, String::new()));
+    assert!(run(&c, Request::People("b".into())).is_empty());
+    let (c, _, _) = client(|_| (401, String::new()));
+    assert_eq!(run(&c, Request::People("b".into())), [Msg::SignedOut]);
+}
+
+#[quench_test::test]
+fn an_upload_is_removed_quietly() {
+    let (c, seen, _) = client(routes);
     assert!(run(&c, Request::RemoveUpload("u/1".into())).is_empty());
-    let paths: Vec<String> = seen
-        .borrow()
-        .iter()
-        .map(|(m, p)| format!("{m} {p}"))
-        .collect();
-    for expected in [
-        "POST /api/v1/accounts",
-        "PUT /api/v1/accounts/a1",
-        "POST /api/v1/account-tests",
-        "DELETE /api/v1/accounts/a1",
-        "DELETE /api/v1/uploads/u%2F1",
-    ] {
-        assert!(
-            paths.contains(&expected.to_string()),
-            "{expected}: {paths:?}"
-        );
-    }
-    let (c, _, _) = client(|_| {
-        (
-            502,
-            r#"{"error":"the mail server refused the login: check the password"}"#.into(),
-        )
-    });
-    assert!(
-        matches!(&run(&c, Request::AddAccount(AccountInput::default()))[0], Msg::Rejected(t) if t.contains("check the password"))
-    );
+    assert_eq!(paths(&seen), ["DELETE /api/v1/uploads/u%2F1"]);
+    let (c, _, _) = client(|_| (500, String::new()));
+    assert!(run(&c, Request::RemoveUpload("u1".into())).is_empty());
 }
 
 #[quench_test::test]
 fn the_panel_calls() {
     let (c, seen, _) = client(routes);
-    assert!(matches!(&run(&c, Request::Stats)[0], Msg::Stats(s) if s.budget_left == 497));
-    assert!(matches!(&run(&c, Request::Settings)[0], Msg::Settings(s) if s.daily_budget == 500));
+    assert!(
+        matches!(&run(&c, Request::Stats)[0], Msg::Stats(s) if s.budget_left == 497 && s.mailboxes == 3)
+    );
+    assert!(
+        matches!(&run(&c, Request::Settings)[0], Msg::Settings(s) if s.daily_budget == 500 && s.domain == "home.example")
+    );
     assert!(matches!(
         &run(&c, Request::SaveSettings(SettingsInput::default()))[0],
         Msg::SettingsSaved(_)
     ));
-    assert!(matches!(&run(&c, Request::TestTransport)[0], Msg::TransportTested(t) if t.smtp.ok));
     assert!(matches!(
-        &run(&c, Request::AdminAccounts { offset: 50 })[0],
-        Msg::AdminAccounts(_)
+        &run(&c, Request::Mailboxes { offset: 50 })[0],
+        Msg::Mailboxes(_)
     ));
     assert!(matches!(
-        &run(
-            &c,
-            Request::Outbox {
-                status: "queued".into(),
-                offset: 0
-            }
-        )[0],
-        Msg::Outbox(_)
+        &run(&c, Request::Deliveries { offset: 0 })[0],
+        Msg::Deliveries(_)
     ));
     assert!(matches!(
         &run(&c, Request::Audit { offset: 0 })[0],
@@ -384,42 +344,61 @@ fn the_panel_calls() {
         &run(
             &c,
             Request::SetDisabled {
-                id: "a1".into(),
+                owner: "bob".into(),
                 disabled: true
             }
         )[0],
-        Msg::AdminAccounts(_)
+        Msg::Mailboxes(_)
     ));
     assert!(matches!(
-        &run(&c, Request::AdminRemoveAccount("a1".into()))[0],
-        Msg::AdminAccounts(_)
+        &run(
+            &c,
+            Request::SetDisabled {
+                owner: "bob".into(),
+                disabled: false
+            }
+        )[0],
+        Msg::Mailboxes(_)
     ));
     assert!(matches!(
-        &run(&c, Request::Retry("o1".into()))[0],
-        Msg::Outbox(_)
-    ));
-    assert!(matches!(
-        &run(&c, Request::RemoveQueued("o1".into()))[0],
-        Msg::Outbox(_)
+        &run(&c, Request::RemoveMailbox("bob".into()))[0],
+        Msg::Mailboxes(_)
     ));
     assert!(run(&c, Request::Language("pl-PL".into())).is_empty());
-    let paths: Vec<String> = seen
-        .borrow()
-        .iter()
-        .map(|(m, p)| format!("{m} {p}"))
-        .collect();
+    let paths = paths(&seen);
     for expected in [
-        "GET /api/v1/admin/accounts?offset=50&limit=50",
-        "GET /api/v1/admin/outbox?status=queued&offset=0&limit=50",
-        "POST /api/v1/admin/accounts/a1/disable",
-        "POST /api/v1/admin/outbox/o1/retry",
-        "DELETE /api/v1/admin/outbox/o1",
+        "GET /api/v1/admin/mailboxes?offset=50&limit=50",
+        "GET /api/v1/admin/deliveries?offset=0&limit=50",
+        "PUT /api/v1/admin/settings",
+        "POST /api/v1/admin/mailboxes/bob/disable",
+        "POST /api/v1/admin/mailboxes/bob/enable",
+        "DELETE /api/v1/admin/mailboxes/bob",
     ] {
         assert!(
             paths.contains(&expected.to_string()),
             "{expected}: {paths:?}"
         );
     }
+}
+
+#[quench_test::test]
+fn a_failed_panel_change_is_said_and_does_not_reload_the_list() {
+    let (c, seen, _) = client(|_| (404, String::new()));
+    assert!(matches!(
+        &run(
+            &c,
+            Request::SetDisabled {
+                owner: "x".into(),
+                disabled: true
+            }
+        )[..],
+        [Msg::Rejected(t)] if t.contains("gone")
+    ));
+    assert!(matches!(
+        &run(&c, Request::RemoveMailbox("x".into()))[..],
+        [Msg::Rejected(_)]
+    ));
+    assert_eq!(seen.borrow().len(), 2);
 }
 
 #[quench_test::test]
@@ -431,7 +410,35 @@ fn a_panel_the_person_may_not_use_is_said() {
         matches!(&run(&c, Request::SaveSettings(SettingsInput::default()))[0], Msg::Rejected(t) if t == "not allowed")
     );
     let (c, _, _) = client(|_| (401, String::new()));
-    assert_eq!(run(&c, Request::TestTransport), [Msg::SignedOut]);
+    assert_eq!(run(&c, Request::Stats), [Msg::SignedOut]);
+    let (c, _, _) = client(|_| {
+        (
+            400,
+            r#"{"error":"the daily budget must be from 1 to 100000"}"#.into(),
+        )
+    });
+    assert!(
+        matches!(&run(&c, Request::SaveSettings(SettingsInput::default()))[0], Msg::Rejected(t) if t.contains("budget"))
+    );
+}
+
+#[quench_test::test]
+fn an_offline_service_is_said() {
+    struct Down;
+    impl Transport for Down {
+        fn send(&self, _: HttpRequest) -> Boxed<'_, Result<HttpResponse, String>> {
+            Box::pin(async { Err("no network".to_string()) })
+        }
+    }
+    let c = Client::new(Down);
+    assert!(matches!(&run_down(&c, Request::Stats)[0], Msg::Failed(t) if t.contains("no network")));
+    assert!(
+        matches!(&run_down(&c, Request::Send(Compose::default()))[0], Msg::Failed(t) if t.contains("no network"))
+    );
+}
+
+fn run_down(client: &Client<impl Transport>, request: Request) -> Vec<Msg> {
+    block_on(client.execute(request))
 }
 
 quench_test::main!();

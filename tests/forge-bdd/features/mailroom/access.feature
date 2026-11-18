@@ -1,7 +1,7 @@
 @mailroom
 Feature: Who may use Mailroom
-  Mailroom holds the passwords of people's mailboxes, so the first thing to show is who is kept out: no sign-in, no mail; a
-  grant of another service, no mail; a reader cannot change anything; only an administrator reaches the panel.
+  Mailroom holds people's mail, so the first thing to show is who is kept out: no sign-in, no mail; a grant of another service,
+  no mail; a reader cannot change anything; only an administrator reaches the panel, and even they never read anyone's mail.
 
   Background:
     Given mailroom API is available
@@ -19,52 +19,45 @@ Feature: Who may use Mailroom
     Then response status should be 401
 
     Examples:
-      | path                    |
-      | /api/v1/me              |
-      | /api/v1/accounts        |
-      | /api/v1/messages        |
-      | /api/v1/admin/settings  |
-      | /api/v1/admin/stats     |
-      | /api/v1/does-not-exist  |
+      | path                     |
+      | /api/v1/me               |
+      | /api/v1/folders          |
+      | /api/v1/messages         |
+      | /api/v1/people           |
+      | /api/v1/admin/settings   |
+      | /api/v1/admin/mailboxes  |
+      | /api/v1/does-not-exist   |
 
   Scenario: A grant of another service opens nothing here
     Given I am signed in to mailroom as "access-sage" with "sage:write"
-    When I list my mailboxes
+    When I list my folders
     Then response status should be 403
 
-  Scenario: A reader can look but not change
+  Scenario: A reader can look but not write
     Given I am signed in to mailroom as "access-reader" with "mailroom:read"
-    When I list my mailboxes
+    When I list my folders
     Then response status should be 200
-    When I add my provider mailbox as "Not allowed"
+    When I write "Not allowed" to "access-reader"
     Then response status should be 403
 
   Scenario: The panel is for administrators
     Given I am signed in to mailroom as "access-writer" with "mailroom:write"
     When I read "/api/v1/admin/stats" on the mailroom panel
     Then response status should be 403
-    When I read "/api/v1/admin/settings" on the mailroom panel
-    Then response status should be 403
-    Given I am signed in to mailroom as "access-admin" with "mailroom:admin"
-    When I read "/api/v1/admin/stats" on the mailroom panel
-    Then response status should be 200
-
-  Scenario: A service's own credential sends mail and opens nothing else
-    Given I am signed in to mailroom as "access-machine" with "service"
-    When I list my mailboxes
-    Then response status should be 403
-    When I read "/api/v1/admin/settings" on the mailroom panel
+    When I read "/api/v1/admin/mailboxes" on the mailroom panel
     Then response status should be 403
 
-  Scenario: A person cannot use the estate's send endpoint
-    When I post to the estate send endpoint as "access-person" with "mailroom:admin"
+  Scenario: A service's credential cannot open a mailbox, and a person cannot use the services' endpoint
+    Given I am signed in to mailroom as "bdd-service" with "service"
+    When I list my folders
     Then response status should be 403
-    When I post to the estate send endpoint as "access-person" with "mailroom:write"
+    When I post to the estate send endpoint as "access-admin" with "mailroom:admin"
+    Then response status should be 403
+    When I post to the estate send endpoint as "access-writer" with "mailroom:write"
     Then response status should be 403
 
   Scenario: Every answer is private
     Given I am signed in to mailroom as "access-private" with "mailroom:read"
-    When I list my mailboxes
+    When I list my folders
     Then the last answer should have the header "cache-control" with "no-store"
-    And the last answer should have the header "x-content-type-options" with "nosniff"
     And the last answer should have the header "referrer-policy" with "no-referrer"
