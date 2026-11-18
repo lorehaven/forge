@@ -16,7 +16,7 @@ refused with a clear message; mail from outside cannot arrive. No port is opened
 
 ## Addresses and folders
 
-A person's address is `<user name>@<MAILROOM_DOMAIN>` (the Gatehouse user name, lower-cased). A mailbox has three folders:
+A person's address is `<user name>@<MAILROOM_DOMAIN>` (the Gatehouse user name; only lower-case letters, digits, `.`, `-`, `_` can have a mailbox, and the names of the estate's services are reserved). A mailbox has three folders:
 **inbox**, **sent** and **trash** (emptied after 30 days). A message to three people is stored once per mailbox, with the
 attachment bytes shared. A mailbox is made the first time the person opens Mailroom or a service first writes to them; a person
 cannot write to someone who has neither (they have to sign in once). Writing `ann` and `ann@<domain>` is the same; any other
@@ -37,9 +37,10 @@ machine client in Gatehouse (`<service>-mailroom`, audience `mailroom`). The sen
 `idempotency_key` makes a retry harmless. Delivery is immediate and all-or-nothing per message.
 
 Gatehouse (verification, reset, invitations, security notices, `/notify`) uses `MailroomSender` when `MAILROOM_URL` is set. It
-addresses the person by **user name**, not by the address stored in the account. A person cannot read a mailbox before they can
-sign in, so the verification, password-reset and invitation links are *also* written to Gatehouse's log for the administrator to
-hand over (`GATEHOUSE_LOG_ACCOUNT_LINKS`, default on).
+addresses the person by **user name**, not by the address stored in the account. The four messages that carry a link (verification,
+password reset, invitation, email change) are **not** put in any mailbox (a person cannot read one before they can sign in, and
+a reset link in the account's own mailbox would hand the account to whoever holds a live session): they are written to Gatehouse's
+log for the administrator to hand over (`GATEHOUSE_LOG_ACCOUNT_LINKS`, default on). Notices and notifications are delivered.
 
 ## Configuration (environment)
 

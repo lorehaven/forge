@@ -84,7 +84,8 @@ impl FromRequest for Caller {
         Ok(Self {
             admin: claims.can(service, "admin"),
             write: claims.can(service, "write") || claims.can(service, "admin"),
-            name: claims.sub.to_ascii_lowercase(),
+            // Exactly as Gatehouse spells it: user names there are case-sensitive, so `Alice` and `alice` are two people.
+            name: claims.sub,
         })
     }
 }

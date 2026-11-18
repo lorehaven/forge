@@ -321,3 +321,30 @@ fn text_conversion_collapses_whitespace_and_keeps_preformatted() {
     let deep = format!("{}x{}", "<div>".repeat(3000), "</div>".repeat(3000));
     assert!(to_text(&deep).contains('x'));
 }
+
+#[quench_test::test]
+fn html_of_the_size_mail_allows_is_sanitised_quickly() {
+    // What the service lets through (see `delivery::html_shape_ok`): thousands of tags, nested up to 128 deep.
+    let html = format!("{}x{}", "<div>".repeat(128), "</div>".repeat(128)).repeat(30);
+    let started = std::time::Instant::now();
+    let out = clean(&html);
+    assert!(out.contains('x'));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[quench_test::test]
+fn the_most_tags_mail_allows_are_sanitised_quickly() {
+    let html = "<p>x <b>y</b></p>".repeat(10_000);
+    let started = std::time::Instant::now();
+    let out = clean(&html);
+    assert!(out.starts_with("<p>"));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+}

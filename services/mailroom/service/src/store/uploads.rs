@@ -60,6 +60,25 @@ impl Store {
         Ok(out)
     }
 
+    /// The bytes of the owner's uploads among `ids`, without reading them.
+    pub async fn uploads_size(&self, owner: &str, ids: &[String]) -> Result<i64> {
+        let mut total = 0_i64;
+        for id in ids {
+            let row = self
+                .pool
+                .query_opt(
+                    "SELECT size FROM uploads WHERE id = $1 AND owner = $2",
+                    &[id, &owner],
+                )
+                .await?;
+            if let Some(row) = row {
+                let size: i32 = row.get("size")?;
+                total += i64::from(size);
+            }
+        }
+        Ok(total)
+    }
+
     /// Bytes a person has waiting in uploads (the quota).
     pub async fn uploads_bytes_of(&self, owner: &str) -> Result<i64> {
         let row = self

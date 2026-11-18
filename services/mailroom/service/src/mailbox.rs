@@ -24,9 +24,12 @@ pub const MAX_PEOPLE: i64 = 20;
 /// [`Error::Forbidden`] for a disabled mailbox, [`Error::Invalid`] for a user name that cannot be an address.
 pub async fn open_mailbox(app: &App, owner: &str) -> Result<MailboxRow> {
     // Callers pass the lower-cased user name; anything else would make an address that does not match its owner.
-    if !draft::local_part_ok(owner) || owner != owner.to_ascii_lowercase() {
+    if !draft::local_part_ok(owner)
+        || owner != owner.to_ascii_lowercase()
+        || crate::delivery::reserved(owner)
+    {
         return Err(Error::Invalid(
-            "this user name cannot have a mailbox (letters, digits, dots, hyphens and underscores only)".into(),
+            "this user name cannot have a mailbox (lower-case letters, digits, dots, hyphens and underscores; not the name of a service)".into(),
         ));
     }
     let stamp = now();
@@ -349,6 +352,10 @@ pub async fn people(app: &App, owner: &str, prefix: &str) -> Result<Vec<Contact>
         .take(64)
         .collect::<String>()
         .to_lowercase();
+    // Nothing is listed for no letters at all: the directory is not handed out in one request.
+    if prefix.is_empty() {
+        return Ok(Vec::new());
+    }
     let found = app.store.mailbox_search(&prefix, MAX_PEOPLE).await?;
     Ok(found
         .into_iter()

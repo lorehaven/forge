@@ -19,6 +19,40 @@ pub const MAX_ATTACHMENTS: usize = 20 * 1024 * 1024;
 /// Most files on one message.
 pub const MAX_FILES: usize = 10;
 
+/// Names a person may not have a mailbox under: the estate's services write under them, and a mailbox of the same name would be
+/// indistinguishable from the service's address.
+pub const RESERVED: [&str; 23] = [
+    "gatehouse",
+    "mailroom",
+    "conveyor",
+    "warehouse",
+    "gantry",
+    "foundry",
+    "sage",
+    "switchboard",
+    "workbench",
+    "daybook",
+    "hoist",
+    "songbook",
+    "klaxon",
+    "forklift",
+    "gauge",
+    "lectern",
+    "genevia",
+    "postmaster",
+    "noreply",
+    "no-reply",
+    "service",
+    "system",
+    "root",
+];
+
+/// Whether `name` is one of the [`RESERVED`] names.
+#[must_use]
+pub fn reserved(name: &str) -> bool {
+    RESERVED.contains(&name)
+}
+
 /// Who wrote it.
 #[derive(Debug, Clone)]
 pub struct Author {
@@ -72,6 +106,49 @@ fn contact(app: &App, name: &str) -> Contact {
     }
 }
 
+/// Most tags and deepest nesting a message's HTML may have. The sanitiser is thorough rather than fast on pathological input
+/// (hundreds of thousands of nested elements take longer than anyone waits), so what a service may send is bounded here.
+pub const MAX_HTML_TAGS: usize = 20_000;
+pub const MAX_HTML_DEPTH: usize = 128;
+
+/// Elements that have no closing tag.
+const VOID: [&str; 14] = [
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
+    "track", "wbr",
+];
+
+/// Whether `html` is within [`MAX_HTML_TAGS`] and [`MAX_HTML_DEPTH`]. A rough count, deliberately on the strict side: it is
+/// a guard against abuse, not a parser.
+#[must_use]
+pub fn html_shape_ok(html: &str) -> bool {
+    let (mut tags, mut depth) = (0_usize, 0_usize);
+    let bytes = html.as_bytes();
+    let mut i = 0;
+    while let Some(at) = html[i..].find('<') {
+        i += at + 1;
+        match bytes.get(i) {
+            Some(b'/') => depth = depth.saturating_sub(1),
+            Some(c) if c.is_ascii_alphabetic() => {
+                tags += 1;
+                let name: String = html[i..]
+                    .chars()
+                    .take_while(char::is_ascii_alphanumeric)
+                    .take(16)
+                    .collect::<String>()
+                    .to_ascii_lowercase();
+                if !VOID.contains(&name.as_str()) {
+                    depth += 1;
+                }
+                if tags > MAX_HTML_TAGS || depth > MAX_HTML_DEPTH {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    true
+}
+
 /// Checks the sizes and the shape of a letter.
 ///
 /// # Errors
@@ -90,6 +167,11 @@ pub fn check(letter: &Letter) -> Result<()> {
     {
         return Err(Error::Invalid(
             "the message is too large or malformed".into(),
+        ));
+    }
+    if letter.html.as_deref().is_some_and(|h| !html_shape_ok(h)) {
+        return Err(Error::Invalid(
+            "the HTML has too many elements or is nested too deeply".into(),
         ));
     }
     if letter.text.trim().is_empty() && letter.html.is_none() && letter.files.is_empty() {
@@ -137,9 +219,21 @@ pub async fn deliver(app: &App, author: &Author, letter: &Letter) -> Result<Outc
     let size = i32::try_from(size).unwrap_or(i32::MAX);
     let quota = app.settings().quota_bytes();
 
+    // The author's own copy counts too: "sent" is not a way round the size of a mailbox.
+    if let Some(owner) = &author.owner
+        && app.store.mailbox_bytes(owner).await? + i64::from(size) > quota
+    {
+        return Err(Error::Invalid(
+            "your mailbox is full: delete something first".into(),
+        ));
+    }
     let mut targets = Vec::new();
     let mut refused: Vec<(String, String)> = Vec::new();
     for name in &names {
+        if reserved(name) {
+            refused.push(((*name).to_string(), "has no mailbox here".into()));
+            continue;
+        }
         let mailbox = if author.owner.is_some() {
             app.store.mailbox_get(name).await?
         } else {
@@ -264,7 +358,7 @@ pub async fn deliver(app: &App, author: &Author, letter: &Letter) -> Result<Outc
             attachments: &attachments,
         })
         .collect();
-    app.store.deliver_all(&copies, &blobs, stamp).await?;
+    app.store.deliver_all(&copies, &blobs, stamp, quota).await?;
     Ok(Outcome {
         sent_id,
         delivered,

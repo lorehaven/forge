@@ -209,6 +209,7 @@ pub async fn remove_upload(
 ) -> Response {
     done(
         async {
+            crate::mailbox::open_mailbox(&app, &caller.name).await?;
             if app.store.upload_delete_one(&caller.name, &id).await? {
                 Ok(())
             } else {

@@ -485,5 +485,8 @@ async fn people_are_found_by_the_start_of_their_name() {
         "an underscore is not a wildcard"
     );
     assert!(found("%").await.is_empty());
-    assert_eq!(found("").await.len(), 4);
+    assert!(
+        found("").await.is_empty(),
+        "the whole directory is not handed out in one request"
+    );
 }

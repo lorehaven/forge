@@ -130,7 +130,8 @@ async fn a_full_mailbox_refuses_and_the_message_is_not_half_delivered() {
     settings.quota_mb = 1;
     env.app.set_settings(settings);
     // Fill cy's mailbox with most of its megabyte.
-    env.write("ann", &["cy"], "big", &"x".repeat(900_000)).await;
+    env.people(&["dee"]).await;
+    env.write("dee", &["cy"], "big", &"x".repeat(900_000)).await;
     let e = outgoing::send_user(
         &env.app,
         "ann",
@@ -294,7 +295,7 @@ async fn a_service_writes_to_people_who_have_not_signed_in_yet() {
     let sent = env
         .service_mail(
             "gatehouse-mailroom",
-            &["newcomer", "other@home.example"],
+            &["newcomer", "other"],
             "Welcome",
             "Hello!",
         )
@@ -711,4 +712,290 @@ async fn nobody_can_be_written_to_with_no_recipients_or_too_many() {
     .await
     .unwrap_err();
     assert!(matches!(e, Error::Invalid(_)));
+}
+
+#[quench_test::test]
+async fn a_service_names_people_exactly_and_services_have_no_mailbox() {
+    db!();
+    let env = env().await;
+    for (name, why) in [
+        ("Alice", "a capital would reach somebody else"),
+        ("alice@home.example", "an address is not a name"),
+        ("a+b", "plus"),
+        ("a b", "space"),
+    ] {
+        let e = env
+            .service_mail("gatehouse", &[name], "s", "t")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&e, Error::Invalid(m) if m.contains("cannot have a mailbox")),
+            "{why}: {e:?}"
+        );
+    }
+    assert!(
+        env.folder("alice", "inbox").await.is_empty(),
+        "nothing reached `alice`"
+    );
+    // The names of the estate's services are not mailboxes: nobody can be mistaken for one.
+    for name in ["gatehouse", "sage", "postmaster", "noreply"] {
+        assert!(
+            matches!(
+                mailbox::open_mailbox(&env.app, name).await.unwrap_err(),
+                Error::Invalid(_)
+            ),
+            "{name}"
+        );
+        let e = env
+            .service_mail("conveyor", &[name], "s", "t")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&e, Error::Invalid(m) if m.contains("nobody received")),
+            "{name}: {e:?}"
+        );
+    }
+}
+
+#[quench_test::test]
+async fn the_sent_copy_counts_against_the_senders_own_mailbox() {
+    db!();
+    let env = env().await;
+    env.people(&["ann", "bob"]).await;
+    let mut settings = env.app.settings();
+    settings.quota_mb = 1;
+    env.app.set_settings(settings);
+    env.write("ann", &["bob"], "one", &"x".repeat(600_000))
+        .await;
+    let e = outgoing::send_user(
+        &env.app,
+        "ann",
+        &Compose {
+            to: vec!["bob".into()],
+            subject: "two".into(),
+            text: "y".repeat(600_000),
+            ..Compose::default()
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(&e, Error::Invalid(m) if m.contains("your mailbox is full")),
+        "{e:?}"
+    );
+}
+
+#[quench_test::test]
+async fn deliveries_at_the_same_moment_cannot_overfill_a_mailbox() {
+    db!();
+    let env = env().await;
+    env.people(&["bob"]).await;
+    let mut settings = env.app.settings();
+    settings.quota_mb = 1;
+    env.app.set_settings(settings);
+    // Five services each write 400 kB to bob at once: two fit in a megabyte, the others must be refused.
+    let tasks: Vec<_> = (0..5)
+        .map(|i| {
+            let app = env.app.clone();
+            tokio::spawn(async move {
+                outgoing::send_service(
+                    &app,
+                    &format!("svc{i}"),
+                    &SendRequest {
+                        to: vec!["bob".into()],
+                        subject: "s".into(),
+                        text: "z".repeat(400_000),
+                        ..SendRequest::default()
+                    },
+                )
+                .await
+                .is_ok()
+            })
+        })
+        .collect();
+    let mut delivered = 0;
+    for t in tasks {
+        delivered += usize::from(t.await.unwrap());
+    }
+    assert_eq!(delivered, 2);
+    assert!(env.app.store.mailbox_bytes("bob").await.unwrap() <= 1024 * 1024);
+}
+
+#[quench_test::test]
+async fn requests_are_bounded_before_any_work_is_done() {
+    db!();
+    let env = env().await;
+    env.people(&["ann"]).await;
+    let many = |n: usize| (0..n).map(|i| format!("u{i}")).collect::<Vec<_>>();
+    for compose in [
+        Compose {
+            to: many(51),
+            subject: "s".into(),
+            text: "t".into(),
+            ..Compose::default()
+        },
+        Compose {
+            to: many(30),
+            cc: many(30),
+            subject: "s".into(),
+            text: "t".into(),
+            ..Compose::default()
+        },
+        Compose {
+            to: vec![],
+            subject: "s".into(),
+            text: "t".into(),
+            ..Compose::default()
+        },
+        Compose {
+            to: vec!["ann".into()],
+            attachments: (0..11).map(|i| i.to_string()).collect(),
+            subject: "s".into(),
+            text: "t".into(),
+            ..Compose::default()
+        },
+    ] {
+        assert!(matches!(
+            outgoing::send_user(&env.app, "ann", &compose)
+                .await
+                .unwrap_err(),
+            Error::Invalid(_)
+        ));
+    }
+    // Attachments are weighed before they are read.
+    let big = outgoing::upload(&env.app, "ann", "a", "a/b", vec![1; outgoing::MAX_UPLOAD])
+        .await
+        .unwrap();
+    let big2 = outgoing::upload(&env.app, "ann", "b", "a/b", vec![1; outgoing::MAX_UPLOAD])
+        .await
+        .unwrap();
+    let e = outgoing::send_user(
+        &env.app,
+        "ann",
+        &Compose {
+            to: vec!["ann".into()],
+            subject: "s".into(),
+            text: "t".into(),
+            attachments: vec![big.id, big2.id],
+            ..Compose::default()
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(&e, Error::Invalid(m) if m.contains("attachments")),
+        "{e:?}"
+    );
+}
+
+#[quench_test::test]
+async fn a_message_to_many_counts_once_for_each_person() {
+    db!();
+    let env = env().await;
+    let names: Vec<String> = (0..4).map(|i| format!("p{i}")).collect();
+    for n in &names {
+        env.people(&[n.as_str()]).await;
+    }
+    env.people(&["ann"]).await;
+    let mut settings = env.app.settings();
+    settings.hourly_per_person = 5;
+    env.app.set_settings(settings);
+    let to = |count: usize| Compose {
+        to: names.iter().take(count).cloned().collect(),
+        subject: "s".into(),
+        text: "t".into(),
+        ..Compose::default()
+    };
+    outgoing::send_user(&env.app, "ann", &to(4)).await.unwrap();
+    // Four of five used: another four do not fit, one does.
+    assert!(matches!(
+        outgoing::send_user(&env.app, "ann", &to(4))
+            .await
+            .unwrap_err(),
+        Error::Limited(_)
+    ));
+    outgoing::send_user(&env.app, "ann", &to(1)).await.unwrap();
+    // A service is charged the same way, and a retry is not charged twice.
+    let mut settings = env.app.settings();
+    settings.daily_budget = 3;
+    env.app.set_settings(settings);
+    let request = SendRequest {
+        to: names.iter().take(2).cloned().collect(),
+        subject: "s".into(),
+        text: "t".into(),
+        idempotency_key: Some("k".into()),
+        ..SendRequest::default()
+    };
+    outgoing::send_service(&env.app, "gatehouse", &request)
+        .await
+        .unwrap();
+    assert_eq!(
+        outgoing::send_service(&env.app, "gatehouse", &request)
+            .await
+            .unwrap()
+            .status,
+        "duplicate"
+    );
+    outgoing::send_service(
+        &env.app,
+        "gatehouse",
+        &SendRequest {
+            idempotency_key: None,
+            to: vec!["p0".into()],
+            ..request.clone()
+        },
+    )
+    .await
+    .unwrap();
+    let e = outgoing::send_service(
+        &env.app,
+        "gatehouse",
+        &SendRequest {
+            idempotency_key: None,
+            to: vec!["p0".into()],
+            ..request
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(e, Error::Limited(_)));
+}
+
+#[quench_test::test]
+fn html_is_bounded_in_elements_and_depth() {
+    use mailroom_service::delivery::{MAX_HTML_DEPTH, MAX_HTML_TAGS, html_shape_ok};
+    assert!(html_shape_ok("<p>hi <b>there</b><br><img src=x></p>"));
+    assert!(html_shape_ok("no tags at all, a < b and c > d"));
+    assert!(html_shape_ok(&"<p>x</p>".repeat(MAX_HTML_TAGS / 2)));
+    assert!(!html_shape_ok(&"<p>x</p>".repeat(MAX_HTML_TAGS + 1)));
+    assert!(html_shape_ok(&format!(
+        "{}{}",
+        "<div>".repeat(MAX_HTML_DEPTH),
+        "</div>".repeat(MAX_HTML_DEPTH)
+    )));
+    assert!(!html_shape_ok(&"<div>".repeat(MAX_HTML_DEPTH + 1)));
+    // Void elements do not nest, closing tags unwind, and what is hostile is refused whole.
+    assert!(html_shape_ok(&"<br>".repeat(5000)));
+    assert!(!html_shape_ok(&"<div>".repeat(400_000)));
+    assert!(html_shape_ok(&"<div></div>".repeat(5000)));
+}
+
+#[quench_test::test]
+async fn a_service_cannot_deliver_html_that_would_stall_the_reader() {
+    db!();
+    let env = env().await;
+    let request = SendRequest {
+        to: vec!["ann".into()],
+        subject: "s".into(),
+        text: "t".into(),
+        html: Some("<div>".repeat(300_000)),
+        ..SendRequest::default()
+    };
+    let e = outgoing::send_service(&env.app, "gatehouse", &request)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&e, Error::Invalid(m) if m.contains("nested")),
+        "{e:?}"
+    );
 }

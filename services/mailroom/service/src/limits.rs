@@ -18,6 +18,15 @@ impl Limits {
     ///
     /// The seconds until the key may try again.
     pub fn hit(&self, key: &str, max: u32, window: i64, now: i64) -> Result<(), u64> {
+        self.hit_n(key, 1, max, window, now)
+    }
+
+    /// Counts `n` uses at once (a message to ten people is ten deliveries). Nothing is counted when they would not all fit.
+    ///
+    /// # Errors
+    ///
+    /// The seconds until the key may try again.
+    pub fn hit_n(&self, key: &str, n: u32, max: u32, window: i64, now: i64) -> Result<(), u64> {
         let mut windows = self
             .windows
             .lock()
@@ -29,10 +38,10 @@ impl Limits {
         if now - entry.0 >= window {
             *entry = (now, 0);
         }
-        if entry.1 >= max {
+        if entry.1.saturating_add(n) > max {
             return Err(u64::try_from(entry.0 + window - now).unwrap_or(1).max(1));
         }
-        entry.1 += 1;
+        entry.1 += n;
         Ok(())
     }
 

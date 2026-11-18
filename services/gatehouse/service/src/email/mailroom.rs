@@ -2,15 +2,28 @@
 //! (`<user name>@<domain>`; the address stored in the account is not used, nothing is sent outside the estate). Gatehouse proves
 //! who it is with a `client_credentials` token it asks of itself.
 //!
-//! A mailbox can only be read by someone who is signed in, so the three messages a person needs *before* they can sign in (the
-//! verification, the password reset and the invitation) could never be read there. Every message is therefore also written to
-//! the log as the logging sender writes it (`visit <link> to ...`): the administrator hands the link over.
-//! `GATEHOUSE_LOG_ACCOUNT_LINKS=false` turns that off.
+//! A mailbox can only be read by someone who is signed in, so the messages a person needs *before* they can sign in (the
+//! verification, the password reset and the invitation) could never be read there; and a reset link in the account's own
+//! mailbox would let whoever holds a live session of that account set a new password. So the four messages that carry a
+//! link (those three and the email change) are **not** delivered to Mailroom at all: they are written to the log as the
+//! logging sender writes them (`visit <link> to ...`) and the administrator hands the link over. Everything else (notices,
+//! notifications) goes to the mailbox, and also to the log while `GATEHOUSE_LOG_ACCOUNT_LINKS` is on.
 
 use super::{LoggingSender, Mail, Recipient, SendError, Sender, render_mail};
 use mailroom_client::{Client, Config, SendRequest};
 use quench_core::async_trait;
 use std::time::Duration;
+
+/// Whether a message is one of the four that carry a link which grants something (an account, a password, an address).
+const fn carries_a_link(mail: &Mail<'_>) -> bool {
+    matches!(
+        mail,
+        Mail::Verification { .. }
+            | Mail::PasswordReset { .. }
+            | Mail::Invite { .. }
+            | Mail::EmailChange { .. }
+    )
+}
 
 /// Longest a person waits for Mailroom to take a message (it only has to queue it).
 const OVERALL: Duration = Duration::from_secs(20);
@@ -69,6 +82,14 @@ impl MailroomSender {
 #[async_trait]
 impl Sender for MailroomSender {
     async fn send(&self, to: &Recipient<'_>, mail: &Mail<'_>) -> Result<(), SendError> {
+        if carries_a_link(mail) {
+            if !self.log_links {
+                return Err(SendError::permanent(
+                    "this message is a link for the administrator to hand over, and GATEHOUSE_LOG_ACCOUNT_LINKS is off",
+                ));
+            }
+            return LoggingSender.send(to, mail).await;
+        }
         let request = Self::request(mail, to)?;
         match tokio::time::timeout(OVERALL, self.client.send(&request)).await {
             Ok(Ok(sent)) => {

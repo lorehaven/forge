@@ -285,9 +285,36 @@ impl Store {
         copies: &[Copy<'_>],
         blobs: &[(String, Vec<u8>)],
         now: i64,
+        quota: i64,
     ) -> Result<()> {
         let mut conn = self.pool.get().await?;
         let mut tx = conn.begin().await?;
+        // Each mailbox is locked (in name order, so two deliveries cannot wait on each other) and its size checked again: the
+        // check made before this transaction cannot see a delivery that was running at the same time.
+        let mut owners: Vec<&str> = copies.iter().map(|c| c.row.owner.as_str()).collect();
+        owners.sort_unstable();
+        owners.dedup();
+        for owner in owners {
+            tx.execute("SELECT pg_advisory_xact_lock(hashtext($1))", &[&owner])
+                .await?;
+            let held = tx
+                .query_one(
+                    "SELECT COALESCE(SUM(size), 0)::BIGINT AS n FROM messages WHERE owner = $1",
+                    &[&owner],
+                )
+                .await?;
+            let held: i64 = held.get("n")?;
+            let adding: i64 = copies
+                .iter()
+                .filter(|c| c.row.owner == owner)
+                .map(|c| i64::from(c.row.size))
+                .sum();
+            if held + adding > quota {
+                return Err(crate::error::Error::Conflict(
+                    "a mailbox filled up meanwhile; try again".into(),
+                ));
+            }
+        }
         for (id, data) in blobs {
             tx.execute(
                 "INSERT INTO blobs (id, data, created) VALUES ($1, $2, $3)",

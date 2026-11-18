@@ -97,9 +97,10 @@ pub async fn upload(
     })
 }
 
-/// The user names in a list of recipients as typed, each at this estate's domain (or without one).
+/// The user names in a list of recipients a **person** typed, each at this estate's domain (or without one), lower-cased: typing
+/// `Ann` reaches `ann`.
 fn names(app: &App, entries: &[String]) -> Result<Vec<String>> {
-    let mut out = Vec::new();
+    let mut out: Vec<String> = Vec::new();
     for entry in entries {
         let name = draft::recipient_name(entry).ok_or_else(|| {
             Error::Invalid(format!("{} is not a user name or address", shorten(entry)))
@@ -125,6 +126,25 @@ fn names(app: &App, entries: &[String]) -> Result<Vec<String>> {
     Ok(out)
 }
 
+/// The user names in a **service's** request: exactly as Gatehouse spells them (user names there are case-sensitive and may
+/// hold `@` or `+`; such a name has no mailbox here, so it is refused rather than turned into somebody else's).
+fn service_names(entries: &[String]) -> Result<Vec<String>> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for entry in entries {
+        if !draft::local_part_ok(entry) || *entry != entry.to_ascii_lowercase() {
+            return Err(Error::Invalid(format!(
+                "{} cannot have a mailbox here (lower-case letters, digits, dots, hyphens and underscores only)",
+                shorten(entry)
+            )));
+        }
+        if seen.insert(entry.clone()) {
+            out.push(entry.clone());
+        }
+    }
+    Ok(out)
+}
+
 fn shorten(text: &str) -> String {
     text.chars().take(60).collect()
 }
@@ -137,13 +157,39 @@ fn shorten(text: &str) -> String {
 /// many sent in an hour, [`Error::NotFound`] for a reply to or an attachment that is not theirs.
 pub async fn send_user(app: &App, owner: &str, compose: &Compose) -> Result<Sent> {
     let mailbox = open_mailbox(app, owner).await?;
-    let per_hour = app.settings().hourly_per_person;
-    app.limits
-        .hit(&format!("send:{owner}"), per_hour, 3600, now())
-        .map_err(Error::Limited)?;
+    // Cheap limits first: nothing below should have to chew through a huge request.
+    let listed = compose.to.len() + compose.cc.len() + compose.bcc.len();
+    if listed == 0
+        || listed > delivery::MAX_RECIPIENTS
+        || compose.attachments.len() > delivery::MAX_FILES
+    {
+        return Err(Error::Invalid(format!(
+            "write to 1 to {} people, with at most {} attachments",
+            delivery::MAX_RECIPIENTS,
+            delivery::MAX_FILES
+        )));
+    }
     let letter_to = names(app, &compose.to)?;
     let letter_cc = names(app, &compose.cc)?;
     let letter_bcc = names(app, &compose.bcc)?;
+    // A message counts once for every mailbox it goes to: fifty recipients are fifty deliveries.
+    let mut everyone: Vec<&String> = letter_to
+        .iter()
+        .chain(&letter_cc)
+        .chain(&letter_bcc)
+        .collect();
+    everyone.sort_unstable();
+    everyone.dedup();
+    let per_hour = app.settings().hourly_per_person;
+    app.limits
+        .hit_n(
+            &format!("send:{owner}"),
+            u32::try_from(everyone.len()).unwrap_or(u32::MAX),
+            per_hour,
+            3600,
+            now(),
+        )
+        .map_err(Error::Limited)?;
     let original = match compose.in_reply_to.as_deref().filter(|r| !r.is_empty()) {
         Some(reply_id) => Some(
             app.store
@@ -157,6 +203,12 @@ pub async fn send_user(app: &App, owner: &str, compose: &Compose) -> Result<Sent
         .as_ref()
         .map(|row| row.message_id.clone())
         .unwrap_or_default();
+    // The size of what is attached is known before any of it is read.
+    if app.store.uploads_size(owner, &compose.attachments).await?
+        > i64::try_from(delivery::MAX_ATTACHMENTS).unwrap_or(i64::MAX)
+    {
+        return Err(Error::Invalid("too many or too large attachments".into()));
+    }
     let uploads = app.store.uploads_owned(owner, &compose.attachments).await?;
     if uploads.len() != compose.attachments.len() {
         return Err(Error::NotFound);
@@ -231,16 +283,14 @@ pub async fn send_service(app: &App, source: &str, request: &SendRequest) -> Res
     let service = service_name(source);
     let stamp = now();
     let settings = app.settings();
-    app.limits
-        .hit(
-            &format!("source:{service}"),
-            settings.hourly_per_source,
-            3600,
-            stamp,
-        )
-        .map_err(Error::Limited)?;
-    let recipients = names(app, &request.to)?;
-    if recipients.is_empty() || recipients.len() > delivery::MAX_RECIPIENTS {
+    if request.to.len() > delivery::MAX_RECIPIENTS {
+        return Err(Error::Invalid(format!(
+            "write to 1 to {} people",
+            delivery::MAX_RECIPIENTS
+        )));
+    }
+    let recipients = service_names(&request.to)?;
+    if recipients.is_empty() {
         return Err(Error::Invalid(format!(
             "write to 1 to {} people",
             delivery::MAX_RECIPIENTS
@@ -274,8 +324,15 @@ pub async fn send_service(app: &App, source: &str, request: &SendRequest) -> Res
         files: Vec::new(),
     };
     delivery::check(&letter)?;
+    let weight = u32::try_from(recipients.len()).unwrap_or(u32::MAX);
     app.limits
-        .hit("estate", settings.daily_budget, 86_400, stamp)
+        .hit_n(
+            &format!("source:{service}"),
+            weight,
+            settings.hourly_per_source,
+            3600,
+            stamp,
+        )
         .map_err(Error::Limited)?;
     let id = new_id();
     let row = DeliveryRow {
@@ -301,6 +358,22 @@ pub async fn send_service(app: &App, source: &str, request: &SendRequest) -> Res
             status: "duplicate".into(),
             delivered: u32::try_from(delivered).unwrap_or(0),
         });
+    }
+    // The estate's day is charged only for what is really delivered: a retry that is found out above costs nothing.
+    if let Err(seconds) = app
+        .limits
+        .hit_n("estate", weight, settings.daily_budget, 86_400, stamp)
+    {
+        app.store
+            .delivery_finish(
+                &id,
+                "failed",
+                0,
+                Some("the estate's daily budget is used up"),
+            )
+            .await?;
+        app.store.delivery_release_key(&id).await?;
+        return Err(Error::Limited(seconds));
     }
     let author = Author {
         name: display_name(&service),

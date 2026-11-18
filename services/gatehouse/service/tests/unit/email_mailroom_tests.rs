@@ -98,22 +98,14 @@ async fn a_message_is_handed_to_mailroom_with_a_machine_token() {
         .mount(&server)
         .await;
     let sender = MailroomSender::new(&config(&server)).unwrap();
-    sender
-        .send(
-            &alice(),
-            &Mail::PasswordReset {
-                link: "https://x/reset?t=1",
-            },
-        )
-        .await
-        .unwrap();
+    sender.send(&alice(), &Mail::PasswordChanged).await.unwrap();
     let requests = server.received_requests().await.unwrap();
     let body = requests
         .iter()
         .find(|r| r.path.ends_with("/send"))
         .unwrap()
         .body_string();
-    assert!(body.contains("\"alice\"") && body.contains("https://x/reset?t=1"));
+    assert!(body.contains("\"alice\""));
     assert!(
         !body.contains("example.test"),
         "the stored address is not used"
@@ -154,4 +146,58 @@ fn an_incomplete_configuration_is_refused_at_startup() {
             .unwrap_err()
             .contains("MAILROOM_CLIENT_SECRET")
     );
+}
+
+#[quench_test::test]
+async fn a_message_that_carries_a_link_never_reaches_the_mailbox() {
+    // No server answers: a send to Mailroom would fail, so success proves nothing was sent.
+    let server = MockServer::start().await;
+    let sender = MailroomSender::new(&config(&server))
+        .unwrap()
+        .with_logged_links(true);
+    for mail in [
+        Mail::Verification {
+            link: "https://x/v?t=1",
+        },
+        Mail::PasswordReset {
+            link: "https://x/r?t=1",
+        },
+        Mail::Invite {
+            link: "https://x/i?t=1",
+        },
+        Mail::EmailChange {
+            link: "https://x/e?t=1",
+        },
+    ] {
+        sender.send(&alice(), &mail).await.unwrap();
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+    // With the log off there is nowhere to put the link: an error, not a silent loss.
+    let quiet = MailroomSender::new(&config(&server))
+        .unwrap()
+        .with_logged_links(false);
+    let e = quiet
+        .send(
+            &alice(),
+            &Mail::PasswordReset {
+                link: "https://x/r?t=1",
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(!e.is_transient());
+    // A notice still goes to the mailbox.
+    token(&server).await;
+    Mock::given(method("POST"))
+        .and(path("/mailroom/api/v1/send"))
+        .respond_with(
+            ResponseTemplate::new(201).set_body_json(
+                quench_serde::json!({"id": "m", "status": "delivered", "delivered": 1}),
+            ),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    quiet.send(&alice(), &Mail::MfaEnabled).await.unwrap();
+    server.verify().await;
 }

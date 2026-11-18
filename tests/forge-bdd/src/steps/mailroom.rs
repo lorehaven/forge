@@ -632,6 +632,26 @@ async fn estate_mail(world: &mut ForgeWorld, kind: String, user: String) {
     panic!("no {kind} message was delivered to {wanted}");
 }
 
+#[then(expr = "mailroom should not have delivered a {string} message to {string}")]
+async fn estate_mail_absent(world: &mut ForgeWorld, kind: String, user: String) {
+    // Give a wrongly delivered message the time it would need to show up.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let wanted = address(&user);
+    let log = delivery_log(world).await;
+    let hit = log
+        .get("items")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .any(|d| {
+            d.get("kind").and_then(|v| v.as_str()) == Some(kind.as_str())
+                && d.get("recipients")
+                    .and_then(|v| v.as_array())
+                    .is_some_and(|r| r.iter().any(|x| x.as_str() == Some(wanted.as_str())))
+        });
+    assert!(!hit, "a {kind} message was delivered to {wanted}");
+}
+
 #[then(expr = "{string} should find a message from gatehouse in their mailroom inbox")]
 async fn user_finds_it(world: &mut ForgeWorld, user: String) {
     let token = token_of(world, &user, "mailroom:read").await;

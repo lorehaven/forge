@@ -372,7 +372,7 @@ fn a_row_marks_service_mail_attachments_and_nameless_subjects() {
     l.send(Msg::Messages(list(vec![auto], 1, 0)));
     let row = find(&l.r, "div", ("data-message", "m1"));
     let text = l.r.text_of(row);
-    assert!(text.contains("mr_automated"), "{text}");
+    assert!(text.contains("Automatic message"), "{text}");
     assert!(text.contains('—'), "an empty subject is a dash: {text}");
 }
 
@@ -800,7 +800,7 @@ fn service_mail_offers_no_reply() {
     };
     assert!(!has("reply") && !has("replyall"));
     assert!(has("forward") && has("delete"));
-    assert!(l.text().contains("mr_automated"));
+    assert!(l.text().contains("Automatic message"));
 }
 
 #[quench_test::test]
@@ -1385,10 +1385,7 @@ fn the_panel_lists_mailboxes_without_mail_and_can_switch_them_off() {
         "{bob}"
     );
     let zed = l.r.text_of(find(&l.r, "tr", ("data-mailbox", "zed")));
-    assert!(
-        zed.contains("mr_admin_never") && zed.contains("mr_admin_off"),
-        "{zed}"
-    );
+    assert!(zed.contains("never") && zed.contains("off"), "{zed}");
     // Switching off, and on again.
     let row = |owner: &str| {
         l.r.document_order()
@@ -1435,7 +1432,7 @@ fn deleting_a_mailbox_takes_two_clicks() {
             .iter()
             .any(|r| matches!(r, Request::RemoveMailbox(_)))
     );
-    assert!(l.text().contains("mr_admin_delete_confirm"));
+    assert!(l.text().contains("Delete this mailbox"));
     l.click_attr("button", ("data-action", "delete"));
     assert_eq!(l.last(), Request::RemoveMailbox("bob".into()));
 }
