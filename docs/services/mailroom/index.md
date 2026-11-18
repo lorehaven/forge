@@ -1,3 +1,11 @@
+---
+title: Mailroom
+parent: Services
+nav_order: 17
+has_children: true
+permalink: /services/mailroom/
+---
+
 # Mailroom
 
 The estate's **own** mail. Every Gatehouse user has a mailbox, people write to each other in a web mail client, forge services

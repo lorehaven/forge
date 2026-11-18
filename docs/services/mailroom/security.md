@@ -1,3 +1,10 @@
+---
+title: Security assessment
+parent: Mailroom
+grand_parent: Services
+nav_order: 1
+---
+
 # Mailroom: security assessment
 
 Scope: `services/mailroom` (service, core, app, web), `libs/mail-html`, `libs/mailroom-client`, Gatehouse's `MailroomSender`, the
