@@ -339,8 +339,11 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         let list_page = list_page.clone();
         move |_: &RouteContext| -> View { list_page("inbox".into()) }
     };
-    let folder = move |ctx: &RouteContext| -> View {
-        list_page(ctx.param("id").unwrap_or_else(|| "inbox".into()))
+    let folder = {
+        let list_page = list_page.clone();
+        move |ctx: &RouteContext| -> View {
+            list_page(ctx.param("id").unwrap_or_else(|| "inbox".into()))
+        }
     };
     let message = {
         let (env, state) = (env.clone(), state.clone());
@@ -366,6 +369,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             screens::compose::page(&env, &state, &mode, id)
         }
     };
+    // An admin section nobody links to: the overview.
     let admin = {
         let (env, state) = (env.clone(), state.clone());
         move |ctx: &RouteContext| -> View {
@@ -374,16 +378,39 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             screens::admin::page(&env, &state, &section)
         }
     };
-    let pages = Routes::new()
+    // The router keeps a page on screen when only a parameter of the same route changed (it expects the page to follow it by
+    // reading `ctx.param` inside its views). These pages ask for their data when they are built, so each folder and each tab
+    // is a route of its own: moving between them then builds the page again. The `:id` / `:section` routes after them only
+    // catch names nobody links to.
+    let mut pages = Routes::new()
         .route(&format!("{base}/ui/home"), home.clone())
         .route(&format!("{base}/ui/home/"), home.clone())
-        .route(&format!("{base}/ui"), home.clone())
-        .route(&format!("{base}/ui/"), home)
+        .route(&format!("{base}/ui/"), home.clone())
+        .route(&format!("{base}/ui"), home);
+    for id in mailroom_core::FOLDERS {
+        let list_page = list_page.clone();
+        pages = pages.route(
+            &format!("{base}/ui/folder/{id}"),
+            move |_: &RouteContext| -> View { list_page(id.to_string()) },
+        );
+    }
+    for (section, _) in screens::admin::SECTIONS {
+        let (env, state) = (env.clone(), state.clone());
+        let path = if section == "overview" {
+            format!("{base}/ui/admin")
+        } else {
+            format!("{base}/ui/admin/{section}")
+        };
+        pages = pages.route(&path, move |_: &RouteContext| -> View {
+            fresh(&state);
+            screens::admin::page(&env, &state, section)
+        });
+    }
+    let pages = pages
         .route(&format!("{base}/ui/folder/:id"), folder)
         .route(&format!("{base}/ui/message/:id"), message)
         .route(&format!("{base}/ui/compose"), compose.clone())
         .route(&format!("{base}/ui/compose/:mode/:id"), compose)
-        .route(&format!("{base}/ui/admin"), admin.clone())
         .route(&format!("{base}/ui/admin/:section"), admin)
         .not_found({
             let env = env.clone();

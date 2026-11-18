@@ -13,7 +13,7 @@ use crate::live::{Request, State};
 /// Rows per page of the lists.
 pub const PAGE: u32 = 50;
 
-const SECTIONS: [(&str, &str); 5] = [
+pub(crate) const SECTIONS: [(&str, &str); 5] = [
     ("overview", "mr_admin_overview"),
     ("settings", "mr_admin_settings"),
     ("mailboxes", "mr_admin_mailboxes"),

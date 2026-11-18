@@ -1571,3 +1571,52 @@ fn an_unknown_panel_section_is_the_overview() {
 }
 
 quench_test::main!();
+
+// -- moving between the pages of one kind -------------------------------------------
+
+#[quench_test::test]
+fn switching_folders_shows_the_folder_without_a_reload() {
+    // Inbox to Sent worked; Sent to Trash left the Sent page on screen (the router keeps a page whose route is the same and
+    // only its parameter changed). Every move between folders must ask for, and show, the folder chosen.
+    let l = live("/mailroom/ui/home");
+    start(&l, false);
+    for (folder, title) in [
+        ("sent", "Sent"),
+        ("trash", "Trash"),
+        ("inbox", "Inbox"),
+        ("trash", "Trash"),
+        ("sent", "Sent"),
+    ] {
+        l.click_attr("a", ("data-folder", folder));
+        assert_eq!(l.path(), format!("/mailroom/ui/folder/{folder}"));
+        assert_eq!(l.last(), Request::List(query(folder)), "{folder}");
+        let heading = find(&l.r, "h1", ("id", "list-title"));
+        assert_eq!(l.r.text_of(heading), title, "{folder}");
+    }
+}
+
+#[quench_test::test]
+fn switching_admin_tabs_shows_the_tab_without_a_reload() {
+    let l = live("/mailroom/ui/admin");
+    start(&l, true);
+    for section in [
+        "settings",
+        "mailboxes",
+        "audit",
+        "deliveries",
+        "overview",
+        "audit",
+    ] {
+        l.click_attr("a", ("data-section", section));
+        let wanted = match section {
+            "settings" => matches!(l.last(), Request::Settings),
+            "mailboxes" => matches!(l.last(), Request::Mailboxes { .. }),
+            "audit" => matches!(l.last(), Request::Audit { .. }),
+            "deliveries" => matches!(l.last(), Request::Deliveries { .. }),
+            _ => matches!(l.last(), Request::Stats),
+        };
+        assert!(wanted, "{section} asked for {:?}", l.last());
+        let current = find(&l.r, "a", ("data-section", section));
+        assert!(l.r.attr(current, "aria-current").is_some(), "{section}");
+    }
+}
