@@ -10,6 +10,12 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <!-- quench:permissions -->
 
+    <!-- To ask Android Auto whether a car is connected (see CarWatch). -->
+    <queries>
+        <package android:name="com.google.android.projection.gearhead" />
+        <provider android:authorities="androidx.car.app.connection" />
+    </queries>
+
     <application
         android:label="Songbook"
         android:icon="@mipmap/ic_launcher"

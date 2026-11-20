@@ -1304,9 +1304,9 @@ dependencies = [
 
 [[package]]
 name = "quench-layout"
-version = "0.1.9"
+version = "0.1.11"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "cd97ebbb9ed0b750ccbb5d97e963a09925b33c3e25f08ca614f700432ff33e03"
+checksum = "e49a9e4485f6f6d66c2395983f050b7247341119e05c4c62cc0ca61404318c7d"
 dependencies = [
  "quench-css",
  "quench-text",

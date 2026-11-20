@@ -262,3 +262,33 @@ class OutputWatch(context: Context, private val player: Player, private val main
         )
     }
 }
+
+/**
+ * Android Auto's own idea of whether a car is connected (the content provider its car-app library reads): when it goes from
+ * connected to not, the music stops. The playback session's controller going away is not always reported (a wireless or
+ * wired car that simply switches off), so this is a second way to hear it.
+ */
+class CarWatch(private val context: Context, private val main: Handler, private val gone: () -> Unit) {
+    private val uri = android.net.Uri.parse("content://androidx.car.app.connection")
+    private var connected = read() > 0
+
+    private val observer = object : android.database.ContentObserver(main) {
+        override fun onChange(selfChange: Boolean) {
+            val now = read() > 0
+            if (connected && !now) gone()
+            connected = now
+        }
+    }
+
+    private fun read(): Int = try {
+        context.contentResolver.query(uri, arrayOf("CarConnectionState"), null, null, null)?.use { if (it.moveToNext()) it.getInt(0) else 0 } ?: 0
+    } catch (e: Exception) {
+        0
+    }
+
+    fun start() {
+        try { context.contentResolver.registerContentObserver(uri, false, observer) } catch (e: Exception) { /* no Android Auto here */ }
+    }
+
+    fun stop() = context.contentResolver.unregisterContentObserver(observer)
+}

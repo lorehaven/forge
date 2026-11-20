@@ -88,7 +88,43 @@ class PlaybackService : MediaLibraryService() {
             .setBitmapLoader(DataSourceBitmapLoader.Builder(this).setDataSourceFactory(offline.pictures).build())
             .build()
         // The car's button for the crossfade follows the setting, wherever it is changed.
-        stopWatching = settings.onChange { main.post { librarySession?.setMediaButtonPreferences(ImmutableList.of(fadeButton(settings))) } }
+        stopWatching = settings.onChange { main.post { refreshButtons() } }
+        // Shuffle and repeat change from the phone's screens too: the car's buttons follow.
+        player.addListener(object : Player.Listener {
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = refreshButtons()
+            override fun onRepeatModeChanged(repeatMode: Int) = refreshButtons()
+        })
+        // The car going away is also seen from Android Auto's own connection state (the controller going away is not always reported).
+        carWatch = CarWatch(this, main) { outputs?.stopMusic("Android Auto disconnected") }.also { it.start() }
+    }
+
+    private var carWatch: CarWatch? = null
+
+    private fun refreshButtons() {
+        val s = librarySession ?: return
+        s.setMediaButtonPreferences(buttons(Settings.of(this), s.player))
+    }
+
+    /** The buttons of the car's player: shuffle, repeat and the crossfade. */
+    private fun buttons(settings: Settings, player: Player): ImmutableList<CommandButton> = ImmutableList.of(
+        shuffleButton(player), repeatButton(player), fadeButton(settings),
+    )
+
+    private fun shuffleButton(player: Player): CommandButton {
+        val on = player.shuffleModeEnabled
+        return CommandButton.Builder(if (on) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF)
+            .setDisplayName(if (on) "Shuffle: on" else "Shuffle: off")
+            .setSessionCommand(SessionCommand(SHUFFLE_COMMAND, Bundle.EMPTY))
+            .build()
+    }
+
+    private fun repeatButton(player: Player): CommandButton {
+        val (icon, name) = when (player.repeatMode) {
+            Player.REPEAT_MODE_ALL -> CommandButton.ICON_REPEAT_ALL to "Repeat: all"
+            Player.REPEAT_MODE_ONE -> CommandButton.ICON_REPEAT_ONE to "Repeat: one"
+            else -> CommandButton.ICON_REPEAT_OFF to "Repeat: off"
+        }
+        return CommandButton.Builder(icon).setDisplayName(name).setSessionCommand(SessionCommand(REPEAT_COMMAND, Bundle.EMPTY)).build()
     }
 
     private var outputs: OutputWatch? = null
@@ -139,6 +175,7 @@ class PlaybackService : MediaLibraryService() {
         sync?.stop()
         focus?.stop()
         outputs?.stop()
+        carWatch?.stop()
         stopWatching?.invoke()
         librarySession?.player?.let { p -> p.currentMediaItem?.let { Resume.save(Brain.of(this), it, p.currentPosition) } }
         crossfader?.release()
@@ -174,15 +211,26 @@ class PlaybackService : MediaLibraryService() {
 
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
             MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(SessionCommand(FADE_COMMAND, Bundle.EMPTY)).build())
-                .setMediaButtonPreferences(ImmutableList.of(fadeButton(settings)))
+                .setAvailableSessionCommands(
+                    MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
+                        .add(SessionCommand(FADE_COMMAND, Bundle.EMPTY)).add(SessionCommand(SHUFFLE_COMMAND, Bundle.EMPTY)).add(SessionCommand(REPEAT_COMMAND, Bundle.EMPTY)).build(),
+                )
+                .setMediaButtonPreferences(buttons(settings, player))
                 .build()
 
         /** The car's crossfade button: the next length of the list. */
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
-            if (customCommand.customAction == FADE_COMMAND) {
-                val now = settings.crossfadeSecs
-                settings.crossfadeSecs = Settings.PRESETS.firstOrNull { it > now } ?: 0
+            when (customCommand.customAction) {
+                FADE_COMMAND -> {
+                    val now = settings.crossfadeSecs
+                    settings.crossfadeSecs = Settings.PRESETS.firstOrNull { it > now } ?: 0
+                }
+                SHUFFLE_COMMAND -> player.shuffleModeEnabled = !player.shuffleModeEnabled
+                REPEAT_COMMAND -> player.repeatMode = when (player.repeatMode) {
+                    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                    Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                    else -> Player.REPEAT_MODE_OFF
+                }
             }
             return com.google.common.util.concurrent.Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
@@ -270,6 +318,8 @@ class PlaybackService : MediaLibraryService() {
         private const val GEARHEAD = "com.google.android.projection.gearhead"
         /** The session command of the crossfade button on the car's player. */
         const val FADE_COMMAND = "songbook.crossfade"
+        const val SHUFFLE_COMMAND = "songbook.shuffle"
+        const val REPEAT_COMMAND = "songbook.repeat"
 
         /** Told (on the main thread) each time a song was written to the history: the screens' "recently played" asks again. */
         @Volatile

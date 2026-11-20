@@ -122,7 +122,7 @@ quench-markdown-term = { registry = "ennor", version = "0.1.0" }
 quench-fullstack = { registry = "ennor", version = "0.1.14" }
 quench-http = { registry = "ennor", version = "0.1.18" }
 quench-k8s = { registry = "ennor", version = "0.1.8" }
-quench-layout = { registry = "ennor", version = "0.1.9" }
+quench-layout = { registry = "ennor", version = "0.1.11" }
 quench-sqlite = { registry = "ennor", version = "0.1.2" }
 quench-log = { registry = "ennor", version = "0.1.12" }
 quench-mail = { registry = "ennor", version = "0.1.15" }
