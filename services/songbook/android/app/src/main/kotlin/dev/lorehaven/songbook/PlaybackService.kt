@@ -205,6 +205,7 @@ class PlaybackService : MediaLibraryService() {
 
         /** Android Auto going away (the cable out, the car off): the music stops, as it does for any other output. */
         override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+            android.util.Log.i("SongbookOutput", "controller disconnected: ${controller.packageName}")
             if (controller.packageName != GEARHEAD) return
             if (session.connectedControllers.none { it.packageName == GEARHEAD && it != controller }) outputs?.stopMusic("Android Auto disconnected")
         }

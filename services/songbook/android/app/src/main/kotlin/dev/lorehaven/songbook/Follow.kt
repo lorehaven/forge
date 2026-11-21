@@ -241,6 +241,11 @@ class OutputWatch(context: Context, private val player: Player, private val main
         }
     }
 
+    /** What the callback does for outputs that went away, by their types (so it can be tested without a real device). */
+    fun removed(sinkTypes: List<Int>) {
+        if (sinkTypes.any { it in EXTERNAL }) stopMusic("an output went away")
+    }
+
     /** Pauses what plays, and keeps it from starting again by itself. */
     fun stopMusic(why: String) {
         if (!player.playWhenReady) return
@@ -272,11 +277,23 @@ class CarWatch(private val context: Context, private val main: Handler, private 
     private val uri = android.net.Uri.parse("content://androidx.car.app.connection")
     private var connected = read() > 0
 
+    private fun check() {
+        val state = read()
+        val now = state > 0
+        if (now != connected) android.util.Log.i("SongbookOutput", "Android Auto connection state: $state")
+        if (connected && !now) gone()
+        connected = now
+    }
+
     private val observer = object : android.database.ContentObserver(main) {
-        override fun onChange(selfChange: Boolean) {
-            val now = read() > 0
-            if (connected && !now) gone()
-            connected = now
+        override fun onChange(selfChange: Boolean) = check()
+    }
+
+    /** The provider's change notice is not always sent (a wireless car that simply goes out of range): while a car is connected it is also asked now and then. */
+    private val poll = object : Runnable {
+        override fun run() {
+            check()
+            main.postDelayed(this, if (connected) POLL_MS else IDLE_POLL_MS)
         }
     }
 
@@ -287,8 +304,18 @@ class CarWatch(private val context: Context, private val main: Handler, private 
     }
 
     fun start() {
-        try { context.contentResolver.registerContentObserver(uri, false, observer) } catch (e: Exception) { /* no Android Auto here */ }
+        try { context.contentResolver.registerContentObserver(uri, true, observer) } catch (e: Exception) { /* no Android Auto here */ }
+        android.util.Log.i("SongbookOutput", "Android Auto connection state at start: ${if (connected) "connected" else "not connected"}")
+        main.postDelayed(poll, POLL_MS)
     }
 
-    fun stop() = context.contentResolver.unregisterContentObserver(observer)
+    fun stop() {
+        main.removeCallbacks(poll)
+        context.contentResolver.unregisterContentObserver(observer)
+    }
+
+    private companion object {
+        const val POLL_MS = 3_000L
+        const val IDLE_POLL_MS = 15_000L
+    }
 }
