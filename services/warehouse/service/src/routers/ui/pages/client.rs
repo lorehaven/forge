@@ -71,6 +71,16 @@ pub(super) async fn browse_slash(who: ActorOrRedirect) -> Response {
     page(who)
 }
 
+#[get("/ui/files/preview")]
+pub(super) async fn preview(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
+#[get("/ui/files/preview/")]
+pub(super) async fn preview_slash(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
 #[get("/ui/artifacts/catalog")]
 pub(super) async fn artifacts(who: ActorOrRedirect) -> Response {
     page(who)
@@ -102,6 +112,8 @@ fn register_screens() {
     let _ = storages_slash as fn(_) -> _;
     let _ = browse as fn(_) -> _;
     let _ = browse_slash as fn(_) -> _;
+    let _ = preview as fn(_) -> _;
+    let _ = preview_slash as fn(_) -> _;
     let _ = artifacts as fn(_) -> _;
     let _ = artifacts_slash as fn(_) -> _;
     let _ = rivets as fn(_) -> _;

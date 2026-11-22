@@ -10,7 +10,7 @@ use std::sync::Arc;
 use warehouse_service::routers::ui;
 
 /// Every screen of the client, with and without the trailing slash.
-const SCREENS: [&str; 14] = [
+const SCREENS: [&str; 16] = [
     "/ui/home",
     "/ui/home/",
     "/ui/docker/catalog",
@@ -21,6 +21,8 @@ const SCREENS: [&str; 14] = [
     "/ui/files/storages/",
     "/ui/files/browse",
     "/ui/files/browse/",
+    "/ui/files/preview",
+    "/ui/files/preview/",
     "/ui/artifacts/catalog",
     "/ui/artifacts/catalog/",
     "/ui/rivets/catalog",
