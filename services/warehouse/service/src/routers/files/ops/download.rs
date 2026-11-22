@@ -61,7 +61,19 @@ pub async fn handle(
                 );
             };
             match storage_file::read_file(&db, &storage.name, &path).await {
-                Ok(Some((sha256, _size))) => dynamic::blob_path(&root, &sha256),
+                Ok(Some((sha256, _size))) => {
+                    let blob = dynamic::blob_path(&root, &sha256);
+                    // The row is there but its bytes are not on disk: say so, rather than "no such file".
+                    if !tokio::fs::try_exists(&blob).await.unwrap_or(false) {
+                        quench_log::error!(
+                            "blob {sha256} of `{}` in `{}` is missing on disk",
+                            query.path,
+                            storage.name
+                        );
+                        return not_found("the content of this file is missing on the server");
+                    }
+                    blob
+                }
                 Ok(None) => return not_found("no such file"),
                 Err(problem) => {
                     quench_log::error!("dynamic download lookup failed: {problem}");

@@ -279,3 +279,5 @@ ui_share_withdraw_text = Link przestanie działać dla wszystkich. To, co otwier
 ui_shares_title = Udostępnione linki
 api_error_share_not_found = Tego linku już nie ma.
 api_error_share_storage_missing = Nie ma takiego magazynu.
+ui_files_view_list = Lista
+ui_files_view_grid = Siatka

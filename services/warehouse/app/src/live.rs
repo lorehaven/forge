@@ -197,6 +197,14 @@ pub(crate) struct Confirm {
     pub action: Request,
 }
 
+/// The storage form shown in a popup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum StorageForm {
+    New,
+    /// The named storage's settings.
+    Edit(String),
+}
+
 /// What the screens read; the host's messages write it.
 #[derive(Clone)]
 pub(crate) struct State {
@@ -217,6 +225,10 @@ pub(crate) struct State {
     /// A refused change, until the person does something else.
     pub notice: Signal<Option<String>>,
     pub confirm: Signal<Option<Confirm>>,
+    /// The storage form being shown.
+    pub storage_form: Signal<Option<StorageForm>>,
+    /// Whether a directory is shown as a grid of cards (else as a list).
+    pub grid: Signal<bool>,
 }
 
 type Inbox = Rc<RefCell<Option<Rc<dyn Fn(Msg)>>>>;
@@ -278,6 +290,7 @@ fn receive(state: &State, router: &Router, base: &str, m: Msg) {
         }
         Msg::StorageSaved(name) => {
             state.notice.set(None);
+            state.storage_form.set(None);
             router.navigate(&format!(
                 "{base}/ui/files/storages?storage={}",
                 warehouse_core::fmt::encode(&name)
@@ -326,6 +339,8 @@ fn new_state() -> State {
         problem: create_signal(None),
         notice: create_signal(None),
         confirm: create_signal(None),
+        storage_form: create_signal(None),
+        grid: create_signal(false),
     }
 }
 
@@ -338,6 +353,7 @@ fn routes(env: &Env, state: &State, base: &str) -> Routes {
             state.problem.set(None);
             state.notice.set(None);
             state.confirm.set(None);
+            state.storage_form.set(None);
             state.share_dialog.set(None);
             build(&env, &state)
         }
@@ -371,6 +387,10 @@ fn routes(env: &Env, state: &State, base: &str) -> Routes {
     })
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the shell wires the bar, the routes and every dialog"
+)]
 fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     let i18n = Rc::new(I18n::new(&LOCALES, &setup.language).expect("the translations parse"));
     let state = new_state();
@@ -427,6 +447,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
                     .child(routes(&env, &state, &base).view(&router))
                     .child(screens::confirm_dialog(&env, &state))
                     .child(screens::share_dialog(&env, &state))
+                    .child(screens::storage_form_dialog(&env, &state))
                     .into_view()
             })
         }

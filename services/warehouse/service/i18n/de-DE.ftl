@@ -279,3 +279,5 @@ ui_share_withdraw_text = Der Link funktioniert für niemanden mehr. Was er geöf
 ui_shares_title = Geteilte Links
 api_error_share_not_found = Diesen Link gibt es nicht mehr.
 api_error_share_storage_missing = Kein solcher Speicher.
+ui_files_view_list = Liste
+ui_files_view_grid = Raster

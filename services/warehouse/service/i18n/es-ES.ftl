@@ -279,3 +279,5 @@ ui_share_withdraw_text = El enlace deja de funcionar para todos. Lo que abría s
 ui_shares_title = Enlaces compartidos
 api_error_share_not_found = Ese enlace ya no existe.
 api_error_share_storage_missing = No existe ese almacén.
+ui_files_view_list = Lista
+ui_files_view_grid = Cuadrícula

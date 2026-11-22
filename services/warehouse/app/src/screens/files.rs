@@ -14,7 +14,7 @@ use super::{
     Env, checkbox_field, confirm, empty, form_error, icon, labelled, meta, meta_text,
     metadata_title, nav, panel_title, share_name, split, waiting,
 };
-use crate::live::{Request, State};
+use crate::live::{Request, State, StorageForm};
 
 fn can_manage(state: &State) -> bool {
     state
@@ -104,7 +104,7 @@ pub fn storages(env: &Env, state: &State) -> View {
 }
 
 fn detail(env: &Env, state: &State, storages: &Storages, selected: &str, manage: bool) -> Element {
-    let create = manage.then(|| create_form(env));
+    let create = manage.then(|| new_button(env, state));
     if selected.is_empty() {
         return div()
             .class("wh-detail")
@@ -130,7 +130,15 @@ fn detail(env: &Env, state: &State, storages: &Storages, selected: &str, manage:
     if let Some(found) = storages.dynamic_named(selected) {
         body = body.child(dynamic_meta(env, found));
         if manage {
-            body = body.child(edit_form(env, found));
+            let (open, edit_name) = (state.storage_form.clone(), found.name.clone());
+            actions = actions.child(
+                button()
+                    .attr("type", "button")
+                    .attr("id", "edit-storage-open")
+                    .class("wh-btn")
+                    .on_click(move || open.set(Some(StorageForm::Edit(edit_name.clone()))))
+                    .text(env.t.t("ui_storage_edit_title")),
+            );
             let (state, name) = (state.clone(), found.name.clone());
             actions = actions.child(
                 button()
@@ -159,6 +167,80 @@ fn detail(env: &Env, state: &State, storages: &Storages, selected: &str, manage:
     }
     body = body.child(create);
     div().class("wh-detail").child(title).child(body)
+}
+
+/// The button that opens the form for a new storage.
+fn new_button(env: &Env, state: &State) -> Element {
+    let open = state.storage_form.clone();
+    div().class("wh-actions-row").child(
+        button()
+            .attr("type", "button")
+            .attr("id", "new-storage-open")
+            .class("wh-btn wh-primary")
+            .on_click(move || open.set(Some(StorageForm::New)))
+            .text(env.t.t("ui_storage_new_title")),
+    )
+}
+
+/// The popup with the form to create or edit a storage, over everything; closed by its button, the backdrop or a save.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function builds the popup around either form"
+)]
+#[must_use]
+pub fn storage_form_dialog(env: &Env, state: &State) -> View {
+    let (env, state) = (env.clone(), state.clone());
+    View::dynamic(move || {
+        let Some(which) = state.storage_form.get() else {
+            return View::Empty;
+        };
+        let (title, form) = match &which {
+            StorageForm::New => ("ui_storage_new_title", create_form(&env, &state)),
+            StorageForm::Edit(name) => {
+                let found = state
+                    .storages
+                    .with(|s| s.as_ref().and_then(|s| s.dynamic_named(name).cloned()));
+                match found {
+                    Some(found) => ("ui_storage_edit_title", edit_form(&env, &state, &found)),
+                    None => return View::Empty,
+                }
+            }
+        };
+        let close = {
+            let open = state.storage_form.clone();
+            move || open.set(None)
+        };
+        div()
+            .attr("id", "storage-form")
+            .class("wh-modal")
+            .child(
+                button()
+                    .attr("type", "button")
+                    .attr("aria-label", env.t.t("ui_close"))
+                    .class("wh-modal-backdrop")
+                    .on_click(close.clone()),
+            )
+            .child(
+                div()
+                    .class("wh-modal-content")
+                    .attr("role", "dialog")
+                    .child(
+                        div()
+                            .class("wh-modal-header")
+                            .child(div().class("wh-modal-title").text(env.t.t(title)))
+                            .child(
+                                button()
+                                    .attr("type", "button")
+                                    .attr("aria-label", env.t.t("ui_close"))
+                                    .class("wh-modal-close")
+                                    .on_click(close)
+                                    .text("×"),
+                            ),
+                    )
+                    .child(div().class("wh-modal-body wh-form-body").child(form)),
+            )
+            .into_view()
+    })
 }
 
 fn static_meta(env: &Env, storage: &StaticStorage) -> Element {
@@ -211,7 +293,7 @@ fn number_box(field: &Field) -> Element {
         .attr("step", "0.01")
 }
 
-fn edit_form(env: &Env, storage: &DynamicStorage) -> Element {
+fn edit_form(env: &Env, _state: &State, storage: &DynamicStorage) -> Element {
     let draft = EditStorageDraft::from_storage(storage);
     let quota = Field::new("edit-quota", &draft.quota_gib);
     let max_file = Field::new("edit-max-file", &draft.max_file_mib);
@@ -246,11 +328,6 @@ fn edit_form(env: &Env, storage: &DynamicStorage) -> Element {
         .attr("id", "edit-storage")
         .class("wh-form")
         .on_submit(send)
-        .child(
-            div()
-                .class("wh-subtitle")
-                .text(env.t.t("ui_storage_edit_title")),
-        )
         .child(labelled(
             "edit-quota",
             env.t.t("ui_storage_quota_gib"),
@@ -281,7 +358,7 @@ fn edit_form(env: &Env, storage: &DynamicStorage) -> Element {
         )
 }
 
-fn create_form(env: &Env) -> Element {
+fn create_form(env: &Env, _state: &State) -> Element {
     let name = Field::new("new-name", "");
     let owner = Field::new("new-owner", "");
     let quota = Field::new("new-quota", "");
@@ -319,11 +396,6 @@ fn create_form(env: &Env) -> Element {
         .attr("id", "new-storage")
         .class("wh-form")
         .on_submit(send)
-        .child(
-            div()
-                .class("wh-subtitle")
-                .text(env.t.t("ui_storage_new_title")),
-        )
         .child(labelled(
             "new-name",
             env.t.t("ui_storage_name"),
@@ -439,7 +511,7 @@ pub fn browse(env: &Env, state: &State) -> View {
             let here = root_dir(tree.as_ref(), &path);
             div()
                 .class("wh-fm")
-                .child(toolbar(&env, &storage, &here))
+                .child(toolbar(&env, &state, &storage, &here))
                 .child(
                     div()
                         .class("wh-fm-body")
@@ -460,7 +532,7 @@ fn root_dir(tree: Option<&(String, String, FileNode, bool)>, path: &str) -> Stri
 }
 
 /// The top bar: where we are (storage > dir > dir) on the left, the actions on the right.
-fn toolbar(env: &Env, storage: &str, dir: &str) -> Element {
+fn toolbar(env: &Env, state: &State, storage: &str, dir: &str) -> Element {
     let mut crumbs = div().class("wh-crumbs").child(
         nav(env, &browse_at(env, storage, ""))
             .attr("data-crumb", "")
@@ -479,7 +551,7 @@ fn toolbar(env: &Env, storage: &str, dir: &str) -> Element {
                 .text(segment.to_string()),
         );
     }
-    let mut actions = div().class("wh-fm-actions");
+    let mut actions = div().class("wh-fm-actions").child(view_toggle(env, state));
     if !dir.is_empty() {
         actions = actions.child(
             nav(env, &browse_at(env, storage, &parent_dir(dir)))
@@ -565,6 +637,8 @@ fn listing(
             .attr("id", "empty-dir")
             .into_view();
     }
+    let grid = state.grid.get();
+    let mut cards = div().class("wh-fm-grid").attr("id", "grid");
     let mut list = div().class("wh-fm-list").child(
         div()
             .class("wh-fm-row wh-fm-head")
@@ -624,6 +698,35 @@ fn listing(
                         .child(icon("remove")),
                 );
             }
+            if grid {
+                let thumb = match preview_kind(&child_path) {
+                    PreviewKind::Image => element("img")
+                        .class("wh-fm-thumb")
+                        .attr("loading", "lazy")
+                        .attr("alt", name.clone())
+                        .attr(
+                            "src",
+                            file_url(env, storage, &child_path, "&disposition=inline"),
+                        ),
+                    _ => div()
+                        .class("wh-fm-thumb wh-fm-glyph")
+                        .text(kind_label(&child_path)),
+                };
+                cards = cards.child(
+                    div()
+                        .class("wh-fm-card")
+                        .child(
+                            nav(env, &preview_mode_at(env, storage, &child_path))
+                                .class("wh-fm-card-open")
+                                .attr("data-entry", child_path.clone())
+                                .child(thumb)
+                                .child(span().class("wh-fm-card-name").text(name.clone()))
+                                .child(span().class("wh-faint wh-mono").text(size)),
+                        )
+                        .child(actions),
+                );
+                continue;
+            }
             row = row
                 .child(span().class("wh-faint").text("▫"))
                 .child(
@@ -639,6 +742,24 @@ fn listing(
                 )
                 .child(span().class("wh-fm-num wh-mono").text(size))
                 .child(actions);
+        } else if grid {
+            cards = cards.child(
+                div()
+                    .class("wh-fm-card")
+                    .child(
+                        nav(env, &browse_at(env, storage, &child_path))
+                            .class("wh-fm-card-open")
+                            .attr("data-entry", child_path.clone())
+                            .child(div().class("wh-fm-thumb wh-fm-glyph").text("▸"))
+                            .child(span().class("wh-fm-card-name").text(name.clone())),
+                    )
+                    .child(
+                        div()
+                            .class("wh-fm-row-actions")
+                            .child(can_share.then(|| share_button(env, storage, &child_path))),
+                    ),
+            );
+            continue;
         } else {
             row = row
                 .child(span().class("wh-faint").text("▸"))
@@ -658,7 +779,7 @@ fn listing(
         }
         list = list.child(row);
     }
-    let mut out = div().child(list);
+    let mut out = div().child(if grid { cards } else { list });
     if truncated {
         out = out.child(
             div()
@@ -668,6 +789,32 @@ fn listing(
         );
     }
     out.into_view()
+}
+
+/// The short label drawn on a file's card when there is no picture: its extension.
+fn kind_label(path: &str) -> String {
+    path.rsplit_once('.')
+        .map_or_else(String::new, |(_, ext)| ext.to_uppercase())
+}
+
+/// The button pair that switches the directory between a list and a grid of cards.
+fn view_toggle(env: &Env, state: &State) -> Element {
+    let mode = |on: bool, id: &'static str, label: &'static str, glyph: &'static str| {
+        let grid = state.grid.clone();
+        let now = state.grid.clone();
+        button()
+            .attr("type", "button")
+            .attr("id", id)
+            .class_if("on", move || now.get() == on)
+            .attr("title", env.t.t(label))
+            .attr("aria-label", env.t.t(label))
+            .on_click(move || grid.set(on))
+            .text(glyph)
+    };
+    div()
+        .class("wh-fm-toggle")
+        .child(mode(false, "view-list", "ui_files_view_list", "☰"))
+        .child(mode(true, "view-grid", "ui_files_view_grid", "▦"))
 }
 
 /// Makes (or fetches again) the share link of one file or directory, and opens the dialog that shows it.

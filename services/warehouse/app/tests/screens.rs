@@ -716,6 +716,11 @@ fn a_database_storage_shows_its_use_and_a_manager_can_edit_it() {
         text.contains("5.00 MiB") && text.contains("enabled"),
         "{text}"
     );
+    assert!(
+        !present(&l.r, "edit-storage"),
+        "the form is a popup, not on the panel"
+    );
+    l.click("button", "edit-storage-open");
     assert!(present(&l.r, "edit-storage"));
 
     l.type_into("input", "edit-quota", "3");
@@ -752,7 +757,7 @@ fn a_reader_sees_a_storage_but_cannot_change_it() {
     let l = started("/warehouse/ui/files/storages?storage=backups", false);
     l.send(Msg::Storages(storages_list()));
     assert!(l.text().contains("backups"));
-    for id in ["edit-storage", "new-storage", "delete-storage"] {
+    for id in ["edit-storage-open", "new-storage-open", "delete-storage"] {
         assert!(!present(&l.r, id), "{id}");
     }
 }
@@ -761,6 +766,11 @@ fn a_reader_sees_a_storage_but_cannot_change_it() {
 fn a_storage_is_created_and_then_opened() {
     let l = started("/warehouse/ui/files/storages", true);
     l.send(Msg::Storages(storages_list()));
+    assert!(
+        !present(&l.r, "new-storage"),
+        "the form is a popup, not on the panel"
+    );
+    l.click("button", "new-storage-open");
     l.submit("new-storage");
     assert!(
         l.text().contains("Storage names may use letters, digits"),
@@ -786,6 +796,19 @@ fn a_storage_is_created_and_then_opened() {
     );
     l.send(Msg::StorageSaved("photos".into()));
     assert_eq!(l.url(), "/warehouse/ui/files/storages?storage=photos");
+    assert!(!present(&l.r, "new-storage"), "a save closes the popup");
+}
+
+#[quench_test::test]
+fn a_directory_can_be_shown_as_a_grid_of_cards() {
+    let l = started("/warehouse/ui/files/browse?storage=backups&path=docs", true);
+    l.send(Msg::Browse(Box::new(browse_of(Browse::READABLE))));
+    assert!(!present(&l.r, "grid"));
+    l.click("button", "view-grid");
+    assert!(present(&l.r, "grid"));
+    assert!(l.text().contains("readme.md"), "{}", l.text());
+    l.click("button", "view-list");
+    assert!(!present(&l.r, "grid"));
 }
 
 #[quench_test::test]
@@ -808,7 +831,7 @@ fn an_unknown_storage_says_so_and_a_manager_can_still_create_one() {
     let l = started("/warehouse/ui/files/storages?storage=ghost", true);
     l.send(Msg::Storages(storages_list()));
     assert!(present(&l.r, "storage-missing"));
-    assert!(present(&l.r, "new-storage"));
+    assert!(present(&l.r, "new-storage-open"));
 }
 
 // ── Files: the browser ───────────────────────────────────────────────────────
