@@ -5188,6 +5188,48 @@ paths:
             Location:
               schema:
                 type: string
+  /ui/files/preview:
+    get:
+      tags:
+      - ui
+      summary: File preview page
+      description: 'A file in a window of its own: just the file (an image, framed text, or "no preview" for what cannot be shown) and a download link, with none of the app around it. Needs a session; without one: 302 to the login page. The address carries `?storage=` and `?path=` for the client to read; the file itself is read from `/api/v1/files/{storage}/file`.'
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: The client page.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: 'No session: to `<base>/ui/login`.'
+          headers:
+            Location:
+              schema:
+                type: string
+  /ui/files/preview/:
+    get:
+      tags:
+      - ui
+      summary: File preview page (trailing slash)
+      description: Same as without the slash.
+      security:
+      - sessionCookie: []
+      responses:
+        '200':
+          description: The client page.
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: 'No session: to `<base>/ui/login`.'
+          headers:
+            Location:
+              schema:
+                type: string
   /ui/artifacts/catalog:
     get:
       tags:

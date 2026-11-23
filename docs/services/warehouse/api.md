@@ -4521,6 +4521,36 @@ Same as without the slash.
 | 200 | The client page. | `text/html` string |
 | 302 | No session: to `<base>/ui/login`. Headers: `Location`. |  |
 
+### GET `/ui/files/preview`
+
+File preview page
+
+A file in a window of its own: just the file (an image, framed text, or "no preview" for what cannot be shown) and a download link, with none of the app around it. Needs a session; without one: 302 to the login page. The address carries `?storage=` and `?path=` for the client to read; the file itself is read from `/api/v1/files/{storage}/file`.
+
+**Authentication:** `sessionCookie`.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | The client page. | `text/html` string |
+| 302 | No session: to `<base>/ui/login`. Headers: `Location`. |  |
+
+### GET `/ui/files/preview/`
+
+File preview page (trailing slash)
+
+Same as without the slash.
+
+**Authentication:** `sessionCookie`.
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| 200 | The client page. | `text/html` string |
+| 302 | No session: to `<base>/ui/login`. Headers: `Location`. |  |
+
 ### GET `/ui/artifacts/catalog`
 
 Artifacts page

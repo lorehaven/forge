@@ -606,6 +606,57 @@ paths:
       responses:
         '200': {description: 'The page.'}
         '302': {description: 'No session.'}
+  /ui/cluster:
+    get:
+      tags: [ui]
+      operationId: uiCluster
+      summary: 'The cluster: overview and kinds'
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/cluster/{kind}:
+    get:
+      tags: [ui]
+      operationId: uiClusterKind
+      summary: The objects of one kind
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: kind, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/cluster/{kind}/view:
+    get:
+      tags: [ui]
+      operationId: uiClusterObject
+      summary: One object, its events, log and shell
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: kind, in: path, required: true, schema: {type: string}}
+        - {name: namespace, in: query, required: false, schema: {type: string}}
+        - {name: name, in: query, required: true, schema: {type: string}}
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/services:
+    get:
+      tags: [ui]
+      operationId: uiServices
+      summary: What the cluster serves, as links
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
+  /ui/profile:
+    get:
+      tags: [ui]
+      operationId: uiProfile
+      summary: Who the caller is to Gantry
+      security: [{sessionCookie: []}]
+      responses:
+        '200': {description: 'The page.'}
+        '302': {description: 'No session.'}
   /ui/resource:
     get:
       tags: [ui]

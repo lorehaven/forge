@@ -17,7 +17,7 @@ The browser client is the `warehouse-web` wasm module (screens from `warehouse-a
 
 ## Screens
 
-Routes (all `{base}/ui/...`, each also with a trailing slash): `home` (also `/ui` and `/ui/`), `docker/catalog`, `crates/catalog`, `files/storages`, `files/browse`, `artifacts/catalog`, `rivets/catalog`; anything else is "not found". The service serves the page for each of these paths to a signed-in browser (the `/ui/docker`, `/ui/crates`, `/ui/files`, `/ui/artifacts`, `/ui/apk`, `/ui/rivets` entry paths redirect permanently to them). The address keeps `?repo=`, `?tag=`, `?storage=`, `?path=` for the client.
+Routes (all `{base}/ui/...`, each also with a trailing slash): `home` (also `/ui` and `/ui/`), `docker/catalog`, `crates/catalog`, `files/storages`, `files/browse`, `files/preview` (a file in a window of its own: the file and a download link, no sidebar), `artifacts/catalog`, `rivets/catalog`; anything else is "not found". The service serves the page for each of these paths to a signed-in browser (the `/ui/docker`, `/ui/crates`, `/ui/files`, `/ui/artifacts`, `/ui/apk`, `/ui/rivets` entry paths redirect permanently to them). The address keeps `?repo=`, `?tag=`, `?storage=`, `?path=` for the client.
 
 | Screen | Shows | Management controls (need `can_manage`) |
 |---|---|---|
