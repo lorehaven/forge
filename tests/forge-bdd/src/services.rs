@@ -130,7 +130,15 @@ impl Fixture {
         let web_package = format!("{app}-web");
         println!("Building {web_package} (wasm)...");
         let status = Command::new("cargo")
-            .args(["build", "-q", "--target", "wasm32-unknown-unknown", "--profile", "wasm", "-p"])
+            .args([
+                "build",
+                "-q",
+                "--target",
+                "wasm32-unknown-unknown",
+                "--profile",
+                "wasm",
+                "-p",
+            ])
             .arg(&web_package)
             .current_dir(&self.workspace_root)
             .envs(std::env::vars())
