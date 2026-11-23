@@ -411,6 +411,63 @@ async fn a_security_report_is_kept_under_its_own_names_next_to_the_test_results(
 }
 
 #[quench_test::test]
+async fn a_bdd_report_is_kept_under_its_own_names_beside_the_tests_and_the_security_report() {
+    use quench_test::mock::matchers::{method, path, query_param};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
+
+    let (_dir, ws) = workspace(&[
+        ("target/debug/quench-test/summary.json", b"{\"summary\":{}}"),
+        ("target/security/summary.json", b"{\"summary\":{}}"),
+        ("target/bdd/summary.json", b"{\"summary\":{\"total\":3}}"),
+        ("target/bdd/index.html", b"<html>bdd</html>"),
+        // A per-suite file next to them is not one of the kept names.
+        ("target/bdd/forge-bdd-gatehouse.json", b"{}"),
+    ]);
+
+    let server = MockServer::start().await;
+    for remote in [
+        "summary.json",
+        "security-summary.json",
+        "bdd-summary.json",
+        "bdd.html",
+    ] {
+        Mock::given(method("PUT"))
+            .and(path("/api/v1/files/artifacts/file"))
+            .and(query_param(
+                "path",
+                format!("conveyor/run-1/job-1/{remote}"),
+            ))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    let store = WarehouseStore::new(&server.uri(), "artifacts", None);
+
+    let (kept, problems) = collect_test_reports(Some(&store), &ws, "run-1", "job-1").await;
+
+    assert!(problems.is_empty(), "{problems:?}");
+    let mut names: Vec<_> = kept.iter().map(|c| c.artifact.name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "bdd-summary.json",
+            "bdd.html",
+            "security-summary.json",
+            "summary.json"
+        ]
+    );
+}
+
+#[quench_test::test]
+fn the_runner_is_asked_to_hand_back_the_bdd_report_too() {
+    let exports = conveyor_service::artifacts::exports(&declared(&[]));
+    assert!(exports.contains(&"target/bdd/summary.json".to_string()));
+    assert!(exports.contains(&"target/bdd/index.html".to_string()));
+}
+
+#[quench_test::test]
 fn the_runner_is_asked_to_hand_back_the_security_report_too() {
     let exports = conveyor_service::artifacts::exports(&declared(&["dist/app"]));
     assert!(exports.contains(&"dist/app".to_string()));

@@ -146,10 +146,10 @@ and  := cmp ( "&&" cmp )*
 cmp  := variable ( "==" | "!=" ) string
 ```
 
-* Variables: `branch`, `tag`, `event`, `sha`. Unknown identifiers are an error listing the known ones.
+* Variables: `branch`, `tag`, `event`, `sha`, `schedule`. Unknown identifiers are an error listing the known ones.
 * Strings are single- or double-quoted, no escapes, may be empty.
 * `&&` binds tighter than `||`. No parentheses, no negation, no other operators.
-* Values at plan time (`EvalContext::new(event, git_ref, sha)`): `refs/tags/X` gives `tag = X`, `branch = ""`; otherwise `refs/heads/` is stripped (a bare ref is a branch) and `tag = ""`. `event` and `sha` are the strings given. Events in use: `push`, `pull_request`, `manual`, `schedule`.
+* Values at plan time (`EvalContext::new(event, git_ref, sha)`): `refs/tags/X` gives `tag = X`, `branch = ""`; otherwise `refs/heads/` is stripped (a bare ref is a branch) and `tag = ""`. `event` and `sha` are the strings given. Events in use: `push`, `pull_request`, `manual`, `schedule`. `schedule` is the `on.schedule` entry that started a scheduled run, written exactly as in the file (`schedule == '0 6 * * *'`), and empty for every other trigger; `EvalContext::with_schedule` sets it. It is how two nightlies are told apart, since both have `event == 'schedule'`.
 * `tag != ''` means "only on a tag".
 * Identifier characters: alphanumeric and `_`. Whitespace is ignored.
 

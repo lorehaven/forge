@@ -43,7 +43,7 @@ Feature: Workbench's pages
     And response should contain "false"
 
   Scenario: The page is styled like the rest of the estate
-    When I open the workbench path "/ui/assets/css/workbench.css"
+    When I open the workbench path "/ui/assets/app.css"
     Then response status should be 200
     And response should contain ".wb-board"
 

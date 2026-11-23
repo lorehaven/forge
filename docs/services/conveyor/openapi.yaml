@@ -570,7 +570,7 @@ paths:
         - {name: id, in: path, required: true, schema: {type: string}}
       responses:
         '200':
-          description: The newest run and the checks (lint, machete, audit, coverage, tests, security) that exist.
+          description: The newest run and the checks (lint, machete, audit, coverage, tests, security, bdd) that exist.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ScanReport'}
@@ -610,7 +610,7 @@ paths:
       x-permission: conveyor:read on the repository's project
       parameters:
         - {name: id, in: path, required: true, schema: {type: string}}
-        - {name: category, in: path, required: true, schema: {type: string, enum: [tests, security]}}
+        - {name: category, in: path, required: true, schema: {type: string, enum: [tests, security, bdd]}}
         - {name: download, in: query, required: false, schema: {type: string}}
       responses:
         '200':
@@ -1552,7 +1552,7 @@ components:
       type: object
       required: [kind, passed, findings]
       properties:
-        kind: {type: string, enum: [lint, machete, audit, coverage, tests, security]}
+        kind: {type: string, enum: [lint, machete, audit, coverage, tests, security, bdd]}
         passed: {type: boolean}
         findings: {type: integer}
         metric: {type: [string, 'null']}
@@ -1576,7 +1576,7 @@ components:
       type: object
       required: [kind, job_name, passed, headline, findings, has_report]
       properties:
-        kind: {type: string, enum: [lint, machete, audit, coverage, tests, security]}
+        kind: {type: string, enum: [lint, machete, audit, coverage, tests, security, bdd]}
         job_name: {type: string, description: "`stage/job`."}
         passed: {type: boolean}
         headline: {type: string}

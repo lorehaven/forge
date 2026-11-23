@@ -78,6 +78,7 @@ ui_scan_audit_title = Podatności
 ui_scan_coverage_title = Pokrycie testami
 ui_scan_tests_title = Testy
 ui_scan_security_title = Bezpieczeństwo
+ui_scan_bdd_title = BDD
 ui_meta_stages = Etapy
 ui_launch_link = Uruchom z parametrami
 ui_launch_subtitle = Uruchamia ręczny przebieg ograniczony do zaznaczonych etapów. Zaznaczony etap uruchomi się nawet wtedy, gdy jego własny warunek pominąłby go w zwykłym przebiegu.

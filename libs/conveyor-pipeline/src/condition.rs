@@ -1,6 +1,6 @@
 //! The `when` expression language.
 //!
-//! Deliberately tiny: four variables, two comparisons, two connectives. That is
+//! Deliberately tiny: five variables, two comparisons, two connectives. That is
 //! enough for "only deploy from master" and "only publish on a tag", which is
 //! what stage conditions are actually for. Anything that wants arithmetic, or
 //! to call out to something, belongs in a shell step where it is visible in the
@@ -34,11 +34,20 @@ pub enum Variable {
     Event,
     /// The commit being built.
     Sha,
+    /// The cron expression that started a scheduled run, exactly as written in `on.schedule`; empty for any
+    /// other trigger. Tells two nightlies apart (`schedule == '0 6 * * *'`).
+    Schedule,
 }
 
 impl Variable {
     /// Every variable a condition can name, in the order `known()` reports them.
-    pub const ALL: [Self; 4] = [Self::Branch, Self::Tag, Self::Event, Self::Sha];
+    pub const ALL: [Self; 5] = [
+        Self::Branch,
+        Self::Tag,
+        Self::Event,
+        Self::Sha,
+        Self::Schedule,
+    ];
 
     /// The identifier a condition source uses for this variable.
     #[must_use]
@@ -48,6 +57,7 @@ impl Variable {
             Self::Tag => "tag",
             Self::Event => "event",
             Self::Sha => "sha",
+            Self::Schedule => "schedule",
         }
     }
 
@@ -101,6 +111,8 @@ pub struct EvalContext {
     pub event: String,
     /// The commit being built.
     pub sha: String,
+    /// The `on.schedule` entry that fired, for a scheduled run; empty otherwise.
+    pub schedule: String,
 }
 
 impl EvalContext {
@@ -129,7 +141,15 @@ impl EvalContext {
             tag,
             event: event.to_string(),
             sha: sha.to_string(),
+            schedule: String::new(),
         }
+    }
+
+    /// The same context for a run that a schedule started: `expression` is the `on.schedule` entry that fired.
+    #[must_use]
+    pub fn with_schedule(mut self, expression: &str) -> Self {
+        self.schedule = expression.to_string();
+        self
     }
 
     fn get(&self, variable: Variable) -> &str {
@@ -138,6 +158,7 @@ impl EvalContext {
             Variable::Tag => &self.tag,
             Variable::Event => &self.event,
             Variable::Sha => &self.sha,
+            Variable::Schedule => &self.schedule,
         }
     }
 }
@@ -147,7 +168,7 @@ impl EvalContext {
 pub enum Condition {
     /// A single `variable op 'value'` test.
     Compare {
-        /// Which of the four variables is being tested.
+        /// Which of the five variables is being tested.
         variable: Variable,
         /// `==` or `!=`.
         op: CompareOp,

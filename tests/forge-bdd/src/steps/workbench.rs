@@ -42,6 +42,11 @@ async fn open_path(world: &mut ForgeWorld, path: String) {
 /// see `world::mint_test_token`.
 #[given(expr = "I am authenticated against workbench with scope {string}")]
 async fn authenticated_with_scope(world: &mut ForgeWorld, scope: String) {
+    let scope = world.resolve_placeholders(&scope);
+    // An issue's reporter points at their row in `auth.users`, which gatehouse writes in the estate.
+    if crate::services::database_url().is_some() {
+        crate::services::ensure_user("workbench-bdd").await;
+    }
     world.access_token = Some(
         crate::world::mint_test_token(
             &world.client,
@@ -66,7 +71,11 @@ async fn authenticated(world: &mut ForgeWorld) {
 /// text globally across every service's steps, not per-file.
 #[when(expr = "an authenticated GET request is sent to {string}")]
 async fn authenticated_get(world: &mut ForgeWorld, path: String) {
-    let url = format!("{}{path}", world.workbench_url);
+    let url = format!(
+        "{}{}",
+        world.workbench_url,
+        world.resolve_placeholders(&path)
+    );
     let mut request = no_redirect_client().get(&url);
     if let Some(token) = &world.access_token {
         request = request.bearer_auth(token);
@@ -81,7 +90,11 @@ async fn authenticated_get(world: &mut ForgeWorld, path: String) {
 #[when(expr = "an authenticated POST is sent to {string} with body:")]
 async fn authenticated_post(world: &mut ForgeWorld, path: String, step: &quench_test_bdd::Step) {
     let body = step.docstring().expect("step must have a docstring");
-    let url = format!("{}{path}", world.workbench_url);
+    let url = format!(
+        "{}{}",
+        world.workbench_url,
+        world.resolve_placeholders(&path)
+    );
     let mut request = no_redirect_client()
         .post(&url)
         .header("Content-Type", "application/json")
@@ -94,4 +107,52 @@ async fn authenticated_post(world: &mut ForgeWorld, path: String, step: &quench_
         .await
         .unwrap_or_else(|e| panic!("POST {url}: {e}"));
     world.record_response(response).await;
+}
+
+/// Creates a project as an administrator and remembers its id as `{project_id}`; the caller is left holding no token, so the
+/// scenario names who it acts as next.
+#[given(expr = "a workbench project {string} exists")]
+async fn project_exists(world: &mut ForgeWorld, key: String) {
+    authenticated_with_scope(world, "admin".to_string()).await;
+    let url = format!("{}/api/v1/projects", world.workbench_url);
+    let response = no_redirect_client()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .body(format!("{{\"key\":\"{key}\",\"name\":\"Project {key}\"}}"))
+        .bearer_auth(world.access_token.as_deref().unwrap_or_default())
+        .send()
+        .await
+        .unwrap_or_else(|e| panic!("POST {url}: {e}"));
+    let status = response.status().as_u16();
+    world.record_response(response).await;
+    assert!(
+        matches!(status, 201 | 409),
+        "creating project {key}: {status} {:?}",
+        world.last_body
+    );
+    // A project that was there already (a rerun against the same database) is looked up by its key.
+    if status == 409 {
+        let url = format!("{}/api/v1/projects", world.workbench_url);
+        let list = no_redirect_client()
+            .get(&url)
+            .bearer_auth(world.access_token.as_deref().unwrap_or_default())
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("GET {url}: {e}"));
+        let body: quench_serde::Value =
+            quench_serde::json::from_str(&list.text().await.unwrap_or_default())
+                .expect("a project list");
+        let id = body
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|p| p.get("key").and_then(quench_serde::Value::as_str) == Some(key.as_str()))
+            .and_then(|p| p.get("id").and_then(quench_serde::Value::as_str))
+            .expect("the existing project")
+            .to_string();
+        world.workbench_project = Some(id);
+    } else {
+        world.workbench_project.clone_from(&world.last_id);
+    }
+    world.access_token = None;
 }

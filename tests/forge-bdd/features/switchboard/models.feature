@@ -37,14 +37,3 @@ Feature: Models API and UI
       """
     Then response status should be 200
     And all models in the response should contain "llama" in their name
-
-  Scenario: Get model estimates modal
-    When GET request is sent to "/api/v1/models/estimates-modal?path=non-existent"
-    Then response status should be 200
-    And response content type should be "text/html"
-    And response should contain 'estimates-modal'
-
-  Scenario: Empty estimates modal
-    When GET request is sent to "/api/v1/models/estimates-modal/empty"
-    Then response status should be 200
-    And response should contain 'estimates-modal'

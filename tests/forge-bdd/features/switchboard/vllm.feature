@@ -20,45 +20,17 @@ Feature: vLLM Management API
     Then response status should be 200
     And response should be a JSON array
 
+  # What the client asks to decide which controls to draw.
+  Scenario: A reader is told it cannot launch, stop or delete
+    When GET request is sent to "/api/v1/vllm/capabilities"
+    Then response status should be 200
+    And response content type should be "application/json"
+    And response should contain "\"vllm_management\":true"
+
   Scenario: List running models
     When GET request is sent to "/api/v1/models/running"
     Then response status should be 200
     And response should be a JSON array
-
-  Scenario: Get vLLM instances grid
-    When GET request is sent to "/api/v1/vllm/grid"
-    Then response status should be 200
-    And response content type should be "text/html"
-    And response should contain 'vllm-instances-grid'
-
-  Scenario: Get launch instance modal
-    When GET request is sent to "/api/v1/vllm/launch-modal?model=some-model"
-    Then response status should be 200
-    And response content type should be "text/html"
-    And response should contain 'launch-instance-modal'
-
-  Scenario: Get empty launch instance modal
-    When GET request is sent to "/api/v1/vllm/launch-modal/empty"
-    Then response status should be 200
-    And response content type should be "text/html"
-    And response should contain 'launch-instance-modal'
-
-  Scenario: Get stop instance modal
-    When GET request is sent to "/api/v1/vllm/stop-modal?id=some-instance-id"
-    Then response status should be 200
-    And response content type should be "text/html"
-    And response should contain 'stop-instance-modal'
-
-  Scenario: Get empty stop instance modal
-    When GET request is sent to "/api/v1/vllm/stop-modal/empty"
-    Then response status should be 200
-    And response content type should be "text/html"
-    And response should contain 'stop-instance-modal'
-
-  Scenario: Get vLLM status SSE
-    When GET request is sent to "/api/v1/vllm/sse"
-    Then response status should be 200
-    And response content type should be "text/event-stream"
 
   # @serial: the launch-then-stop scenarios (here and in permissions.feature)
   # share the switchboard process's mock instance registry and all bind the

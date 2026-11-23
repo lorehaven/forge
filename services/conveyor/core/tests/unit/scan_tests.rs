@@ -46,8 +46,10 @@ fn a_chip_is_coloured_by_what_the_scan_found() {
 }
 
 #[quench_test::test]
-fn checks_have_titles_and_only_two_keep_a_report() {
+fn checks_have_titles_and_only_three_keep_a_report() {
     assert_eq!(title_key("security"), Some("ui_scan_security_title"));
+    assert_eq!(title_key("bdd"), Some("ui_scan_bdd_title"));
+    assert!(has_report_page("bdd"));
     assert_eq!(title_key("nope"), None);
     assert!(has_report_page("tests") && has_report_page("security"));
     assert!(!has_report_page("lint"));

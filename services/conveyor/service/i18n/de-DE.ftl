@@ -78,6 +78,7 @@ ui_scan_audit_title = Schwachstellen
 ui_scan_coverage_title = Testabdeckung
 ui_scan_tests_title = Tests
 ui_scan_security_title = Sicherheit
+ui_scan_bdd_title = BDD
 ui_meta_stages = Stufen
 ui_launch_link = Mit Parametern starten
 ui_launch_subtitle = Startet einen manuellen Lauf, der auf die angekreuzten Stufen beschränkt ist. Eine angekreuzte Stufe läuft auch dann, wenn ihre eigene Bedingung sie sonst auslassen würde.

@@ -42,7 +42,7 @@ All error enums derive `quench_core::Error` (the workspace's `thiserror` replace
 | Variant | Text |
 |---|---|
 | `Empty` | `condition is empty` |
-| `UnknownVariable { name, known }` | `unknown variable '{name}' (known: branch, tag, event, sha)` |
+| `UnknownVariable { name, known }` | `unknown variable '{name}' (known: branch, tag, event, sha, schedule)` |
 | `ExpectedVariable { found }` | `expected a variable, found {found}` |
 | `ExpectedComparison { variable, found }` | `expected '==' or '!=' after '{variable}', found {found}` |
 | `ExpectedValue { op, found }` | `expected a quoted value after '{op}', found {found}` |

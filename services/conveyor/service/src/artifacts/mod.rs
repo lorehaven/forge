@@ -309,8 +309,9 @@ impl WarehouseStore {
 /// `(directory under the checkout, file, artifact name)`. The first four are what a `quench-test` run
 /// writes under `target/<profile>/quench-test`. The last two are the security gate's report - the same
 /// format, written to `target/security` by a run with `QUENCH_TEST_REPORT_DIR` pointed there - kept
-/// under names of their own so the scan page can tell it from the unit tests'.
-const REPORTS: [(&str, &str, &str); 6] = [
+/// under names of their own so the scan page can tell it from the unit tests'. The last two are the same for the
+/// BDD suite's report, written to `target/bdd`.
+const REPORTS: [(&str, &str, &str); 8] = [
     ("target/debug/quench-test", "summary.json", TESTS_SUMMARY),
     ("target/debug/quench-test", "index.html", TESTS_REPORT_PAGE),
     ("target/release/quench-test", "summary.json", TESTS_SUMMARY),
@@ -321,6 +322,8 @@ const REPORTS: [(&str, &str, &str); 6] = [
     ),
     ("target/security", "summary.json", SECURITY_SUMMARY),
     ("target/security", "index.html", SECURITY_REPORT_PAGE),
+    ("target/bdd", "summary.json", BDD_SUMMARY),
+    ("target/bdd", "index.html", BDD_REPORT_PAGE),
 ];
 
 /// The merged results of a `quench-test` run.
@@ -331,6 +334,10 @@ pub const TESTS_REPORT_PAGE: &str = "index.html";
 pub const SECURITY_SUMMARY: &str = "security-summary.json";
 /// The page that shows them.
 pub const SECURITY_REPORT_PAGE: &str = "security.html";
+/// The BDD suite's merged results.
+pub const BDD_SUMMARY: &str = "bdd-summary.json";
+/// The page that shows them.
+pub const BDD_REPORT_PAGE: &str = "bdd.html";
 
 /// What a job's runner must hand back to conveyor's workspace for [`collect`] and [`collect_test_reports`] to
 /// find it: the declared artifacts, and the reports a `quench-test` run leaves.

@@ -392,7 +392,7 @@ impl Worker {
             None => spec,
         };
 
-        let context = EvalContext::new(event, &run.git_ref, &run.sha);
+        let context = self.eval_context(run, event).await?;
         let plan = pipeline::plan(&spec, &context);
 
         // `Some` even if empty, so a pruned source is distinguishable from "not a restart" below.
@@ -456,6 +456,17 @@ impl Worker {
         }
 
         result
+    }
+
+    /// What a `when` condition sees. A scheduled run also carries the cron entry that started it; failing to
+    /// find that out fails the run, because planning without it would skip every stage that asks.
+    async fn eval_context(&self, run: &Run, event: &str) -> Result<EvalContext, WorkerError> {
+        let context = EvalContext::new(event, &run.git_ref, &run.sha);
+        if run.trigger != Trigger::Schedule {
+            return Ok(context);
+        }
+        let expression = schedules::expression_for_run(&self.db, run).await?;
+        Ok(context.with_schedule(expression.as_deref().unwrap_or_default()))
     }
 
     async fn checkout(&self, run: &Run, repo: &Repo) -> Result<Workspace, WorkerError> {

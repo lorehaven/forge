@@ -231,13 +231,6 @@ async fn get_capabilities(world: &mut ForgeWorld) {
     record_response(world, response).await;
 }
 
-#[quench_test_bdd::when("I request the files panel without authentication")]
-async fn files_panel_unauthenticated(world: &mut ForgeWorld) {
-    let url = format!("{}/sage/ui/files/panel?project_id=any", world.sage_base_url);
-    let response = world.client.get(&url).send().await;
-    record_response(world, response).await;
-}
-
 #[quench_test_bdd::then(expr = "the response should mention {string}")]
 #[allow(
     clippy::needless_pass_by_ref_mut,

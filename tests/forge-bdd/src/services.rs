@@ -119,10 +119,11 @@ impl Fixture {
     /// started alongside whatever was selected - see `main.rs`), an
     /// in-memory database so the suite needs no Postgres.
     fn common_env(command: &mut Command, service_name: &str) {
+        let (certificate, key) = dev_certificate();
         command
             .env("SERVICE_NAME", service_name)
-            .env("SERVER_CERT_PATH", "cert.pem")
-            .env("SERVER_KEY_PATH", "key.pem")
+            .env("SERVER_CERT_PATH", certificate)
+            .env("SERVER_KEY_PATH", key)
             .env("DATABASE_URL", "")
             .env("POSTGRES_URL", "")
             // The suite deliberately runs on a throwaway in-memory store.
@@ -159,6 +160,7 @@ impl Fixture {
             Target::Workbench => self.start_workbench().await,
             Target::Daybook => self.start_daybook().await,
             Target::Mailroom => self.start_mailroom().await,
+            Target::Gauge => self.start_gauge().await,
         }
     }
 
@@ -226,6 +228,14 @@ impl Fixture {
             .env("SERVER_CERT_PATH", "missing.pem")
             .env("SERVER_KEY_PATH", "missing.pem");
 
+        if let Some(url) = database_url() {
+            command
+                .env("DATABASE_URL", &url)
+                .env("POSTGRES_URL", url)
+                .env("DB_SCHEMA", "workbench")
+                .env("ALLOW_IN_MEMORY_DB", "false");
+        }
+
         Service {
             target: Target::Workbench,
             child: command.spawn().expect("failed to start workbench-service"),
@@ -263,6 +273,38 @@ impl Fixture {
         }
     }
 
+    /// Gauge, watching what `mocks::start_node_exporter` serves and one host that is never there. It keeps
+    /// its history in memory (no `DATABASE_URL`), and a second between scrapes so a scenario need not wait.
+    async fn start_gauge(&self) -> Service {
+        self.build("gauge-service").await;
+        println!("Starting gauge-service...");
+
+        let mut command = Command::new(self.binary("gauge-service"));
+        command
+            .current_dir(self.service_dir("gauge-service"))
+            .envs(std::env::vars());
+        Self::common_env(&mut command, "gauge");
+        command
+            .env("SERVER_ADDR", "127.0.0.1:13443")
+            .env("BASE_PATH", "/gauge")
+            .env("DB_SCHEMA", "test_gauge")
+            .env("SERVICE_AUTH_ENABLED", "true")
+            .env(
+                "GAUGE_TARGETS",
+                self.workspace_root
+                    .join("tests/forge-bdd/gauge-targets.toml")
+                    .display()
+                    .to_string(),
+            )
+            .env("SERVER_CERT_PATH", "missing.pem")
+            .env("SERVER_KEY_PATH", "missing.pem");
+
+        Service {
+            target: Target::Gauge,
+            child: command.spawn().expect("failed to start gauge-service"),
+        }
+    }
+
     /// Daybook's API is exercised here with an in-memory database. CRUD
     /// persistence and owner isolation are covered by its Postgres-backed
     /// integration suite.
@@ -282,6 +324,14 @@ impl Fixture {
             .env("SERVICE_AUTH_ENABLED", "true")
             .env("SERVER_CERT_PATH", "missing.pem")
             .env("SERVER_KEY_PATH", "missing.pem");
+        if let Some(url) = database_url() {
+            // The module's own schema, not the throwaway one the in-memory run names.
+            command
+                .env("DATABASE_URL", &url)
+                .env("POSTGRES_URL", url)
+                .env("DB_SCHEMA", "daybook")
+                .env("ALLOW_IN_MEMORY_DB", "false");
+        }
 
         Service {
             target: Target::Daybook,
@@ -453,6 +503,7 @@ impl Fixture {
             .env("CLIENT_SECRET_WAREHOUSE", "bdd-client-secret-warehouse")
             .env("CLIENT_SECRET_CONVEYOR", "bdd-client-secret-conveyor")
             .env("CLIENT_SECRET_WORKBENCH", "bdd-client-secret-workbench")
+            .env("CLIENT_SECRET_GAUGE", "bdd-client-secret-gauge")
             .env(
                 "CLIENT_SECRET_SAGE_SWITCHBOARD",
                 "bdd-client-secret-sage-switchboard",
@@ -518,6 +569,98 @@ impl Fixture {
 
 /// Waits until every started service answers, so a slow boot does not surface
 /// as a scenario failure.
+/// A Postgres the services under test may use instead of their in-memory stores (`FORGE_BDD_DATABASE_URL`): one database with
+/// the daybook (and, as they gain scenarios, workbench and conveyor) modules installed by `foundry apply --install`. Scenarios
+/// tagged `@postgres` run only when it is set; every other scenario is the same either way.
+#[must_use]
+pub fn database_url() -> Option<String> {
+    std::env::var("FORGE_BDD_DATABASE_URL")
+        .ok()
+        .filter(|url| !url.trim().is_empty())
+}
+
+/// Makes sure `username` has a row in the database's `auth.users`, which a service's own tables point at (a task's owner is a
+/// foreign key to it). In the estate gatehouse writes it; the harness's gatehouse keeps its users in memory, so a scenario that
+/// acts as somebody new on a real database asks for the row here first.
+///
+/// # Panics
+///
+/// When `FORGE_BDD_DATABASE_URL` is unset or the database cannot be reached.
+pub async fn ensure_user(username: &str) {
+    let url = database_url().expect("FORGE_BDD_DATABASE_URL");
+    let pool = quench_pg::Pool::connect(&url)
+        .await
+        .unwrap_or_else(|e| panic!("FORGE_BDD_DATABASE_URL: {e}"));
+    pool.execute(
+        "INSERT INTO auth.users (username, password, roles) VALUES ($1, 'x', '[]'::jsonb) ON CONFLICT (username) DO NOTHING",
+        &[&username as &dyn quench_pg::ToSql],
+    )
+    .await
+    .expect("seed the user");
+}
+
+/// The certificate and key the HTTPS services (sage, switchboard, warehouse) are started with.
+///
+/// A service whose certificate is missing quietly serves plain HTTP, and the suites for those three speak HTTPS,
+/// so with no certificate every request would wait on a handshake that never comes. Picked in this order, once:
+/// `FORGE_BDD_CERT` with `FORGE_BDD_KEY`; the estate's shared dev certificate `certs/cert.pem` with `key.pem`;
+/// otherwise a throwaway self-signed one made with `openssl` under `target/forge-bdd-cert` (so a fresh checkout,
+/// such as a CI job's, needs nothing set up). Clients here accept any certificate.
+fn dev_certificate() -> (PathBuf, PathBuf) {
+    static CERTIFICATE: OnceLock<(PathBuf, PathBuf)> = OnceLock::new();
+    CERTIFICATE
+        .get_or_init(|| {
+            let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .and_then(Path::parent)
+                .expect("workspace root")
+                .to_path_buf();
+            if let (Some(certificate), Some(key)) = (
+                std::env::var_os("FORGE_BDD_CERT"),
+                std::env::var_os("FORGE_BDD_KEY"),
+            ) {
+                return (PathBuf::from(certificate), PathBuf::from(key));
+            }
+            let shared = (root.join("certs/cert.pem"), root.join("certs/key.pem"));
+            if shared.0.is_file() && shared.1.is_file() {
+                return shared;
+            }
+            let target_dir = std::env::var("CARGO_TARGET_DIR")
+                .map_or_else(|_| root.join("target"), PathBuf::from);
+            let directory = target_dir.join("forge-bdd-cert");
+            let made = (directory.join("cert.pem"), directory.join("key.pem"));
+            if !(made.0.is_file() && made.1.is_file()) {
+                make_certificate(&directory, &made.0, &made.1);
+            }
+            made
+        })
+        .clone()
+}
+
+/// A self-signed certificate for `127.0.0.1` and `localhost`, valid for a year.
+fn make_certificate(directory: &Path, certificate: &Path, key: &Path) {
+    std::fs::create_dir_all(directory).expect("create the certificate directory");
+    let status = std::process::Command::new("openssl")
+        .args(["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1"])
+        .args(["-nodes", "-days", "365", "-subj", "/CN=localhost"])
+        .args(["-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"])
+        .arg("-keyout")
+        .arg(key)
+        .arg("-out")
+        .arg(certificate)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .unwrap_or_else(|e| {
+            panic!(
+                "the sage, switchboard and warehouse suites need a TLS certificate and `openssl` \
+                 could not be run to make one ({e}); put one at certs/cert.pem and certs/key.pem, or \
+                 set FORGE_BDD_CERT and FORGE_BDD_KEY"
+            )
+        });
+    assert!(status.success(), "openssl could not make a certificate");
+}
+
 pub async fn wait_until_ready(urls: &[(Target, String)]) {
     let client = quench_client::transport::Client::builder()
         .danger_accept_invalid_certs(true)
@@ -528,7 +671,10 @@ pub async fn wait_until_ready(urls: &[(Target, String)]) {
         let mut ready = false;
         for _ in 0..60 {
             sleep(Duration::from_millis(500)).await;
-            if client.get(url).send().await.is_ok() {
+            // A listener that accepts and never answers (plain HTTP behind an HTTPS client) would wait forever.
+            let answered =
+                tokio::time::timeout(Duration::from_secs(5), client.get(url).send()).await;
+            if matches!(answered, Ok(Ok(_))) {
                 ready = true;
                 break;
             }

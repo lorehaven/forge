@@ -197,7 +197,7 @@ Permission: read. `200` `{"findings": [{severity, check, service, method, path, 
 
 ### GET /api/v1/repos/{id}/scan/{category}/report
 
-Permission: read. `category` is `tests` or `security` (others: `404 no such report`). `200 text/html` with `content-security-policy: sandbox allow-scripts`, `x-content-type-options: nosniff`, `cache-control: private, max-age=60`; with `?download=<anything>` also `content-disposition: attachment; filename="<owner>-<name>-<category>-report.html"`. `404 this check has no report`; `502` text `the report could not be read`.
+Permission: read. `category` is `tests`, `security` or `bdd` (others: `404 no such report`). `200 text/html` with `content-security-policy: sandbox allow-scripts`, `x-content-type-options: nosniff`, `cache-control: private, max-age=60`; with `?download=<anything>` also `content-disposition: attachment; filename="<owner>-<name>-<category>-report.html"`. `404 this check has no report`; `502` text `the report could not be read`.
 
 ## secrets
 

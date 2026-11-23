@@ -40,6 +40,7 @@ Feature: Daybook's personal task API
     When GET request is sent to "/api/v1/tasks"
     Then the response status should be 401
 
+  @memory
   Scenario: A read audience is enough to reach the API
     Given I am authenticated against daybook with scope "daybook:read"
     When GET request is sent to "/api/v1/tasks"
@@ -54,6 +55,7 @@ Feature: Daybook's personal task API
       """
     Then the response status should be 403
 
+  @memory
   Scenario: A write grant reaches the database layer
     Given I am authenticated against daybook with scope "daybook:write"
     When an authenticated Daybook POST is sent to "/api/v1/tasks" with body:

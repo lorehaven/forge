@@ -78,6 +78,7 @@ ui_scan_audit_title = Vulnerabilities
 ui_scan_coverage_title = Test coverage
 ui_scan_tests_title = Tests
 ui_scan_security_title = Security
+ui_scan_bdd_title = BDD
 ui_meta_stages = Stages
 ui_launch_link = Run with parameters
 ui_launch_subtitle = Start a manual run limited to the stages you tick. A ticked stage runs even if its own condition would leave it out of an ordinary run.

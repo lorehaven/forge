@@ -5,9 +5,9 @@ grand_parent: Services
 nav_order: 10
 ---
 
-The scan feature turns what a repository's runs already did into six check cards. Nothing here starts a scan or runs a tool: it is a read of step output and stored artifacts (`src/scan/`, `src/artifacts/`). Routes: `GET /api/v1/scan`, `GET /api/v1/repos/{id}/scan`, `.../scan/findings`, `.../scan/{category}/report` (see [API](api.md)).
+The scan feature turns what a repository's runs already did into seven check cards. Nothing here starts a scan or runs a tool: it is a read of step output and stored artifacts (`src/scan/`, `src/artifacts/`). Routes: `GET /api/v1/scan`, `GET /api/v1/repos/{id}/scan`, `.../scan/findings`, `.../scan/{category}/report` (see [API](api.md)).
 
-## The six checks
+## The seven checks
 
 Order everywhere (`ScanSummary::KINDS`, `conveyor_core::scan::CHECKS`), with the chip letter of the front page:
 
@@ -19,12 +19,13 @@ Order everywhere (`ScanSummary::KINDS`, `conveyor_core::scan::CHECKS`), with the
 | `coverage` | C | `ui_scan_coverage_title` | a step whose command contains `llvm-cov` (checked first; for example `cargo llvm-cov report`) |
 | `tests` | T | `ui_scan_tests_title` | the `summary.json` artifact of a job that ran `quench-test` tests |
 | `security` | S | `ui_scan_security_title` | the `security-summary.json` artifact of the nightly security run |
+| `bdd` | B | `ui_scan_bdd_title` | the `bdd-summary.json` artifact of the daily BDD run (`forge-bdd`) |
 
 The step command is the text recorded for the step (for an `anvil` step, the arguments after `anvil`; secrets already redacted).
 
 ## Which run a card comes from
 
-Every card is taken from the newest run that **produced it**, not from the newest run. For the four step-based checks the newest 40 runs of the repository (newest first) are searched until each check is found. For `tests` and `security` the newest artifact of that name across all runs of the repository is used, however many newer runs there are. `run` in the report is the repository's newest run, whatever it did; each `CheckDetail.origin` is the run that produced that card. A nightly security run and a push therefore never blank each other's cards.
+Every card is taken from the newest run that **produced it**, not from the newest run. For the four step-based checks the newest 40 runs of the repository (newest first) are searched until each check is found. For `tests`, `security` and `bdd` the newest artifact of that name across all runs of the repository is used, however many newer runs there are. `run` in the report is the repository's newest run, whatever it did; each `CheckDetail.origin` is the run that produced that card. A nightly security run and a push therefore never blank each other's cards.
 
 Results of finished runs are cached in memory (up to 256 runs for step checks, 64 parsed reports), so the front page, which asks for every repository, is cheap; a run still going is re-read each time.
 
@@ -41,11 +42,11 @@ Only finished steps (`started_at` and `finished_at` set) count. The log lines be
 
 `passed` of a step check is whether the step succeeded. At most 50 findings are kept per check.
 
-## tests and security
+## tests, security and bdd
 
-Both read a `quench-test` report: a JSON with `summary` (`total`, `passed`, `failed`, `skipped`), `duration_ms` and `suites[].cases[]` (`name`, `status`, `message`, `location`). Headline `<passed> passed, <failed> failed, <skipped> skipped` plus the duration (`<n> ms`, `<s.s> s` or `<m>m <s>s`) when it is above zero; `metric` = `<passed>/<total>`; `passed` = no failed case; each failed case is a finding (`severity` `failed`, `location` = the case's location or its suite name, `extra` = its message). For `tests`, if several jobs of the run left a summary, the one with the largest total is used (the coverage job reruns the tests). For `security`, the check's `job_name` is `<stage/job>, <UTC time of the artifact>`.
+All three read a `quench-test` report: a JSON with `summary` (`total`, `passed`, `failed`, `skipped`), `duration_ms` and `suites[].cases[]` (`name`, `status`, `message`, `location`). Headline `<passed> passed, <failed> failed, <skipped> skipped` plus the duration (`<n> ms`, `<s.s> s` or `<m>m <s>s`) when it is above zero; `metric` = `<passed>/<total>`; `passed` = no failed case; each failed case is a finding (`severity` `failed`, `location` = the case's location or its suite name, `extra` = its message). For `tests`, if several jobs of the run left a summary, the one with the largest total is used (the coverage job reruns the tests). For `security` and `bdd`, the check's `job_name` is `<stage/job>, <UTC time of the artifact>`; a BDD suite is a `suites[]` entry (a feature), each scenario a case, so a failed scenario's finding carries its feature as `location` and its failing step as `extra`.
 
-Files come from the job's checkout; see [Pipelines](pipelines.md#artifacts) for the paths conveyor looks at and the artifact names (`summary.json`, `index.html`, `security-summary.json`, `security.html`). They are downloaded from warehouse (at most 16 MiB) and need `WAREHOUSE_URL`; without it `tests` and `security` never appear. The stored HTML page of a check is served by `GET /api/v1/repos/{id}/scan/{category}/report`, sandboxed so it cannot reach the session.
+Files come from the job's checkout; see [Pipelines](pipelines.md#artifacts) for the paths conveyor looks at and the artifact names (`summary.json`, `index.html`, `security-summary.json`, `security.html`, `bdd-summary.json`, `bdd.html`). They are downloaded from warehouse (at most 16 MiB) and need `WAREHOUSE_URL`; without it `tests`, `security` and `bdd` never appear. The stored HTML page of a check is served by `GET /api/v1/repos/{id}/scan/{category}/report`, sandboxed so it cannot reach the session.
 
 ## Scanner findings
 

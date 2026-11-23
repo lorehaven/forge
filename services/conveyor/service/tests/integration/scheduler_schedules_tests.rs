@@ -370,3 +370,111 @@ async fn a_feature_branch_cannot_register_a_schedule() {
         [] as [conveyor_service::scheduler::schedules::StoredSchedule; 0]
     );
 }
+
+const TWO_CLOCKS: &str = r#"
+on = { push = ["master"], schedule = ["0 0 * * *", "0 6 * * *"], timezone = "Europe/Warsaw" }
+
+[[stage]]
+name = "build"
+when = "event != 'schedule'"
+[[stage.job]]
+name = "compile"
+steps = ["echo building"]
+
+[[stage]]
+name = "security"
+when = "event == 'schedule' && schedule == '0 0 * * *'"
+[[stage.job]]
+name = "nightly"
+steps = ["echo scanning"]
+
+[[stage]]
+name = "bdd"
+when = "event == 'schedule' && schedule == '0 6 * * *'"
+[[stage.job]]
+name = "daily"
+steps = ["echo testing"]
+"#;
+
+#[quench_test::test]
+async fn two_schedules_of_one_pipeline_each_run_only_their_own_stage() {
+    let Some((db, _guard)) = database().await else {
+        return skipped("two_schedules_of_one_pipeline_each_run_only_their_own_stage");
+    };
+    let origin = Origin::with_pipeline(TWO_CLOCKS);
+    let repo = register_repo(&db, "two-clocks", &origin.url()).await;
+    let _work = start_scheduler(&db);
+
+    let push = push_run(&db, &repo.id, "refs/heads/master", &origin.sha).await;
+    let push = settle(&db, &push).await;
+    assert_eq!(push.status, Status::Success, "{:?}", push.error);
+    assert_eq!(schedules::list(&db, &repo.id).await.unwrap().len(), 2);
+    // A push is no scheduled run: it has no schedule to name.
+    assert_eq!(
+        schedules::expression_for_run(&db, &push).await.unwrap(),
+        None
+    );
+
+    let tick = schedules::fire_due(&db, Time::now() + days(2))
+        .await
+        .unwrap();
+    assert_eq!(tick.started, 2);
+
+    let runs = queue::list_runs(&db, Some(&repo.id), 10).await.unwrap();
+    let scheduled: Vec<_> = runs
+        .iter()
+        .filter(|r| r.trigger == Trigger::Schedule)
+        .collect();
+    assert_eq!(scheduled.len(), 2);
+
+    let mut seen = Vec::new();
+    for run in scheduled {
+        let finished = settle(&db, &run.id).await;
+        assert_eq!(finished.status, Status::Success, "{:?}", finished.error);
+        let expression = schedules::expression_for_run(&db, &finished)
+            .await
+            .unwrap()
+            .expect("a scheduled run knows its schedule");
+        let jobs = queue::list_jobs(&db, &run.id).await.unwrap();
+        let ran = |name: &str| {
+            jobs.iter()
+                .any(|j| j.name == name && j.status == Status::Success)
+        };
+        match expression.as_str() {
+            "0 0 * * *" => assert!(
+                ran("nightly") && !ran("daily"),
+                "midnight ran the wrong stage"
+            ),
+            "0 6 * * *" => assert!(ran("daily") && !ran("nightly"), "6 am ran the wrong stage"),
+            other => panic!("unexpected schedule {other}"),
+        }
+        assert!(!ran("compile"), "a scheduled run must not redo the build");
+
+        // A restart has no delivery id of its own and still names the schedule it repeats.
+        let restart = queue::enqueue(
+            &db,
+            &NewRun {
+                repo_id: repo.id.clone(),
+                trigger: Trigger::Schedule,
+                git_ref: finished.git_ref.clone(),
+                sha: finished.sha.clone(),
+                message: None,
+                delivery_id: None,
+                resumed_from: Some(finished.id.clone()),
+                stages: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            schedules::expression_for_run(&db, restart.run())
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(expression.as_str())
+        );
+        seen.push(expression);
+    }
+    seen.sort();
+    assert_eq!(seen, ["0 0 * * *", "0 6 * * *"]);
+}

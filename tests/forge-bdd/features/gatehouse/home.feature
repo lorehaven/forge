@@ -16,22 +16,27 @@ Feature: Gatehouse home page
   # its feature flag - so the page proves both halves of the gating rule.
   Scenario: Enabled services are listed
     Given I am signed in to the realm
-    When I open the home page
+    When I request the dashboard
     Then response status should be 200
     And response should contain "home-card-sage"
     And response should contain "home-card-switchboard"
 
   Scenario: A service turned off by its feature flag is not listed
     Given I am signed in to the realm
-    When I open the home page
+    When I request the dashboard
     Then response status should be 200
     And response should not contain "home-card-warehouse"
 
-  Scenario: The home page is styled like the rest of the estate
+  # Each card carries the translation keys the client resolves.
+  Scenario: Every service card carries its translation keys
     Given I am signed in to the realm
-    When I open the home page
-    Then response should contain "/gatehouse/ui/assets/css/gatehouse.css"
-    And response should contain "ui_home_group_services"
+    When I request the dashboard
+    Then response should contain "ui_service_sage_title"
+    And response should contain "ui_service_sage_desc"
+
+  Scenario: The dashboard needs a session
+    When I request the dashboard
+    Then response status should be 401
 
   # The bare root and the bare base path both belong on the UI, not a 404.
   Scenario: The base path lands on the UI

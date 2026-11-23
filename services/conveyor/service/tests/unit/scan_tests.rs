@@ -1,6 +1,6 @@
 use conveyor_service::scan::{
-    CheckKind, CheckResult, parse_audit, parse_coverage, parse_lint, parse_machete, security_check,
-    strip_ansi, tests_check,
+    CheckKind, CheckResult, ScanSummary, bdd_check, parse_audit, parse_coverage, parse_lint,
+    parse_machete, security_check, strip_ansi, tests_check,
 };
 
 #[quench_test::test]
@@ -313,6 +313,41 @@ fn a_security_report_is_a_check_of_its_own_with_each_failed_stage_a_finding() {
             .unwrap()
             .contains("RUSTSEC-2026-0001")
     );
+}
+
+const BDD_REPORT: &str = r#"{
+  "summary": {"total": 3, "passed": 2, "failed": 1, "skipped": 0},
+  "duration_ms": 90000,
+  "suites": [
+    {"name": "Login", "cases": [
+      {"name": "a wrong password is refused", "status": "passed", "duration_ms": 40},
+      {"name": "a locked account stays locked", "status": "failed", "message": "expected 423, got 200"}
+    ]},
+    {"name": "Health", "cases": [{"name": "answers", "status": "passed", "duration_ms": 5}]}
+  ]
+}"#;
+
+#[quench_test::test]
+fn a_bdd_report_is_a_check_of_its_own_with_each_failed_scenario_a_finding() {
+    let check = bdd_check("daily/bdd", BDD_REPORT).expect("a report");
+
+    assert_eq!(check.kind, CheckKind::Bdd);
+    assert!(!check.passed);
+    assert_eq!(check.metric.as_deref(), Some("2/3"));
+    assert_eq!(check.findings.len(), 1);
+    assert_eq!(check.findings[0].title, "a locked account stays locked");
+    assert_eq!(check.findings[0].location.as_deref(), Some("Login"));
+    assert!(
+        check.findings[0]
+            .extra
+            .as_deref()
+            .unwrap()
+            .contains("expected 423")
+    );
+    assert_eq!(CheckKind::from_slug("bdd"), Some(CheckKind::Bdd));
+    assert_eq!(CheckKind::Bdd.slug(), "bdd");
+    assert_eq!(CheckKind::Bdd.label(), "ui_scan_bdd_title");
+    assert!(ScanSummary::KINDS.contains(&CheckKind::Bdd));
 }
 
 #[quench_test::test]

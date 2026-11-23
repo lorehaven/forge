@@ -27,6 +27,8 @@ pub enum CheckKind {
     Tests,
     /// The nightly security gate, from its own `security-summary.json` artifact (same report format).
     Security,
+    /// The daily BDD run, from its own `bdd-summary.json` artifact (same report format).
+    Bdd,
 }
 
 impl CheckKind {
@@ -53,6 +55,7 @@ impl CheckKind {
             Self::Coverage => "ui_scan_coverage_title",
             Self::Tests => "ui_scan_tests_title",
             Self::Security => "ui_scan_security_title",
+            Self::Bdd => "ui_scan_bdd_title",
         }
     }
 
@@ -66,6 +69,7 @@ impl CheckKind {
             Self::Coverage => "coverage",
             Self::Tests => "tests",
             Self::Security => "security",
+            Self::Bdd => "bdd",
         }
     }
 
@@ -78,6 +82,7 @@ impl CheckKind {
             "coverage" => Some(Self::Coverage),
             "tests" => Some(Self::Tests),
             "security" => Some(Self::Security),
+            "bdd" => Some(Self::Bdd),
             _ => None,
         }
     }
@@ -132,19 +137,22 @@ pub struct ScanSummary {
     pub tests: Option<CheckResult>,
     /// From the most recent run that produced a security report, which is not necessarily `run`.
     pub security: Option<CheckResult>,
+    /// From the most recent run that produced a BDD report, likewise.
+    pub bdd: Option<CheckResult>,
     /// The run each present check came from.
     pub origins: Vec<(CheckKind, Run)>,
 }
 
 impl ScanSummary {
     /// Every check, in the order a page lists them.
-    pub const KINDS: [CheckKind; 6] = [
+    pub const KINDS: [CheckKind; 7] = [
         CheckKind::Lint,
         CheckKind::Machete,
         CheckKind::Audit,
         CheckKind::Coverage,
         CheckKind::Tests,
         CheckKind::Security,
+        CheckKind::Bdd,
     ];
 
     /// The run that produced `kind`'s result.
@@ -164,6 +172,7 @@ impl ScanSummary {
             CheckKind::Coverage => self.coverage = Some(result),
             CheckKind::Tests => self.tests = Some(result),
             CheckKind::Security => self.security = Some(result),
+            CheckKind::Bdd => self.bdd = Some(result),
         }
     }
 
@@ -175,6 +184,7 @@ impl ScanSummary {
             && self.coverage.is_none()
             && self.tests.is_none()
             && self.security.is_none()
+            && self.bdd.is_none()
     }
 
     #[must_use]
@@ -186,6 +196,7 @@ impl ScanSummary {
             CheckKind::Coverage => self.coverage.as_ref(),
             CheckKind::Tests => self.tests.as_ref(),
             CheckKind::Security => self.security.as_ref(),
+            CheckKind::Bdd => self.bdd.as_ref(),
         }
     }
 }
@@ -242,7 +253,7 @@ pub async fn latest_with(
         }
     }
 
-    // Tests and security leave artifacts, so they are found by name across all runs, however many
+    // Tests, security and BDD leave artifacts, so they are found by name across all runs, however many
     // newer runs there have been since.
     if let Some(store) = store {
         if let Some((result, run)) = latest_tests(db, store, repo_id, &runs).await {
@@ -252,6 +263,10 @@ pub async fn latest_with(
         if let Some((result, run)) = latest_security(db, store, repo_id, &runs).await {
             summary.origins.push((CheckKind::Security, run));
             summary.security = Some(result);
+        }
+        if let Some((result, run)) = latest_bdd(db, store, repo_id, &runs).await {
+            summary.origins.push((CheckKind::Bdd, run));
+            summary.bdd = Some(result);
         }
     }
 
@@ -378,7 +393,8 @@ async fn job_tests(db: &Db, store: &WarehouseStore, job: &Job) -> Option<CheckRe
 }
 
 pub use crate::artifacts::{
-    SECURITY_REPORT_PAGE, SECURITY_SUMMARY, TESTS_REPORT_PAGE, TESTS_SUMMARY,
+    BDD_REPORT_PAGE, BDD_SUMMARY, SECURITY_REPORT_PAGE, SECURITY_SUMMARY, TESTS_REPORT_PAGE,
+    TESTS_SUMMARY,
 };
 
 /// A `quench-test` report (`summary.json`) as a check: the totals as the headline, each failed test a finding.
@@ -392,6 +408,13 @@ pub fn tests_check(job_name: &str, json: &str) -> Option<CheckResult> {
 #[must_use]
 pub fn security_check(job_name: &str, json: &str) -> Option<CheckResult> {
     report_check(CheckKind::Security, job_name, json)
+}
+
+/// The BDD suite's report, which is a `quench-test` report: every feature a suite, every scenario a case, every
+/// failed scenario a finding with the failing step as its message.
+#[must_use]
+pub fn bdd_check(job_name: &str, json: &str) -> Option<CheckResult> {
+    report_check(CheckKind::Bdd, job_name, json)
 }
 
 /// The newest scan findings any run of the repository left, with the run they came from.
@@ -424,7 +447,61 @@ async fn latest_security(
     repo_id: &str,
     recent: &[Run],
 ) -> Option<(CheckResult, Run)> {
-    let artifact = queue::latest_artifact_named(db, repo_id, SECURITY_SUMMARY)
+    latest_report(
+        db,
+        store,
+        repo_id,
+        recent,
+        &KeptReport {
+            kind: CheckKind::Security,
+            summary: SECURITY_SUMMARY,
+            page: SECURITY_REPORT_PAGE,
+            parse: security_check,
+        },
+    )
+    .await
+}
+
+/// The newest BDD report any run of the repository left, as a check.
+async fn latest_bdd(
+    db: &Db,
+    store: &WarehouseStore,
+    repo_id: &str,
+    recent: &[Run],
+) -> Option<(CheckResult, Run)> {
+    latest_report(
+        db,
+        store,
+        repo_id,
+        recent,
+        &KeptReport {
+            kind: CheckKind::Bdd,
+            summary: BDD_SUMMARY,
+            page: BDD_REPORT_PAGE,
+            parse: bdd_check,
+        },
+    )
+    .await
+}
+
+/// A report a job keeps under a name of its own: which check it is, the artifact names, and how to read it.
+struct KeptReport {
+    kind: CheckKind,
+    summary: &'static str,
+    page: &'static str,
+    parse: fn(&str, &str) -> Option<CheckResult>,
+}
+
+/// The newest artifact called `report.summary` in any run of the repository, read as a check.
+async fn latest_report(
+    db: &Db,
+    store: &WarehouseStore,
+    repo_id: &str,
+    recent: &[Run],
+    report: &KeptReport,
+) -> Option<(CheckResult, Run)> {
+    let slug = report.kind.slug();
+    let artifact = queue::latest_artifact_named(db, repo_id, report.summary)
         .await
         .ok()??;
 
@@ -439,13 +516,13 @@ async fn latest_security(
             Ok(bytes) => bytes,
             Err(error) => {
                 quench_log::warn!(
-                    "could not read the security report of run {}: {error}",
+                    "could not read the {slug} report of run {}: {error}",
                     artifact.run_id
                 );
                 return None;
             }
         };
-        let result = security_check("", &String::from_utf8_lossy(&bytes))?;
+        let result = (report.parse)("", &String::from_utf8_lossy(&bytes))?;
         if let Ok(mut cache) = report_cache().lock() {
             if cache.len() >= 64 {
                 cache.clear();
@@ -459,7 +536,7 @@ async fn latest_security(
         .await
         .ok()
         .and_then(|jobs| jobs.into_iter().find(|job| job.id == artifact.job_id))
-        .map_or_else(|| "security".to_string(), |job| job.qualified_name());
+        .map_or_else(|| slug.to_string(), |job| job.qualified_name());
     result.job_name = format!(
         "{job_name}, {}",
         artifact.created_at.format("%Y-%m-%d %H:%M UTC")
@@ -468,7 +545,7 @@ async fn latest_security(
         .await
         .ok()?
         .into_iter()
-        .find(|a| a.name == SECURITY_REPORT_PAGE)
+        .find(|a| a.name == report.page)
         .map(|a| a.uri);
     let run = run_for(db, recent, &artifact.run_id).await?;
     Some((result, run))
@@ -607,7 +684,7 @@ async fn collect_job_checks(
             // A job may run several llvm-cov invocations; last one wins, not merged.
             CheckKind::Coverage => summary.coverage = Some(result),
             // Never matched from a step: these come from the job's artifacts (`job_tests`, `latest_security`).
-            CheckKind::Tests | CheckKind::Security => {}
+            CheckKind::Tests | CheckKind::Security | CheckKind::Bdd => {}
         }
     }
 
@@ -636,7 +713,7 @@ impl CheckResult {
             }
             CheckKind::Coverage => parse_coverage(&borrowed)
                 .map(|(headline, findings, metric)| (headline, findings, Some(metric))),
-            CheckKind::Tests | CheckKind::Security => None,
+            CheckKind::Tests | CheckKind::Security | CheckKind::Bdd => None,
         };
 
         if let Some((headline, mut findings, metric)) = parsed {

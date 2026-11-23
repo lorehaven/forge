@@ -149,6 +149,20 @@ fn variables_parse_back_from_what_they_render() {
     }
 }
 
+#[quench_test::test]
+fn the_schedule_variable_is_the_cron_entry_that_fired_and_empty_otherwise() {
+    let morning = on_branch("master").with_schedule("0 6 * * *");
+    assert!(holds("schedule == '0 6 * * *'", &morning));
+    assert!(!holds("schedule == '0 0 * * *'", &morning));
+    assert!(holds(
+        "event == 'push' && schedule != '0 0 * * *'",
+        &morning
+    ));
+    // Anything that no schedule started has none.
+    assert!(holds("schedule == ''", &on_branch("master")));
+    assert!(!holds("schedule == '0 6 * * *'", &on_branch("master")));
+}
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------

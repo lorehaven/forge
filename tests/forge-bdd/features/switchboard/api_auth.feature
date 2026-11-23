@@ -23,6 +23,7 @@ Feature: API authentication
       | /api/v1/vllm/list         |
       | /api/v1/vllm/instances    |
       | /api/v1/models/running    |
+      | /api/v1/vllm/capabilities |
 
   Scenario: Listing models needs a token
     When an unauthenticated POST request is sent to "/api/v1/models/list"

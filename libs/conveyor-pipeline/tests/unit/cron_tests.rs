@@ -293,9 +293,15 @@ fn when_conditions_can_tell_a_scheduled_run_from_the_rest() {
 // ---------------------------------------------------------------------------
 
 fn stages_that_run(source: &str, event: &str) -> Vec<String> {
+    stages_that_run_on(source, event, "")
+}
+
+/// The stages a run of `event` plans when the schedule entry `schedule` started it (empty: none did).
+fn stages_that_run_on(source: &str, event: &str, schedule: &str) -> Vec<String> {
     use conveyor_pipeline::{EvalContext, plan};
     let spec = parse(source).expect("the repository's own pipeline must parse");
-    plan(&spec, &EvalContext::new(event, "refs/heads/master", "abc"))
+    let context = EvalContext::new(event, "refs/heads/master", "abc").with_schedule(schedule);
+    plan(&spec, &context)
         .into_iter()
         .filter(|stage| stage.decision.will_run())
         .map(|stage| spec.stages[stage.index].name.clone())
@@ -331,7 +337,7 @@ steps = [{ run = "true" }]
 
 fn assert_nightly_is_only_the_security_stage(name: &str, source: &str, normal: &[&str]) {
     assert_eq!(
-        stages_that_run(source, "schedule"),
+        stages_that_run_on(source, "schedule", "0 0 * * *"),
         ["security"],
         "{name}: nightly"
     );
@@ -349,17 +355,27 @@ fn the_scheduled_run_is_the_security_stage_and_nothing_else() {
     assert_nightly_is_only_the_security_stage("inline", NIGHTLY_SPLIT, &["check", "build"]);
 }
 
-/// Any real pipeline that declares a schedule must follow that shape, so a stage added later cannot
-/// quietly start running every night. A pipeline without a schedule has nothing to check.
+/// Any real pipeline that declares a schedule must follow that shape: each entry starts exactly one stage of its
+/// own and none of the ones a push runs, so a stage added later cannot quietly start running every night. A
+/// pipeline without a schedule has nothing to check.
 #[quench_test::test]
-fn a_repository_pipeline_that_declares_a_schedule_runs_only_its_security_stage_on_it() {
+fn a_repository_pipeline_that_declares_a_schedule_runs_one_stage_of_its_own_on_each_entry() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    // `(name, file, the stage each entry starts, in the file's order)`.
     let pipelines = [
-        ("forge", root.join("../../.conveyor.toml")),
+        (
+            "forge",
+            root.join("../../.conveyor.toml"),
+            &["security", "bdd"][..],
+        ),
         // A sibling checkout; absent when forge is built on its own.
-        ("quench", root.join("../../../quench/.conveyor.toml")),
+        (
+            "quench",
+            root.join("../../../quench/.conveyor.toml"),
+            &["security"][..],
+        ),
     ];
-    for (name, path) in pipelines {
+    for (name, path, scheduled) in pipelines {
         let Ok(source) = std::fs::read_to_string(&path) else {
             continue;
         };
@@ -368,14 +384,45 @@ fn a_repository_pipeline_that_declares_a_schedule_runs_only_its_security_stage_o
             continue;
         }
 
-        assert_nightly_is_only_the_security_stage(name, &source, &["check", "build", "test"]);
-        assert_eq!(spec.schedules.len(), 1, "{name}");
-        assert_eq!(spec.schedules[0].timezone, "Europe/Warsaw");
-        // And it is a midnight, whatever the season.
-        for when in ["2026-07-01T10:00:00Z", "2026-12-01T10:00:00Z"] {
-            let fires = spec.schedules[0].next_after(at(when)).unwrap();
-            let local = Zone::named("Europe/Warsaw").unwrap().civil_at(fires);
-            assert_eq!((local.hour, local.minute), (0, 0), "{name} {when}");
+        let normal = ["check", "build", "test"];
+        for event in ["push", "pull_request", "manual"] {
+            assert_eq!(
+                stages_that_run(&source, event),
+                normal,
+                "{name}: {event} must be what it always was, without a scheduled stage"
+            );
+        }
+        // With more than one clock, each stage names its own: a scheduled run that no entry started
+        // (its schedule withdrawn since) runs nothing at all rather than everything.
+        if spec.schedules.len() > 1 {
+            assert_eq!(
+                stages_that_run_on(&source, "schedule", ""),
+                Vec::<String>::new(),
+                "{name}: a schedule run with no clock"
+            );
+        }
+        assert_eq!(spec.schedules.len(), scheduled.len(), "{name}");
+        for (entry, stage) in spec.schedules.iter().zip(scheduled) {
+            assert_eq!(
+                stages_that_run_on(&source, "schedule", &entry.expression),
+                [*stage],
+                "{name}: `{}` starts one stage, its own",
+                entry.expression
+            );
+            assert_eq!(entry.timezone, "Europe/Warsaw");
+            // And it is on the hour its entry says, whatever the season.
+            let hour: u32 = entry
+                .expression
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .parse()
+                .unwrap();
+            for when in ["2026-07-01T10:00:00Z", "2026-12-01T10:00:00Z"] {
+                let fires = entry.next_after(at(when)).unwrap();
+                let local = Zone::named("Europe/Warsaw").unwrap().civil_at(fires);
+                assert_eq!((local.hour, local.minute), (hour, 0), "{name} {when}");
+            }
         }
     }
 }

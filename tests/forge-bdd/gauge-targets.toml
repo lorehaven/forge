@@ -1,0 +1,13 @@
+# The hosts the BDD run's Gauge watches: one that answers like a node_exporter (`mocks::start_node_exporter`) and one
+# that is never there.
+interval_secs = 1
+
+[[target]]
+name = "bdd-host"
+kind = "node"
+url = "http://127.0.0.1:19100"
+
+[[target]]
+name = "bdd-missing"
+kind = "node"
+url = "http://127.0.0.1:19101"

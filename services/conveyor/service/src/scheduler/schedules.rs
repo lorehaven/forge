@@ -172,6 +172,56 @@ pub fn delivery_id(schedule_id: &str, due_at: Time) -> String {
     format!("schedule:{schedule_id}:{}", due_at.timestamp())
 }
 
+/// The `on.schedule` entry that started `run`, so a stage can ask which clock it is on (`schedule == '0 6 * * *'`).
+///
+/// A run's `delivery_id` names the schedule row it came from. A restart has none of its own, so the chain
+/// of `resumed_from` is followed to the firing it repeats. `None` for any run that no schedule started, and
+/// for one whose schedule has been withdrawn since (the entry is then gone from the file as well).
+pub async fn expression_for_run(
+    db: &Db,
+    run: &crate::domain::Run,
+) -> Result<Option<String>, QueueError> {
+    // A restart of a restart of a firing: a handful of hops at most; the cap only guards a corrupt cycle.
+    let mut current = run.clone();
+    for _ in 0..16 {
+        if let Some(id) = current
+            .delivery_id
+            .as_deref()
+            .and_then(schedule_of_delivery)
+        {
+            return expression_of(db, id).await;
+        }
+        let Some(source) = current.resumed_from.as_deref() else {
+            return Ok(None);
+        };
+        let Some(next) = crate::scheduler::queue::read_run(db, source).await? else {
+            return Ok(None);
+        };
+        current = next;
+    }
+    Ok(None)
+}
+
+/// The schedule id inside a [`delivery_id`]: `schedule:<id>:<due instant>`.
+fn schedule_of_delivery(delivery: &str) -> Option<&str> {
+    let rest = delivery.strip_prefix("schedule:")?;
+    let (id, _due) = rest.rsplit_once(':')?;
+    (!id.is_empty()).then_some(id)
+}
+
+async fn expression_of(db: &Db, schedule_id: &str) -> Result<Option<String>, QueueError> {
+    let pool = pool(db)?;
+    let sql = format!(
+        "SELECT expression FROM {}.schedules WHERE id = $1",
+        schema()
+    );
+    let row = pool
+        .query_opt(&sql, &[&schedule_id as &dyn quench_pg::ToSql])
+        .await?;
+    row.map(|row| row.get::<String, _>("expression").map_err(QueueError::from))
+        .transpose()
+}
+
 /// What one pass did, for logs and tests.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Tick {

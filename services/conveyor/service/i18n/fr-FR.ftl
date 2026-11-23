@@ -78,6 +78,7 @@ ui_scan_audit_title = Vulnérabilités
 ui_scan_coverage_title = Couverture de tests
 ui_scan_tests_title = Tests
 ui_scan_security_title = Sécurité
+ui_scan_bdd_title = BDD
 ui_meta_stages = Étapes
 ui_launch_link = Lancer avec des paramètres
 ui_launch_subtitle = Lance une exécution manuelle limitée aux étapes cochées. Une étape cochée s'exécute même si sa propre condition l'exclurait d'une exécution ordinaire.

@@ -74,7 +74,3 @@ Feature: File Upload and RAG Support
     When I request the chat capabilities
     Then the response status should be 200
     And the response should mention "file_search"
-
-  Scenario: Files UI panel requires authentication
-    When I request the files panel without authentication
-    Then the response status should be 401

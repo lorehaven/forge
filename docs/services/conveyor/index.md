@@ -46,7 +46,7 @@ The pipeline language is the separate library [conveyor-pipeline](../../libs/con
 | [Runs and the scheduler](scheduler.md) | The queue, workers, the janitor, run/job/step status machines, cancellation, restarts, the schedule clock. |
 | [Executors](executors.md) | `native`, `kubernetes` and `mock`; job services; artifact export from pods. |
 | [Events](events.md) | Log streaming over SSE and the raw view. |
-| [Scans](scans.md) | The six checks, where each comes from, the stored reports and the scanner findings. |
+| [Scans](scans.md) | The seven checks, where each comes from, the stored reports and the scanner findings. |
 | [Permissions](permissions.md) | Grants, the project tree, what each route needs. |
 | [Configuration](configuration.md) | Every environment variable. |
 | [Data](data.md) | Tables, constraints, migrations. |

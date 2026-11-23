@@ -61,6 +61,10 @@ async fn main() {
     if selected.contains(&Target::Sage) {
         mocks::start().await;
     }
+    // Gauge watches a host; this one answers like a node_exporter.
+    if selected.contains(&Target::Gauge) {
+        mocks::start_node_exporter().await;
+    }
 
     let fixture = services::Fixture::new(manifest_dir);
     let mut running = Vec::new();
@@ -126,6 +130,7 @@ async fn main() {
                 Target::Workbench => format!("{}/health", probe.workbench_url),
                 Target::Daybook => format!("{}/health", probe.daybook_url),
                 Target::Mailroom => format!("{}/health/live", probe.mailroom_url),
+                Target::Gauge => format!("{}/health", probe.gauge_url),
             };
             (*target, url)
         })
@@ -142,6 +147,9 @@ async fn main() {
 
     let features_path = std::path::Path::new(manifest_dir).join("features");
 
+    // Scenarios tagged `@postgres` need the database the services were given (`FORGE_BDD_DATABASE_URL`).
+    let database = services::database_url().is_some() || opts.no_spawn;
+
     // One pass per service, so the closing summary can report each separately.
     let outcome = quench_core::future::catch_unwind(AssertUnwindSafe(async {
         let mut results = Vec::new();
@@ -155,6 +163,8 @@ async fn main() {
                 .filter(move |feature, _rule, scenario| {
                     feature.name != SHUTDOWN_FEATURE
                         && matches_selection(&[target], feature, Some(scenario))
+                        && (database || !has_tag(feature, scenario, "postgres"))
+                        && (!database || !has_tag(feature, scenario, "memory"))
                 })
                 .run(features_path.clone())
                 .await;
@@ -176,6 +186,15 @@ async fn main() {
         results
     }))
     .await;
+
+    // For poking at the services by hand after a run (`curl`, a browser): keeps them up this many seconds.
+    if let Some(hold) = std::env::var("FORGE_BDD_HOLD_SECS")
+        .ok()
+        .and_then(|seconds| seconds.parse::<u64>().ok())
+    {
+        println!("Holding the services for {hold}s (FORGE_BDD_HOLD_SECS)...");
+        tokio::time::sleep(std::time::Duration::from_secs(hold)).await;
+    }
 
     for service in running {
         println!("Stopping {}...", service.target.tag());
@@ -313,6 +332,16 @@ fn selected_targets(explicit: &[String]) -> Vec<Target> {
 
 /// Keeps scenarios whose service was not started out of the run, so a targeted
 /// invocation does not fail against services that are not up.
+/// Whether the feature or the scenario carries `@name`. `@postgres` scenarios need the services to run on a real
+/// database; `@memory` ones describe what the in-memory store does (a `503` where a database would answer) and run only without.
+fn has_tag(feature: &Feature, scenario: &Scenario, name: &str) -> bool {
+    feature
+        .tags
+        .iter()
+        .chain(scenario.tags.iter())
+        .any(|tag| tag.trim_start_matches('@') == name)
+}
+
 fn matches_selection(selected: &[Target], feature: &Feature, scenario: Option<&Scenario>) -> bool {
     let tags = feature
         .tags

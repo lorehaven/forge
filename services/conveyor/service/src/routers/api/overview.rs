@@ -382,7 +382,7 @@ pub struct ReportQuery {
     pub download: Option<String>,
 }
 
-/// The stored report page of a check that keeps one (tests, security).
+/// The stored report page of a check that keeps one (tests, security, bdd).
 ///
 /// Served by conveyor: warehouse hands files out as
 /// downloads, and it needs the reader to hold a warehouse grant. Sandboxed (`allow-scripts` only, no origin of its own) so a
@@ -395,7 +395,8 @@ pub async fn check_report(
     Inject(db): Inject<Db>,
     Inject(config): Inject<JwtConfig>,
 ) -> Response {
-    let Some(kind @ (CheckKind::Tests | CheckKind::Security)) = CheckKind::from_slug(&category)
+    let Some(kind @ (CheckKind::Tests | CheckKind::Security | CheckKind::Bdd)) =
+        CheckKind::from_slug(&category)
     else {
         return json_error(StatusCode::NOT_FOUND, "no such report");
     };

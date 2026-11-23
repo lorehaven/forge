@@ -43,6 +43,7 @@ Feature: Workbench's API
 
   # The suite runs on an in-memory store on purpose. Workbench says so rather
   # than looking healthy and losing every project and issue on restart.
+  @memory
   Scenario: The domain layer refuses an in-memory database
     Given I am authenticated against workbench
     When an authenticated GET request is sent to "/api/v1/projects"

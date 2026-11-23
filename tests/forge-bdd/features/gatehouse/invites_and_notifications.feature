@@ -70,7 +70,7 @@ Feature: Invitations, username rules and service notifications
     Then response status should be 202
     When I follow the unsubscribe link emailed to "bdd-unsub@example.com"
     Then response status should be 200
-    And response should contain "ui_unsubscribe_done"
+    And response should contain "\"done\":true"
     When a service notifies "bdd-unsub" with "conveyor.run.failed"
     Then response status should be 200
     And response should contain "not_subscribed"

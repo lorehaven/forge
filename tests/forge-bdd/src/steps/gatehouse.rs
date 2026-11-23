@@ -899,6 +899,24 @@ async fn open_page(world: &mut ForgeWorld, path: &str) {
     world.record_response(res).await;
 }
 
+/// What the client's dashboard asks for, as JSON.
+#[when("I request the dashboard")]
+async fn request_dashboard(world: &mut ForgeWorld) {
+    open_page(world, "/api/v1/ui/dashboard").await;
+}
+
+/// What the client's user list asks for, as JSON.
+#[when("I request the user list")]
+async fn request_user_list(world: &mut ForgeWorld) {
+    open_page(world, "/api/v1/ui/admin/users").await;
+}
+
+/// What the client's user editor asks for, as JSON.
+#[when(expr = "I request the editor data for {string}")]
+async fn request_editor_data(world: &mut ForgeWorld, username: String) {
+    open_page(world, &format!("/api/v1/ui/admin/users/{username}")).await;
+}
+
 #[when("I open the user administration page")]
 async fn open_admin_users(world: &mut ForgeWorld) {
     open_page(world, "/ui/admin/users").await;
@@ -1007,10 +1025,10 @@ fn redirect_reports(world: &mut ForgeWorld, marker: String) {
 )]
 fn offers_control(world: &mut ForgeWorld, service: String) {
     let body = world.last_body.clone().unwrap_or_default();
-    let field = format!("name=\"perm_{service}_");
+    let field = format!("\"name\":\"{service}\"");
     assert!(
         body.contains(&field),
-        "no access control for '{service}' on the page"
+        "no access control for '{service}' in the editor data"
     );
 }
 
@@ -1022,11 +1040,22 @@ fn offers_control(world: &mut ForgeWorld, service: String) {
 // is what lets these steps read it back the same way a developer would.
 // ---------------------------------------------------------------------------
 
+/// A client address no earlier request used. Gatehouse limits registrations, resends and resets per client
+/// (20 an hour) as well as per account and per address; without this every scenario shares the one bucket of
+/// a harness that sends no address, and a full run of the suite uses it up. The per-account and per-address
+/// limits, which are what the scenarios exercise, are untouched.
+fn fresh_client_ip() -> String {
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("10.{}.{}.{}", (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff)
+}
+
 #[when(expr = "I register as {string} with password {string} and email {string}")]
 async fn register(world: &mut ForgeWorld, username: String, password: String, email: String) {
     let url = format!("{}/ui/register", world.gatehouse_url);
     let res = no_redirect_client()
         .post(&url)
+        .header("x-real-ip", fresh_client_ip())
         .form(&[
             ("username", username.as_str()),
             ("password", password.as_str()),
@@ -1058,6 +1087,7 @@ async fn request_new_verification_email(world: &mut ForgeWorld, username: String
     let url = format!("{}/ui/resend-verification", world.gatehouse_url);
     let res = no_redirect_client()
         .post(&url)
+        .header("x-real-ip", fresh_client_ip())
         .form(&[("username", username.as_str())])
         .send()
         .await
@@ -1070,6 +1100,7 @@ async fn request_password_reset(world: &mut ForgeWorld, username: String) {
     let url = format!("{}/ui/forgot-password", world.gatehouse_url);
     let res = no_redirect_client()
         .post(&url)
+        .header("x-real-ip", fresh_client_ip())
         .form(&[("username", username.as_str())])
         .send()
         .await
@@ -1447,51 +1478,43 @@ fn totp_code(secret: &str) -> String {
         .code_now()
 }
 
-/// Pulls a form field's `value="..."` out of rendered HTML - good enough for
-/// the one hidden `secret`/`pending` field these pages carry, without a real
-/// HTML parser. Scans the whole `<input ...>` tag containing `name="field"`
-/// rather than assuming `value` comes right after `name`: `quench_web` does not
-/// guarantee attribute order, and it is not always `name` then `value`.
-fn extract_form_value(body: &str, field: &str) -> Option<String> {
-    let name_pos = body.find(&format!("name=\"{field}\""))?;
-    let tag_start = body[..name_pos].rfind('<')?;
-    let tag_end = name_pos + body[name_pos..].find('>')?;
-    let tag = &body[tag_start..tag_end];
-
-    let marker = "value=\"";
-    let start = tag.find(marker)? + marker.len();
-    let rest = &tag[start..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
-}
-
 /// Enrolls the signed-in user (see `Given I am signed in to the realm as`):
-/// reads the not-yet-persisted secret off the enroll page, computes one valid
-/// code for it, and submits that - the same "prove you saved it" round trip
-/// `/ui/account/mfa/enroll`'s own page expects.
+/// reads the not-yet-persisted secret from `GET /api/v1/ui/mfa-enroll`, computes one valid
+/// code for it, and submits that - the same "prove you saved it" round trip the enroll page makes.
 #[given("I enroll two-factor authentication")]
 #[when("I enroll two-factor authentication")]
 async fn enroll_mfa(world: &mut ForgeWorld) {
-    let url = format!("{}/ui/account/mfa/enroll", world.gatehouse_url);
-    let mut request = no_redirect_client().get(&url);
-    if let Some(cookie) = &world.session_cookie {
-        request = request.header(
-            quench_client::transport::header::COOKIE,
-            format!("{SESSION_COOKIE}={cookie}"),
-        );
-    }
-    let res = request.send().await.expect("enroll page request failed");
-    let body = res.text().await.expect("enroll page body");
-    let secret = extract_form_value(&body, "secret").expect("no MFA secret on the enroll page");
+    let url = format!("{}/api/v1/ui/mfa-enroll", world.gatehouse_url);
+    let cookie = world
+        .session_cookie
+        .clone()
+        .expect("not signed in: enrolling needs a realm session");
+    let cookie = format!("{SESSION_COOKIE}={cookie}");
+    let res = no_redirect_client()
+        .get(&url)
+        .header(quench_client::transport::header::COOKIE, cookie.clone())
+        .send()
+        .await
+        .expect("enroll request failed");
+    let body = res.text().await.expect("enroll body");
+    let offered: quench_serde::Value = quench_serde::json::from_str(&body)
+        .unwrap_or_else(|e| panic!("enroll answer {body:?}: {e}"));
+    let secret = offered
+        .get("secret")
+        .and_then(quench_serde::Value::as_str)
+        .expect("no MFA secret in the enroll answer")
+        .to_string();
     world.mfa_secret = Some(secret.clone());
 
     let code = totp_code(&secret);
-    post_form(
-        world,
-        "/ui/account/mfa/enroll",
-        &[("secret", secret.as_str()), ("code", code.as_str())],
-    )
-    .await;
+    let res = no_redirect_client()
+        .post(format!("{}/api/v1/ui/mfa-enroll", world.gatehouse_url))
+        .header(quench_client::transport::header::COOKIE, cookie)
+        .json(&json!({ "secret": secret, "code": code }))
+        .send()
+        .await
+        .expect("enroll submission failed");
+    world.record_response(res).await;
 }
 
 /// The `pending` token `login_submit` redirected to `/ui/login/mfa` with,

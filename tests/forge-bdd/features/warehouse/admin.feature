@@ -22,6 +22,9 @@ Feature: Admin garbage collection permission enforcement
     When I run docker garbage collection
     Then response status should be 403
 
+  # @serial: a crates collection removes what other scenarios of this process are in the middle of publishing and
+  # yanking, so it runs alone.
+  @serial
   Scenario: A write grant can run crates GC
     Given I hold a token scoped "user warehouse:write"
     When I run crates garbage collection

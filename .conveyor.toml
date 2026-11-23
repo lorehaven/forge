@@ -1,7 +1,8 @@
-# Every push to master, every pull request, and - at midnight Warsaw time, through summer and winter time
-# alike - the nightly security run. The scheduled run is the `security` stage alone: every other stage opts
-# out with `event != 'schedule'`, so pushes and pull requests are exactly what they were.
-on = { push = ["master"], pull_request = ["*"], schedule = ["0 0 * * *"], timezone = "Europe/Warsaw" }
+# Every push to master, every pull request, and two clocks, in Warsaw time through summer and winter time alike:
+# midnight is the nightly security run, 6 am the daily BDD run. Each scheduled run is one stage alone: the stage
+# names its own clock (`schedule == '<the entry>'`), and every other stage opts out with `event != 'schedule'`, so
+# pushes and pull requests are exactly what they were. Needs a conveyor that knows the `schedule` variable.
+on = { push = ["master"], pull_request = ["*"], schedule = ["0 0 * * *", "0 6 * * *"], timezone = "Europe/Warsaw" }
 
 # ---------------------------------------------------------------- check
 [[stage]]
@@ -177,7 +178,7 @@ steps = [
 # unreviewed one fails the night until it is added there (or protected).
 [[stage]]
 name = "security"
-when = "event == 'schedule'"
+when = "event == 'schedule' && schedule == '0 0 * * *'"
 
 [[stage.job]]
 name    = "nightly"
@@ -190,3 +191,39 @@ steps = [
 ]
 # Every finding, not only the failing ones. Kept when the job is green; a red run's findings are in the report.
 artifacts = ["target/security-findings.json"]
+
+# ---------------------------------------------------------------- bdd (daily)
+# Started by the 6 am clock (`on.schedule`), never by a push. The whole `forge-bdd` suite: every service's
+# scenarios against real HTTP, the services built and started by the runner itself (as `foreman test` does), each
+# on an in-memory store (or the Postgres below) and its own test realm, on fixed ports inside this job's pod. No namespace is made for it
+# on purpose: the pod is already throwaway and shares nothing with the estate, so a failing run cannot leave
+# anything behind and no run can touch live data. (A stack deployed into its own namespace is a later step.)
+#
+# Mailroom needs Postgres, and daybook and workbench run on it too (their `@postgres` scenarios: what a database keeps and
+# who may see it); the sidecar below is that database. The
+# runner's per-suite reports go to target/bdd, which conveyor keeps whatever the outcome (`bdd-summary.json`,
+# `bdd.html`) and shows as the BDD card on the repo's scan page, beside Tests and Security without replacing either.
+[[stage]]
+name = "bdd"
+when = "event == 'schedule' && schedule == '0 6 * * *'"
+
+[[stage.job]]
+name    = "daily"
+image   = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL"]
+# Seven services build from cold before the first scenario runs.
+timeout = 7200
+env     = { RUST_BACKTRACE = "1", MAILROOM_BDD_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres", FORGE_BDD_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/postgres" }
+steps   = [
+  # The modules whose services run on this database (`FORGE_BDD_DATABASE_URL`): the scenarios tagged `@postgres` then
+  # run too, and the in-memory ones that describe what a store without a database does (`@memory`) stand down.
+  { run = "cargo run -q -p foundry -- apply --catalog services/foundry/service/migrations --database-url postgres://postgres:postgres@127.0.0.1:5432/postgres --install daybook --install workbench" },
+  { run = "export QUENCH_TEST_REPORT_DIR=$PWD/target/bdd; cargo run -p forge-bdd" },
+]
+
+# 127.0.0.1, not `localhost`, and a check over TCP: see the coverage job's database.
+[[stage.job.service]]
+name  = "postgres"
+image = "pgvector/pgvector:pg18"
+env   = { POSTGRES_PASSWORD = "postgres" }
+ready = "pg_isready -h 127.0.0.1 -U postgres"

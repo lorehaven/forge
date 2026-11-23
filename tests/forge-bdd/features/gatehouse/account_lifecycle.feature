@@ -57,8 +57,8 @@ Feature: Account lifecycle and multi-factor authentication
     And a user "bdd-lifecycle-mfa" with password "secret" and no permissions
     And I am signed in to the realm as "bdd-lifecycle-mfa" with password "secret"
     When I enroll two-factor authentication
-    Then response should be a redirect
-    And the redirect location should contain "ok=mfa_enabled"
+    Then response status should be 200
+    And response should contain "\"done\":true"
     When I submit the login form with username "bdd-lifecycle-mfa" and password "secret"
     Then response should be a redirect
     And the redirect location should contain "/login/mfa"

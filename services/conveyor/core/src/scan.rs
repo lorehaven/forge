@@ -3,13 +3,14 @@
 use crate::model::{CheckChip, ScanFinding};
 
 /// The checks in the order a page lists them: `(slug, title key, chip letter)`.
-pub const CHECKS: [(&str, &str, &str); 6] = [
+pub const CHECKS: [(&str, &str, &str); 7] = [
     ("lint", "ui_scan_lint_title", "L"),
     ("machete", "ui_scan_machete_title", "M"),
     ("audit", "ui_scan_audit_title", "A"),
     ("coverage", "ui_scan_coverage_title", "C"),
     ("tests", "ui_scan_tests_title", "T"),
     ("security", "ui_scan_security_title", "S"),
+    ("bdd", "ui_scan_bdd_title", "B"),
 ];
 
 /// The i18n key of a check's title.
@@ -21,7 +22,7 @@ pub fn title_key(kind: &str) -> Option<&'static str> {
 /// Only these keep a stored report page.
 #[must_use]
 pub fn has_report_page(kind: &str) -> bool {
-    matches!(kind, "tests" | "security")
+    matches!(kind, "tests" | "security" | "bdd")
 }
 
 /// A chip as it is drawn.

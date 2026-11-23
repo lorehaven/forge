@@ -22,6 +22,7 @@ pub enum Target {
     Workbench,
     Daybook,
     Mailroom,
+    Gauge,
 }
 
 impl Target {
@@ -36,10 +37,11 @@ impl Target {
             Self::Workbench => "workbench",
             Self::Daybook => "daybook",
             Self::Mailroom => "mailroom",
+            Self::Gauge => "gauge",
         }
     }
 
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Sage,
         Self::Switchboard,
         Self::Warehouse,
@@ -48,6 +50,7 @@ impl Target {
         Self::Workbench,
         Self::Daybook,
         Self::Mailroom,
+        Self::Gauge,
     ];
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -78,6 +81,8 @@ pub struct ForgeWorld {
     pub workbench_url: String,
     pub daybook_base_url: String,
     pub daybook_url: String,
+    pub gauge_base_url: String,
+    pub gauge_url: String,
     pub mailroom_base_url: String,
     pub mailroom_url: String,
 
@@ -111,6 +116,8 @@ pub struct ForgeWorld {
     pub username: String,
     pub password: String,
     pub current_crate_name: Option<String>,
+    /// The workbench project the scenario created, for `{project_id}` in a path or a scope.
+    pub workbench_project: Option<String>,
     pub current_crate_version: Option<String>,
 
     // gatehouse
@@ -150,6 +157,7 @@ impl ForgeWorld {
         let conveyor_base_url = service_url("CONVEYOR_API_URL", "http://127.0.0.1:9999");
         let workbench_base_url = service_url("WORKBENCH_API_URL", "http://127.0.0.1:10443");
         let daybook_base_url = service_url("DAYBOOK_API_URL", "http://127.0.0.1:12443");
+        let gauge_base_url = service_url("GAUGE_API_URL", "http://127.0.0.1:13443");
         let mailroom_base_url = service_url("MAILROOM_API_URL", "http://127.0.0.1:18443");
 
         let client = quench_client::transport::Client::builder()
@@ -191,6 +199,8 @@ impl ForgeWorld {
             workbench_base_url,
             daybook_url: format!("{daybook_base_url}/daybook"),
             daybook_base_url,
+            gauge_url: format!("{gauge_base_url}/gauge"),
+            gauge_base_url,
             mailroom_url: format!("{mailroom_base_url}/mailroom"),
             mailroom_base_url,
             client,
@@ -209,6 +219,7 @@ impl ForgeWorld {
             username: env::var("SERVICE_USERNAME").unwrap_or_else(|_| "admin".to_string()),
             password: env::var("SERVICE_PASSWORD").unwrap_or_else(|_| "password".to_string()),
             current_crate_name: None,
+            workbench_project: None,
             current_crate_version: None,
             session_cookie: None,
             refresh_cookie: None,
@@ -231,6 +242,7 @@ impl ForgeWorld {
             Target::Workbench => &self.workbench_url,
             Target::Daybook => &self.daybook_url,
             Target::Mailroom => &self.mailroom_url,
+            Target::Gauge => &self.gauge_url,
         }
     }
 
@@ -245,6 +257,7 @@ impl ForgeWorld {
             Target::Workbench => &self.workbench_base_url,
             Target::Daybook => &self.daybook_base_url,
             Target::Mailroom => &self.mailroom_base_url,
+            Target::Gauge => &self.gauge_base_url,
         }
     }
 
@@ -262,6 +275,9 @@ impl ForgeWorld {
             ] {
                 resolved = resolved.replace(placeholder, name);
             }
+        }
+        if let Some(id) = &self.workbench_project {
+            resolved = resolved.replace("{project_id}", id);
         }
         if let Some(id) = &self.last_id {
             resolved = resolved.replace("{last_id}", id);
@@ -295,7 +311,7 @@ impl ForgeWorld {
     ) -> quench_client::transport::RequestBuilder {
         if self.target == Target::Switchboard {
             rb = rb.bearer_auth(&self.switchboard_token);
-        } else if self.target == Target::Daybook {
+        } else if matches!(self.target, Target::Daybook | Target::Gauge) {
             if let Some(token) = &self.access_token {
                 rb = rb.bearer_auth(token);
             }

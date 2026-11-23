@@ -138,3 +138,48 @@ impl Endpoint for Vllm {
         Response::text(StatusCode::NOT_FOUND, "Not Found")
     }
 }
+
+/// Starts a stand-in for `node_exporter` on 19100, for Gauge's suite: two cores, memory, one disk and a load.
+pub async fn start_node_exporter() {
+    println!("Starting mock node_exporter...");
+    tokio::spawn(serve("node_exporter", 19100, Arc::new(NodeExporter)));
+    sleep(Duration::from_millis(300)).await;
+}
+
+struct NodeExporter;
+
+const NODE_METRICS: &str = r#"# HELP node_cpu_seconds_total Seconds the CPUs spent in each mode.
+# TYPE node_cpu_seconds_total counter
+node_cpu_seconds_total{cpu="0",mode="idle"} 9000
+node_cpu_seconds_total{cpu="0",mode="user"} 700
+node_cpu_seconds_total{cpu="0",mode="system"} 300
+node_cpu_seconds_total{cpu="1",mode="idle"} 9500
+node_cpu_seconds_total{cpu="1",mode="user"} 400
+node_cpu_seconds_total{cpu="1",mode="system"} 100
+# TYPE node_memory_MemTotal_bytes gauge
+node_memory_MemTotal_bytes 17179869184
+# TYPE node_memory_MemAvailable_bytes gauge
+node_memory_MemAvailable_bytes 8589934592
+# TYPE node_memory_MemFree_bytes gauge
+node_memory_MemFree_bytes 4294967296
+# TYPE node_load1 gauge
+node_load1 0.42
+node_load5 0.30
+node_load15 0.20
+# TYPE node_boot_time_seconds gauge
+node_boot_time_seconds 1700000000
+# TYPE node_filesystem_size_bytes gauge
+node_filesystem_size_bytes{device="/dev/sda1",fstype="ext4",mountpoint="/"} 107374182400
+# TYPE node_filesystem_avail_bytes gauge
+node_filesystem_avail_bytes{device="/dev/sda1",fstype="ext4",mountpoint="/"} 53687091200
+"#;
+
+#[async_trait]
+impl Endpoint for NodeExporter {
+    async fn call(&self, req: Request) -> Response {
+        if req.method() == Method::GET && req.uri().path() == "/metrics" {
+            return Response::text(StatusCode::OK, NODE_METRICS);
+        }
+        Response::not_found()
+    }
+}

@@ -11,19 +11,27 @@ Feature: Gatehouse user administration pages
     Given gatehouse API is available
     And I am administering the realm
 
-  Scenario: The page is offered to an administrator
+  # The pages are a client-rendered application; what each one shows is read from `/api/v1/ui/...`,
+  # which is what these scenarios ask.
+  Scenario: The user list is offered to an administrator
+    Given I am signed in to the realm
+    When I request the user list
+    Then response status should be 200
+    And response should contain "\"can_create\":true"
+    And response should contain "\"username\":\"admin\""
+    And the response should never contain a password hash
+
+  Scenario: The user administration page is the application shell
     Given I am signed in to the realm
     When I open the user administration page
     Then response status should be 200
-    And response should contain "ui_admin_users_title"
-    And response should contain "ui_admin_create_title"
-    And the response should never contain a password hash
+    And response should contain "/gatehouse/ui/assets/quench.js"
 
   Scenario: The home page offers the realm section to an administrator
     Given I am signed in to the realm
-    When I open the home page
+    When I request the dashboard
     Then response status should be 200
-    And response should contain "ui_home_group_realm"
+    And response should contain "\"admin\":true"
 
   # The guard: a signed-in non-admin is refused, not bounced to the login form,
   # which would look like their session had expired.
@@ -31,7 +39,7 @@ Feature: Gatehouse user administration pages
     Given no user "bdd-ui-outsider" exists
     And a user "bdd-ui-outsider" with password "secret" and "read" on "sage"
     And I am signed in to the realm as "bdd-ui-outsider" with password "secret"
-    When I open the user administration page
+    When I request the user list
     Then response status should be 403
     And response should contain "ui_admin_forbidden"
 
@@ -39,9 +47,9 @@ Feature: Gatehouse user administration pages
     Given no user "bdd-ui-plain" exists
     And a user "bdd-ui-plain" with password "secret" and "read" on "sage"
     And I am signed in to the realm as "bdd-ui-plain" with password "secret"
-    When I open the home page
+    When I request the dashboard
     Then response status should be 200
-    And response should not contain "ui_home_group_realm"
+    And response should contain "\"admin\":false"
 
   Scenario: Visiting without a session goes to the login form
     When I open the user administration page
@@ -63,7 +71,7 @@ Feature: Gatehouse user administration pages
     Given no user "bdd-ui-matrix" exists
     And a user "bdd-ui-matrix" with password "secret" and no permissions
     And I am signed in to the realm
-    When I open the administration page for "bdd-ui-matrix"
+    When I request the editor data for "bdd-ui-matrix"
     Then response status should be 200
     And the page should offer an access control for "sage"
     And the page should offer an access control for "warehouse"
@@ -71,9 +79,9 @@ Feature: Gatehouse user administration pages
 
   Scenario: A wildcard role is shown rather than hidden
     Given I am signed in to the realm
-    When I open the administration page for "admin"
+    When I request the editor data for "admin"
     Then response status should be 200
-    And response should contain "ui_admin_wildcard_note"
+    And response should contain "\"wildcard\":true"
 
   Scenario: Granting through the form reaches the next token
     Given no user "bdd-ui-granted" exists
@@ -92,9 +100,9 @@ Feature: Gatehouse user administration pages
     When I submit the delete form for "bdd-ui-doomed"
     Then response status should be 302
     And the redirect should report "ok=deleted"
-    When I open the administration page for "bdd-ui-doomed"
-    Then response status should be 302
-    And the redirect should report "err=ui_admin_error_not_found"
+    When I request the editor data for "bdd-ui-doomed"
+    Then response status should be 404
+    And response should contain "ui_admin_error_not_found"
 
   # The pages share the API's rules, so this cannot pass while the API's own
   # scenario for the same rule fails.
@@ -110,10 +118,12 @@ Feature: Gatehouse user administration pages
     Then response status should be 302
     And the redirect should report "err=ui_admin_error_self_delete"
 
-  # A hand-crafted link cannot put arbitrary text on the page: only keys
-  # `RealmError` can produce are rendered.
-  Scenario: An unknown error key is not reflected onto the page
+  # A hand-crafted link cannot put arbitrary text in front of the client: the server sends the same
+  # shell whatever `?err=` says, and the data endpoint never echoes it.
+  Scenario: An unknown error key is not reflected
     Given I am signed in to the realm
     When I open the user administration page with error "ui_admin_error_fabricated"
     Then response status should be 200
     And response should not contain "ui_admin_error_fabricated"
+    When I request the user list
+    Then response should not contain "ui_admin_error_fabricated"

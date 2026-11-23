@@ -78,6 +78,7 @@ ui_scan_audit_title = Vulnerabilidades
 ui_scan_coverage_title = Cobertura de pruebas
 ui_scan_tests_title = Pruebas
 ui_scan_security_title = Seguridad
+ui_scan_bdd_title = BDD
 ui_meta_stages = Etapas
 ui_launch_link = Ejecutar con parámetros
 ui_launch_subtitle = Inicia una ejecución manual limitada a las etapas marcadas. Una etapa marcada se ejecuta aunque su propia condición la dejaría fuera de una ejecución normal.

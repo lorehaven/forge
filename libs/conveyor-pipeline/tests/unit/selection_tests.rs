@@ -137,11 +137,24 @@ fn names_are_trimmed_and_repeats_are_one_stage() {
 const FORGE: &str = include_str!("../../../../.conveyor.toml");
 
 fn will_run(spec: &conveyor_pipeline::PipelineSpec, event: &str, git_ref: &str) -> Vec<String> {
-    plan(spec, &EvalContext::new(event, git_ref, "abc"))
-        .into_iter()
-        .filter(|stage| stage.decision.will_run())
-        .map(|stage| spec.stages[stage.index].name.clone())
-        .collect()
+    will_run_on(spec, event, git_ref, "")
+}
+
+/// As [`will_run`] for a run that the schedule entry `schedule` started.
+fn will_run_on(
+    spec: &conveyor_pipeline::PipelineSpec,
+    event: &str,
+    git_ref: &str,
+    schedule: &str,
+) -> Vec<String> {
+    plan(
+        spec,
+        &EvalContext::new(event, git_ref, "abc").with_schedule(schedule),
+    )
+    .into_iter()
+    .filter(|stage| stage.decision.will_run())
+    .map(|stage| spec.stages[stage.index].name.clone())
+    .collect()
 }
 
 #[quench_test::test]
@@ -153,7 +166,7 @@ fn the_release_stages_of_forges_pipeline_never_run_by_themselves() {
         ("manual", "master"),
         ("schedule", "refs/heads/master"),
     ] {
-        let running = will_run(&spec, event, git_ref);
+        let running = will_run_on(&spec, event, git_ref, "0 0 * * *");
         assert!(
             !running.iter().any(|s| s.starts_with("release")),
             "{event} on {git_ref} ran {running:?}"
@@ -164,9 +177,14 @@ fn the_release_stages_of_forges_pipeline_never_run_by_themselves() {
         will_run(&spec, "push", "refs/heads/master"),
         ["check", "build", "test"]
     );
+    // Each clock starts its own stage and nothing else.
     assert_eq!(
-        will_run(&spec, "schedule", "refs/heads/master"),
+        will_run_on(&spec, "schedule", "refs/heads/master", "0 0 * * *"),
         ["security"]
+    );
+    assert_eq!(
+        will_run_on(&spec, "schedule", "refs/heads/master", "0 6 * * *"),
+        ["bdd"]
     );
 }
 

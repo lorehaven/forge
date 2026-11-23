@@ -68,7 +68,7 @@ Use `127.0.0.1`, not `localhost` (the name can resolve to `::1`). Redis-backed c
 
 ### Suites
 
-Seven suites, each selected by a tag equal to its name (`Target::tag`): `@sage`, `@switchboard`, `@warehouse`, `@gatehouse`, `@conveyor`, `@workbench`, `@daybook`. There are 304 `Scenario` lines in `features/`. Gantry, Gauge, Foundry and Hoist have no BDD suite.
+Nine suites, each selected by a tag equal to its name (`Target::tag`): `@sage`, `@switchboard`, `@warehouse`, `@gatehouse`, `@conveyor`, `@workbench`, `@daybook`, `@mailroom`, `@gauge`. There are 361 `Scenario` lines in `features/`. Gantry, Foundry and Hoist have no BDD suite (Gantry needs a cluster to talk to).
 
 | Suite | Port | Scheme | Features (`features/<service>/`) |
 |---|---|---|---|
@@ -77,15 +77,27 @@ Seven suites, each selected by a tag equal to its name (`Target::tag`): `@sage`,
 | warehouse | 8443 | HTTPS | admin, artifacts, crates, docker, docker_registry, files, index, ui_auth, ui_jwt |
 | gatehouse | 5443 | HTTP | account_lifecycle, admin_pages, auth_api, home, invites_and_notifications, keys, login_page, oauth, oauth_token, self_service, user_admin |
 | conveyor | 9999 | HTTP | api, ui, webhooks |
-| workbench | 10443 | HTTP | api, ui |
-| daybook | 12443 | HTTP | api |
+| workbench | 10443 | HTTP | api, postgres, ui |
+| daybook | 12443 | HTTP | api, postgres |
+| mailroom | 18443 | HTTP | access, admin, estate_mail, people, reading (needs `MAILROOM_BDD_DATABASE_URL`) |
+| gauge | 13443 | HTTP | api |
+
+The pages of every service are a client-rendered application, so what a scenario can say about a page is its shell (`<div id="app">`, `app.css`, `quench.js`, `app.wasm`), where it redirects, and what the JSON endpoints it calls answer (`/api/v1/ui/...` on gatehouse). Assertions on page markup or i18n keys have nothing to match.
+
+#### Scenario tags
+
+* `@serial` runs the scenario alone, after the rest (shared mock state, or an action that removes what others are using: the vLLM launches, warehouse's crates GC).
+* `@postgres` runs only when `FORGE_BDD_DATABASE_URL` is set; `@memory` only when it is not. With it, daybook and workbench run on that database instead of their in-memory stores (install their modules first: `cargo run -p foundry -- apply --catalog services/foundry/service/migrations --database-url $URL --install daybook --install workbench`), the harness seeds the `auth.users` rows their tables point at, and the scenarios can say who may see and change what.
+* `MAILROOM_BDD_DATABASE_URL` is separate: Mailroom makes its own schema there and is skipped without it.
+
+`FORGE_BDD_HOLD_SECS=<n>` keeps the services running that many seconds after the run, to `curl` them or look at a page.
 
 Redirect listeners: sage 7778, switchboard 8081, warehouse 8080, gatehouse 5080, conveyor 9998, workbench 10080. The sage suite also starts in-process mocks (`src/mocks.rs`): a mock switchboard (checks for a `Bearer` header) and a mock vLLM, on ports 19554 and 18000 (`SWITCHBOARD_URL`, `VLLM_BASE_URL` of the sage process). The ports must be free.
 
 ### Run
 
 ```bash
-cargo run -p forge-bdd                          # all seven suites
+cargo run -p forge-bdd                          # every suite
 cargo run -p forge-bdd -- --tags @gatehouse     # one suite
 cargo run -p forge-bdd -- --service warehouse   # same, no tag expression (repeatable)
 cargo run -p forge-bdd -- --tags '@sage and not @slow'
@@ -119,6 +131,8 @@ TOTAL                      ...                                 PASSED
 ### Environment of the services under test
 
 `common_env` in `src/services.rs` gives every service `SERVICE_NAME`, `SERVER_CERT_PATH=cert.pem`, `SERVER_KEY_PATH=key.pem`, empty `DATABASE_URL` and `POSTGRES_URL`, `ALLOW_IN_MEMORY_DB=true`, `DB_RECREATE=false`, `SERVICE_USERNAME=admin`, `SERVICE_PASSWORD=password`, `AUTH_BOOTSTRAP=true`, `GATEHOUSE_URL=http://127.0.0.1:5443/gatehouse`, `GATEHOUSE_TLS_VERIFY=false`. So the suite needs no Postgres: each service keeps an in-memory store and seeds its own admin in its own realm. Conveyor's `SERVER_CERT_PATH`/`SERVER_KEY_PATH` are pointed at `missing.pem` so it runs plain HTTP. Gatehouse is started with `GATEHOUSE_TEST_MODE=true`, `CLIENTS_CONFIG=tests/forge-bdd/clients.toml` (a copy of the gatehouse client registrations with redirect URIs on the fixed ports), a test `GATEHOUSE_KEY_ENCRYPTION_KEY`, and `CLIENT_SECRET_*` values matching the file (`CLIENT_SECRET_SAGE`, `_SWITCHBOARD`, `_WAREHOUSE` and the others set in `services.rs`).
+
+`SERVER_CERT_PATH`/`SERVER_KEY_PATH` point at one certificate, chosen once by `dev_certificate()` in `src/services.rs`: `FORGE_BDD_CERT` with `FORGE_BDD_KEY`; else the estate's shared `certs/cert.pem` with `key.pem`; else a throwaway self-signed one that `openssl` makes under `target/forge-bdd-cert`. A service with no certificate serves plain HTTP, which the HTTPS suites (sage, switchboard, warehouse) cannot talk to, so a fresh checkout needs this. `wait_until_ready` gives each probe 5 seconds, so a listener that never answers is a warning, not a hang. Mailroom's suite runs only with `MAILROOM_BDD_DATABASE_URL` set.
 
 conveyor, workbench and daybook have no database in the suite: scenarios cover route authentication and request validation, plus the `503` answer when a valid request reaches the in-memory adapter. Daybook's CRUD and owner isolation are covered by `services/daybook/service/tests/integration.rs` against Postgres.
 
@@ -157,7 +171,7 @@ The live test reads `FORGE_SECTEST_TARGETS` (required; space-separated `name=url
 
 ## Continuous integration
 
-`.conveyor.toml` triggers on pushes to `master`, pull requests and a nightly schedule (`0 0 * * *`, Europe/Warsaw). Stages:
+`.conveyor.toml` triggers on pushes to `master`, pull requests and two schedules, both read in Europe/Warsaw time: `0 0 * * *` (the nightly security run) and `0 6 * * *` (the daily BDD run). A scheduled run is told which clock fired by the `when` variable `schedule` (`schedule == '0 6 * * *'`); the stage names its own clock, so one clock never starts the other's stage. Stages:
 
 | Stage | Jobs | When |
 |---|---|---|
@@ -165,6 +179,7 @@ The live test reads `FORGE_SECTEST_TARGETS` (required; space-separated `name=url
 | `build` | `workspace` (`anvil build --all`) | not on schedule |
 | `test` | `unit` (`anvil test --all`), `coverage` | not on schedule |
 | `security` | `nightly` (the three `forge-sectest` runs with live targets on cluster DNS, `FORGE_SECTEST_FAIL_ON=medium`, timeout 3600) | schedule only |
+| `bdd` | `daily` (`cargo run -p forge-bdd`, every suite, timeout 7200, a `postgres` sidecar: Mailroom's suite through `MAILROOM_BDD_DATABASE_URL`, and daybook and workbench on it through `FORGE_BDD_DATABASE_URL` after a `foundry apply`) | the 6 am schedule only |
 
 ### Coverage job
 
