@@ -169,7 +169,14 @@ async fn the_cluster_can_be_browsed_by_kind_with_events_and_a_pod_log() {
             entry.url
         );
     }
-    eprintln!("{}", facade.iter().map(|e| format!("{} {}", e.available, e.url)).collect::<Vec<_>>().join("\n"));
+    eprintln!(
+        "{}",
+        facade
+            .iter()
+            .map(|e| format!("{} {}", e.available, e.url))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
 }
 
 /// Opens a real shell over the Kubernetes exec WebSocket: `GANTRY_IT_EXEC_POD=namespace/pod`.
