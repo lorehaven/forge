@@ -680,7 +680,7 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         .class("fui-app fui-client")
         .child(forge_shell::sidebar(
             &bar,
-            vec![screens::sidebar(&env, &router)],
+            vec![screens::sidebar(&env, &router, &state)],
         ))
         .child(
             div()

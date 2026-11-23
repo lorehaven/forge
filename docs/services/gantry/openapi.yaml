@@ -755,7 +755,7 @@ paths:
       operationId: clusterFacade
       summary: What the cluster serves, as links
       description: |
-        One entry per host and path of every Ingress; `available` when a running pod matches the Service behind it.
+        One entry per host of every Ingress, at the path a person would open (a `/ui` path if there is one, else the shortest; API, asset and registry paths are skipped); `available` when a running pod matches the Service behind it.
       security: [{bearer: []}, {sessionCookie: []}]
       x-permission: gantry:read (blanket)
       responses:

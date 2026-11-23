@@ -192,3 +192,4 @@ ui_cluster_shell_open = Ouvrir un shell
 ui_cluster_shell_send = Envoyer
 ui_cluster_shell_close = Fermer le shell
 ui_cluster_shell_ended = Le shell est terminé.
+ui_cluster_overview = Vue d’ensemble

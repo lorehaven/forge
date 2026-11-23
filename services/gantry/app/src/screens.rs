@@ -64,8 +64,8 @@ pub fn not_found(env: &Env) -> View {
 
 /// Packages and History in the side panel, the open one marked.
 #[must_use]
-pub(crate) fn sidebar(env: &Env, router: &Router) -> View {
-    let (env, router) = (env.clone(), router.clone());
+pub(crate) fn sidebar(env: &Env, router: &Router, state: &State) -> View {
+    let (env, router, state) = (env.clone(), router.clone(), state.clone());
     View::dynamic(move || {
         let here = router.location().path;
         let packages = env.path("/home");
@@ -126,6 +126,11 @@ pub(crate) fn sidebar(env: &Env, router: &Router) -> View {
             .child(first)
             .child(second)
             .child(third)
+            .child(if in_cluster {
+                cluster::subnav(&env, &state, &here)
+            } else {
+                View::Empty
+            })
             .child(fourth)
             .child(fifth)
             .into_view()

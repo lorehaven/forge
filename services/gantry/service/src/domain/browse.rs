@@ -674,7 +674,34 @@ fn selected(selector: &Value, pod: &Value) -> bool {
     })
 }
 
-/// One entry per host and path an Ingress serves, available when a pod of the service behind it runs.
+/// Path segments that mark a path as machinery (an API, assets, a registry) rather than a page.
+const MACHINERY: [&str; 11] = [
+    "api",
+    "assets",
+    "ws",
+    "index",
+    "share",
+    "admin",
+    "v2",
+    "token",
+    "health",
+    "favicon.ico",
+    "static",
+];
+
+/// The path of an Ingress rule as a link, or `None` when it is not a page: a regular expression is cut back to
+/// its literal start (`/kindle(/|$)(.*)` is `/kindle`), and anything that is an API, assets or the like is left out.
+fn visible_path(path: &str) -> Option<String> {
+    let literal = path.split('(').next().unwrap_or(path);
+    let literal = if literal.is_empty() { "/" } else { literal };
+    let machinery = literal
+        .split('/')
+        .any(|segment| MACHINERY.contains(&segment) || segment.starts_with('_'));
+    (!machinery).then(|| literal.to_string())
+}
+
+/// One entry per host an Ingress serves, at the path a person would open, available when a pod of the service
+/// behind it runs.
 #[must_use]
 pub fn facade(ingresses: &[Value], services: &[Value], pods: &[Value]) -> Vec<FacadeEntry> {
     let mut found = Vec::new();
@@ -708,35 +735,40 @@ pub fn facade(ingresses: &[Value], services: &[Value], pods: &[Value]) -> Vec<Fa
             } else {
                 "http"
             };
-            for path in rule
+            // One link per host of an Ingress: the page a person would open, not each of its API, asset and
+            // index paths.
+            let paths = rule
                 .pointer("/http/paths")
                 .and_then(Value::as_array)
                 .into_iter()
                 .flatten()
-            {
-                let service = text(path, "/backend/service/name").unwrap_or_default();
-                let selector = services
-                    .iter()
-                    .find(|s| {
-                        text(s, "/metadata/name") == Some(service)
-                            && text(s, "/metadata/namespace") == Some(namespace)
-                    })
-                    .and_then(|s| s.pointer("/spec/selector"));
-                let available = selector.is_some_and(|selector| {
-                    pods.iter().any(|pod| {
-                        text(pod, "/metadata/namespace") == Some(namespace)
-                            && text(pod, "/status/phase") == Some("Running")
-                            && selected(selector, pod)
-                    })
-                });
-                let path_text = text(path, "/path").unwrap_or("/");
-                found.push(FacadeEntry {
-                    name: name.to_string(),
-                    namespace: namespace.to_string(),
-                    url: format!("{scheme}://{host}{path_text}"),
-                    available,
-                });
-            }
+                .filter_map(|path| Some((visible_path(text(path, "/path").unwrap_or("/"))?, path)));
+            let Some((path_text, path)) =
+                paths.min_by_key(|(visible, _)| (!visible.ends_with("/ui"), visible.len()))
+            else {
+                continue;
+            };
+            let service = text(path, "/backend/service/name").unwrap_or_default();
+            let selector = services
+                .iter()
+                .find(|s| {
+                    text(s, "/metadata/name") == Some(service)
+                        && text(s, "/metadata/namespace") == Some(namespace)
+                })
+                .and_then(|s| s.pointer("/spec/selector"));
+            let available = selector.is_some_and(|selector| {
+                pods.iter().any(|pod| {
+                    text(pod, "/metadata/namespace") == Some(namespace)
+                        && text(pod, "/status/phase") == Some("Running")
+                        && selected(selector, pod)
+                })
+            });
+            found.push(FacadeEntry {
+                name: name.to_string(),
+                namespace: namespace.to_string(),
+                url: format!("{scheme}://{host}{path_text}"),
+                available,
+            });
         }
     }
     let address = |e: &FacadeEntry| {

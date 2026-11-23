@@ -1343,3 +1343,48 @@ fn a_shell_opens_shows_what_it_prints_takes_a_line_and_closes() {
     assert_eq!(l.last(), Request::ExecClose("s1".into()));
     assert!(present(&l.r, "exec-open"));
 }
+
+#[quench_test::test]
+fn the_cluster_has_a_submenu_of_its_kinds_with_the_open_one_marked() {
+    let kinds = || {
+        Msg::ClusterKinds(
+            [
+                ("Node", "Cluster"),
+                ("Pod", "Workloads"),
+                ("Service", "Network"),
+            ]
+            .into_iter()
+            .map(|(kind, group)| ClusterKind {
+                kind: kind.into(),
+                api_version: "v1".into(),
+                namespaced: true,
+                group: group.into(),
+            })
+            .collect(),
+        )
+    };
+
+    let l = live("/gantry/ui/cluster/Pod");
+    l.send(kinds());
+    find(&l.r, "a", ("id", "sub-overview"));
+    let node = find(&l.r, "a", ("id", "sub-Node"));
+    assert_eq!(
+        l.r.attr(node, "href").as_deref(),
+        Some("/gantry/ui/cluster/Node")
+    );
+    let pod = find(&l.r, "a", ("id", "sub-Pod"));
+    assert!(l.r.attr(pod, "class").unwrap().contains("gt-current"));
+    assert!(!l.r.attr(node, "class").unwrap().contains("gt-current"));
+    assert!(l.text().contains("Workloads"));
+
+    // An object of a kind keeps its kind marked.
+    let object = live("/gantry/ui/cluster/Pod/view?namespace=ml&name=web-1");
+    object.send(kinds());
+    let pod = find(&object.r, "a", ("id", "sub-Pod"));
+    assert!(object.r.attr(pod, "class").unwrap().contains("gt-current"));
+
+    // Outside the cluster pages there is no submenu.
+    let home = live("/gantry/ui/home");
+    home.send(kinds());
+    assert!(!present(&home.r, "cluster-nav"));
+}

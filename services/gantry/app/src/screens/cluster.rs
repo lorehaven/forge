@@ -908,3 +908,41 @@ fn terminal(env: &Env, state: &State, object: &ClusterRef, container: &Field) ->
             .into_view()
     })
 }
+
+/// Under "Cluster" in the sidebar: the overview, then every kind under its heading, the open one marked.
+pub(super) fn subnav(env: &Env, state: &State, here: &str) -> View {
+    let overview = env.path("/cluster");
+    let here = here.trim_end_matches('/');
+    let mut nav = div().class("gt-subnav").attr("id", "cluster-nav").child(
+        link(&overview)
+            .class(if here == overview {
+                "gt-subnav-item gt-current"
+            } else {
+                "gt-subnav-item"
+            })
+            .attr("id", "sub-overview")
+            .text(env.t.t("ui_cluster_overview")),
+    );
+    for (group, kinds) in kinds_by_group(&state.cluster_kinds.get()) {
+        nav = nav.child(
+            div()
+                .class("gt-subnav-group")
+                .text(env.t.t(&format!("ui_cluster_group_{group}"))),
+        );
+        for kind in kinds {
+            let address = env.path(&format!("/cluster/{}", kind.kind));
+            let open = here == address || here.starts_with(&format!("{address}/"));
+            nav = nav.child(
+                link(&address)
+                    .class(if open {
+                        "gt-subnav-item gt-current"
+                    } else {
+                        "gt-subnav-item"
+                    })
+                    .attr("id", format!("sub-{}", kind.kind))
+                    .text(env.t.t(&format!("ui_kind_{}", kind.kind))),
+            );
+        }
+    }
+    nav.into_view()
+}

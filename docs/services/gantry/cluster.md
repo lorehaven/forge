@@ -52,7 +52,7 @@ Each list row (`Entry`) has the one word a person scans for (`status`), a second
 
 ### Services
 
-`GET /api/v1/cluster/facade`: one link per host and path of every Ingress, `https` where the Ingress lists the host under `tls`, and `available` when a running pod matches the selector of the Service behind it. The UI page is **Services**. (Palantir's version listed NodePort ports whose name contained "web ui" and an `ADDITIONAL_SERVICES` list; neither is carried over.)
+`GET /api/v1/cluster/facade`: one link per host of every Ingress, at the path a person would open, `https` where the Ingress lists the host under `tls`, and `available` when a running pod matches the selector of the Service behind it. An Ingress with several paths gives one link: a path ending in `/ui` if there is one, else the shortest; paths that are machinery (a segment `api`, `assets`, `ws`, `index`, `share`, `admin`, `v2`, `token`, `health`, `static`, `favicon.ico`, or starting with `_`) are skipped, and a regular-expression path is cut back to its literal start (`/kindle(/|$)(.*)` is `/kindle`). An Ingress with only machinery paths gives none. The UI page is **Services**. (Palantir's version listed NodePort ports whose name contained "web ui" and an `ADDITIONAL_SERVICES` list; neither is carried over.)
 
 ### Logs
 
@@ -93,7 +93,7 @@ How it works: the service opens the Kubernetes exec WebSocket itself (protocol `
 
 | Route | Screen |
 |---|---|
-| `{base}/ui/cluster` | overview cards (refreshed every 5 s), what needs attention, the latest warnings, the kinds by heading |
+| `{base}/ui/cluster` | (the sidebar shows a submenu under "Cluster" on every cluster page: Overview, then every kind under its heading, the open one marked) overview cards (refreshed every 5 s), what needs attention, the latest warnings, the kinds by heading |
 | `{base}/ui/cluster/{kind}` | the list, with a namespace select and a name filter, refreshed every 5 s |
 | `{base}/ui/cluster/{kind}/view?namespace=&name=` | related pods, events, a pod's log and shell, delete and scale, the YAML (a form for whoever holds `deploy`) |
 | `{base}/ui/services` | the links, refreshed every 10 s |

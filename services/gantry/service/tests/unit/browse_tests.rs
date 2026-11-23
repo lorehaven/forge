@@ -157,13 +157,25 @@ fn the_overview_adds_up_nodes_pods_and_warnings() {
 }
 
 #[quench_test::test]
-fn the_facade_links_what_ingresses_serve_and_marks_what_runs() {
-    let ingresses = [json!({
-        "metadata": {"name": "web", "namespace": "ml"},
-        "spec": {"tls": [{"hosts": ["a.example"]}], "rules": [
-            {"host": "a.example", "http": {"paths": [{"path": "/web", "backend": {"service": {"name": "web"}}}]}},
-            {"host": "b.example", "http": {"paths": [{"path": "/", "backend": {"service": {"name": "gone"}}}]}}]}
-    })];
+fn the_facade_links_each_ingress_once_at_its_page_and_marks_what_runs() {
+    let tls = json!([{"hosts": ["a.example"]}]);
+    let rule = |host: &str, paths: &[&str], service: &str| {
+        json!({"host": host, "http": {"paths": paths.iter()
+            .map(|p| json!({"path": p, "backend": {"service": {"name": service}}})).collect::<Vec<_>>()}})
+    };
+    let ingresses = [
+        // Several paths: the UI one is the link, the API and asset paths are not.
+        json!({"metadata": {"name": "sage", "namespace": "ml"}, "spec": {"tls": tls, "rules": [
+            rule("a.example", &["/sage/api/v1", "/sage/ui", "/sage/assets"], "web")]}}),
+        json!({"metadata": {"name": "gone", "namespace": "ml"}, "spec": {"rules": [
+            rule("b.example", &["/"], "gone")]}}),
+        // A regular expression is cut back to what is literal.
+        json!({"metadata": {"name": "kindle", "namespace": "ml"}, "spec": {"rules": [
+            rule("c.example", &["/kindle(/|$)(.*)"], "web")]}}),
+        // Only machinery: nothing to open.
+        json!({"metadata": {"name": "registry", "namespace": "ml"}, "spec": {"rules": [
+            rule("d.example", &["/v2", "/token"], "web")]}}),
+    ];
     let services = [
         json!({"metadata": {"name": "web", "namespace": "ml"}, "spec": {"selector": {"app": "web"}}}),
     ];
@@ -171,9 +183,16 @@ fn the_facade_links_what_ingresses_serve_and_marks_what_runs() {
         json!({"metadata": {"namespace": "ml", "labels": {"app": "web"}}, "status": {"phase": "Running"}}),
     ];
     let entries = browse::facade(&ingresses, &services, &pods);
-    assert_eq!(entries.len(), 2);
-    assert_eq!(entries[0].url, "https://a.example/web");
-    assert!(entries[0].available);
-    assert_eq!(entries[1].url, "http://b.example/");
-    assert!(!entries[1].available);
+    let urls: Vec<(&str, bool)> = entries
+        .iter()
+        .map(|e| (e.url.as_str(), e.available))
+        .collect();
+    assert_eq!(
+        urls,
+        [
+            ("https://a.example/sage/ui", true),
+            ("http://b.example/", false),
+            ("http://c.example/kindle", true),
+        ]
+    );
 }

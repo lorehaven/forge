@@ -192,3 +192,4 @@ ui_cluster_shell_open = Otwórz powłokę
 ui_cluster_shell_send = Wyślij
 ui_cluster_shell_close = Zamknij powłokę
 ui_cluster_shell_ended = Powłoka zakończyła działanie.
+ui_cluster_overview = Przegląd

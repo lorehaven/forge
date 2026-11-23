@@ -159,6 +159,17 @@ async fn the_cluster_can_be_browsed_by_kind_with_events_and_a_pod_log() {
     let facade = cluster.browse_facade().await.unwrap();
     assert_ne!(facade.len(), 0);
     assert!(facade.iter().any(|e| e.available), "{facade:?}");
+    // One link per Ingress host, at a page: never an API, asset or registry path.
+    for entry in &facade {
+        assert!(
+            !["/api", "/assets", "/v2", "/token", "(", "/share"]
+                .iter()
+                .any(|bad| entry.url.contains(bad)),
+            "{}",
+            entry.url
+        );
+    }
+    eprintln!("{}", facade.iter().map(|e| format!("{} {}", e.available, e.url)).collect::<Vec<_>>().join("\n"));
 }
 
 /// Opens a real shell over the Kubernetes exec WebSocket: `GANTRY_IT_EXEC_POD=namespace/pod`.
