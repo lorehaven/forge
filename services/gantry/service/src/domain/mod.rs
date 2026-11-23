@@ -1,8 +1,11 @@
 pub mod actions;
+pub mod browse;
 pub mod cluster;
+pub mod cluster_actions;
 pub mod commands;
 pub mod db;
 pub mod deployments;
+pub mod exec;
 pub mod executor;
 pub mod kubectl;
 pub mod operation;

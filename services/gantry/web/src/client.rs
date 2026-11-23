@@ -7,7 +7,8 @@ use std::pin::Pin;
 use gantry_app::{Msg, Request};
 use gantry_core::format::encode;
 use gantry_core::{
-    Busy, DeploymentPlan, DeploymentView, Group, Info, Operation, PackageBody, PlanRequest,
+    Busy, ClusterEntry, ClusterKind, ClusterObject, ClusterOverview, DeploymentPlan,
+    DeploymentView, ExecRead, FacadeEntry, Group, Info, Operation, PackageBody, PlanRequest,
     ResourceRef, ResourceYaml, StoredPlan, TargetView,
 };
 use quench_serde::json;
@@ -271,6 +272,172 @@ impl<T: Transport> Client<T> {
                 let path = format!("/api/v1/resources/yaml?{}", yaml_query(&resource));
                 vec![match self.get::<ResourceYaml>(path).await {
                     Ok(yaml) => Msg::Yaml(Box::new(yaml)),
+                    Err(failure) => failure.read(),
+                }]
+            }
+            Request::ClusterKinds => {
+                vec![match self
+                    .get::<Vec<ClusterKind>>("/api/v1/cluster/kinds".into())
+                    .await
+                {
+                    Ok(kinds) => Msg::ClusterKinds(kinds),
+                    Err(failure) => failure.read(),
+                }]
+            }
+            Request::ClusterDelete(object) => Self::started(
+                self.send("POST", "/api/v1/cluster/delete".into(), &object.body())
+                    .await,
+            ),
+            Request::ClusterScale { object, replicas } => {
+                let mut body = object.body();
+                if let Some(map) = body.as_object_mut() {
+                    map.insert("replicas", json!(replicas));
+                }
+                Self::started(
+                    self.send("POST", "/api/v1/cluster/scale".into(), &body)
+                        .await,
+                )
+            }
+            Request::ClusterEdit { object, yaml } => {
+                let mut body = object.body();
+                if let Some(map) = body.as_object_mut() {
+                    map.insert("yaml", json!(yaml));
+                }
+                Self::started(
+                    self.send("POST", "/api/v1/cluster/edit".into(), &body)
+                        .await,
+                )
+            }
+            Request::ExecEnabled => {
+                #[derive(Deserialize)]
+                struct Enabled {
+                    namespaces: Vec<String>,
+                }
+                vec![match self
+                    .get::<Enabled>("/api/v1/cluster/exec/enabled".into())
+                    .await
+                {
+                    Ok(enabled) => Msg::ExecEnabled(enabled.namespaces),
+                    Err(failure) => failure.read(),
+                }]
+            }
+            Request::ExecOpen { object, container } => {
+                let mut body = quench_serde::json!({
+                    "namespace": object.namespace,
+                    "pod": object.name,
+                });
+                if let (false, Some(map)) = (container.is_empty(), body.as_object_mut()) {
+                    map.insert("container", json!(container));
+                }
+                vec![match self
+                    .send::<_, Created>("POST", "/api/v1/cluster/exec".into(), &body)
+                    .await
+                {
+                    Ok(created) => Msg::ExecOpened(created.id),
+                    Err(failure) => failure.write(),
+                }]
+            }
+            Request::ExecInput { id, data } => {
+                let body = quench_serde::json!({ "id": id, "data": data });
+                match self
+                    .send::<_, quench_serde::Value>(
+                        "POST",
+                        "/api/v1/cluster/exec/input".into(),
+                        &body,
+                    )
+                    .await
+                {
+                    Ok(_) => vec![],
+                    Err(failure) => vec![failure.write()],
+                }
+            }
+            Request::ExecPoll { id, since } => {
+                let path = format!(
+                    "/api/v1/cluster/exec/output?id={}&since={since}",
+                    encode(&id)
+                );
+                match self.get::<ExecRead>(path).await {
+                    Ok(read) => vec![Msg::ExecOutput(read)],
+                    // A shell the service forgot is over, not an error to show.
+                    Err(Failure::NotFound) => vec![Msg::ExecOutput(ExecRead {
+                        ended: true,
+                        closed: Some("the session timed out".into()),
+                        next: u64::MAX,
+                        ..ExecRead::default()
+                    })],
+                    Err(failure) => vec![failure.read()],
+                }
+            }
+            Request::ExecClose(id) => {
+                let body = quench_serde::json!({ "id": id });
+                let _ = self
+                    .send::<_, quench_serde::Value>(
+                        "POST",
+                        "/api/v1/cluster/exec/close".into(),
+                        &body,
+                    )
+                    .await;
+                vec![]
+            }
+            Request::Facade => {
+                vec![match self
+                    .get::<Vec<FacadeEntry>>("/api/v1/cluster/facade".into())
+                    .await
+                {
+                    Ok(list) => Msg::Facade(list),
+                    Err(failure) => failure.read(),
+                }]
+            }
+            Request::ClusterOverview => {
+                vec![match self
+                    .get::<ClusterOverview>("/api/v1/cluster/overview".into())
+                    .await
+                {
+                    Ok(overview) => Msg::ClusterOverview(Box::new(overview)),
+                    Err(failure) => failure.read(),
+                }]
+            }
+            Request::ClusterList { kind, namespace } => {
+                let mut path = format!("/api/v1/cluster/objects?kind={}", encode(&kind));
+                if !namespace.is_empty() {
+                    path = format!("{path}&namespace={}", encode(&namespace));
+                }
+                vec![match self.get::<Vec<ClusterEntry>>(path).await {
+                    Ok(list) => Msg::ClusterList(list),
+                    Err(failure) => failure.read(),
+                }]
+            }
+            Request::ClusterObject(object) => {
+                let path = format!(
+                    "/api/v1/cluster/object?kind={}&{}",
+                    encode(&object.kind),
+                    object.query()
+                );
+                vec![match self.get::<ClusterObject>(path).await {
+                    Ok(object) => Msg::ClusterObject(Box::new(object)),
+                    Err(failure) => failure.read(),
+                }]
+            }
+            Request::ClusterLog {
+                namespace,
+                pod,
+                container,
+                previous,
+            } => {
+                #[derive(Deserialize)]
+                struct Log {
+                    log: String,
+                }
+                let mut path = format!(
+                    "/api/v1/cluster/logs?namespace={}&pod={}&previous={previous}",
+                    encode(&namespace),
+                    encode(&pod)
+                );
+                if !container.is_empty() {
+                    path = format!("{path}&container={}", encode(&container));
+                }
+                vec![match self.get::<Log>(path).await {
+                    Ok(log) => Msg::ClusterLog(log.log),
                     Err(failure) => failure.read(),
                 }]
             }

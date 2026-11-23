@@ -1,6 +1,7 @@
 //! What Gantry asks of the cluster. A trait, so the reconciler and the planner are tested against a fake
 //! and a developer can run the whole service with no cluster at all.
 
+use crate::domain::browse;
 use crate::domain::settings::{ClusterMode, Settings};
 use quench_core::async_trait;
 use quench_k8s::{
@@ -186,6 +187,60 @@ pub trait Cluster: Send + Sync {
         namespace: Option<&str>,
         name: &str,
     ) -> Result<String, ClusterError>;
+
+    /// The kinds a person can browse that this cluster serves and this account may list.
+    async fn browse_kinds(&self) -> Result<Vec<browse::KindInfo>, ClusterError> {
+        Ok(Vec::new())
+    }
+    /// Every object of `kind`, in `namespace` (`None`: everywhere).
+    async fn browse_list(
+        &self,
+        kind: &str,
+        namespace: Option<&str>,
+    ) -> Result<Vec<browse::Entry>, ClusterError> {
+        let _ = (kind, namespace);
+        Err(ClusterError::Kube("this cluster cannot be browsed".into()))
+    }
+    /// One object as YAML (status included, a Secret refused), with its events.
+    async fn browse_object(
+        &self,
+        kind: &str,
+        namespace: Option<&str>,
+        name: &str,
+    ) -> Result<browse::ObjectView, ClusterError> {
+        let _ = (kind, namespace, name);
+        Err(ClusterError::Kube("this cluster cannot be browsed".into()))
+    }
+    /// The cluster in a few numbers.
+    async fn browse_overview(&self) -> Result<browse::Overview, ClusterError> {
+        Err(ClusterError::Kube("this cluster cannot be browsed".into()))
+    }
+    /// A shell in a pod.
+    async fn exec_open(
+        &self,
+        namespace: &str,
+        pod: &str,
+        container: Option<&str>,
+    ) -> Result<crate::domain::exec::ExecConnection, ClusterError> {
+        let _ = (namespace, pod, container);
+        Err(ClusterError::Kube("this cluster has no shells".into()))
+    }
+    /// What the cluster serves, as links.
+    async fn browse_facade(&self) -> Result<Vec<browse::FacadeEntry>, ClusterError> {
+        Ok(Vec::new())
+    }
+    /// The log of one container of a pod: the last `tail` lines.
+    async fn pod_log(
+        &self,
+        namespace: &str,
+        pod: &str,
+        container: Option<&str>,
+        tail: u32,
+        previous: bool,
+    ) -> Result<String, ClusterError> {
+        let _ = (namespace, pod, container, tail, previous);
+        Err(ClusterError::Kube("this cluster has no logs".into()))
+    }
 }
 
 /// The annotation Gantry puts on what it edited, so the difference from the package is visible.
@@ -485,6 +540,273 @@ impl Cluster for KubeCluster {
         clean_for_editing(&mut value);
         quench_serde::yaml::to_string(&value).map_err(|e| ClusterError::Kube(e.to_string()))
     }
+
+    async fn browse_kinds(&self) -> Result<Vec<browse::KindInfo>, ClusterError> {
+        Ok(self
+            .browsable()
+            .await?
+            .into_iter()
+            .map(|(resource, _, group)| browse::KindInfo {
+                api_version: resource.api_version(),
+                namespaced: resource.namespaced,
+                kind: resource.kind,
+                group: group.to_string(),
+            })
+            .collect())
+    }
+
+    async fn browse_list(
+        &self,
+        kind: &str,
+        namespace: Option<&str>,
+    ) -> Result<Vec<browse::Entry>, ClusterError> {
+        let (resource, _) = self.resource_of(kind).await?;
+        let api = match namespace {
+            Some(ns) if resource.namespaced => self.client.namespaced(&resource, ns),
+            _ => self.client.api(&resource),
+        };
+        let list = api
+            .list(&ListParams::default())
+            .await
+            .map_err(|e| kube_error(&e))?;
+        let api_version = resource.api_version();
+        let mut found: Vec<browse::Entry> = list
+            .items
+            .iter()
+            .filter_map(|object| browse::entry(&api_version, &resource.kind, object))
+            .collect();
+        found.sort_by(|a, b| (&a.namespace, &a.name).cmp(&(&b.namespace, &b.name)));
+        if let Some(path) = metrics_path(&resource.kind, namespace)
+            && let Ok(list) = self.client.get_json(&path).await
+        {
+            browse::add_usage(&mut found, &browse::usage_of(&list));
+        }
+        Ok(found)
+    }
+
+    async fn browse_object(
+        &self,
+        kind: &str,
+        namespace: Option<&str>,
+        name: &str,
+    ) -> Result<browse::ObjectView, ClusterError> {
+        let (resource, _) = self.resource_of(kind).await?;
+        let api = match namespace {
+            Some(ns) if resource.namespaced => self.client.namespaced(&resource, ns),
+            _ => self.client.api(&resource),
+        };
+        let mut object = api.get(name).await.map_err(|e| kube_error(&e))?;
+        let containers = browse::containers(&object);
+        let related = self.related(&resource.kind, namespace, name, &object).await;
+        let edit_yaml = if matches!(resource.kind.as_str(), "Node" | "Event") {
+            String::new()
+        } else {
+            let mut editable = object.clone();
+            clean_for_editing(&mut editable);
+            quench_serde::yaml::to_string(&editable).unwrap_or_default()
+        };
+        browse::clean_for_reading(&mut object);
+        let yaml = quench_serde::yaml::to_string(&object)
+            .map_err(|e| ClusterError::Kube(e.to_string()))?;
+
+        // Events about it: the ones whose subject it is. Not being allowed to read them is not an error.
+        let events = match self
+            .client
+            .api(&ApiResource::new("", "v1", "Event", "events", true))
+            .list(&ListParams::default().fields(&format!(
+                "involvedObject.kind={},involvedObject.name={name}",
+                resource.kind
+            )))
+            .await
+        {
+            Ok(list) => {
+                let mut events: Vec<browse::EventInfo> = list
+                    .items
+                    .iter()
+                    .filter(|e| {
+                        namespace.is_none_or(|ns| {
+                            e.pointer("/metadata/namespace").and_then(Value::as_str) == Some(ns)
+                        })
+                    })
+                    .map(browse::event)
+                    .collect();
+                events.sort_by(|a, b| b.last.cmp(&a.last));
+                events
+            }
+            Err(_) => Vec::new(),
+        };
+        Ok(browse::ObjectView {
+            yaml,
+            events,
+            containers,
+            edit_yaml,
+            related,
+        })
+    }
+
+    async fn exec_open(
+        &self,
+        namespace: &str,
+        pod: &str,
+        container: Option<&str>,
+    ) -> Result<crate::domain::exec::ExecConnection, ClusterError> {
+        crate::domain::exec::connect(self.client.config(), namespace, pod, container)
+            .await
+            .map_err(ClusterError::Kube)
+    }
+
+    async fn browse_facade(&self) -> Result<Vec<browse::FacadeEntry>, ClusterError> {
+        let all = |resource: ApiResource| {
+            let api = self.client.api(&resource);
+            async move {
+                api.list(&ListParams::default())
+                    .await
+                    .map(|l| l.items)
+                    .map_err(|e| kube_error(&e))
+            }
+        };
+        let ingresses = all(ApiResource::new(
+            "networking.k8s.io",
+            "v1",
+            "Ingress",
+            "ingresses",
+            true,
+        ))
+        .await?;
+        let services = all(ApiResource::new("", "v1", "Service", "services", true)).await?;
+        let pods = all(ApiResource::pod()).await?;
+        Ok(browse::facade(&ingresses, &services, &pods))
+    }
+
+    async fn browse_overview(&self) -> Result<browse::Overview, ClusterError> {
+        let list = |resource: ApiResource| {
+            let api = self.client.api(&resource);
+            async move {
+                api.list(&ListParams::default())
+                    .await
+                    .map(|l| l.items)
+                    .map_err(|e| kube_error(&e))
+            }
+        };
+        let nodes = list(ApiResource::new("", "v1", "Node", "nodes", false)).await?;
+        let pods = list(ApiResource::pod()).await?;
+        let events = list(ApiResource::new("", "v1", "Event", "events", true))
+            .await
+            .unwrap_or_default();
+        let usage = self
+            .client
+            .get_json("/apis/metrics.k8s.io/v1beta1/nodes")
+            .await
+            .ok();
+        Ok(browse::overview(&nodes, usage.as_ref(), &pods, &events))
+    }
+
+    async fn pod_log(
+        &self,
+        namespace: &str,
+        pod: &str,
+        container: Option<&str>,
+        tail: u32,
+        previous: bool,
+    ) -> Result<String, ClusterError> {
+        self.client
+            .namespaced(&ApiResource::pod(), namespace)
+            .logs(
+                pod,
+                &LogParams {
+                    container: container.map(str::to_string),
+                    tail_lines: Some(tail),
+                    previous,
+                    timestamps: true,
+                    ..LogParams::default()
+                },
+            )
+            .await
+            .map_err(|e| kube_error(&e))
+    }
+}
+
+/// Where metrics-server lists usage for `kind`, if it reports on it.
+fn metrics_path(kind: &str, namespace: Option<&str>) -> Option<String> {
+    match (kind, namespace) {
+        ("Node", _) => Some("/apis/metrics.k8s.io/v1beta1/nodes".to_string()),
+        ("Pod", Some(ns)) => Some(format!("/apis/metrics.k8s.io/v1beta1/namespaces/{ns}/pods")),
+        ("Pod", None) => Some("/apis/metrics.k8s.io/v1beta1/pods".to_string()),
+        _ => None,
+    }
+}
+
+impl KubeCluster {
+    /// The pods that belong to an object: those a workload or service selects, those on a node.
+    async fn related(
+        &self,
+        kind: &str,
+        namespace: Option<&str>,
+        name: &str,
+        object: &Value,
+    ) -> Vec<browse::Entry> {
+        let params = if kind == "Node" {
+            ListParams::default().fields(&format!("spec.nodeName={name}"))
+        } else if let Some(selector) = browse::pod_selector(kind, object) {
+            ListParams::default().labels(&selector)
+        } else {
+            return Vec::new();
+        };
+        let pods = ApiResource::pod();
+        let api = namespace.map_or_else(
+            || self.client.api(&pods),
+            |ns| self.client.namespaced(&pods, ns),
+        );
+        let Ok(list) = api.list(&params).await else {
+            return Vec::new();
+        };
+        let mut found: Vec<browse::Entry> = list
+            .items
+            .iter()
+            .filter_map(|pod| browse::entry("v1", "Pod", pod))
+            .collect();
+        found.sort_by(|a, b| a.name.cmp(&b.name));
+        if let Some(ns) = namespace
+            && let Ok(usage) = self
+                .client
+                .get_json(&format!(
+                    "/apis/metrics.k8s.io/v1beta1/namespaces/{ns}/pods"
+                ))
+                .await
+        {
+            browse::add_usage(&mut found, &browse::usage_of(&usage));
+        }
+        found
+    }
+
+    /// The browsable kinds the cluster serves, with their resources.
+    async fn browsable(&self) -> Result<Vec<(ApiResource, Scope, &'static str)>, ClusterError> {
+        let discovery = self.discovery().await?;
+        let mut found = Vec::new();
+        for (group, kind) in browse::KINDS {
+            let hit = discovery
+                .groups()
+                .iter()
+                .flat_map(ApiGroup::recommended_resources)
+                .find(|(resource, caps)| resource.kind == kind && caps.supports_operation("list"));
+            if let Some((resource, caps)) = hit {
+                found.push((resource.clone(), caps.scope.clone(), group));
+            }
+        }
+        Ok(found)
+    }
+
+    async fn resource_of(&self, kind: &str) -> Result<(ApiResource, Scope), ClusterError> {
+        if kind.eq_ignore_ascii_case("secret") {
+            return Err(ClusterError::Kube("a Secret is never shown".into()));
+        }
+        self.browsable()
+            .await?
+            .into_iter()
+            .find(|(resource, _, _)| resource.kind.eq_ignore_ascii_case(kind))
+            .map(|(resource, scope, _)| (resource, scope))
+            .ok_or_else(|| ClusterError::Kube(format!("the cluster has no kind {kind}")))
+    }
 }
 
 /// Kinds that are never a package's own: derived objects and noise.
@@ -543,7 +865,7 @@ fn live_resource(resource: &ApiResource, object: &Value) -> Option<LiveResource>
 }
 
 /// Removes what the API server added, so the YAML is what a person edits and applies back.
-fn clean_for_editing(value: &mut quench_serde::Value) {
+pub(crate) fn clean_for_editing(value: &mut quench_serde::Value) {
     if let Some(object) = value.as_object_mut() {
         object.remove("status");
         if let Some(meta) = object.get_mut("metadata").and_then(|m| m.as_object_mut()) {
@@ -982,6 +1304,51 @@ impl Cluster for FakeCluster {
             })
             .map(|e| e.yaml.clone())
             .ok_or_else(|| ClusterError::Kube(format!("{kind}/{name} not found")))
+    }
+
+    async fn exec_open(
+        &self,
+        _namespace: &str,
+        _pod: &str,
+        _container: Option<&str>,
+    ) -> Result<crate::domain::exec::ExecConnection, ClusterError> {
+        Ok(crate::domain::exec::echo_shell())
+    }
+
+    async fn browse_kinds(&self) -> Result<Vec<browse::KindInfo>, ClusterError> {
+        let kind =
+            |kind: &str, api_version: &str, namespaced: bool, group: &str| browse::KindInfo {
+                kind: kind.to_string(),
+                api_version: api_version.to_string(),
+                namespaced,
+                group: group.to_string(),
+            };
+        Ok(vec![
+            kind("Node", "v1", false, "Cluster"),
+            kind("Pod", "v1", true, "Workloads"),
+            kind("Deployment", "apps/v1", true, "Workloads"),
+            kind("StatefulSet", "apps/v1", true, "Workloads"),
+            kind("ConfigMap", "v1", true, "Config"),
+        ])
+    }
+
+    async fn browse_object(
+        &self,
+        kind: &str,
+        namespace: Option<&str>,
+        name: &str,
+    ) -> Result<browse::ObjectView, ClusterError> {
+        let yaml = self
+            .resource_yaml(None, kind, namespace, name)
+            .await
+            .map_err(|_| ClusterError::Kube(format!("{kind}/{name} not found")))?;
+        Ok(browse::ObjectView {
+            edit_yaml: yaml.clone(),
+            yaml,
+            events: Vec::new(),
+            containers: Vec::new(),
+            related: Vec::new(),
+        })
     }
 
     async fn list_workloads(&self, namespaces: &[String]) -> Result<Vec<Workload>, ClusterError> {

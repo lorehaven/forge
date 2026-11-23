@@ -48,6 +48,8 @@ A row is `editable` when it is live and not a Secret, and `workload` when its ki
 
 `extra` rows are shown and counted but never make a package `out_of_sync`. `summary.not_ready` counts present workloads whose ready count is lower than the desired count; `update_to` is the offered version when the target status is `update_available`.
 
+Whether the offered version changes a given row is decided per resource where the packages say so (`outdated` on a row; see [Updates](#updates-per-resource)).
+
 `installed` of a group is the version the running workloads agree on, else the version of the last recorded install; `offered` is the newest non-yanked version.
 
 ## The inventory
@@ -72,3 +74,15 @@ They create an operation immediately (no plan to confirm); the operation and its
 The edit applies the YAML **as written** with `kubectl apply -f <file>`; the file is named `edit-<first 12 hex of the SHA-256 of the YAML>.yaml` in the runner's package directory, so the same edit is the same file. Drift is allowed and shown: nothing keeps an edit; the package's next install overwrites it, and until then the row is `edited`. A ConfigMap edit restarts exactly the Deployments, StatefulSets and DaemonSets of its namespace whose pod template names the ConfigMap in an `env` (`valueFrom.configMapKeyRef`), an `envFrom` (`configMapRef`) or a volume, and waits for each (`rollout restart`, `rollout status`).
 
 A Secret is never read, shown or edited by Gantry: a package's values are set through the package's own values (`values.yaml`, and `secrets.yaml` encrypted with age) and a new version.
+
+## Updates, per resource
+
+A package is one unit to publish but not one unit to change: `forge` holds a dozen services, and a build of one republishes the whole package. Comparing only version strings made every workload of it look upgradable after any build.
+
+`riveter pack` therefore writes a `[digests]` table into the manifest (see [Package format](../../libs/rivet-package/format.md#rivettoml)): `Kind/name` to a short hash of the resource as it renders. When a target is `update_available`, Gantry reads the digests of the installed and of the offered version (from the registry's version list; a published version never changes, so they are kept in memory) and compares:
+
+* the resources whose hash differs, or that only one version has, are the **changed** set (`Target.changed`); each such row is `outdated: true`, and the UI marks it "update available";
+* if none differs, the target's status becomes `current` and nothing is offered: the new version only rebuilt the package;
+* if either version has no digests (built before they existed), the old rule stays: the whole package is on offer and every row is `outdated`.
+
+A workload whose own manifest is unchanged but whose ConfigMap changed is not marked, though an install would restart it; the ConfigMap's row is. Upgrading still applies the whole package (`kubectl apply` leaves the unchanged resources as they are).

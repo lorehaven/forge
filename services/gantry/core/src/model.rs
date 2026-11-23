@@ -68,6 +68,9 @@ pub struct Row {
     pub workload: bool,
     #[serde(default)]
     pub editable: bool,
+    /// The package's newer version changes this resource.
+    #[serde(default)]
+    pub outdated: bool,
 }
 
 /// A package and what it put in the cluster.
@@ -455,4 +458,238 @@ pub struct DeploymentPlan {
     /// `start` or `stop`.
     pub action: String,
     pub stop: Vec<String>,
+}
+
+// ── the cluster as it is ─────────────────────────────────────────────────────
+
+/// A kind of object the cluster can be browsed by.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClusterKind {
+    pub kind: String,
+    #[serde(rename = "apiVersion", default)]
+    pub api_version: String,
+    #[serde(default)]
+    pub namespaced: bool,
+    /// The heading it is listed under.
+    pub group: String,
+}
+
+/// One row of a list of objects.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClusterEntry {
+    pub kind: String,
+    pub name: String,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub detail: String,
+    #[serde(default)]
+    pub created: Option<String>,
+    /// The status is a problem.
+    #[serde(default)]
+    pub attention: bool,
+    /// What it uses right now, when metrics-server says.
+    #[serde(default)]
+    pub usage: String,
+}
+
+/// An event about an object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClusterEvent {
+    /// `Normal` or `Warning`.
+    #[serde(rename = "type", default)]
+    pub kind: String,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub count: i64,
+    #[serde(default)]
+    pub last: Option<String>,
+    #[serde(default)]
+    pub object: String,
+}
+
+/// One object: its YAML and what happened to it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClusterObject {
+    pub yaml: String,
+    #[serde(default)]
+    pub events: Vec<ClusterEvent>,
+    /// A pod's containers, for its log.
+    #[serde(default)]
+    pub containers: Vec<String>,
+    /// The YAML to edit; empty for what is not edited from here.
+    #[serde(default)]
+    pub edit_yaml: String,
+    /// The pods that belong to it.
+    #[serde(default)]
+    pub related: Vec<ClusterEntry>,
+}
+
+/// A place the cluster serves, as a link.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FacadeEntry {
+    pub name: String,
+    #[serde(default)]
+    pub namespace: String,
+    pub url: String,
+    #[serde(default)]
+    pub available: bool,
+}
+
+/// The cluster in a few numbers (`GET /api/v1/cluster/overview`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClusterOverview {
+    pub nodes_ready: usize,
+    pub nodes_total: usize,
+    pub cpu_used_m: u64,
+    pub cpu_total_m: u64,
+    pub memory_used: u64,
+    pub memory_total: u64,
+    pub pods_running: usize,
+    pub pods_total: usize,
+    #[serde(default)]
+    pub pods_attention: Vec<ClusterEntry>,
+    #[serde(default)]
+    pub warnings: Vec<ClusterEvent>,
+    /// Whether usage is measured.
+    #[serde(default)]
+    pub metrics: bool,
+}
+
+/// Which object: the address of its screen and the query of its request.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ClusterRef {
+    pub kind: String,
+    pub namespace: String,
+    pub name: String,
+}
+
+impl ClusterRef {
+    /// `?namespace=ns&name=x`, percent-encoded (the kind is a path segment of the screen).
+    #[must_use]
+    pub fn query(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.namespace.is_empty() {
+            parts.push(format!(
+                "namespace={}",
+                crate::format::encode(&self.namespace)
+            ));
+        }
+        parts.push(format!("name={}", crate::format::encode(&self.name)));
+        parts.join("&")
+    }
+
+    /// The body of a change to it.
+    #[must_use]
+    pub fn body(&self) -> quench_serde::Value {
+        quench_serde::json!({
+            "kind": self.kind,
+            "namespace": self.namespace,
+            "name": self.name,
+        })
+    }
+
+    /// The reverse of [`query`](Self::query), for `kind`. `None` without a name.
+    #[must_use]
+    pub fn from_pairs(kind: &str, pairs: &[(String, String)]) -> Option<Self> {
+        let get = |name: &str| {
+            pairs
+                .iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.clone())
+                .unwrap_or_default()
+        };
+        let found = Self {
+            kind: kind.to_string(),
+            namespace: get("namespace"),
+            name: get("name"),
+        };
+        (!found.name.is_empty() && !kind.is_empty()).then_some(found)
+    }
+}
+
+/// Groups the kinds by heading, in the order the service listed them.
+#[must_use]
+pub fn kinds_by_group(kinds: &[ClusterKind]) -> Vec<(String, Vec<ClusterKind>)> {
+    let mut groups: Vec<(String, Vec<ClusterKind>)> = Vec::new();
+    for kind in kinds {
+        match groups.iter_mut().find(|(group, _)| *group == kind.group) {
+            Some((_, list)) => list.push(kind.clone()),
+            None => groups.push((kind.group.clone(), vec![kind.clone()])),
+        }
+    }
+    groups
+}
+
+// ── a shell in a pod ─────────────────────────────────────────────────────────
+
+/// What a shell printed since the reader last asked (`GET /api/v1/cluster/exec/output`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExecRead {
+    #[serde(default)]
+    pub data: String,
+    /// Where to ask from next.
+    #[serde(default)]
+    pub next: u64,
+    /// Why it ended, when it did and the pod said.
+    #[serde(default)]
+    pub closed: Option<String>,
+    /// The shell is over.
+    #[serde(default)]
+    pub ended: bool,
+}
+
+/// What a terminal would show for `text`: colour and cursor codes removed, line ends made plain, a backspace
+/// taking back the character before it.
+#[must_use]
+pub fn plain_terminal(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\u{1b}' => match chars.peek() {
+                // `ESC [ ... final byte`
+                Some('[') => {
+                    chars.next();
+                    for next in chars.by_ref() {
+                        if ('\u{40}'..='\u{7e}').contains(&next) {
+                            break;
+                        }
+                    }
+                }
+                // `ESC ] ... BEL` (a window title)
+                Some(']') => {
+                    chars.next();
+                    for next in chars.by_ref() {
+                        if next == '\u{7}' {
+                            break;
+                        }
+                    }
+                }
+                _ => {
+                    chars.next();
+                }
+            },
+            '\r' => {
+                if chars.peek() != Some(&'\n') {
+                    // A lone return rewrites the line: drop what is on it.
+                    let keep = out.rfind('\n').map_or(0, |i| i + 1);
+                    out.truncate(keep);
+                }
+            }
+            '\u{8}' => {
+                if out.chars().last().is_some_and(|last| last != '\n') {
+                    out.pop();
+                }
+            }
+            '\u{7}' => {}
+            other => out.push(other),
+        }
+    }
+    out
 }

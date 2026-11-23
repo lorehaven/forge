@@ -18,6 +18,12 @@ pub struct Manifest {
     /// A package that declares none is one deployment, named after the package, covering all of it.
     #[serde(default, rename = "deployment", skip_serializing_if = "Vec::is_empty")]
     pub deployments: Vec<Deployment>,
+    /// What each resource the package declares comes to, `Kind/name` -> a short hash of its rendered form,
+    /// written by `riveter pack`. Two versions of one package that agree on a resource's hash do not change
+    /// it, which is how Gantry tells which workloads a new build actually touches. Absent from packages
+    /// built before it existed; a reader then falls back to comparing the package versions.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub digests: std::collections::BTreeMap<String, String>,
 }
 
 /// What a deployment is, and how it relates to the others. A deployment is a name for a set of workloads
@@ -135,6 +141,7 @@ impl Manifest {
             requires: Requires::default(),
             meta: quench_serde::Map::new(),
             deployments: Vec::new(),
+            digests: std::collections::BTreeMap::new(),
         }
     }
 

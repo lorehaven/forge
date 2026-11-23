@@ -5,7 +5,7 @@ grand_parent: Services
 nav_order: 1
 ---
 
-The HTTP API of `gantry-service`, rendered from [openapi.yaml](openapi.yaml) (OpenAPI 3.1, checked against the route macros by `scripts/docs-check.py gantry`). All paths are under `BASE_PATH` (`/gantry` under foreman). 18 API routes and 21 `/ui` routes are registered; the three routes of `quench-starter` (`/health`, `/health/live`, `/health/ready`) are on the [Operations](operations.md#health) page.
+The HTTP API of `gantry-service`, rendered from [openapi.yaml](openapi.yaml) (OpenAPI 3.1, checked against the route macros by `scripts/docs-check.py gantry`). All paths are under `BASE_PATH` (`/gantry` under foreman). 32 API routes and 26 `/ui` routes are registered; the three routes of `quench-starter` (`/health`, `/health/live`, `/health/ready`) are on the [Operations](operations.md#health) page.
 
 ## Conventions
 
@@ -133,6 +133,10 @@ Permission: blanket read. `200` the `Operation` plus `live_log` (the runner's ou
 
 Permission: blanket `gantry:deploy`. `200` with the `Operation` after the request; an operation that is already over is returned unchanged. `404 no such operation`.
 
+## cluster
+
+The cluster as it is, by kind. Everything here is described on the [Cluster](cluster.md) page; the routes are `GET /api/v1/cluster/{kinds, overview, facade, objects, object, logs}`, `POST /api/v1/cluster/{delete, scale, edit}` (each queues an operation and answers `201`) and the shell routes `GET /api/v1/cluster/exec/{enabled, output}`, `POST /api/v1/cluster/exec`, `/exec/input`, `/exec/close`. They take **blanket** grants: `read` to look, `scale` to delete or scale, `deploy` to edit or open a shell. A shell needs its namespace in `GANTRY_EXEC_NAMESPACES` as well. A Secret is refused everywhere (`502 kubernetes: a Secret is never shown`, or `422` for a change).
+
 ## auth and ui
 
-The SSO routes behave as in [Common service runtime](../common-runtime.md); gantry uses the shared `/ui/status` handler of `quench-auth`. The page routes (`/ui/home`, `/ui/home/`, `/ui/apps/{name}`, `/ui/targets/{name}`, `/ui/operations`, `/ui/operations/{id}`, `/ui/plans/{id}`, `/ui/resource`) return the same HTML page for a valid session and `302` to the sign-in otherwise; `GET /ui` and `GET /ui/` redirect to `{BASE_PATH}/ui/home`; the five asset routes (`/ui/assets/quench.js`, `app.css`, `shell.js`, `favicon.png`, `app.wasm`) are public. See [The browser-client pattern](../../guides/browser-client.md).
+The SSO routes behave as in [Common service runtime](../common-runtime.md); gantry uses the shared `/ui/status` handler of `quench-auth`. The page routes (`/ui/home`, `/ui/home/`, `/ui/apps/{name}`, `/ui/targets/{name}`, `/ui/operations`, `/ui/operations/{id}`, `/ui/plans/{id}`, `/ui/resource`, `/ui/cluster`, `/ui/cluster/{kind}`, `/ui/cluster/{kind}/view`, `/ui/services`, `/ui/profile`) return the same HTML page for a valid session and `302` to the sign-in otherwise; `GET /ui` and `GET /ui/` redirect to `{BASE_PATH}/ui/home`; the five asset routes (`/ui/assets/quench.js`, `app.css`, `shell.js`, `favicon.png`, `app.wasm`) are public. See [The browser-client pattern](../../guides/browser-client.md).

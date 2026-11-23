@@ -42,6 +42,8 @@ quench-starter = { workspace = true }
 gantry-web = { workspace = true }
 rivet-package = { workspace = true }
 quench-k8s = { workspace = true }
+quench-proto = { workspace = true }
+quench-tls = { workspace = true }
 kube-cluster = { workspace = true }
 tokio = { workspace = true }
 

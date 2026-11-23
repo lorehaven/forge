@@ -13,6 +13,9 @@ use quench_ui::router::{Router, link};
 
 use crate::live::{Notice, Pending, Problem, Request, State};
 
+mod cluster;
+pub(crate) use cluster::{cluster_home, cluster_list, cluster_object, profile, services};
+
 /// What every screen needs of the app.
 #[derive(Clone)]
 pub struct Env {
@@ -67,8 +70,34 @@ pub(crate) fn sidebar(env: &Env, router: &Router) -> View {
         let here = router.location().path;
         let packages = env.path("/home");
         let history = env.path("/operations");
+        let cluster = env.path("/cluster");
+        let in_cluster = here.starts_with(&cluster);
+        let services = env.path("/services");
+        let profile = env.path("/profile");
+        let in_services = here.starts_with(&services);
+        let in_profile = here.starts_with(&profile);
         let in_history = here.starts_with(&history);
-        let in_packages = !in_history && here.starts_with(&env.path(""));
+        let in_packages = !in_history
+            && !in_cluster
+            && !in_services
+            && !in_profile
+            && here.starts_with(&env.path(""));
+        let mut fourth = link(&services)
+            .class("fui-nav-item")
+            .attr("id", "nav-services")
+            .child(forge_shell::icon("globe"))
+            .child(span().text(env.t.t("ui_nav_services")));
+        let mut fifth = link(&profile)
+            .class("fui-nav-item")
+            .attr("id", "nav-profile")
+            .child(forge_shell::icon("user"))
+            .child(span().text(env.t.t("ui_nav_profile")));
+        if in_services {
+            fourth = fourth.attr("aria-current", "page").class("gt-current");
+        }
+        if in_profile {
+            fifth = fifth.attr("aria-current", "page").class("gt-current");
+        }
         let mut first = link(&packages)
             .class("fui-nav-item")
             .attr("id", "nav-packages")
@@ -79,13 +108,27 @@ pub(crate) fn sidebar(env: &Env, router: &Router) -> View {
             .attr("id", "nav-history")
             .child(forge_shell::icon("clock"))
             .child(span().text(env.t.t("ui_nav_operations")));
+        let mut third = link(&cluster)
+            .class("fui-nav-item")
+            .attr("id", "nav-cluster")
+            .child(forge_shell::icon("server"))
+            .child(span().text(env.t.t("ui_nav_cluster")));
+        if in_cluster {
+            third = third.attr("aria-current", "page").class("gt-current");
+        }
         if in_packages {
             first = first.attr("aria-current", "page").class("gt-current");
         }
         if in_history {
             second = second.attr("aria-current", "page").class("gt-current");
         }
-        div().child(first).child(second).into_view()
+        div()
+            .child(first)
+            .child(second)
+            .child(third)
+            .child(fourth)
+            .child(fifth)
+            .into_view()
     })
 }
 
@@ -637,11 +680,18 @@ fn resource_row(env: &Env, state: &State, line: &Line) -> View {
                 .text(row.namespace.clone().unwrap_or_default()),
         ))
         .child(cell(
-            div().child(badge(env, "rstate", &row.state)).child(
-                row.ready
-                    .clone()
-                    .map(|r| span().class("gt-desc gt-gap").text(r)),
-            ),
+            div()
+                .child(badge(env, "rstate", &row.state))
+                .child(
+                    row.ready
+                        .clone()
+                        .map(|r| span().class("gt-desc gt-gap").text(r)),
+                )
+                .child(row.outdated.then(|| {
+                    span()
+                        .class("gt-update gt-gap")
+                        .text(env.t.t("ui_row_update"))
+                })),
         ))
         .child(cell(buttons))
         .into_view()

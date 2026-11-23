@@ -104,3 +104,89 @@ async fn workloads_a_package_installed_are_found_by_their_label_and_version() {
 }
 
 quench_test::main!();
+
+#[quench_test::test]
+#[ignore = "needs a cluster; read-only"]
+async fn the_cluster_can_be_browsed_by_kind_with_events_and_a_pod_log() {
+    let cluster = KubeCluster::connect(&settings()).expect("a kubeconfig");
+
+    let kinds = cluster.browse_kinds().await.unwrap();
+    let names: Vec<&str> = kinds.iter().map(|k| k.kind.as_str()).collect();
+    assert!(
+        names.contains(&"Node") && names.contains(&"Pod"),
+        "{names:?}"
+    );
+    assert!(!names.contains(&"Secret"));
+
+    let nodes = cluster.browse_list("Node", None).await.unwrap();
+    assert_ne!(nodes.len(), 0);
+    assert!(
+        nodes
+            .iter()
+            .all(|n| n.status == "Ready" || n.status == "NotReady")
+    );
+
+    let pods = cluster.browse_list("Pod", None).await.unwrap();
+    let pod = pods
+        .iter()
+        .find(|p| p.status == "Running")
+        .expect("a running pod");
+    let namespace = pod.namespace.clone().expect("a namespace");
+    let view = cluster
+        .browse_object("Pod", Some(&namespace), &pod.name)
+        .await
+        .unwrap();
+    assert!(view.yaml.contains("kind: Pod") && !view.yaml.contains("managedFields"));
+    assert_ne!(view.containers.len(), 0);
+    cluster
+        .pod_log(
+            &namespace,
+            &pod.name,
+            Some(&view.containers[view.containers.len() - 1]),
+            5,
+            false,
+        )
+        .await
+        .unwrap();
+
+    assert!(cluster.browse_list("Secret", None).await.is_err());
+
+    let overview = cluster.browse_overview().await.unwrap();
+    assert_ne!(overview.nodes_total, 0);
+    assert!(overview.pods_total >= overview.pods_running);
+    assert!(overview.cpu_total_m > 0);
+
+    let facade = cluster.browse_facade().await.unwrap();
+    assert_ne!(facade.len(), 0);
+    assert!(facade.iter().any(|e| e.available), "{facade:?}");
+}
+
+/// Opens a real shell over the Kubernetes exec WebSocket: `GANTRY_IT_EXEC_POD=namespace/pod`.
+#[quench_test::test]
+#[ignore = "needs a cluster and a pod with /bin/sh; set GANTRY_IT_EXEC_POD=namespace/pod"]
+async fn a_shell_in_a_real_pod_runs_a_command_and_answers() {
+    use gantry_service::domain::exec::ExecEvent;
+
+    let target = std::env::var("GANTRY_IT_EXEC_POD").expect("GANTRY_IT_EXEC_POD");
+    let (namespace, pod) = target.split_once('/').expect("namespace/pod");
+    let cluster = KubeCluster::connect(&settings()).expect("a kubeconfig");
+
+    let mut shell = cluster.exec_open(namespace, pod, None).await.unwrap();
+    shell
+        .input
+        .send(b"echo gantry-it-$((6*7))\n".to_vec())
+        .await
+        .unwrap();
+
+    let mut seen = String::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while !seen.contains("gantry-it-42\r\n") && tokio::time::Instant::now() < deadline {
+        if let Ok(Some(ExecEvent::Output(bytes))) =
+            tokio::time::timeout(Duration::from_secs(5), shell.output.recv()).await
+        {
+            seen.push_str(&String::from_utf8_lossy(&bytes));
+        }
+    }
+    assert!(seen.contains("gantry-it-42"), "{seen:?}");
+    shell.input.send(b"exit\n".to_vec()).await.unwrap();
+}

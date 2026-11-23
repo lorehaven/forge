@@ -75,6 +75,8 @@ pub struct Row {
     pub ready: Option<String>,
     pub workload: bool,
     pub editable: bool,
+    /// The package's newest version changes this resource (all of them, for a package that cannot say).
+    pub outdated: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -233,6 +235,20 @@ pub fn kubectl_name(api_version: Option<&str>, kind: &str, name: &str) -> String
     )
 }
 
+/// Whether the newest version of the package changes this resource: only when it is on offer at all, and
+/// then when the two versions disagree on it - or when they cannot say, for every resource.
+fn outdated(target: Option<&Target>, kind: &str, name: &str) -> bool {
+    let Some(target) = target.filter(|t| t.status == Status::UpdateAvailable) else {
+        return false;
+    };
+    target.changed.as_ref().is_none_or(|changed| {
+        changed.iter().any(|key| {
+            key.split_once('/')
+                .is_some_and(|(k, n)| k.eq_ignore_ascii_case(kind) && n == name)
+        })
+    })
+}
+
 /// Groups by package: what the cluster has, what the inventory says should be there, and which is which.
 #[must_use]
 pub fn group(
@@ -292,6 +308,7 @@ pub fn group(
                     ready: found.and_then(|r| r.ready.clone()),
                     workload: is_workload(&item.kind),
                     editable: found.is_some() && !is_secret(&item.kind),
+                    outdated: outdated(target, &item.kind, &item.name),
                 });
             }
             for resource in theirs {
@@ -320,6 +337,7 @@ pub fn group(
                     ready: resource.ready.clone(),
                     workload: is_workload(&resource.kind),
                     editable: !is_secret(&resource.kind),
+                    outdated: false,
                 });
             }
 

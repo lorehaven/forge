@@ -10,6 +10,7 @@ use quench_http::prelude::{
 pub use quench_starter::http::domain::api_error::{ApiError, json_error};
 
 pub mod authz;
+pub mod cluster;
 pub mod deployments;
 pub mod info;
 pub mod operations;
@@ -46,6 +47,7 @@ pub fn wrap_auth(
 }
 
 pub fn register_routes() {
+    cluster::register_routes();
     info::register_routes();
     deployments::register_routes();
     operations::register_routes();

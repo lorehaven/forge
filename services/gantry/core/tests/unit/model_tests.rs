@@ -119,3 +119,13 @@ fn text_for_the_screens() {
     assert_eq!(when("2026-10-29T10:00:05Z"), "2026-10-29 10:00:05");
     assert_eq!(when(""), "");
 }
+
+#[quench_test::test]
+fn a_terminal_line_is_shown_without_its_colour_or_cursor_codes() {
+    use gantry_core::plain_terminal;
+    assert_eq!(plain_terminal("\u{1b}[32mok\u{1b}[0m\r\n"), "ok\n");
+    assert_eq!(plain_terminal("ab\u{8}c"), "ac");
+    assert_eq!(plain_terminal("one\ntwo\rthree"), "one\nthree");
+    assert_eq!(plain_terminal("\u{1b}]0;title\u{7}$ "), "$ ");
+    assert_eq!(plain_terminal("$ "), "$ ");
+}

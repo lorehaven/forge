@@ -153,6 +153,13 @@ pub fn pack(opts: &PackOptions<'_>, resolver: Option<&dyn DigestResolver>) -> Re
         None => (Vec::new(), Vec::new()),
     };
 
+    manifest.digests = resource_digests(opts.env, &files, &defaults).with_context(|| {
+        format!(
+            "could not render `{}` to fingerprint its resources",
+            opts.env
+        )
+    })?;
+
     let mut builder = PackageBuilder::new(manifest.clone());
     for (path, bytes) in files {
         builder.add_file(path, bytes)?;
@@ -210,6 +217,80 @@ pub fn fingerprint(package: &Package) -> Result<String> {
         text.push_str(&rivet_package::sha256_hex(bytes));
     }
     Ok(rivet_package::sha256_hex(text.as_bytes()))
+}
+
+/// A short hash of every resource the packed overlay renders to, `Kind/name` -> hex.
+///
+/// Rendered from the files as they will be shipped (pinned digests included) with the package's own
+/// defaults; a value only an install supplies is a stand-in, the same in every build. What a resource says
+/// about itself is then comparable between two versions without installing either.
+fn resource_digests(
+    env: &str,
+    files: &BTreeMap<String, Vec<u8>>,
+    defaults: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>> {
+    use crate::render::{ResourceScope, Selector, render_in_memory};
+
+    let scratch =
+        quench_core::tmp::TempDir::new().context("failed to create a scratch directory")?;
+    let root = scratch.path().join("overlays");
+    for (path, bytes) in files {
+        // Encrypted values are not opened here: their names stand in below.
+        if path == crate::vault::FILE {
+            continue;
+        }
+        let target = root.join(env).join(path);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&target, bytes)?;
+    }
+
+    let mut vars: HashMap<String, String> = defaults
+        .iter()
+        .map(|(name, value)| {
+            let value = if value.is_empty() {
+                format!("placeholder-{name}")
+            } else {
+                value.clone()
+            };
+            (name.clone(), value)
+        })
+        .collect();
+    // `defaults` already names the vault's entries; anything else the overlay reads is a required value.
+    for name in overlay_vars(&scan_overlay(env, &root)?.rendered) {
+        vars.entry(name.clone())
+            .or_insert_with(|| format!("placeholder-{name}"));
+    }
+
+    let workspace = Workspace {
+        overlays_dir: Some(root),
+        output_dir: Some(scratch.path().join("manifests")),
+        env_vars: Some(vars),
+        ..Workspace::default()
+    };
+    let rendered = crate::env::with_workspace(workspace, || {
+        render_in_memory(env, ResourceScope::All, &Selector::default())
+    })?;
+
+    let mut digests = BTreeMap::new();
+    for (_, yaml) in rendered {
+        let doc: quench_serde::Value = quench_serde::yaml::from_str(&yaml)?;
+        let text = |value: Option<&quench_serde::Value>| {
+            value
+                .and_then(quench_serde::Value::as_str)
+                .map(str::to_string)
+        };
+        let (Some(kind), Some(name)) = (
+            text(doc.get("kind")),
+            text(doc.get("metadata").and_then(|m| m.get("name"))),
+        ) else {
+            continue;
+        };
+        let hash = rivet_package::sha256_hex(yaml.as_bytes());
+        digests.insert(format!("{kind}/{name}"), hash[..16].to_string());
+    }
+    Ok(digests)
 }
 
 /// A package error with the likely fix attached where there is one.

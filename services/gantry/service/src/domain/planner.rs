@@ -97,7 +97,38 @@ pub async fn all(gantry: &Gantry) -> Result<Vec<Target>, PlanError> {
         .cluster
         .list_workloads(&gantry.settings.allowed_namespaces)
         .await?;
-    Ok(targets::assemble(&catalog, &workloads))
+    let mut found = targets::assemble(&catalog, &workloads);
+    narrow_updates(gantry, &catalog, &mut found).await;
+    Ok(found)
+}
+
+/// A new version of a package is not a new version of everything in it: `forge` holds a dozen services and
+/// a build of one republishes it. Where both versions say what each resource comes to, only the resources
+/// that differ are on offer, and a package where none does is current.
+async fn narrow_updates(gantry: &Gantry, catalog: &[PackageVersion], found: &mut [Target]) {
+    for target in found.iter_mut() {
+        if target.status != targets::Status::UpdateAvailable {
+            continue;
+        }
+        let (Some(installed), Some(offered)) = (
+            target.installed.as_deref(),
+            catalog.iter().find(|p| p.name == target.name),
+        ) else {
+            continue;
+        };
+        let offered = targets::digests_of(offered);
+        if offered.is_empty() {
+            continue;
+        }
+        let Some(installed) = gantry.digests_of(&target.name, installed).await else {
+            continue;
+        };
+        let changed = targets::changed_resources(&installed, &offered);
+        if changed.is_empty() {
+            target.status = targets::Status::Current;
+        }
+        target.changed = Some(changed);
+    }
 }
 
 /// Works out the change that puts `name` at `version` (the newest non-yanked if `None`) and stores it.

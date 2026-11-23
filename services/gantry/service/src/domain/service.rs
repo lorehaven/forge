@@ -7,7 +7,8 @@ use crate::domain::operation::{CLUSTER_SCOPE, NewOperation, Operation, Store};
 use crate::domain::registry::Registry;
 use crate::domain::settings::Settings;
 use crate::domain::steps::Plan;
-use std::sync::Arc;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
 
 pub struct Gantry {
@@ -16,7 +17,12 @@ pub struct Gantry {
     pub executor: Arc<dyn Executor>,
     pub registry: Arc<dyn Registry>,
     pub settings: Settings,
+    /// The shells that are open in pods.
+    pub exec: crate::domain::exec::ExecSessions,
     wake: Notify,
+    /// Per-resource hashes of published versions, by `(package, version)`. A published version never
+    /// changes, so what was read once is kept.
+    digests: Mutex<BTreeMap<(String, String), BTreeMap<String, String>>>,
 }
 
 #[derive(Debug, quench_core::Error)]
@@ -41,8 +47,31 @@ impl Gantry {
             executor,
             registry,
             settings,
+            exec: crate::domain::exec::ExecSessions::new(),
             wake: Notify::new(),
+            digests: Mutex::new(BTreeMap::new()),
         }
+    }
+
+    /// The per-resource hashes `riveter pack` wrote into one published version, or `None` when it carries
+    /// none (built before they existed, or no longer published) or the registry cannot be reached.
+    pub async fn digests_of(
+        &self,
+        package: &str,
+        version: &str,
+    ) -> Option<BTreeMap<String, String>> {
+        let key = (package.to_string(), version.to_string());
+        if let Some(known) = self.digests.lock().ok()?.get(&key) {
+            return Some(known.clone());
+        }
+        let versions = self.registry.versions(package).await.ok()?;
+        let digests =
+            crate::domain::targets::digests_of(versions.iter().find(|v| v.version == version)?);
+        if digests.is_empty() {
+            return None;
+        }
+        self.digests.lock().ok()?.insert(key, digests.clone());
+        Some(digests)
     }
 
     /// Records an operation (validated first: a plan outside the allow-list is refused, not queued) and

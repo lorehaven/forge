@@ -111,7 +111,7 @@ The pipeline has no release stage: releases are run by hand with Anvil.
 
 ## The cluster: homecloud
 
-The estate is declared in the sibling repository `homecloud` as `riveter` overlays (one directory per package under `overlays/`: `forge`, `media`, `observability`, `paper-finder`, `palantir`, `stalwart`, `survey-sender`, `vllm`, `vpn`). `riveter pack` builds a `.rivet` package, the pipeline publishes it to Warehouse, Gantry (or `riveter install`) applies it. Layout of `overlays/forge`:
+The estate is declared in the sibling repository `homecloud` as `riveter` overlays (one directory per package under `overlays/`: `forge`, `media`, `observability`, `paper-finder`, `palantir` (being replaced by the Cluster pages of Gantry), `stalwart`, `survey-sender`, `vllm`, `vpn`). `riveter pack` builds a `.rivet` package, the pipeline publishes it to Warehouse, Gantry (or `riveter install`) applies it. Layout of `overlays/forge`:
 
 | Path | Content |
 |---|---|

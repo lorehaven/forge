@@ -28,6 +28,8 @@ tags:
     description: Independently startable and stoppable workload groups declared by packages.
   - name: operations
     description: Requested changes and their progress.
+  - name: cluster
+    description: The cluster as it is, by kind; its events and logs; delete, scale and edit; shells in pods.
   - name: auth
     description: Sign-in forwarded to gatehouse.
   - name: ui
@@ -660,6 +662,308 @@ paths:
       responses:
         '200': {description: 'WebAssembly (`application/wasm`).'}
         '404': {description: 'The module is not installed in the web directory.'}
+  /api/v1/cluster/kinds:
+    get:
+      tags: [cluster]
+      operationId: clusterKinds
+      summary: The kinds that can be browsed
+      description: |
+        The kinds of object the cluster serves and the service account may list, among those Gantry shows, in display order. Never a Secret.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read (blanket)
+      responses:
+        '200':
+          description: The kinds.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/ClusterKind'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/cluster/overview:
+    get:
+      tags: [cluster]
+      operationId: clusterOverview
+      summary: The cluster in a few numbers
+      description: |
+        Nodes ready, CPU and memory in use against what the nodes can allocate (`metrics` says whether usage was measured), pods running, pods that need attention and the latest ten warnings.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read (blanket)
+      responses:
+        '200':
+          description: The overview.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClusterOverview'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/cluster/facade:
+    get:
+      tags: [cluster]
+      operationId: clusterFacade
+      summary: What the cluster serves, as links
+      description: |
+        One entry per host and path of every Ingress; `available` when a running pod matches the Service behind it.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read (blanket)
+      responses:
+        '200':
+          description: The links.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/FacadeEntry'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/cluster/objects:
+    get:
+      tags: [cluster]
+      operationId: clusterObjects
+      summary: Every object of one kind
+      description: |
+        Across all namespaces unless `namespace` is given. Nodes and pods carry `usage` when metrics-server answers. A Secret is refused (`502`).
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read (blanket)
+      parameters:
+        - {name: kind, in: query, required: true, schema: {type: string}}
+        - {name: namespace, in: query, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: The rows.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/ClusterEntry'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/cluster/object:
+    get:
+      tags: [cluster]
+      operationId: clusterObject
+      summary: One object, its events and what belongs to it
+      description: |
+        YAML with `managedFields` removed, the events about it (newest first), a pod's containers, the YAML as it would be edited, and the pods a workload or service selects or that run on a node.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read (blanket)
+      parameters:
+        - {name: kind, in: query, required: true, schema: {type: string}}
+        - {name: namespace, in: query, required: false, schema: {type: string}}
+        - {name: name, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The object.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClusterObject'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/cluster/logs:
+    get:
+      tags: [cluster]
+      operationId: clusterLogs
+      summary: The log of a pod's container
+      description: |
+        The last `tail` lines (default 500, at most 5000), with timestamps.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:read (blanket)
+      parameters:
+        - {name: namespace, in: query, required: true, schema: {type: string}}
+        - {name: pod, in: query, required: true, schema: {type: string}}
+        - {name: container, in: query, required: false, schema: {type: string}}
+        - {name: tail, in: query, required: false, schema: {type: integer}}
+        - {name: previous, in: query, required: false, schema: {type: boolean}}
+      responses:
+        '200':
+          description: '`{"log": "..."}`.'
+          content:
+            application/json:
+              schema: {type: object, required: [log], properties: {log: {type: string}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/cluster/delete:
+    post:
+      tags: [cluster]
+      operationId: clusterDelete
+      summary: Delete an object
+      description: |
+        Queues an operation with one `delete` step. Refused (`422`) for Namespaces, CustomResourceDefinitions, PersistentVolumes, PersistentVolumeClaims, StorageClasses, Nodes, Events, Secrets and ClusterRoleBindings, for an object that is not there, and for a protected workload.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:scale (blanket)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClusterObjectRef'}
+      responses:
+        '201':
+          description: The queued operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/cluster/scale:
+    post:
+      tags: [cluster]
+      operationId: clusterScale
+      summary: Set the replicas of a workload
+      description: |
+        Queues `scale` then a `rollout` wait (300 s). Only Deployments and StatefulSets, at most 50 replicas; zero for a protected workload is refused.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:scale (blanket)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClusterScaleBody'}
+      responses:
+        '201':
+          description: The queued operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/cluster/edit:
+    post:
+      tags: [cluster]
+      operationId: clusterEdit
+      summary: Apply an object's edited YAML
+      description: |
+        Queues `apply_yaml` (and a `rollout` wait for a Deployment, StatefulSet or DaemonSet). The YAML must describe the object named in the body; a Secret is refused.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:deploy (blanket)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClusterEditBody'}
+      responses:
+        '201':
+          description: The queued operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Operation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Unprocessable'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/cluster/exec/enabled:
+    get:
+      tags: [cluster]
+      operationId: clusterExecEnabled
+      summary: Where a shell may be opened
+      description: |
+        The namespaces in `GANTRY_EXEC_NAMESPACES`, or none for a caller without blanket `deploy`.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: authentication only
+      responses:
+        '200':
+          description: '`{"namespaces": [...]}`.'
+          content:
+            application/json:
+              schema: {type: object, required: [namespaces], properties: {namespaces: {type: array, items: {type: string}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /api/v1/cluster/exec:
+    post:
+      tags: [cluster]
+      operationId: clusterExecOpen
+      summary: Open a shell in a pod
+      description: |
+        Opens `/bin/sh` with a tty over the Kubernetes exec WebSocket and keeps what it prints. `403` when the namespace is not in `GANTRY_EXEC_NAMESPACES`; `409` when 8 shells are open already. Logged.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:deploy (blanket)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [namespace, pod], properties: {namespace: {type: string}, pod: {type: string}, container: {type: string}}}
+      responses:
+        '200':
+          description: '`{"id": "..."}`.'
+          content:
+            application/json:
+              schema: {type: object, required: [id], properties: {id: {type: string}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '502': {$ref: '#/components/responses/BadGateway'}
+  /api/v1/cluster/exec/input:
+    post:
+      tags: [cluster]
+      operationId: clusterExecInput
+      summary: Type into a shell
+      description: |
+        `404` for a session that is gone, timed out or not the caller's; `409` once it has ended.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:deploy (blanket)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [id, data], properties: {id: {type: string}, data: {type: string}}}
+      responses:
+        '200':
+          description: '`{}`.'
+          content:
+            application/json:
+              schema: {type: object}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/cluster/exec/output:
+    get:
+      tags: [cluster]
+      operationId: clusterExecOutput
+      summary: What a shell printed
+      description: |
+        From absolute offset `since` (default 0); output older than the 256 KB kept is gone and the read resumes where the buffer starts. `next` is where to ask next.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:deploy (blanket)
+      parameters:
+        - {name: id, in: query, required: true, schema: {type: string}}
+        - {name: since, in: query, required: false, schema: {type: integer}}
+      responses:
+        '200':
+          description: The new output.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExecRead'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/cluster/exec/close:
+    post:
+      tags: [cluster]
+      operationId: clusterExecClose
+      summary: End a shell
+      description: |
+        Only the opener can. Closing one that is already gone is not an error.
+      security: [{bearer: []}, {sessionCookie: []}]
+      x-permission: gantry:deploy (blanket)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [id], properties: {id: {type: string}}}
+      responses:
+        '200':
+          description: '`{}`.'
+          content:
+            application/json:
+              schema: {type: object}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
 components:
   securitySchemes:
     bearer:
@@ -750,6 +1054,10 @@ components:
         units:
           type: array
           items: {$ref: '#/components/schemas/Unit'}
+        changed:
+          type: [array, 'null']
+          items: {type: string}
+          description: '`Kind/name` of the resources the offered version changes against the installed one, when both versions carry digests; null otherwise.'
     PackageVersion:
       type: object
       required: [name, version]
@@ -796,7 +1104,7 @@ components:
       enum: [synced, out_of_sync, missing, not_installed, unlisted]
     Row:
       type: object
-      required: [apiVersion, kind, name, namespace, state, ready, workload, editable]
+      required: [apiVersion, kind, name, namespace, state, ready, workload, editable, outdated]
       properties:
         apiVersion: {type: [string, 'null']}
         kind: {type: string}
@@ -806,6 +1114,7 @@ components:
         ready: {type: [string, 'null'], description: '"1/1" for a workload that reports it (Jobs: done, failed, running).'}
         workload: {type: boolean}
         editable: {type: boolean}
+        outdated: {type: boolean, description: 'The newest version of the package changes this resource (every resource when the versions carry no digests).'}
     Summary:
       type: object
       required: [sync, total, synced, edited, missing, extra, workloads, not_ready]
@@ -1061,3 +1370,97 @@ components:
         authenticated: {type: boolean}
         username: {type: [string, 'null']}
         roles: {type: array, items: {type: string}}
+    ClusterKind:
+      type: object
+      required: [kind, apiVersion, namespaced, group]
+      properties:
+        kind: {type: string}
+        apiVersion: {type: string}
+        namespaced: {type: boolean}
+        group: {type: string, description: 'The heading: Cluster, Workloads, Network, Config, Storage, Accounts or Custom.'}
+    ClusterEntry:
+      type: object
+      required: [apiVersion, kind, name, namespace, status, detail, created, attention, usage]
+      properties:
+        apiVersion: {type: string}
+        kind: {type: string}
+        name: {type: string}
+        namespace: {type: [string, 'null']}
+        status: {type: string, description: 'The word a person scans for: Running, 3/3, Ready, Bound, ...'}
+        detail: {type: string, description: 'What else is worth a column for the kind.'}
+        created: {type: [string, 'null']}
+        attention: {type: boolean, description: 'The status is a problem (a crash loop, a node not ready, a short workload).'}
+        usage: {type: string, description: '`134m · 1.2Gi` for nodes and pods when metrics-server answers, else empty.'}
+    ClusterEvent:
+      type: object
+      required: [type, reason, message, count, last, object]
+      properties:
+        type: {type: string, description: Normal or Warning.}
+        reason: {type: string}
+        message: {type: string}
+        count: {type: integer}
+        last: {type: [string, 'null']}
+        object: {type: string, description: '`Kind/name` it is about.'}
+    ClusterObject:
+      type: object
+      required: [yaml, events, containers, edit_yaml, related]
+      properties:
+        yaml: {type: string}
+        events: {type: array, items: {$ref: '#/components/schemas/ClusterEvent'}}
+        containers: {type: array, items: {type: string}, description: "A pod's containers, init containers first."}
+        edit_yaml: {type: string, description: 'The YAML to edit; empty for Nodes and Events.'}
+        related: {type: array, items: {$ref: '#/components/schemas/ClusterEntry'}}
+    ClusterOverview:
+      type: object
+      required: [nodes_ready, nodes_total, cpu_used_m, cpu_total_m, memory_used, memory_total, pods_running, pods_total, pods_attention, warnings, metrics]
+      properties:
+        nodes_ready: {type: integer}
+        nodes_total: {type: integer}
+        cpu_used_m: {type: integer, description: Millicores in use.}
+        cpu_total_m: {type: integer, description: Millicores the nodes can allocate.}
+        memory_used: {type: integer, description: Bytes.}
+        memory_total: {type: integer, description: Bytes.}
+        pods_running: {type: integer}
+        pods_total: {type: integer}
+        pods_attention: {type: array, items: {$ref: '#/components/schemas/ClusterEntry'}}
+        warnings: {type: array, items: {$ref: '#/components/schemas/ClusterEvent'}}
+        metrics: {type: boolean, description: Whether usage was measured.}
+    FacadeEntry:
+      type: object
+      required: [name, namespace, url, available]
+      properties:
+        name: {type: string, description: The Ingress.}
+        namespace: {type: string}
+        url: {type: string}
+        available: {type: boolean, description: A running pod of the Service behind it exists.}
+    ClusterObjectRef:
+      type: object
+      required: [kind, name]
+      properties:
+        kind: {type: string}
+        name: {type: string}
+        namespace: {type: [string, 'null']}
+    ClusterScaleBody:
+      type: object
+      required: [kind, name, replicas]
+      properties:
+        kind: {type: string, enum: [Deployment, StatefulSet]}
+        name: {type: string}
+        namespace: {type: string}
+        replicas: {type: integer, minimum: 0, maximum: 50}
+    ClusterEditBody:
+      type: object
+      required: [kind, name, yaml]
+      properties:
+        kind: {type: string}
+        name: {type: string}
+        namespace: {type: [string, 'null']}
+        yaml: {type: string}
+    ExecRead:
+      type: object
+      required: [data, next, closed, ended]
+      properties:
+        data: {type: string}
+        next: {type: integer, format: int64, description: Where to ask from next.}
+        closed: {type: [string, 'null'], description: Why it ended, when the pod said.}
+        ended: {type: boolean}

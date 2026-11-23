@@ -5,7 +5,7 @@ use crate::domain::cluster::Workload;
 use crate::domain::registry::{PackageVersion, compare};
 use quench_serde::Serialize;
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -47,6 +47,36 @@ pub struct Target {
     pub offered: Option<String>,
     pub status: Status,
     pub units: Vec<Unit>,
+    /// `Kind/name` of the resources the offered version changes against the installed one, when both
+    /// versions say what each resource comes to. `None` when they do not (an older package): then the whole
+    /// package counts as changed.
+    pub changed: Option<BTreeSet<String>>,
+}
+
+/// The resources two versions of a package disagree on: changed, added or removed. Each side is
+/// `Kind/name` -> hash, as `riveter pack` wrote it into the manifest.
+#[must_use]
+pub fn changed_resources(
+    installed: &BTreeMap<String, String>,
+    offered: &BTreeMap<String, String>,
+) -> BTreeSet<String> {
+    installed
+        .keys()
+        .chain(offered.keys())
+        .filter(|key| installed.get(*key) != offered.get(*key))
+        .cloned()
+        .collect()
+}
+
+/// The `[digests]` of a published version's manifest; empty for a package built before they existed.
+#[must_use]
+pub fn digests_of(version: &PackageVersion) -> BTreeMap<String, String> {
+    version
+        .manifest
+        .get("digests")
+        .cloned()
+        .and_then(|value| quench_serde::from_value(&value).ok())
+        .unwrap_or_default()
 }
 
 #[must_use]
@@ -98,6 +128,7 @@ pub fn assemble(catalog: &[PackageVersion], workloads: &[Workload]) -> Vec<Targe
                 offered,
                 status,
                 units,
+                changed: None,
             }
         })
         .collect()

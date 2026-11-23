@@ -463,9 +463,11 @@ dependencies = [
  "quench-k8s",
  "quench-log",
  "quench-pg",
+ "quench-proto",
  "quench-serde",
  "quench-starter",
  "quench-test",
+ "quench-tls",
  "rivet-package",
  "tokio",
 ]

@@ -35,8 +35,15 @@ Grants: a wildcard role (admin, or a client-credentials `service` token) holds e
 | `POST /resources/delete`, `/resources/apply` | `scale` on the package |
 | `POST /resources/edit` | `deploy` on the package |
 | `POST /resources/refresh` | `read` on the package |
+| `GET /cluster/kinds`, `/cluster/objects`, `/cluster/object`, `/cluster/logs`, `/cluster/overview`, `/cluster/facade` | blanket `read` |
+| `POST /cluster/delete`, `POST /cluster/scale` | blanket `scale` |
+| `POST /cluster/edit` | blanket `deploy` |
+| `GET /cluster/exec/enabled` | none beyond authentication; the namespaces are empty without blanket `deploy` |
+| `POST /cluster/exec`, `/cluster/exec/input`, `/cluster/exec/close`, `GET /cluster/exec/output` | blanket `deploy`, and for opening one the namespace must be in `GANTRY_EXEC_NAMESPACES`; a session is only the opener's |
 | `POST /operations`, `POST /operations/{id}/cancel` | blanket `deploy` |
 | `GET /operations`, `GET /operations/{id}` | blanket `read` |
+
+The cluster routes take the **blanket** grant only: the cluster is not one package, so `gantry:target:<package>:<action>` does not open it.
 
 Consequences: a user with only `gantry:target:media:deploy` can plan and confirm upgrades of `media`, see only `media`, but cannot list or read operations (blanket read), cancel one, or submit a raw plan; the client tolerates the missing operation list (the "change in progress" banner is a hint). The permission for an action is checked only at confirmation, so planning is open to any reader. `refresh` needs only `read` yet queues a real operation (`pull` and a dry-run render).
 
@@ -44,4 +51,4 @@ Consequences: a user with only `gantry:target:media:deploy` can plan and confirm
 
 * `gantry-warehouse` (client credentials, audience `warehouse` only): how Gantry reads the package registry, with `WAREHOUSE_CLIENT_SECRET`.
 * The runner Job authenticates to the registry with `RIVETER_CLIENT_ID`/`RIVETER_CLIENT_SECRET` from the credentials Secret (`GANTRY_RUNNER_CREDENTIALS_SECRET`), not with the service's identity.
-* In the cluster the service account `gantry-sa` may create and read Jobs in its namespace and `get`/`list` a fixed set of kinds cluster-wide through the `gantry-observer` ClusterRole, never Secrets; the broad `gantry-runner` account is bound only to the runner Job. *Unverified here:* these manifests live in the `homecloud` repository (`overlays/forge/gantry/`), which this book does not read; the names come from the service's defaults and its previous documentation.
+* In the cluster the service account `gantry-sa` may create and read Jobs in its namespace and `get`/`list` a fixed set of kinds cluster-wide through the `gantry-observer` ClusterRole, never Secrets (it also reads nodes, volumes, events, pod logs and metrics for the [Cluster](cluster.md) pages); the broad `gantry-runner` account is bound only to the runner Job. *Unverified here:* these manifests live in the `homecloud` repository (`overlays/forge/gantry/`), which this book does not read; the names come from the service's defaults and its previous documentation.

@@ -56,6 +56,31 @@ pub(super) async fn resource(who: ActorOrRedirect) -> Response {
     page(who)
 }
 
+#[get("/ui/cluster")]
+pub(super) async fn cluster(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
+#[get("/ui/cluster/{kind}")]
+pub(super) async fn cluster_kind(who: ActorOrRedirect, Path(_kind): Path<String>) -> Response {
+    page(who)
+}
+
+#[get("/ui/cluster/{kind}/view")]
+pub(super) async fn cluster_object(who: ActorOrRedirect, Path(_kind): Path<String>) -> Response {
+    page(who)
+}
+
+#[get("/ui/services")]
+pub(super) async fn services(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
+#[get("/ui/profile")]
+pub(super) async fn profile(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
 // The files carry no data of their own: the data comes from the API, which has its own check.
 #[get("/ui/assets/quench.js")]
 pub(super) async fn script() -> Response {
@@ -91,6 +116,11 @@ pub(super) fn register_routes() {
     let _ = operation as fn(_, _) -> _;
     let _ = plan as fn(_, _) -> _;
     let _ = resource as fn(_) -> _;
+    let _ = cluster as fn(_) -> _;
+    let _ = cluster_kind as fn(_, _) -> _;
+    let _ = cluster_object as fn(_, _) -> _;
+    let _ = services as fn(_) -> _;
+    let _ = profile as fn(_) -> _;
     let _ = script as fn() -> _;
     let _ = style as fn() -> _;
     let _ = shell as fn() -> _;

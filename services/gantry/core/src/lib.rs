@@ -7,7 +7,8 @@ pub mod model;
 
 pub use draft::{DraftError, EditDraft};
 pub use model::{
-    Busy, DeploymentPlan, DeploymentView, EditBody, Group, Info, Operation, PackageBody,
-    PackageVersion, Plan, PlanRequest, ResourceBody, ResourceRef, ResourceYaml, Row, StoredPlan,
-    Summary, TargetView, Unit,
+    Busy, ClusterEntry, ClusterEvent, ClusterKind, ClusterObject, ClusterOverview, ClusterRef,
+    DeploymentPlan, DeploymentView, EditBody, ExecRead, FacadeEntry, Group, Info, Operation,
+    PackageBody, PackageVersion, Plan, PlanRequest, ResourceBody, ResourceRef, ResourceYaml, Row,
+    StoredPlan, Summary, TargetView, Unit, kinds_by_group, plain_terminal,
 };

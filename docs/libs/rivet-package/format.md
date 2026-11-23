@@ -46,7 +46,7 @@ Reader rules (`parse_sums`): blank lines are ignored; each other line is split a
 
 ## `rivet.toml`
 
-Top-level tables: `[package]` (required), `[requires]`, `[meta]`, `[[deployment]]`. Unknown top-level keys are ignored on read (the top-level struct has no `deny_unknown_fields`), but `[package]`, `[requires]`, each `[[deployment]]` and each `[[deployment.also_stops]]` reject unknown keys.
+Top-level tables: `[package]` (required), `[requires]`, `[meta]`, `[[deployment]]`, `[digests]`. Unknown top-level keys are ignored on read (the top-level struct has no `deny_unknown_fields`), but `[package]`, `[requires]`, each `[[deployment]]` and each `[[deployment.also_stops]]` reject unknown keys.
 
 | Key | Type | Required | Default | Rule |
 |---|---|---|---|---|
@@ -65,7 +65,9 @@ Top-level tables: `[package]` (required), `[requires]`, `[meta]`, `[[deployment]
 | `deployment[].also_stops[].selector` | string | yes | | non-blank after trim, must not start with `-` |
 | `deployment[].also_stops[].namespaces` | array of string | no | `[]` | not validated |
 
-Serialisation (`to_toml`) omits `requires` when empty, `meta` when empty, `deployment` when there are none, and `None` or empty optional fields.
+`[digests]` (written by `riveter pack`, never by hand) maps `Kind/name` to the first 16 hex characters of the SHA-256 of that resource as the overlay renders it, from the files as shipped (pinned image digests included) with the package's own default values; a value only an install supplies is a fixed stand-in, so the hash is the same in every build. Two versions that agree on a resource's hash do not change it: Gantry uses this to flag only the resources a new build touches (see [Resources](../../services/gantry/resources.md#updates-per-resource)). A package built before this has none, and readers fall back to comparing versions. Warehouse stores the manifest as parsed by this crate, so it must be built with a version that knows the table or the table is dropped on publish.
+
+Serialisation (`to_toml`) omits `requires` when empty, `meta` when empty, `deployment` when there are none, `digests` when empty, and `None` or empty optional fields.
 
 Example:
 

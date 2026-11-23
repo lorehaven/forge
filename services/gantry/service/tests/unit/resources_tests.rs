@@ -937,6 +937,7 @@ mod summary {
             ready: ready.map(str::to_string),
             workload: kind == "Deployment",
             editable: true,
+            outdated: false,
         }
     }
 
@@ -1069,6 +1070,7 @@ fn rows_filter_by_kind_state_and_a_piece_of_the_name() {
         ready: None,
         workload: false,
         editable: true,
+        outdated: false,
     };
     let group = Group {
         package: "demo".to_string(),

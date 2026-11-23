@@ -26,6 +26,11 @@ async fn the_pages_start_the_client_for_a_signed_in_visitor() {
         "/ui/operations/o1",
         "/ui/plans/p1",
         "/ui/resource?package=ml&kind=ConfigMap&name=x",
+        "/ui/cluster",
+        "/ui/cluster/Pod",
+        "/ui/cluster/Pod/view?namespace=ml&name=web-1",
+        "/ui/services",
+        "/ui/profile",
     ] {
         let (status, body) = get(path, &rig).await;
         if status == StatusCode::OK {
@@ -51,6 +56,11 @@ async fn a_visitor_with_no_session_is_sent_to_sign_in() {
         "/ui/operations/o1",
         "/ui/plans/p1",
         "/ui/resource?package=ml&kind=ConfigMap&name=x",
+        "/ui/cluster",
+        "/ui/cluster/Pod",
+        "/ui/cluster/Pod/view?namespace=ml&name=web-1",
+        "/ui/services",
+        "/ui/profile",
     ] {
         let (status, _) = get(path, &rig).await;
         assert!(status.is_redirection(), "{path}: {status}");

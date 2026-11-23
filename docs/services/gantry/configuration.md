@@ -38,6 +38,7 @@ Therefore writing to a real cluster from a developer machine has to be said twic
 | `GANTRY_JOB_DEADLINE_SECS` | `3600` | `activeDeadlineSeconds` of a Job. A value that is not a number is `3600`. |
 | `GANTRY_SELF_DEPLOYMENT` | `forge/gantry` | `namespace/name` of Gantry's own Deployment (applied last, with a rollback). |
 | `GANTRY_SELF_ROLLOUT_TIMEOUT_SECS` | `300` | How long the guarded rollout waits before undoing. |
+| `GANTRY_EXEC_NAMESPACES` | empty | Comma list. Namespaces whose pods may be opened a shell in. Empty turns shells off. Listing one is not enough: `gantry-sa` also needs `create` on `pods/exec` there. See [Cluster](cluster.md#shells). |
 | `GANTRY_PROTECTED` | `forge/gantry,forge/forge-db,forge/redis,forge/gatehouse` | Comma list of `namespace/name` workloads that can never be stopped. Malformed entries are dropped. |
 
 ## Local run

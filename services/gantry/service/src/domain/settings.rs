@@ -71,6 +71,9 @@ pub struct Settings {
     /// How long the guarded rollout of Gantry's own Deployment waits for the new pod before the runner
     /// rolls it back.
     pub self_rollout_timeout_secs: u64,
+    /// Namespaces whose pods may be opened a shell in (`GANTRY_EXEC_NAMESPACES`, comma separated). Empty
+    /// turns exec off: a shell is not something the service's read-only role should be able to give.
+    pub exec_namespaces: Vec<String>,
     /// A JSON file of workloads the fake cluster starts with (`GANTRY_FAKE_CLUSTER`).
     pub fake_cluster_seed: Option<PathBuf>,
 }
@@ -167,6 +170,15 @@ impl Settings {
             age_key_secret: get("GANTRY_AGE_KEY_SECRET")
                 .unwrap_or_else(|| "gantry-age-key".to_string()),
             allowed_namespaces: get("GANTRY_NAMESPACES")
+                .map(|list| {
+                    list.split(',')
+                        .map(str::trim)
+                        .filter(|namespace| !namespace.is_empty())
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            exec_namespaces: get("GANTRY_EXEC_NAMESPACES")
                 .map(|list| {
                     list.split(',')
                         .map(str::trim)

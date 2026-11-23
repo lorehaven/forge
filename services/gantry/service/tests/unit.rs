@@ -8,8 +8,12 @@ mod support;
 mod api_tests;
 #[path = "unit/authz_tests.rs"]
 mod authz_tests;
+#[path = "unit/browse_tests.rs"]
+mod browse_tests;
 #[path = "unit/client_tests.rs"]
 mod client_tests;
+#[path = "unit/cluster_actions_tests.rs"]
+mod cluster_actions_tests;
 #[path = "unit/cluster_kube_tests.rs"]
 mod cluster_kube_tests;
 #[path = "unit/db_tests.rs"]
@@ -18,6 +22,8 @@ mod db_tests;
 mod deployments_api_tests;
 #[path = "unit/deployments_tests.rs"]
 mod deployments_tests;
+#[path = "unit/exec_tests.rs"]
+mod exec_tests;
 #[path = "../../../../cli/riveter/tests/support/fake_cluster.rs"]
 mod fake_cluster;
 #[path = "unit/kubectl_tests.rs"]

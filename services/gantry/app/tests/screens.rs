@@ -6,8 +6,9 @@ use std::rc::Rc;
 
 use gantry_app::{Gantry, Msg, Request, Setup, gantry};
 use gantry_core::{
-    Busy, DeploymentView, Group, Info, Operation, PackageVersion, Plan, ResourceRef, ResourceYaml,
-    Row, StoredPlan, Summary, TargetView, Unit,
+    Busy, ClusterEntry, ClusterEvent, ClusterKind, ClusterObject, ClusterOverview, ClusterRef,
+    DeploymentView, ExecRead, FacadeEntry, Group, Info, Operation, PackageVersion, Plan,
+    ResourceRef, ResourceYaml, Row, StoredPlan, Summary, TargetView, Unit,
 };
 use quench_ui::Event;
 use quench_ui::prelude::*;
@@ -128,6 +129,7 @@ fn row(kind: &str, name: &str, state: &str, editable: bool) -> Row {
         ready: (kind == "Deployment" && state != "missing").then(|| "1/1".into()),
         workload: kind == "Deployment",
         editable,
+        outdated: false,
     }
 }
 
@@ -927,3 +929,417 @@ fn leaving_the_operation_stops_the_asking() {
 }
 
 quench_test::main!();
+
+// ── the cluster as it is ────────────────────────────────────────────────────
+
+fn entry(name: &str, ns: &str, status: &str, attention: bool) -> ClusterEntry {
+    ClusterEntry {
+        kind: "Pod".into(),
+        name: name.into(),
+        namespace: Some(ns.into()),
+        status: status.into(),
+        detail: "1/1 · 0 restarts · n1".into(),
+        created: Some("2026-11-20T10:00:05Z".into()),
+        attention,
+        usage: "12m · 100Mi".into(),
+    }
+}
+
+#[quench_test::test]
+fn the_cluster_lists_its_kinds_under_headings_and_the_sidebar_leads_there() {
+    let l = live("/gantry/ui/cluster");
+    assert!(l.asked.borrow().contains(&Request::ClusterKinds));
+    assert!(present(&l.r, "waiting"));
+    l.send(Msg::ClusterKinds(vec![
+        ClusterKind {
+            kind: "Node".into(),
+            api_version: "v1".into(),
+            namespaced: false,
+            group: "Cluster".into(),
+        },
+        ClusterKind {
+            kind: "Pod".into(),
+            api_version: "v1".into(),
+            namespaced: true,
+            group: "Workloads".into(),
+        },
+    ]));
+    find(&l.r, "a", ("href", "/gantry/ui/cluster/Pod"));
+    assert!(l.text().contains("Workloads"), "{}", l.text());
+    find(&l.r, "a", ("id", "nav-cluster"));
+}
+
+#[quench_test::test]
+fn a_list_of_pods_filters_by_name_and_marks_what_needs_attention() {
+    let l = live("/gantry/ui/cluster/Pod");
+    assert!(l.asked.borrow().contains(&Request::ClusterList {
+        kind: "Pod".into(),
+        namespace: String::new()
+    }));
+    l.send(Msg::ClusterList(vec![]));
+    assert!(present(&l.r, "no-objects"));
+    l.send(Msg::ClusterList(vec![
+        entry("web-1", "ml", "Running", false),
+        entry("db-1", "data", "CrashLoopBackOff", true),
+    ]));
+    assert!(!present(&l.r, "no-objects"));
+    let web = l.r.text_of(find(&l.r, "tr", ("data-object", "web-1")));
+    assert!(
+        web.contains("ml") && web.contains("Running") && web.contains("2026-11-20 10:00:05"),
+        "{web}"
+    );
+    assert!(l.r.html().contains("gt-state-failed"));
+    find(
+        &l.r,
+        "a",
+        (
+            "href",
+            "/gantry/ui/cluster/Pod/view?namespace=ml&name=web-1",
+        ),
+    );
+}
+
+#[quench_test::test]
+fn a_list_is_asked_for_again_while_it_is_open() {
+    let l = live("/gantry/ui/cluster/Pod");
+    let before = l.asked.borrow().len();
+    tick(5100.0);
+    assert!(l.asked.borrow().len() > before);
+}
+
+#[quench_test::test]
+fn a_pod_shows_its_events_yaml_and_loads_a_log_on_request() {
+    let l = live("/gantry/ui/cluster/Pod/view?namespace=ml&name=web-1");
+    assert!(
+        l.asked
+            .borrow()
+            .contains(&Request::ClusterObject(ClusterRef {
+                kind: "Pod".into(),
+                namespace: "ml".into(),
+                name: "web-1".into()
+            }))
+    );
+    l.send(Msg::ClusterObject(Box::new(ClusterObject {
+        yaml: "kind: Pod\n".into(),
+        events: vec![ClusterEvent {
+            kind: "Warning".into(),
+            reason: "BackOff".into(),
+            message: "restarting".into(),
+            count: 4,
+            last: Some("2026-11-20T10:00:05Z".into()),
+            object: "Pod/web-1".into(),
+        }],
+        containers: vec!["app".into()],
+        related: vec![],
+        edit_yaml: String::new(),
+    })));
+    assert!(
+        l.r.text_of(find(&l.r, "tr", ("data-event", "BackOff")))
+            .contains("restarting")
+    );
+    assert!(l.text().contains("kind: Pod"));
+    l.click("button", "log-load");
+    assert_eq!(
+        l.last(),
+        Request::ClusterLog {
+            namespace: "ml".into(),
+            pod: "web-1".into(),
+            container: "app".into(),
+            previous: false
+        }
+    );
+    l.send(Msg::ClusterLog("line one".into()));
+    assert_eq!(
+        l.r.text_of(find(&l.r, "pre", ("id", "cluster-log"))),
+        "line one"
+    );
+}
+
+#[quench_test::test]
+fn the_cluster_page_opens_with_the_numbers_and_what_needs_attention() {
+    let l = live("/gantry/ui/cluster");
+    assert!(l.asked.borrow().contains(&Request::ClusterOverview));
+    l.send(Msg::ClusterOverview(Box::new(ClusterOverview {
+        nodes_ready: 1,
+        nodes_total: 1,
+        cpu_used_m: 500,
+        cpu_total_m: 4000,
+        memory_used: 2 * 1024 * 1024 * 1024,
+        memory_total: 8 * 1024 * 1024 * 1024,
+        pods_running: 9,
+        pods_total: 10,
+        pods_attention: vec![entry("db-1", "data", "CrashLoopBackOff", true)],
+        warnings: vec![ClusterEvent {
+            kind: "Warning".into(),
+            reason: "BackOff".into(),
+            message: "restarting".into(),
+            count: 3,
+            last: None,
+            object: "Pod/db-1".into(),
+        }],
+        metrics: true,
+    })));
+    let cpu = l.r.text_of(find(&l.r, "div", ("id", "stat-cpu")));
+    assert!(cpu.contains("500 / 4000m") && cpu.contains("12%"), "{cpu}");
+    assert!(
+        l.r.text_of(find(&l.r, "div", ("id", "stat-pods")))
+            .contains("9 / 10")
+    );
+    find(&l.r, "tr", ("data-attention", "db-1"));
+    find(&l.r, "tr", ("data-warning", "BackOff"));
+    // The numbers are asked for again while the page is open.
+    let before = l.asked.borrow().len();
+    tick(5100.0);
+    assert!(l.asked.borrow().len() > before);
+}
+
+#[quench_test::test]
+fn a_workload_lists_the_pods_that_belong_to_it() {
+    let l = live("/gantry/ui/cluster/Deployment/view?namespace=ml&name=web");
+    l.send(Msg::ClusterObject(Box::new(ClusterObject {
+        yaml: "kind: Deployment\n".into(),
+        events: vec![],
+        containers: vec![],
+        related: vec![entry("web-1", "ml", "Running", false)],
+        edit_yaml: String::new(),
+    })));
+    let row = l.r.text_of(find(&l.r, "tr", ("data-related", "web-1")));
+    assert!(row.contains("Running") && row.contains("12m"), "{row}");
+    find(
+        &l.r,
+        "a",
+        (
+            "href",
+            "/gantry/ui/cluster/Pod/view?namespace=ml&name=web-1",
+        ),
+    );
+}
+
+fn opened_workload(l: &Live, can: &[&str]) {
+    l.send(Msg::Info(Info {
+        actor: "ana".into(),
+        version: String::new(),
+        can: can.iter().map(ToString::to_string).collect(),
+    }));
+    l.send(Msg::ClusterObject(Box::new(ClusterObject {
+        yaml: "kind: Deployment\nstatus: {}\n".into(),
+        edit_yaml: "kind: Deployment\nspec:\n  replicas: 1\n".into(),
+        ..ClusterObject::default()
+    })));
+}
+
+fn web_ref() -> ClusterRef {
+    ClusterRef {
+        kind: "Deployment".into(),
+        namespace: "ml".into(),
+        name: "web".into(),
+    }
+}
+
+#[quench_test::test]
+fn a_reader_sees_no_buttons_and_a_read_only_yaml() {
+    let l = live("/gantry/ui/cluster/Deployment/view?namespace=ml&name=web");
+    opened_workload(&l, &["read"]);
+    assert!(!present(&l.r, "cluster-actions"));
+    assert!(!present(&l.r, "cluster-edit"));
+    assert!(present(&l.r, "cluster-yaml"));
+}
+
+#[quench_test::test]
+fn deleting_an_object_asks_first_and_scaling_asks_for_the_number() {
+    let l = live("/gantry/ui/cluster/Deployment/view?namespace=ml&name=web");
+    opened_workload(&l, &["read", "scale"]);
+    let before = l.asked().len();
+    l.click("button", "delete");
+    assert_eq!(l.asked().len(), before, "nothing is asked yet");
+    assert!(l.text().contains("Delete Deployment/web?"), "{}", l.text());
+    l.click("button", "confirm-yes");
+    assert_eq!(l.last(), Request::ClusterDelete(web_ref()));
+
+    l.type_into("input", "scale-replicas", "3");
+    l.click("button", "scale");
+    assert_eq!(
+        l.last(),
+        Request::ClusterScale {
+            object: web_ref(),
+            replicas: 3
+        }
+    );
+}
+
+#[quench_test::test]
+fn whoever_may_deploy_edits_the_yaml_and_applies_it() {
+    let l = live("/gantry/ui/cluster/Deployment/view?namespace=ml&name=web");
+    opened_workload(&l, &["read", "deploy"]);
+    l.type_into(
+        "textarea",
+        "cluster-yaml",
+        "kind: Deployment\nspec:\n  replicas: 2\n",
+    );
+    l.submit("cluster-edit");
+    assert_eq!(
+        l.last(),
+        Request::ClusterEdit {
+            object: web_ref(),
+            yaml: "kind: Deployment\nspec:\n  replicas: 2\n".into()
+        }
+    );
+}
+
+#[quench_test::test]
+fn what_takes_data_with_it_has_no_delete_button() {
+    let l = live("/gantry/ui/cluster/PersistentVolumeClaim/view?namespace=ml&name=data");
+    l.send(Msg::Info(Info {
+        actor: "ana".into(),
+        version: String::new(),
+        can: vec!["read".into(), "scale".into()],
+    }));
+    l.send(Msg::ClusterObject(Box::default()));
+    assert!(!present(&l.r, "delete"));
+}
+
+#[quench_test::test]
+fn the_services_page_links_what_runs_and_greys_what_does_not() {
+    let l = live("/gantry/ui/services");
+    assert!(l.asked.borrow().contains(&Request::Facade));
+    assert!(present(&l.r, "waiting"));
+    l.send(Msg::Facade(vec![
+        FacadeEntry {
+            name: "sage".into(),
+            namespace: "forge".into(),
+            url: "https://ennor.ddns.net/sage".into(),
+            available: true,
+        },
+        FacadeEntry {
+            name: "old".into(),
+            namespace: "forge".into(),
+            url: "https://ennor.ddns.net/old".into(),
+            available: false,
+        },
+    ]));
+    let up = find(&l.r, "a", ("data-service", "https://ennor.ddns.net/sage"));
+    assert_eq!(
+        l.r.attr(up, "href").as_deref(),
+        Some("https://ennor.ddns.net/sage")
+    );
+    let down = find(&l.r, "a", ("data-service", "https://ennor.ddns.net/old"));
+    assert!(l.r.attr(down, "href").is_none());
+    assert!(l.r.html().contains("gt-state-failed"));
+    let before = l.asked.borrow().len();
+    tick(10_100.0);
+    assert!(l.asked.borrow().len() > before);
+}
+
+#[quench_test::test]
+fn the_profile_says_who_and_what_they_may_do() {
+    let l = live("/gantry/ui/profile");
+    l.send(Msg::Info(Info {
+        actor: "ana".into(),
+        version: "0.2.13".into(),
+        can: vec!["read".into(), "scale".into()],
+    }));
+    assert_eq!(l.r.text_of(find(&l.r, "p", ("id", "profile-actor"))), "ana");
+    let can = l.r.text_of(find(&l.r, "div", ("id", "profile-can")));
+    assert!(can.contains("read") && can.contains("scale"), "{can}");
+    find(&l.r, "a", ("id", "nav-services"));
+    find(&l.r, "a", ("id", "nav-profile"));
+}
+
+fn opened_pod(l: &Live, can: &[&str]) {
+    l.send(Msg::Info(Info {
+        actor: "ana".into(),
+        version: String::new(),
+        can: can.iter().map(ToString::to_string).collect(),
+    }));
+    l.send(Msg::ClusterObject(Box::new(ClusterObject {
+        yaml: "kind: Pod\n".into(),
+        containers: vec!["app".into()],
+        ..ClusterObject::default()
+    })));
+}
+
+fn web_pod() -> ClusterRef {
+    ClusterRef {
+        kind: "Pod".into(),
+        namespace: "ml".into(),
+        name: "web-1".into(),
+    }
+}
+
+#[quench_test::test]
+fn a_shell_is_offered_only_where_it_is_turned_on_and_to_whoever_may_deploy() {
+    let l = live("/gantry/ui/cluster/Pod/view?namespace=ml&name=web-1");
+    assert!(l.asked.borrow().contains(&Request::ExecEnabled));
+    opened_pod(&l, &["read", "deploy"]);
+    assert!(
+        !present(&l.r, "exec-open"),
+        "off until the service says where"
+    );
+    l.send(Msg::ExecEnabled(vec!["other".into()]));
+    assert!(!present(&l.r, "exec-open"));
+    l.send(Msg::ExecEnabled(vec!["ml".into()]));
+    assert!(present(&l.r, "exec-open"));
+
+    let reader = live("/gantry/ui/cluster/Pod/view?namespace=ml&name=web-1");
+    opened_pod(&reader, &["read"]);
+    reader.send(Msg::ExecEnabled(vec!["ml".into()]));
+    assert!(!present(&reader.r, "exec-open"));
+}
+
+#[quench_test::test]
+fn a_shell_opens_shows_what_it_prints_takes_a_line_and_closes() {
+    let l = live("/gantry/ui/cluster/Pod/view?namespace=ml&name=web-1");
+    opened_pod(&l, &["read", "deploy"]);
+    l.send(Msg::ExecEnabled(vec!["ml".into()]));
+    l.click("button", "exec-open");
+    assert_eq!(
+        l.last(),
+        Request::ExecOpen {
+            object: web_pod(),
+            container: String::new()
+        }
+    );
+
+    l.send(Msg::ExecOpened("s1".into()));
+    l.send(Msg::ExecOutput(ExecRead {
+        data: "\u{1b}[32m$ \u{1b}[0m".into(),
+        next: 12,
+        ..ExecRead::default()
+    }));
+    assert_eq!(l.r.text_of(find(&l.r, "pre", ("id", "exec-screen"))), "$ ");
+
+    // While it is open it is asked what it printed, from where it left off.
+    tick(800.0);
+    assert!(l.asked.borrow().contains(&Request::ExecPoll {
+        id: "s1".into(),
+        since: 12
+    }));
+
+    l.type_into("input", "exec-line", "ls");
+    l.submit("exec-form");
+    assert_eq!(
+        l.last(),
+        Request::ExecInput {
+            id: "s1".into(),
+            data: "ls\n".into()
+        }
+    );
+
+    l.send(Msg::ExecOutput(ExecRead {
+        ended: true,
+        next: 20,
+        ..ExecRead::default()
+    }));
+    assert!(present(&l.r, "exec-over"));
+    let before = l.asked.borrow().len();
+    tick(800.0);
+    assert_eq!(
+        l.asked.borrow().len(),
+        before,
+        "an ended shell is not asked again"
+    );
+
+    l.click("button", "exec-close");
+    assert_eq!(l.last(), Request::ExecClose("s1".into()));
+    assert!(present(&l.r, "exec-open"));
+}

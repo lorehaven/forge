@@ -9,7 +9,9 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gantry_core::{
-    Busy, DeploymentView, Group, Info, Operation, ResourceRef, ResourceYaml, StoredPlan, TargetView,
+    Busy, ClusterEntry, ClusterKind, ClusterObject, ClusterOverview, ClusterRef, DeploymentView,
+    ExecRead, FacadeEntry, Group, Info, Operation, ResourceRef, ResourceYaml, StoredPlan,
+    TargetView,
 };
 use quench_ui::i18n::I18n;
 use quench_ui::prelude::*;
@@ -19,6 +21,12 @@ use crate::screens::{self, Env};
 
 /// How often a running operation is asked for again.
 const POLL_MS: u32 = 3000;
+/// How often a list of the cluster's objects is asked for again.
+const CLUSTER_POLL_MS: u32 = 5000;
+/// How often the list of services is asked for again.
+const FACADE_POLL_MS: u32 = 10_000;
+/// How often an open shell is asked what it printed.
+const EXEC_POLL_MS: u32 = 700;
 
 /// What the app asks its host for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +44,56 @@ pub enum Request {
     Plan(String),
     /// The live YAML of a resource.
     Yaml(ResourceRef),
+    /// The kinds of object the cluster can be browsed by.
+    ClusterKinds,
+    /// The cluster in a few numbers.
+    ClusterOverview,
+    /// What the cluster serves, as links.
+    Facade,
+    /// Every object of a kind, in a namespace (empty: all).
+    ClusterList {
+        kind: String,
+        namespace: String,
+    },
+    /// One object, with its events.
+    ClusterObject(ClusterRef),
+    /// Which namespaces a shell may be opened in.
+    ExecEnabled,
+    /// Open a shell in a pod's container (empty: the first).
+    ExecOpen {
+        object: ClusterRef,
+        container: String,
+    },
+    /// Type into a shell.
+    ExecInput {
+        id: String,
+        data: String,
+    },
+    /// What a shell printed since.
+    ExecPoll {
+        id: String,
+        since: u64,
+    },
+    ExecClose(String),
+    /// Delete an object.
+    ClusterDelete(ClusterRef),
+    /// Set the replicas of a workload.
+    ClusterScale {
+        object: ClusterRef,
+        replicas: u32,
+    },
+    /// Apply an object's edited YAML.
+    ClusterEdit {
+        object: ClusterRef,
+        yaml: String,
+    },
+    /// The log of a pod's container.
+    ClusterLog {
+        namespace: String,
+        pod: String,
+        container: String,
+        previous: bool,
+    },
     /// Start or stop a deployment, now.
     Start(String),
     Stop(String),
@@ -74,6 +132,17 @@ pub enum Msg {
     Operation(Box<Operation>),
     Plan(Box<StoredPlan>),
     Yaml(Box<ResourceYaml>),
+    ClusterKinds(Vec<ClusterKind>),
+    ClusterOverview(Box<ClusterOverview>),
+    Facade(Vec<FacadeEntry>),
+    /// The namespaces a shell may be opened in.
+    ExecEnabled(Vec<String>),
+    /// A shell was opened.
+    ExecOpened(String),
+    ExecOutput(ExecRead),
+    ClusterList(Vec<ClusterEntry>),
+    ClusterObject(Box<ClusterObject>),
+    ClusterLog(String),
     /// A change was queued: the app opens its operation.
     Started(String),
     /// A change went through (the text is for the person).
@@ -176,6 +245,19 @@ pub(crate) struct State {
     pub operation: Signal<Option<Operation>>,
     pub plan: Signal<Option<StoredPlan>>,
     pub yaml: Signal<Option<ResourceYaml>>,
+    pub cluster_kinds: Signal<Vec<ClusterKind>>,
+    pub cluster_overview: Signal<Option<ClusterOverview>>,
+    pub facade: Signal<Option<Vec<FacadeEntry>>>,
+    pub exec_namespaces: Signal<Vec<String>>,
+    /// The open shell, what it has printed (as the terminal shows it), and where to ask from next.
+    pub exec_id: Signal<Option<String>>,
+    pub exec_screen: Signal<String>,
+    pub exec_raw: Signal<String>,
+    pub exec_next: Signal<u64>,
+    pub exec_over: Signal<Option<String>>,
+    pub cluster_list: Signal<Option<Vec<ClusterEntry>>>,
+    pub cluster_object: Signal<Option<ClusterObject>>,
+    pub cluster_log: Signal<Option<String>>,
     pub problem: Signal<Option<Problem>>,
     pub notice: Signal<Option<Notice>>,
     pub pending: Signal<Option<Pending>>,
@@ -209,6 +291,18 @@ impl State {
             operation: create_signal(None),
             plan: create_signal(None),
             yaml: create_signal(None),
+            cluster_kinds: create_signal(Vec::new()),
+            cluster_overview: create_signal(None),
+            facade: create_signal(None),
+            exec_namespaces: create_signal(Vec::new()),
+            exec_id: create_signal(None),
+            exec_screen: create_signal(String::new()),
+            exec_raw: create_signal(String::new()),
+            exec_next: create_signal(0),
+            exec_over: create_signal(None),
+            cluster_list: create_signal(None),
+            cluster_object: create_signal(None),
+            cluster_log: create_signal(None),
             problem: create_signal(None),
             notice: create_signal(None),
             pending: create_signal(None),
@@ -252,6 +346,43 @@ fn receive(state: &State, router: &Router, base: &str, m: Msg) {
             state.problem.set(None);
             state.yaml.set(Some(*yaml));
         }
+        Msg::ClusterKinds(kinds) => state.cluster_kinds.set(kinds),
+        Msg::ExecEnabled(namespaces) => state.exec_namespaces.set(namespaces),
+        Msg::ExecOpened(id) => {
+            state.exec_raw.set(String::new());
+            state.exec_screen.set(String::new());
+            state.exec_next.set(0);
+            state.exec_over.set(None);
+            state.exec_id.set(Some(id));
+        }
+        Msg::ExecOutput(read) => {
+            if read.next >= state.exec_next.get_untracked() {
+                state.exec_next.set(read.next);
+                if !read.data.is_empty() {
+                    let mut raw = state.exec_raw.get_untracked();
+                    raw.push_str(&read.data);
+                    state.exec_screen.set(gantry_core::plain_terminal(&raw));
+                    state.exec_raw.set(raw);
+                }
+            }
+            if read.ended {
+                state.exec_over.set(Some(read.closed.unwrap_or_default()));
+            }
+        }
+        Msg::Facade(entries) => {
+            state.problem.set(None);
+            state.facade.set(Some(entries));
+        }
+        Msg::ClusterOverview(overview) => state.cluster_overview.set(Some(*overview)),
+        Msg::ClusterList(list) => {
+            state.problem.set(None);
+            state.cluster_list.set(Some(list));
+        }
+        Msg::ClusterObject(object) => {
+            state.problem.set(None);
+            state.cluster_object.set(Some(*object));
+        }
+        Msg::ClusterLog(text) => state.cluster_log.set(Some(text)),
         Msg::Started(id) => {
             state.enter();
             router.navigate(&format!("{base}/ui/operations/{id}"));
@@ -383,7 +514,127 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             screens::resource(&env, &state, resource)
         }
     };
+    let cluster_home = {
+        let (env, state) = (env.clone(), state.clone());
+        move |_: &RouteContext| -> View {
+            state.enter();
+            (env.ask)(Request::ClusterKinds);
+            (env.ask)(Request::ClusterOverview);
+            let again = Rc::clone(&env.ask);
+            poll(
+                CLUSTER_POLL_MS,
+                Rc::new(move || {
+                    again(Request::ClusterOverview);
+                    true
+                }),
+            );
+            screens::cluster_home(&env, &state)
+        }
+    };
+    let cluster_list = {
+        let (env, state) = (env.clone(), state.clone());
+        move |ctx: &RouteContext| -> View {
+            let kind = ctx.param("kind").unwrap_or_default();
+            state.enter();
+            state.cluster_list.set(None);
+            (env.ask)(Request::ClusterKinds);
+            let namespace = ctx
+                .location()
+                .query_pairs()
+                .into_iter()
+                .find(|(key, _)| key == "namespace")
+                .map(|(_, value)| value)
+                .unwrap_or_default();
+            let ask = {
+                let (ask, kind) = (Rc::clone(&env.ask), kind.clone());
+                move || {
+                    ask(Request::ClusterList {
+                        kind: kind.clone(),
+                        namespace: namespace.clone(),
+                    });
+                }
+            };
+            ask();
+            // What a cluster is doing changes under the page: look again.
+            poll(
+                CLUSTER_POLL_MS,
+                Rc::new(move || {
+                    ask();
+                    true
+                }),
+            );
+            screens::cluster_list(&env, &state, &kind)
+        }
+    };
+    let cluster_object = {
+        let (env, state) = (env.clone(), state.clone());
+        move |ctx: &RouteContext| -> View {
+            let kind = ctx.param("kind").unwrap_or_default();
+            state.enter();
+            state.cluster_object.set(None);
+            state.cluster_log.set(None);
+            state.exec_id.set(None);
+            state.exec_over.set(None);
+            (env.ask)(Request::ClusterKinds);
+            let Some(object) = ClusterRef::from_pairs(&kind, &ctx.location().query_pairs()) else {
+                state.problem.set(Some(Problem::NotFound));
+                return screens::not_found(&env);
+            };
+            (env.ask)(Request::ClusterObject(object.clone()));
+            if object.kind == "Pod" {
+                (env.ask)(Request::ExecEnabled);
+                // While a shell is open and not over, ask what it printed.
+                let (ask, state) = (Rc::clone(&env.ask), state.clone());
+                poll(
+                    EXEC_POLL_MS,
+                    Rc::new(move || {
+                        if let Some(id) = state.exec_id.get_untracked()
+                            && state.exec_over.get_untracked().is_none()
+                        {
+                            ask(Request::ExecPoll {
+                                id,
+                                since: state.exec_next.get_untracked(),
+                            });
+                        }
+                        true
+                    }),
+                );
+            }
+            screens::cluster_object(&env, &state, object)
+        }
+    };
+    let services = {
+        let (env, state) = (env.clone(), state.clone());
+        move |_: &RouteContext| -> View {
+            state.enter();
+            state.facade.set(None);
+            let ask = Rc::clone(&env.ask);
+            ask(Request::Facade);
+            poll(
+                FACADE_POLL_MS,
+                Rc::new(move || {
+                    ask(Request::Facade);
+                    true
+                }),
+            );
+            screens::services(&env, &state)
+        }
+    };
+    let profile = {
+        let (env, state) = (env.clone(), state.clone());
+        move |_: &RouteContext| -> View {
+            state.enter();
+            (env.ask)(Request::Startup);
+            screens::profile(&env, &state)
+        }
+    };
     let screen = Routes::new()
+        .route(&format!("{base}/ui/services"), services)
+        .route(&format!("{base}/ui/profile"), profile)
+        .route(&format!("{base}/ui/cluster"), cluster_home.clone())
+        .route(&format!("{base}/ui/cluster/"), cluster_home)
+        .route(&format!("{base}/ui/cluster/:kind"), cluster_list)
+        .route(&format!("{base}/ui/cluster/:kind/view"), cluster_object)
         .route(&format!("{base}/ui/home"), home.clone())
         .route(&format!("{base}/ui/home/"), home.clone())
         .route(&format!("{base}/ui"), home.clone())

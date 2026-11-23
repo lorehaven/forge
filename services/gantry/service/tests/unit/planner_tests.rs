@@ -153,6 +153,39 @@ async fn each_target_says_how_what_runs_compares_to_what_is_published() {
     assert_eq!(behind.units.len(), 1);
 }
 
+#[quench_test::test]
+async fn a_build_only_offers_the_resources_it_changes() {
+    use quench_serde::json;
+    let rig = rig();
+    let manifest =
+        |sage: &str| json!({ "digests": { "Deployment/sage": sage, "Deployment/hoist": "h1" } });
+    rig.registry
+        .publish_with("forge", "1.0.0+1", Some("ns"), manifest("s1"));
+    rig.registry
+        .publish_with("forge", "1.0.0+2", Some("ns"), manifest("s2"));
+    rig.registry
+        .publish_with("forge", "1.0.0+3", Some("ns"), manifest("s2"));
+    rig.registry
+        .publish_with("same", "1.0.0+1", Some("ns"), manifest("s1"));
+    rig.registry
+        .publish_with("same", "1.0.0+2", Some("ns"), manifest("s1"));
+    rig.cluster.set_workloads(vec![
+        workload("forge", "sage", "ns", Some("1.0.0+1")),
+        workload("forge", "hoist", "ns", Some("1.0.0+1")),
+        workload("same", "x", "ns", Some("1.0.0+1")),
+    ]);
+
+    let targets = planner::all(&rig.gantry).await.unwrap();
+    let forge = targets.iter().find(|t| t.name == "forge").unwrap();
+    assert_eq!(forge.status, Status::UpdateAvailable);
+    let changed: Vec<&str> = forge.changed.iter().flatten().map(String::as_str).collect();
+    assert_eq!(changed, ["Deployment/sage"]);
+
+    // A rebuild that changed nothing is not an update.
+    let same = targets.iter().find(|t| t.name == "same").unwrap();
+    assert_eq!(same.status, Status::Current);
+}
+
 // ---------------------------------------------------------------- plans
 
 #[quench_test::test]

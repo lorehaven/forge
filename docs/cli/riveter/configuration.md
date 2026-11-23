@@ -160,7 +160,7 @@ Rendering this wrote `t-manifests.yaml` plus `t-manifests.phase-1.yaml` … for 
 
 ## rivet.toml
 
-Read by `pack` from `overlays/<env>/rivet.toml`; regenerated into the archive. Missing file error: `an overlay needs a rivet.toml next to its overlay.yaml: [package] name = "<overlay directory name>" version = "0.1.0"`.
+Read by `pack` from `overlays/<env>/rivet.toml`; regenerated into the archive. `pack` adds a `[digests]` table to the archived copy (a hash per rendered resource; see [pack](commands-packages.md#pack)); never write it by hand. Missing file error: `an overlay needs a rivet.toml next to its overlay.yaml: [package] name = "<overlay directory name>" version = "0.1.0"`.
 
 ```toml
 [package]

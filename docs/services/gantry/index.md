@@ -6,7 +6,7 @@ has_children: true
 permalink: /services/gantry/
 ---
 
-Gantry installs, upgrades, stops, starts and swaps what runs in the cluster, from a UI and an API, as versioned `.rivet` packages (see the `rivet-package` library). It never touches a workload itself: it records what was asked as an **operation**, has a short-lived **runner** do the work with `riveter` and `kubectl`, and reads the outcome back. Service crate `gantry-service` 0.2.2, which also builds the `gantry-runner` program the runner Jobs execute.
+Gantry installs, upgrades, stops, starts and swaps what runs in the cluster, and shows the cluster itself (see [Cluster](cluster.md); it replaces the Palantir dashboard), from a UI and an API, as versioned `.rivet` packages (see the `rivet-package` library). It never touches a workload itself: it records what was asked as an **operation**, has a short-lived **runner** do the work with `riveter` and `kubectl`, and reads the outcome back. Service crate `gantry-service` 0.2.2, which also builds the `gantry-runner` program the runner Jobs execute.
 
 ## Crates
 
@@ -43,6 +43,7 @@ All under `services/gantry/`.
 | Page | Content |
 |---|---|
 | [API](api.md) and [openapi.yaml](openapi.yaml) | Every route. |
+| [Cluster](cluster.md) | The cluster by kind, an overview, the services page, a pod's log and shell, delete, scale and edit: what Palantir was. |
 | [Resources](resources.md) | The five resource states, sync states, the cluster side (discovery, labels), the direct actions. |
 | [Deployments](deployments.md) | Start, stop, swap, update while stopped, protected workloads. |
 | [Plans and operations](reconciler.md) | Steps, validation, the reconciler, the runner, outcomes, self-upgrade. |
