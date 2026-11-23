@@ -218,6 +218,8 @@ steps   = [
   # The modules whose services run on this database (`FORGE_BDD_DATABASE_URL`): the scenarios tagged `@postgres` then
   # run too, and the in-memory ones that describe what a store without a database does (`@memory`) stand down.
   { run = "cargo run -q -p foundry -- apply --catalog services/foundry/service/migrations --database-url postgres://postgres:postgres@127.0.0.1:5432/postgres --install daybook --install workbench" },
+  # The browser clients are built by the harness when a service has none (git-ignored), and need this target.
+  { run = "rustup target add wasm32-unknown-unknown" },
   { run = "export QUENCH_TEST_REPORT_DIR=$PWD/target/bdd; cargo run -p forge-bdd" },
 ]
 

@@ -113,6 +113,47 @@ impl Fixture {
             .await
             .unwrap_or_else(|e| panic!("failed to build {package}: {e}"));
         assert!(status.success(), "{package} build failed");
+        self.ensure_client(package).await;
+    }
+
+    /// The browser client of a service that has one (`services/<name>/web`).
+    ///
+    /// The module is git-ignored (`scripts/web.sh` or the image build makes it), so a fresh checkout - the CI pod - has
+    /// none, and the service then answers its pages with a 404. Builds it when it is missing.
+    async fn ensure_client(&self, package: &str) {
+        let app = package.strip_suffix("-service").unwrap_or(package);
+        let crate_dir = self.workspace_root.join("services").join(app).join("web");
+        let module = self.service_dir(package).join("web").join("app.wasm");
+        if !crate_dir.join("Cargo.toml").is_file() || module.is_file() {
+            return;
+        }
+        let web_package = format!("{app}-web");
+        println!("Building {web_package} (wasm)...");
+        let status = Command::new("cargo")
+            .args(["build", "-q", "--target", "wasm32-unknown-unknown", "--profile", "wasm", "-p"])
+            .arg(&web_package)
+            .current_dir(&self.workspace_root)
+            .envs(std::env::vars())
+            .status()
+            .await
+            .unwrap_or_else(|e| panic!("failed to build {web_package}: {e}"));
+        assert!(
+            status.success(),
+            "{web_package} build failed (is the wasm32-unknown-unknown target installed?)"
+        );
+        let built = self
+            .target_dir()
+            .join("wasm32-unknown-unknown")
+            .join("wasm")
+            .join(format!("{}.wasm", web_package.replace('-', "_")));
+        std::fs::create_dir_all(module.parent().expect("a web dir")).expect("create the web dir");
+        std::fs::copy(&built, &module)
+            .unwrap_or_else(|e| panic!("copy {} to {}: {e}", built.display(), module.display()));
+    }
+
+    fn target_dir(&self) -> PathBuf {
+        std::env::var_os("CARGO_TARGET_DIR")
+            .map_or_else(|| self.workspace_root.join("target"), PathBuf::from)
     }
 
     /// Environment every service shares: one realm (gatehouse, always
@@ -394,6 +435,8 @@ impl Fixture {
             .env("BASE_PATH", "/switchboard")
             .env("DB_SCHEMA", "test_switchboard")
             .env("SERVICE_AUTH_ENABLED", "true")
+            .env("FEATURE_MODELS_DASHBOARD_ENABLED", "true")
+            .env("FEATURE_VLLM_MANAGEMENT_ENABLED", "true")
             .env("VLLM_MANAGEMENT_MODE", "mock");
 
         Service {
@@ -429,9 +472,14 @@ impl Fixture {
             .env("BASE_PATH", "/warehouse")
             .env("DB_SCHEMA", "test_warehouse")
             .env("SERVICE_AUTH_ENABLED", "true")
+            // Signs warehouse's own registry tokens; the service refuses to start without one, and its `.env` (where
+            // a developer keeps it) is git-ignored, so a fresh checkout has none.
+            .env("DOCKER_TOKEN_SECRET", "bdd-docker-token-secret")
             .env("FEATURE_CRATES_ENABLED", "true")
             .env("FEATURE_DOCKER_ENABLED", "true")
             .env("FEATURE_FILES_ENABLED", "true")
+            .env("FEATURE_ARTIFACTS_ENABLED", "true")
+            .env("ARTIFACT_STORAGE_PATH", storage_dir.join("artifacts"))
             .env("CRATES_STORAGE_PATH", storage_dir.join("crates"))
             .env("STORAGE_PATH", storage_dir.join("docker"))
             .env(
