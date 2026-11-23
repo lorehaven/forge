@@ -50,7 +50,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "conveyor"
-version = "0.7.20"
+version = "0.7.21"
 dependencies = [
  "conveyor-core",
  "conveyor-pipeline",
@@ -84,7 +84,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-cli"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "conveyor-pipeline",
  "forge-tui",
@@ -107,7 +107,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-pipeline"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "quench-core",
  "quench-serde",
@@ -1712,7 +1712,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "conveyor-pipeline",
  "forge-tui",
