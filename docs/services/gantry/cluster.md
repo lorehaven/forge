@@ -93,7 +93,7 @@ How it works: the service opens the Kubernetes exec WebSocket itself (protocol `
 
 | Route | Screen |
 |---|---|
-| `{base}/ui/cluster` | (the sidebar shows a submenu under "Cluster" on every cluster page: Overview, then every kind under its heading, the open one marked) overview cards (refreshed every 5 s), what needs attention, the latest warnings, the kinds by heading |
+| `{base}/ui/cluster` | (the sidebar shows a submenu under "Cluster" on every cluster page: Overview, then the headings, which open and close with a click: one is open by default when it holds the kind being looked at, and the open kind is marked) overview cards (refreshed every 5 s), what needs attention, the latest warnings, the kinds by heading |
 | `{base}/ui/cluster/{kind}` | the list, with a namespace select and a name filter, refreshed every 5 s |
 | `{base}/ui/cluster/{kind}/view?namespace=&name=` | related pods, events, a pod's log and shell, delete and scale, the YAML (a form for whoever holds `deploy`) |
 | `{base}/ui/services` | the links, refreshed every 10 s |

@@ -1344,47 +1344,127 @@ fn a_shell_opens_shows_what_it_prints_takes_a_line_and_closes() {
     assert!(present(&l.r, "exec-open"));
 }
 
-#[quench_test::test]
-fn the_cluster_has_a_submenu_of_its_kinds_with_the_open_one_marked() {
-    let kinds = || {
-        Msg::ClusterKinds(
-            [
-                ("Node", "Cluster"),
-                ("Pod", "Workloads"),
-                ("Service", "Network"),
-            ]
-            .into_iter()
-            .map(|(kind, group)| ClusterKind {
-                kind: kind.into(),
-                api_version: "v1".into(),
-                namespaced: true,
-                group: group.into(),
-            })
-            .collect(),
-        )
-    };
+fn kinds_msg() -> Msg {
+    Msg::ClusterKinds(
+        [
+            ("Node", "Cluster"),
+            ("Pod", "Workloads"),
+            ("Deployment", "Workloads"),
+            ("Service", "Network"),
+        ]
+        .into_iter()
+        .map(|(kind, group)| ClusterKind {
+            kind: kind.into(),
+            api_version: "v1".into(),
+            namespaced: true,
+            group: group.into(),
+        })
+        .collect(),
+    )
+}
 
+#[quench_test::test]
+fn the_cluster_submenu_opens_only_the_heading_being_looked_at_and_the_rest_on_a_click() {
     let l = live("/gantry/ui/cluster/Pod");
-    l.send(kinds());
+    l.send(kinds_msg());
     find(&l.r, "a", ("id", "sub-overview"));
-    let node = find(&l.r, "a", ("id", "sub-Node"));
-    assert_eq!(
-        l.r.attr(node, "href").as_deref(),
-        Some("/gantry/ui/cluster/Node")
-    );
+    // Every heading is there; only the one holding the open kind shows its kinds.
+    for heading in ["Cluster", "Workloads", "Network"] {
+        find(&l.r, "button", ("id", &format!("group-{heading}")));
+    }
     let pod = find(&l.r, "a", ("id", "sub-Pod"));
     assert!(l.r.attr(pod, "class").unwrap().contains("gt-current"));
-    assert!(!l.r.attr(node, "class").unwrap().contains("gt-current"));
-    assert!(l.text().contains("Workloads"));
+    find(&l.r, "a", ("id", "sub-Deployment"));
+    assert!(
+        !present(&l.r, "sub-Node"),
+        "a closed heading hides its kinds"
+    );
+    assert!(!present(&l.r, "sub-Service"));
+    let workloads = find(&l.r, "button", ("id", "group-Workloads"));
+    assert_eq!(
+        l.r.attr(workloads, "aria-expanded").as_deref(),
+        Some("true")
+    );
 
-    // An object of a kind keeps its kind marked.
-    let object = live("/gantry/ui/cluster/Pod/view?namespace=ml&name=web-1");
-    object.send(kinds());
-    let pod = find(&object.r, "a", ("id", "sub-Pod"));
-    assert!(object.r.attr(pod, "class").unwrap().contains("gt-current"));
+    l.click("button", "group-Network");
+    let service = find(&l.r, "a", ("id", "sub-Service"));
+    assert_eq!(
+        l.r.attr(service, "href").as_deref(),
+        Some("/gantry/ui/cluster/Service")
+    );
+    l.click("button", "group-Network");
+    assert!(
+        !present(&l.r, "sub-Service"),
+        "a second click closes it again"
+    );
+
+    // The heading of the open kind can be closed too.
+    l.click("button", "group-Workloads");
+    assert!(!present(&l.r, "sub-Deployment"));
 
     // Outside the cluster pages there is no submenu.
     let home = live("/gantry/ui/home");
-    home.send(kinds());
+    home.send(kinds_msg());
     assert!(!present(&home.r, "cluster-nav"));
+}
+
+#[quench_test::test]
+fn choosing_another_kind_in_the_submenu_switches_the_page() {
+    let l = live("/gantry/ui/cluster/Pod");
+    l.send(kinds_msg());
+    l.send(Msg::ClusterList(vec![entry(
+        "web-1", "ml", "Running", false,
+    )]));
+    assert_eq!(
+        l.r.text_of(find(&l.r, "h3", ("id", "cluster-title"))),
+        "Pod"
+    );
+
+    l.click("button", "group-Cluster");
+    l.click("a", "sub-Node");
+    assert_eq!(l.history.location().path, "/gantry/ui/cluster/Node");
+    assert!(l.asked.borrow().contains(&Request::ClusterList {
+        kind: "Node".into(),
+        namespace: String::new()
+    }));
+    assert_eq!(
+        l.r.text_of(find(&l.r, "h3", ("id", "cluster-title"))),
+        "Node"
+    );
+    assert!(!present(&l.r, "no-objects") || l.text().contains("Nothing here"));
+}
+
+#[quench_test::test]
+fn moving_from_a_workload_to_one_of_its_pods_loads_the_pod_on_the_same_route() {
+    let l = live("/gantry/ui/cluster/Deployment/view?namespace=ml&name=web");
+    l.send(Msg::ClusterObject(Box::new(ClusterObject {
+        yaml: "kind: Deployment\n".into(),
+        related: vec![entry("web-1", "ml", "Running", false)],
+        ..ClusterObject::default()
+    })));
+    let link = find(
+        &l.r,
+        "a",
+        (
+            "href",
+            "/gantry/ui/cluster/Pod/view?namespace=ml&name=web-1",
+        ),
+    );
+    l.r.fire(link, &Event::Click);
+    assert!(
+        l.asked
+            .borrow()
+            .contains(&Request::ClusterObject(ClusterRef {
+                kind: "Pod".into(),
+                namespace: "ml".into(),
+                name: "web-1".into()
+            }))
+    );
+    // The deployment's page is gone while the pod's loads.
+    assert!(present(&l.r, "waiting"));
+    l.send(Msg::ClusterObject(Box::default()));
+    assert_eq!(
+        l.r.text_of(find(&l.r, "h3", ("id", "cluster-object-title"))),
+        "web-1"
+    );
 }

@@ -246,6 +246,8 @@ pub(crate) struct State {
     pub plan: Signal<Option<StoredPlan>>,
     pub yaml: Signal<Option<ResourceYaml>>,
     pub cluster_kinds: Signal<Vec<ClusterKind>>,
+    /// Headings of the Cluster submenu whose open or closed state the person flipped from its default.
+    pub nav_flipped: Signal<Vec<String>>,
     pub cluster_overview: Signal<Option<ClusterOverview>>,
     pub facade: Signal<Option<Vec<FacadeEntry>>>,
     pub exec_namespaces: Signal<Vec<String>>,
@@ -292,6 +294,7 @@ impl State {
             plan: create_signal(None),
             yaml: create_signal(None),
             cluster_kinds: create_signal(Vec::new()),
+            nav_flipped: create_signal(Vec::new()),
             cluster_overview: create_signal(None),
             facade: create_signal(None),
             exec_namespaces: create_signal(Vec::new()),
@@ -408,6 +411,24 @@ fn poll(every_ms: u32, ask: Rc<dyn Fn() -> bool>) {
     let gone = Rc::clone(&alive);
     on_cleanup(move || gone.set(false));
     tick(every_ms, ask, alive);
+}
+
+/// A screen that is built again when the address changes without the route changing: from one kind of
+/// object to another, from one package to the next, from one object to another of the same kind. The router
+/// builds a route's page once and only follows a parameter that is read inside a view, so the page is made
+/// inside one that reads the address.
+fn following(
+    build: impl Fn(&RouteContext) -> View + 'static,
+) -> impl Fn(&RouteContext) -> View + 'static {
+    let build = Rc::new(build);
+    move |ctx: &RouteContext| {
+        let (ctx, build) = (ctx.clone(), Rc::clone(&build));
+        View::dynamic(move || {
+            // Reading the location is what makes this run again on navigation.
+            let _ = ctx.location();
+            untrack(|| build(&ctx))
+        })
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -633,19 +654,22 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         .route(&format!("{base}/ui/profile"), profile)
         .route(&format!("{base}/ui/cluster"), cluster_home.clone())
         .route(&format!("{base}/ui/cluster/"), cluster_home)
-        .route(&format!("{base}/ui/cluster/:kind"), cluster_list)
-        .route(&format!("{base}/ui/cluster/:kind/view"), cluster_object)
+        .route(&format!("{base}/ui/cluster/:kind"), following(cluster_list))
+        .route(
+            &format!("{base}/ui/cluster/:kind/view"),
+            following(cluster_object),
+        )
         .route(&format!("{base}/ui/home"), home.clone())
         .route(&format!("{base}/ui/home/"), home.clone())
         .route(&format!("{base}/ui"), home.clone())
         .route(&format!("{base}/ui/"), home)
-        .route(&format!("{base}/ui/apps/:name"), package)
-        .route(&format!("{base}/ui/targets/:name"), target)
+        .route(&format!("{base}/ui/apps/:name"), following(package))
+        .route(&format!("{base}/ui/targets/:name"), following(target))
         .route(&format!("{base}/ui/operations"), operations.clone())
         .route(&format!("{base}/ui/operations/"), operations)
-        .route(&format!("{base}/ui/operations/:id"), operation)
-        .route(&format!("{base}/ui/plans/:id"), plan)
-        .route(&format!("{base}/ui/resource"), resource)
+        .route(&format!("{base}/ui/operations/:id"), following(operation))
+        .route(&format!("{base}/ui/plans/:id"), following(plan))
+        .route(&format!("{base}/ui/resource"), following(resource))
         .not_found({
             let env = env.clone();
             move |_| screens::not_found(&env)

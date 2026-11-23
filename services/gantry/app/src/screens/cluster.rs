@@ -909,10 +909,12 @@ fn terminal(env: &Env, state: &State, object: &ClusterRef, container: &Field) ->
     })
 }
 
-/// Under "Cluster" in the sidebar: the overview, then every kind under its heading, the open one marked.
+/// Under "Cluster" in the sidebar: the overview, then the kinds under headings that open and close. A heading
+/// is open when the person opened it, or when it holds the kind being looked at; a click flips that.
 pub(super) fn subnav(env: &Env, state: &State, here: &str) -> View {
     let overview = env.path("/cluster");
     let here = here.trim_end_matches('/');
+    let flipped = state.nav_flipped.get();
     let mut nav = div().class("gt-subnav").attr("id", "cluster-nav").child(
         link(&overview)
             .class(if here == overview {
@@ -924,17 +926,47 @@ pub(super) fn subnav(env: &Env, state: &State, here: &str) -> View {
             .text(env.t.t("ui_cluster_overview")),
     );
     for (group, kinds) in kinds_by_group(&state.cluster_kinds.get()) {
+        let is_open = |kind: &str| {
+            let address = env.path(&format!("/cluster/{kind}"));
+            here == address || here.starts_with(&format!("{address}/"))
+        };
+        let holds_current = kinds.iter().any(|k| is_open(&k.kind));
+        let open = holds_current != flipped.contains(&group);
+
+        let toggle = {
+            let (flipped, group) = (state.nav_flipped.clone(), group.clone());
+            move || {
+                flipped.update(|all| {
+                    if let Some(at) = all.iter().position(|g| *g == group) {
+                        all.remove(at);
+                    } else {
+                        all.push(group.clone());
+                    }
+                });
+            }
+        };
         nav = nav.child(
-            div()
+            button()
+                .attr("type", "button")
+                .attr("id", format!("group-{group}"))
+                .attr("aria-expanded", if open { "true" } else { "false" })
                 .class("gt-subnav-group")
-                .text(env.t.t(&format!("ui_cluster_group_{group}"))),
+                .on_click(toggle)
+                .child(
+                    span()
+                        .class("gt-chevron")
+                        .text(if open { "▾" } else { "▸" }),
+                )
+                .child(span().text(env.t.t(&format!("ui_cluster_group_{group}")))),
         );
+        if !open {
+            continue;
+        }
         for kind in kinds {
             let address = env.path(&format!("/cluster/{}", kind.kind));
-            let open = here == address || here.starts_with(&format!("{address}/"));
             nav = nav.child(
                 link(&address)
-                    .class(if open {
+                    .class(if is_open(&kind.kind) {
                         "gt-subnav-item gt-current"
                     } else {
                         "gt-subnav-item"

@@ -115,6 +115,8 @@ details.gt-details > summary { cursor: pointer; color: var(--fui-text-tertiary);
 
 /* Under "Cluster" in the sidebar: the kinds, indented, the open one marked. */
 .gt-subnav { display: flex; flex-direction: column; gap: .125rem; margin: .125rem 0 .5rem 1.25rem; padding-left: .75rem; border-left: 1px solid var(--fui-border); }
-.gt-subnav-group { margin-top: .5rem; padding: 0 .5rem; font-size: .6875rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--fui-text-tertiary); }
+.gt-subnav-group { display: flex; align-items: center; gap: .375rem; width: 100%; margin-top: .25rem; padding: .3125rem .5rem; border: 0; border-radius: var(--fui-radius-lg); background: none; font: inherit; font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; text-align: left; cursor: pointer; color: var(--fui-text-tertiary); }
+.gt-subnav-group:hover { background: var(--fui-surface-hover); color: var(--fui-text-secondary); }
+.gt-chevron { width: .75rem; text-align: center; }
 .gt-subnav-item { display: block; padding: .3125rem .5rem; border-radius: var(--fui-radius-lg); font-size: .8125rem; color: var(--fui-text-secondary) !important; text-decoration: none; }
 .gt-subnav-item:hover { background: var(--fui-surface-hover); }
