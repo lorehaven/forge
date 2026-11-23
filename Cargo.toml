@@ -136,7 +136,7 @@ quench-schema = { registry = "ennor", version = "0.1.6" }
 quench-serde = { registry = "ennor", version = "0.1.10" }
 quench-starter = { registry = "ennor", version = "0.4.24" }
 quench-test = { registry = "ennor", version = "0.1.6" }
-quench-test-bdd = { registry = "ennor", version = "0.1.6" }
+quench-test-bdd = { registry = "ennor", version = "0.1.7" }
 quench-tls = { registry = "ennor", version = "0.1.11" }
 quench-template = { registry = "ennor", version = "0.1.6" }
 quench-tex = { registry = "ennor", version = "0.1.0" }

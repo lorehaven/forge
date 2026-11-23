@@ -1532,9 +1532,9 @@ dependencies = [
 
 [[package]]
 name = "quench-test-bdd"
-version = "0.1.6"
+version = "0.1.7"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "1aeaaff6455a9530184b0a029492899584391f7a9e05c48e18f639a358395ea6"
+checksum = "c1a69c75cadbcc5e8fd77e1ae07e1a78e89ef3bbb9d100afb4d22490e5385d42"
 dependencies = [
  "quench-args",
  "quench-core",
