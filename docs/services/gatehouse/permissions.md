@@ -53,7 +53,7 @@ The service keys are also the realm's **audience list**. A service absent from t
 | `hoist` | Hoist | no | `read` | |
 | `gatehouse` | Gatehouse | no | `read-users`, `create-user`, `edit-user`, `delete-user`, `manage-permissions`, `manage-signing-keys`, `notify` | |
 
-Templates: `viewer` (`read` on sage, warehouse, switchboard, conveyor, workbench, daybook, gantry, gauge, hoist), `editor` (`read`+`write` on sage, warehouse, conveyor, workbench, daybook; switchboard `read`, `launch`, `stop`; `read` on gantry, gauge, hoist), `user-manager` (gatehouse `read-users`, `create-user`, `edit-user`, `delete-user`, `manage-permissions`). Registration default: `viewer`. The cluster overlay mounts its own copy (`gatehouse-permissions-config`, which adds palantir); an overlay copy and the repository copy can differ.
+Templates: `viewer` (`read` on sage, warehouse, switchboard, conveyor, workbench, daybook, gantry, gauge, hoist), `editor` (`read`+`write` on sage, warehouse, conveyor, workbench, daybook; switchboard `read`, `launch`, `stop`; `read` on gantry, gauge, hoist), `user-manager` (gatehouse `read-users`, `create-user`, `edit-user`, `delete-user`, `manage-permissions`). Registration default: `viewer`. The cluster overlay mounts its own copy (`gatehouse-permissions-config`, which adds this estate's own services, such as lore-office); an overlay copy and the repository copy can differ.
 
 ### Gatehouse's own actions
 
