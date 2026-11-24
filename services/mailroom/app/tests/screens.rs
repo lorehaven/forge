@@ -1674,6 +1674,7 @@ fn the_inbox_can_archive_and_read_everything_and_the_trash_asks_twice_before_emp
 
 #[quench_test::test]
 fn the_page_looks_again_every_half_minute_and_the_tab_says_what_is_unread() {
+    alone(|| {
     let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
     quench_ui::platform::install(clock.clone());
     let l = live("/mailroom/ui/folder/inbox");
@@ -1704,6 +1705,7 @@ fn the_page_looks_again_every_half_minute_and_the_tab_says_what_is_unread() {
         !later.iter().any(|r| matches!(r, Request::List(_))),
         "{later:?}"
     );
+    });
 }
 
 #[quench_test::test]
@@ -1747,6 +1749,7 @@ fn kept(id: &str, subject: &str) -> Draft {
 
 #[quench_test::test]
 fn what_is_typed_is_kept_a_moment_later_and_sent_with_the_draft_it_came_from() {
+    alone(|| {
     let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
     quench_ui::platform::install(clock.clone());
     let l = live("/mailroom/ui/compose");
@@ -1805,10 +1808,12 @@ fn what_is_typed_is_kept_a_moment_later_and_sent_with_the_draft_it_came_from() {
     l.type_into("textarea", "compose-body", "changed after sending");
     clock.advance(3_000.0);
     assert_eq!(l.asked().len(), before);
+    });
 }
 
 #[quench_test::test]
 fn a_draft_opens_with_everything_it_kept_and_is_not_saved_again_unchanged() {
+    alone(|| {
     let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
     quench_ui::platform::install(clock.clone());
     let l = live("/mailroom/ui/compose/draft/d1");
@@ -1839,6 +1844,7 @@ fn a_draft_opens_with_everything_it_kept_and_is_not_saved_again_unchanged() {
     // Throwing it away deletes it.
     l.click("a", "discard");
     assert_eq!(l.last(), Request::DeleteDraft("d1".into()));
+    });
 }
 
 #[quench_test::test]
@@ -1925,6 +1931,7 @@ fn a_message_in_a_conversation_shows_the_rest_of_it_as_links() {
 
 #[quench_test::test]
 fn a_message_waits_a_few_seconds_and_can_be_taken_back() {
+    alone(|| {
     let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
     quench_ui::platform::install(clock.clone());
     let l = live("/mailroom/ui/compose");
@@ -1953,6 +1960,7 @@ fn a_message_waits_a_few_seconds_and_can_be_taken_back() {
         "{:?}",
         l.last()
     );
+    });
 }
 
 #[quench_test::test]
@@ -2090,4 +2098,10 @@ fn the_tab_says_nothing_until_the_counts_are_known() {
     );
     l.send(Msg::Folders(folders()));
     assert!(l.r.html().contains("data-fui-badge=\"2\""));
+}
+
+/// Runs a test that installs a clock on a thread of its own: the clock belongs to the thread, and a test run in the same thread
+/// afterwards would otherwise find its messages held back by it.
+fn alone(test: impl FnOnce() + Send + 'static) {
+    std::thread::spawn(test).join().expect("the test passed");
 }
