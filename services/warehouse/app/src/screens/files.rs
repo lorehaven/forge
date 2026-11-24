@@ -957,6 +957,10 @@ fn siblings_of(root: &FileNode, dir: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one function builds the whole bar: the way back, the neighbours, zoom and the downloads"
+)]
 fn preview_bar(env: &Env, storage: &str, root: &FileNode, path: &str) -> Element {
     let name = last_segment(path);
     let dir = parent_dir(path);
@@ -1016,17 +1020,22 @@ fn preview_bar(env: &Env, storage: &str, root: &FileNode, path: &str) -> Element
             ))
     });
     div()
-        .class("wh-fm-bar")
+        .class("wh-fm-bar wh-fm-bar-preview")
         .child(
             div()
-                .class("wh-fm-actions")
+                .class("wh-fm-actions wh-fm-lead")
                 .child(
                     nav(env, &browse_at(env, storage, &dir))
                         .attr("id", "leave-preview")
                         .class("wh-btn")
                         .text(format!("← {}", env.t.t("ui_preview_back"))),
                 )
-                .child(span().attr("id", "preview-name").text(name.to_string()))
+                .child(
+                    span()
+                        .attr("id", "preview-name")
+                        .attr("title", name.to_string())
+                        .text(name.to_string()),
+                )
                 .child(span().class("wh-faint wh-mono").text(content_type(path))),
         )
         .child(

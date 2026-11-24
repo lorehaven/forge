@@ -122,6 +122,14 @@ details>summary.wh-folder{cursor:pointer}
 .wh-fm-bar{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:.5rem 1rem;border-bottom:1px solid var(--wh-border);background:var(--wh-surface-2)}
 .wh-fm-bar .wh-crumbs{flex:1 1 auto;min-width:0;font-weight:500}
 .wh-fm-actions{display:flex;align-items:center;gap:.5rem}
+/* The preview's bar is one line on a desktop: the name gives way (cut with an ellipsis), the buttons keep their words. */
+.wh-fm-bar.wh-fm-bar-preview{flex-wrap:nowrap}
+.wh-fm-bar-preview .wh-btn{white-space:nowrap}
+.wh-fm-bar-preview>.wh-fm-actions{flex:0 0 auto}
+.wh-fm-bar-preview>.wh-fm-actions.wh-fm-lead{flex:1 1 0;min-width:0}
+.wh-fm-lead #preview-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wh-fm-lead .wh-mono{flex:0 0 auto;white-space:nowrap}
+@media (max-width:900px){.wh-fm-bar.wh-fm-bar-preview{flex-wrap:wrap}.wh-fm-bar-preview>.wh-fm-actions.wh-fm-lead{flex:1 1 100%}}
 .wh-fm-body{flex:1 1 auto;min-height:0;overflow:auto}
 .wh-fm-list{display:flex;flex-direction:column}
 .wh-fm-row{display:grid;grid-template-columns:1.25rem minmax(0,1fr) 12rem 6rem 6.75rem;align-items:center;gap:.75rem;padding:.375rem 1rem;min-height:2.5rem;border-bottom:1px solid var(--wh-border)}
