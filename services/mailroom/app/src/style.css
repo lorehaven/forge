@@ -97,3 +97,4 @@ h3{margin:0;font-size:1rem}
 .mr-notify-on,.mr-notify-denied,.mr-notify-unsupported{display:none;margin:0}
 html[data-fui-notify="granted"] .mr-notify-on,html[data-fui-notify="denied"] .mr-notify-denied,html[data-fui-notify="unsupported"] .mr-notify-unsupported{display:block}
 html[data-fui-notify="granted"] .mr-notify-ask,html[data-fui-notify="denied"] .mr-notify-ask,html[data-fui-notify="unsupported"] .mr-notify-ask{display:none}
+.mr-selectbar:empty{display:none}.mr-bulk .mr-btn[disabled]{opacity:.5;cursor:default}.mr-bulk{padding:.25rem .5rem}

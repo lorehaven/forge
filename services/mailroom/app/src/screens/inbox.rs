@@ -131,9 +131,8 @@ fn bulk(
     );
     View::dynamic(move || {
         let chosen = selected.get();
-        if chosen.is_empty() {
-            return View::Empty;
-        }
+        // The bar is always there, so the buttons are where the eye expects them; they wait for something to be chosen.
+        let none = chosen.is_empty();
         // Every message of the folder, not just the ones on the page: the change names the folder instead of the messages.
         let whole = every.get();
         let count = if whole {
@@ -152,6 +151,7 @@ fn bulk(
                 .attr("type", "button")
                 .attr("id", id)
                 .class(if danger { "mr-btn mr-danger" } else { "mr-btn" })
+                .attr_bool("disabled", move || none)
                 .on_click({
                     let ids = chosen.clone();
                     move || {
@@ -173,14 +173,47 @@ fn bulk(
                 })
                 .text(label)
         };
+        // The box on the left chooses the whole page, or lets go of what was chosen.
+        let on_page: Vec<String> = state
+            .list
+            .get()
+            .map(|l| l.items.iter().map(|m| m.id.clone()).collect())
+            .unwrap_or_default();
+        let whole_page = !on_page.is_empty() && on_page.iter().all(|id| chosen.contains(id));
+        let toggle = {
+            let (selected, every) = (selected.clone(), every.clone());
+            input()
+                .attr("type", "checkbox")
+                .attr("id", "select-page")
+                .class("mr-pick")
+                .attr("aria-label", env.t.t("mr_select_page"))
+                .attr_bool("checked", move || whole_page)
+                .attr_bool("disabled", {
+                    let empty = on_page.is_empty();
+                    move || empty
+                })
+                .on_click(move || {
+                    every.set(false);
+                    if whole_page {
+                        selected.set(Vec::new());
+                    } else {
+                        selected.set(on_page.clone());
+                    }
+                })
+        };
         let mut bar = div()
             .class("mr-actions mr-bulk")
             .attr("id", "bulk")
+            .child(toggle)
             .child(
                 span()
                     .attr("id", "selected-count")
                     .class("mr-muted")
-                    .text(format!("{count} {}", env.t.t("mr_list_selected"))),
+                    .text(if none {
+                        String::new()
+                    } else {
+                        format!("{count} {}", env.t.t("mr_list_selected"))
+                    }),
             )
             .child(act(
                 "bulk-read",
@@ -288,23 +321,6 @@ fn select_bar(
             .get()
             .is_some_and(|q| q.text.trim().is_empty() && !q.unread && !q.flagged);
         let more = whole_page && plain && total as usize > on_page.len() && total <= MOST_AT_ONCE;
-        let toggle = {
-            let (selected, every, ids) = (selected.clone(), every.clone(), on_page.clone());
-            input()
-                .attr("type", "checkbox")
-                .attr("id", "select-page")
-                .class("mr-pick")
-                .attr("aria-label", env.t.t("mr_select_page"))
-                .attr_bool("checked", move || whole_page)
-                .on_click(move || {
-                    every.set(false);
-                    if whole_page {
-                        selected.set(Vec::new());
-                    } else {
-                        selected.set(ids.clone());
-                    }
-                })
-        };
         let note = if every.get() {
             Some((
                 env.t
@@ -328,7 +344,6 @@ fn select_bar(
         };
         div()
             .class("mr-selectbar")
-            .child(toggle)
             .child(note.map(|(text, label, take_all)| {
                 let (selected, every) = (selected.clone(), every.clone());
                 span()

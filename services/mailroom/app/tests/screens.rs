@@ -558,13 +558,13 @@ fn selecting_messages_offers_what_can_be_done_with_them() {
         3,
         0,
     )));
-    assert!(!present(&l.r, "bulk"), "nothing is selected yet");
+    assert!(idle(&l), "nothing is selected yet: the buttons are there and wait");
     l.click_attr("input", ("data-select", "m1"));
     l.click_attr("input", ("data-select", "m2"));
     l.click_attr("input", ("data-select", "m3"));
     // Clicking again takes a message out of the selection.
     l.click_attr("input", ("data-select", "m3"));
-    assert!(present(&l.r, "bulk"));
+    assert!(present(&l.r, "bulk") && !idle(&l), "something chosen: the buttons work");
     assert!(
         l.r.text_of(find(&l.r, "span", ("id", "selected-count")))
             .starts_with('2')
@@ -607,7 +607,7 @@ fn selecting_messages_offers_what_can_be_done_with_them() {
         l.click("button", button);
         assert_eq!(l.last(), Request::Change(expected), "{button}");
         // Asking for the change empties the selection; select the two again for the next.
-        assert!(!present(&l.r, "bulk"));
+        assert!(idle(&l));
         l.click_attr("input", ("data-select", "m1"));
         l.click_attr("input", ("data-select", "m2"));
     }
@@ -653,12 +653,12 @@ fn a_new_search_or_page_forgets_the_selection() {
         0,
     )));
     l.click_attr("input", ("data-select", "m1"));
-    assert!(present(&l.r, "bulk"));
+    assert!(present(&l.r, "bulk") && !idle(&l), "something chosen: the buttons work");
     l.submit("search-form");
-    assert!(!present(&l.r, "bulk"));
+    assert!(idle(&l));
     l.click_attr("input", ("data-select", "m1"));
     l.click("button", "older");
-    assert!(!present(&l.r, "bulk"));
+    assert!(idle(&l));
 }
 
 #[quench_test::test]
@@ -2039,12 +2039,12 @@ fn the_page_is_chosen_with_one_box_and_the_whole_folder_with_one_more_click() {
             ..Change::default()
         })
     );
-    assert!(!present(&l.r, "bulk"), "the choice is spent");
+    assert!(idle(&l), "the choice is spent");
     // The box again takes the choice away; a short folder has nothing more to offer.
     l.click("input", "select-page");
     assert!(!l.r.html().contains("80 selected"), "back to the page");
     l.click("input", "select-page");
-    assert!(!present(&l.r, "bulk"), "chosen again, then not");
+    assert!(idle(&l), "chosen again, then not");
     l.send(Msg::Messages(list(page(3), 3, 0)));
     l.click("input", "select-page");
     assert!(!present(&l.r, "select-everything"));
@@ -2104,4 +2104,30 @@ fn the_tab_says_nothing_until_the_counts_are_known() {
 /// afterwards would otherwise find its messages held back by it.
 fn alone(test: impl FnOnce() + Send + 'static) {
     std::thread::spawn(test).join().expect("the test passed");
+}
+
+/// The bulk bar is always there; with nothing chosen its buttons are disabled.
+fn idle(l: &Live) -> bool {
+    present(&l.r, "bulk") && l.r.attr(find(&l.r, "button", ("id", "bulk-read")), "disabled").is_some()
+}
+
+#[quench_test::test]
+fn the_buttons_are_always_there_with_the_box_beside_them_and_wait_for_a_choice() {
+    let l = live("/mailroom/ui/home");
+    l.send(Msg::Messages(list(vec![message("m1", "One", true), message("m2", "Two", true)], 2, 0)));
+    let html = l.r.html();
+    // One line: the box first, then the buttons, whatever is chosen.
+    let at = |needle: &str| html.find(needle).unwrap_or_else(|| panic!("{needle}: {html}"));
+    assert!(at("id=\"select-page\"") < at("id=\"bulk-read\""));
+    for id in ["bulk-read", "bulk-unread", "bulk-star", "bulk-archive", "bulk-trash"] {
+        assert!(l.r.attr(find(&l.r, "button", ("id", id)), "disabled").is_some(), "{id} waits");
+    }
+    l.click("input", "select-page");
+    for id in ["bulk-read", "bulk-unread", "bulk-star", "bulk-archive", "bulk-trash"] {
+        assert!(l.r.attr(find(&l.r, "button", ("id", id)), "disabled").is_none(), "{id} works");
+    }
+    assert!(l.r.html().contains("2 selected"));
+    // Letting go of everything disables them again.
+    l.click("input", "select-page");
+    assert!(idle(&l));
 }
