@@ -30,6 +30,14 @@ attachment bytes shared. A mailbox is made the first time the person opens Mailr
 cannot write to someone who has neither (they have to sign in once). Writing `ann` and `ann@<domain>` is the same; any other
 domain is refused. Quota per mailbox: 500 MB by default (panel).
 
+## Drafts, muted senders, conversations
+
+What a person is writing is kept as a **draft** (`/api/v1/drafts`): the recipients as typed, the subject, the text and the message it
+answers, at most 100 per person; attachments are not kept. Sending a message written in a draft removes it (`draft` in the send
+body). A **muted** sender (`/api/v1/mutes`) has their mail put in the archive already read; it is each person's own choice. A
+message's **conversation** (`/api/v1/messages/{id}/thread`) is found by the message-id links in the headers, not by the subject. The
+**signature** (`PUT /api/v1/signature`) is added by the client to the end of the messages a person starts.
+
 ## People
 
 `mailroom:read` opens your mailbox, `mailroom:write` sends and changes mail, `mailroom:admin` is the panel (settings, mailboxes

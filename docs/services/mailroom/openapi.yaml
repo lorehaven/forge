@@ -157,6 +157,120 @@ paths:
         '204': {description: Done.}
         '400': {description: An unknown folder, or a delete outside the trash.}
         '404': {description: A message that is not the caller's.}
+  /api/v1/messages/{id}/thread:
+    get:
+      tags: [mail]
+      operationId: getThread
+      summary: The other messages of the conversation a message belongs to, oldest first
+      description: >
+        Found by the links in the headers (what a message answers and what answers it, a few steps each way, at most 30), not by
+        the subject: automated mail that shares a subject is not a conversation.
+      x-permission: mailroom:read
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: The other messages (summaries), empty when it is alone.}
+        '404': {description: No such message in the caller's mailbox.}
+  /api/v1/drafts:
+    get:
+      tags: [mail]
+      operationId: listDrafts
+      summary: The caller's drafts, the latest first
+      x-permission: mailroom:read
+      responses:
+        '200': {description: The drafts (at most 200).}
+    post:
+      tags: [mail]
+      operationId: createDraft
+      summary: Keep a message that is being written
+      description: Nothing is checked yet (recipients are as typed). A person keeps at most 100 drafts; attachments are not kept.
+      x-permission: mailroom:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftInput'
+            example: {to: sectest-alice, subject: Hello, text: Dear Alice}
+      responses:
+        '201': {description: The draft, with its id.}
+        '400': {description: Too long, or too many drafts.}
+  /api/v1/drafts/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get:
+      tags: [mail]
+      operationId: getDraft
+      summary: One draft
+      x-permission: mailroom:read
+      responses:
+        '200': {description: The draft.}
+        '404': {description: No such draft of the caller's.}
+    put:
+      tags: [mail]
+      operationId: saveDraft
+      summary: Change a draft
+      x-permission: mailroom:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftInput'
+      responses:
+        '200': {description: The draft as kept.}
+        '400': {description: Too long.}
+        '404': {description: No such draft of the caller's (someone else's looks the same).}
+    delete:
+      tags: [mail]
+      operationId: deleteDraft
+      summary: Throw a draft away
+      x-permission: mailroom:write
+      responses:
+        '204': {description: Gone (also when there was none).}
+  /api/v1/mutes:
+    get:
+      tags: [mail]
+      operationId: listMutes
+      summary: The senders whose mail goes straight to the archive
+      x-permission: mailroom:read
+      responses:
+        '200': {description: The muted addresses, lower-case.}
+  /api/v1/mutes/{address}:
+    parameters:
+      - {name: address, in: path, required: true, schema: {type: string}}
+    put:
+      tags: [mail]
+      operationId: muteSender
+      summary: Mute a sender
+      description: Their mail from now on is put in the archive, already read. At most 200 senders.
+      x-permission: mailroom:write
+      responses:
+        '204': {description: Muted.}
+        '400': {description: Not an address, or too many muted senders.}
+    delete:
+      tags: [mail]
+      operationId: unmuteSender
+      summary: Let a sender back into the inbox
+      x-permission: mailroom:write
+      responses:
+        '204': {description: Done.}
+  /api/v1/signature:
+    put:
+      tags: [mail]
+      operationId: saveSignature
+      summary: Keep the text added to the end of the messages the caller starts
+      x-permission: mailroom:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Signature'
+            example: {text: 'Ann, estate office'}
+      responses:
+        '200': {description: The signature as kept (trailing blank lines removed).}
+        '400': {description: Longer than 2000 characters.}
   /api/v1/admin/settings:
     get:
       tags: [admin]
@@ -352,6 +466,26 @@ paths:
         '200': {$ref: '#/components/responses/ClientPage'}
         '302': {description: 'To {base}/ui/login without a valid session cookie.'}
         '404': {$ref: '#/components/responses/ClientMissing'}
+  /ui/drafts:
+    get:
+      tags: [ui]
+      operationId: uiDrafts
+      summary: Client page, the drafts
+      security: []
+      responses:
+        '200': {$ref: '#/components/responses/ClientPage'}
+        '302': {description: 'To {base}/ui/login without a valid session cookie.'}
+        '404': {$ref: '#/components/responses/ClientMissing'}
+  /ui/muted:
+    get:
+      tags: [ui]
+      operationId: uiMuted
+      summary: Client page, the settings (signature, notifications, muted senders)
+      security: []
+      responses:
+        '200': {$ref: '#/components/responses/ClientPage'}
+        '302': {description: 'To {base}/ui/login without a valid session cookie.'}
+        '404': {$ref: '#/components/responses/ClientMissing'}
   /ui/compose:
     get:
       tags: [ui]
@@ -366,10 +500,10 @@ paths:
     get:
       tags: [ui]
       operationId: uiComposeFrom
-      summary: Client page, a reply or a forward of a message
+      summary: Client page, a reply or a forward of a message, or a saved draft
       security: []
       parameters:
-        - {name: mode, in: path, required: true, schema: {type: string, enum: [reply, forward]}}
+        - {name: mode, in: path, required: true, schema: {type: string, enum: [reply, replyall, forward, draft]}}
         - {name: id, in: path, required: true, schema: {type: string}}
       responses:
         '200': {$ref: '#/components/responses/ClientPage'}
@@ -529,6 +663,21 @@ components:
         text: {type: string}
         in_reply_to: {type: [string, 'null'], description: The id of the message being answered.}
         attachments: {type: array, items: {type: string}, description: Ids from the upload endpoint.}
+        draft: {type: [string, 'null'], description: The draft this was written in; it is removed once the message is sent.}
+    DraftInput:
+      type: object
+      properties:
+        to: {type: string, description: As typed (names or addresses, separated by commas).}
+        cc: {type: string}
+        bcc: {type: string}
+        subject: {type: string}
+        text: {type: string}
+        in_reply_to: {type: [string, 'null'], description: The id of the message being answered.}
+    Signature:
+      type: object
+      required: [text]
+      properties:
+        text: {type: string, maxLength: 2000}
     SendRequest:
       type: object
       required: [to, subject, text]
@@ -542,12 +691,13 @@ components:
         idempotency_key: {type: [string, 'null'], description: A retry with the same key does not deliver twice.}
     Change:
       type: object
-      required: [ids]
+      description: Either `ids` (1 to 200 messages) or `all_in` (a whole folder, up to 5000 messages), not both.
       properties:
         ids: {type: array, items: {type: string}}
+        all_in: {type: [string, 'null'], description: 'Every message of this folder (`inbox`, `archive`, `sent` or `trash`) instead of `ids`.'}
         seen: {type: [boolean, 'null']}
         flagged: {type: [boolean, 'null']}
-        move_to: {type: [string, 'null'], description: '`inbox` or `trash`.'}
+        move_to: {type: [string, 'null'], description: '`inbox`, `archive` or `trash`.'}
         delete: {type: boolean, description: Delete for good (only from the trash).}
     SettingsInput:
       type: object
