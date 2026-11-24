@@ -131,6 +131,7 @@ async fn main() {
                 Target::Daybook => format!("{}/health", probe.daybook_url),
                 Target::Mailroom => format!("{}/health/live", probe.mailroom_url),
                 Target::Gauge => format!("{}/health", probe.gauge_url),
+                Target::Gantry => format!("{}/health", probe.gantry_url),
             };
             (*target, url)
         })

@@ -226,6 +226,7 @@ fn options(port: u16) -> Options {
     options.active = true;
     options.checks = vec!["fuzz".to_string()];
     options.forge_root = Some(forge_root());
+    options.fuzz = true;
     options.token = Some("a-token".to_string());
     options
 }

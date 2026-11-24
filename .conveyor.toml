@@ -171,7 +171,11 @@ steps = [
 # the scanner's self-test, and a live scan of the estate are quench-test cases written to target/security,
 # which conveyor keeps whatever the outcome and shows as the Security card on the repo's scan page.
 #
-# The live scan is READ-ONLY (no FORGE_SECTEST_ACTIVE): anonymous requests, forged credentials, traversal
+# The live scan is READ-ONLY (no FORGE_SECTEST_ACTIVE) apart from FORGE_SECTEST_PROBE_MUTATING: the mutating routes of the services named
+# there are asked anonymously, but only where an empty request cannot do anything (a path id that names nothing, or a required body).
+# gantry, which can delete, scale and exec in the cluster, is left off the list on purpose: its mutating routes are covered by the
+# daily bdd run, against a simulated cluster (GANTRY_CLUSTER=none, GANTRY_RUNNER=simulate), where they cannot reach anything.
+# Anonymous requests, forged credentials, traversal
 # and protocol probes against the running services over cluster DNS, at 20 requests/second, ~10 minutes.
 # Give it a service-account token (FORGE_SECTEST_TOKEN, as a conveyor secret) to test behind the auth wall,
 # FAIL_ON is "medium": tests/forge-sectest/public-routes.txt records the reviewed anonymous routes, so a new
@@ -185,7 +189,7 @@ name    = "nightly"
 image   = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
 secrets = ["ANVIL_APP_TOKEN", "ANVIL_GATEHOUSE_URL"]
 timeout = 3600
-env = { RUST_BACKTRACE = "1", FORGE_SECTEST_FAIL_ON = "medium", FORGE_SECTEST_TARGETS = "gatehouse=http://gatehouse.forge.svc.cluster.local/gatehouse warehouse=http://warehouse.forge.svc.cluster.local/warehouse conveyor=http://conveyor.forge.svc.cluster.local/conveyor sage=http://sage.forge.svc.cluster.local/sage switchboard=http://switchboard.forge.svc.cluster.local/switchboard workbench=http://workbench.forge.svc.cluster.local/workbench gantry=http://gantry.forge.svc.cluster.local/gantry daybook=http://daybook.forge.svc.cluster.local/daybook" }
+env = { RUST_BACKTRACE = "1", FORGE_SECTEST_FAIL_ON = "medium", FORGE_SECTEST_PROBE_MUTATING = "gatehouse warehouse conveyor sage switchboard workbench daybook", FORGE_SECTEST_TARGETS = "gatehouse=http://gatehouse.forge.svc.cluster.local/gatehouse warehouse=http://warehouse.forge.svc.cluster.local/warehouse conveyor=http://conveyor.forge.svc.cluster.local/conveyor sage=http://sage.forge.svc.cluster.local/sage switchboard=http://switchboard.forge.svc.cluster.local/switchboard workbench=http://workbench.forge.svc.cluster.local/workbench gantry=http://gantry.forge.svc.cluster.local/gantry daybook=http://daybook.forge.svc.cluster.local/daybook" }
 steps = [
   { run = "export QUENCH_TEST_REPORT_DIR=$PWD/target/security; rc=0; cargo test -p forge-sectest --test scanners || rc=1; cargo test -p forge-sectest --features gate --test gate -- --test-threads=1 || rc=1; cargo test -p forge-sectest --features gate --test live -- --test-threads=1 || rc=1; exit $rc" },
 ]
@@ -217,7 +221,7 @@ env     = { RUST_BACKTRACE = "1", MAILROOM_BDD_DATABASE_URL = "postgres://postgr
 steps   = [
   # The modules whose services run on this database (`FORGE_BDD_DATABASE_URL`): the scenarios tagged `@postgres` then
   # run too, and the in-memory ones that describe what a store without a database does (`@memory`) stand down.
-  { run = "cargo run -q -p foundry -- apply --catalog services/foundry/service/migrations --database-url postgres://postgres:postgres@127.0.0.1:5432/postgres --install conveyor --install daybook --install sage --install warehouse --install workbench" },
+  { run = "cargo run -q -p foundry -- apply --catalog services/foundry/service/migrations --database-url postgres://postgres:postgres@127.0.0.1:5432/postgres --install conveyor --install daybook --install gantry --install sage --install warehouse --install workbench" },
   # The browser clients are built by the harness when a service has none (git-ignored), and need this target.
   { run = "rustup target add wasm32-unknown-unknown" },
   { run = "export QUENCH_TEST_REPORT_DIR=$PWD/target/bdd; cargo run -p forge-bdd" },

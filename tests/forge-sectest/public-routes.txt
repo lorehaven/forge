@@ -141,3 +141,12 @@ mailroom GET /ui/assets/favicon.png
 mailroom GET /ui/assets/quench.js
 mailroom GET /ui/assets/shell.js
 mailroom GET /ui/status
+# gatehouse: pages reached from an emailed link or a second-factor challenge; they answer with the application shell and take their token in the query (reviewed 2026-11-24).
+gatehouse GET /ui/login/mfa
+gatehouse GET /ui/accept-invite
+gatehouse GET /ui/reset-password
+# gatehouse: logout takes the refresh token it is to end and answers 204 to anyone who holds one (reviewed 2026-11-24).
+gatehouse POST /api/v1/auth/logout
+# Public by design: the crates search (the registry answers reads to anyone unless CRATES_REQUIRE_AUTH_FOR_READS is set, see its openapi) and gauge's base path, which redirects to the UI (reviewed 2026-11-24).
+warehouse GET /api/v1/crates
+gauge GET /

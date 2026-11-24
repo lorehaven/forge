@@ -210,6 +210,7 @@ impl Fixture {
             Target::Daybook => self.start_daybook().await,
             Target::Mailroom => self.start_mailroom().await,
             Target::Gauge => self.start_gauge().await,
+            Target::Gantry => self.start_gantry().await,
         }
     }
 
@@ -364,6 +365,51 @@ impl Fixture {
         Service {
             target: Target::Gauge,
             child: command.spawn().expect("failed to start gauge-service"),
+        }
+    }
+
+    /// Gantry, on a cluster that does not exist: `GANTRY_CLUSTER=none` is its in-memory fake and `GANTRY_RUNNER=simulate` applies
+    /// every step to that fake, in-process, so a plan, a scale, a delete or an exec changes nothing outside the process. Both
+    /// are set outright and the pod's own cluster address is removed: the Conveyor pod this runs in has one, and a service
+    /// that found it would default to the real cluster. Its state (operations, inventory) is in the suite's Postgres.
+    async fn start_gantry(&self) -> Service {
+        self.build("gantry-service").await;
+        println!("Starting gantry-service...");
+
+        let state = std::env::temp_dir().join(format!("forge-bdd-gantry-{}", std::process::id()));
+        // Packages come from a directory (no Warehouse in this suite): an empty one, so the same run in a pod and on a
+        // developer's machine sees the same registry, and an unreadable one cannot turn every route into a 502.
+        std::fs::create_dir_all(state.join("packages")).expect("a state directory for gantry");
+        let mut command = Command::new(self.binary("gantry-service"));
+        command
+            .current_dir(self.service_dir("gantry-service"))
+            .envs(std::env::vars())
+            .env_remove("KUBERNETES_SERVICE_HOST")
+            .env_remove("KUBERNETES_SERVICE_PORT")
+            .env_remove("KUBECONFIG");
+        Self::common_env(&mut command, "gantry");
+        command
+            .env("SERVER_ADDR", "127.0.0.1:11443")
+            .env("BASE_PATH", "/gantry")
+            .env("DB_SCHEMA", "test_gantry")
+            .env("SERVICE_AUTH_ENABLED", "true")
+            .env("GANTRY_CLUSTER", "none")
+            .env("GANTRY_RUNNER", "simulate")
+            .env("GANTRY_STATE_DIR", &state)
+            .env("GANTRY_VALUES_DIR", state.join("values"))
+            .env("GANTRY_PACKAGES_DIR", state.join("packages"))
+            .env(
+                "GANTRY_FAKE_CLUSTER",
+                self.workspace_root
+                    .join("services/gantry/service/local/seed.json"),
+            )
+            .env("SERVER_CERT_PATH", "missing.pem")
+            .env("SERVER_KEY_PATH", "missing.pem");
+        Self::use_database(&mut command, "gantry");
+
+        Service {
+            target: Target::Gantry,
+            child: command.spawn().expect("failed to start gantry-service"),
         }
     }
 
@@ -586,6 +632,7 @@ impl Fixture {
             .env("CLIENT_SECRET_CONVEYOR", "bdd-client-secret-conveyor")
             .env("CLIENT_SECRET_WORKBENCH", "bdd-client-secret-workbench")
             .env("CLIENT_SECRET_GAUGE", "bdd-client-secret-gauge")
+            .env("CLIENT_SECRET_GANTRY", "bdd-client-secret-gantry")
             .env(
                 "CLIENT_SECRET_SAGE_SWITCHBOARD",
                 "bdd-client-secret-sage-switchboard",

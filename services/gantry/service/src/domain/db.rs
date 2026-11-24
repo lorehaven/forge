@@ -20,6 +20,14 @@ pub enum GantryError {
 }
 
 impl GantryError {
+    /// A value the database cannot store because of what it is: a NUL byte, text that is not valid UTF-8, a number out of
+    /// range, a string longer than the column or its index allows (SQLSTATE class 22, or 54000). The caller's fault, so it
+    /// is a 400 and not a 500 that quotes the database.
+    #[must_use]
+    pub fn is_unstorable_value(&self) -> bool {
+        matches!(self, Self::Sql(error) if error.code().is_some_and(|c| c.starts_with("22") || c == "54000"))
+    }
+
     /// Postgres's unique-constraint violation, e.g. a second running operation in one scope.
     #[must_use]
     pub fn is_unique_violation(&self) -> bool {

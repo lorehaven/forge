@@ -35,6 +35,12 @@ allowed_scopes = ["workbench"]
 secret_env = "CLIENT_SECRET_WORKBENCH"
 
 [[client]]
+client_id = "gantry"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["gantry"]
+secret_env = "CLIENT_SECRET_GANTRY"
+
+[[client]]
 client_id = "gauge"
 redirect_path = "/ui/auth/callback"
 allowed_scopes = ["gauge"]

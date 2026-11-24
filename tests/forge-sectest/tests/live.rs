@@ -2,6 +2,8 @@
 //!
 //!     FORGE_SECTEST_TARGETS="warehouse=http://warehouse.forge.svc:8080 gatehouse=http://..."  (required)
 //!     FORGE_SECTEST_TOKEN        a valid bearer token, to test behind the auth wall
+//!     FORGE_SECTEST_PROBE_MUTATING  services (space or comma separated, or `all`) whose mutating routes are probed anonymously where an
+//!                                   empty request cannot be a valid one (no `ACTIVE` needed). A service that acts on the cluster: name it on purpose
 //!     FORGE_SECTEST_ACTIVE=1     also send mutating verbs and credential bursts (staging only!)
 //!     FORGE_SECTEST_FAIL_ON      lowest severity that fails a case: info|low|medium|high|critical (default high)
 //!     FORGE_SECTEST_BASELINE     reviewed anonymous routes (default tests/forge-sectest/public-routes.txt if present)
@@ -62,6 +64,18 @@ fn run_scan() -> Result<Scan, String> {
 
     let mut options = Options::new(targets, routes);
     options.token = env("FORGE_SECTEST_TOKEN");
+    // The documents decide which routes that rejected the probe as malformed can be given what they need, and which
+    // mutating routes are safe to probe without `active`.
+    options.forge_root = Some(root.clone());
+    options.probe_mutating = env("FORGE_SECTEST_PROBE_MUTATING")
+        .map(|list| {
+            list.split([' ', ','])
+                .filter(|name| !name.is_empty())
+                .map(|name| if name == "all" { "*" } else { name })
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
     options.active = env("FORGE_SECTEST_ACTIVE").is_some();
     options.allow_remote = env("FORGE_SECTEST_ALLOW_REMOTE").is_some();
     // Opt-in: the identities are minted from a gatehouse in test mode, which production never is.

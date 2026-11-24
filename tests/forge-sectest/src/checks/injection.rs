@@ -39,7 +39,7 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
         else {
             continue;
         };
-        if reply.status >= 500 {
+        if reply.crashed() {
             findings.push(Finding::new(
                 Severity::Medium,
                 "injection",
@@ -88,7 +88,7 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
             let Some(reply) = ctx.send(target, &probe).await else {
                 continue;
             };
-            if reply.status >= 500 {
+            if reply.crashed() {
                 findings.push(Finding::new(
                     Severity::Medium,
                     "injection",

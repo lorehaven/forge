@@ -23,6 +23,7 @@ pub enum Target {
     Daybook,
     Mailroom,
     Gauge,
+    Gantry,
 }
 
 impl Target {
@@ -38,10 +39,11 @@ impl Target {
             Self::Daybook => "daybook",
             Self::Mailroom => "mailroom",
             Self::Gauge => "gauge",
+            Self::Gantry => "gantry",
         }
     }
 
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Sage,
         Self::Switchboard,
         Self::Warehouse,
@@ -51,6 +53,7 @@ impl Target {
         Self::Daybook,
         Self::Mailroom,
         Self::Gauge,
+        Self::Gantry,
     ];
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -83,6 +86,8 @@ pub struct ForgeWorld {
     pub daybook_url: String,
     pub gauge_base_url: String,
     pub gauge_url: String,
+    pub gantry_base_url: String,
+    pub gantry_url: String,
     pub mailroom_base_url: String,
     pub mailroom_url: String,
 
@@ -158,6 +163,7 @@ impl ForgeWorld {
         let workbench_base_url = service_url("WORKBENCH_API_URL", "http://127.0.0.1:10443");
         let daybook_base_url = service_url("DAYBOOK_API_URL", "http://127.0.0.1:12443");
         let gauge_base_url = service_url("GAUGE_API_URL", "http://127.0.0.1:13443");
+        let gantry_base_url = service_url("GANTRY_API_URL", "http://127.0.0.1:11443");
         let mailroom_base_url = service_url("MAILROOM_API_URL", "http://127.0.0.1:18443");
 
         let client = quench_client::transport::Client::builder()
@@ -201,6 +207,8 @@ impl ForgeWorld {
             daybook_base_url,
             gauge_url: format!("{gauge_base_url}/gauge"),
             gauge_base_url,
+            gantry_url: format!("{gantry_base_url}/gantry"),
+            gantry_base_url,
             mailroom_url: format!("{mailroom_base_url}/mailroom"),
             mailroom_base_url,
             client,
@@ -243,6 +251,7 @@ impl ForgeWorld {
             Target::Daybook => &self.daybook_url,
             Target::Mailroom => &self.mailroom_url,
             Target::Gauge => &self.gauge_url,
+            Target::Gantry => &self.gantry_url,
         }
     }
 
@@ -258,6 +267,7 @@ impl ForgeWorld {
             Target::Daybook => &self.daybook_base_url,
             Target::Mailroom => &self.mailroom_base_url,
             Target::Gauge => &self.gauge_base_url,
+            Target::Gantry => &self.gantry_base_url,
         }
     }
 
@@ -311,7 +321,10 @@ impl ForgeWorld {
     ) -> quench_client::transport::RequestBuilder {
         if self.target == Target::Switchboard {
             rb = rb.bearer_auth(&self.switchboard_token);
-        } else if matches!(self.target, Target::Daybook | Target::Gauge) {
+        } else if matches!(
+            self.target,
+            Target::Daybook | Target::Gauge | Target::Gantry
+        ) {
             if let Some(token) = &self.access_token {
                 rb = rb.bearer_auth(token);
             }

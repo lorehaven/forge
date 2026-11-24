@@ -140,7 +140,7 @@ pub async fn run(ctx: &Ctx, target: &Target, protected: &[Route]) -> Vec<Finding
             continue;
         }
         for forgery in &forged {
-            let mut probe = Probe::new(&route.method, &route.sample_path());
+            let mut probe = Probe::new(&route.method, &route.probe_path());
             if matches!(route.method.as_str(), "POST" | "PUT" | "PATCH") {
                 probe = probe.json("{}");
             }

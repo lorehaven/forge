@@ -44,6 +44,7 @@ fn url_of<'a>(world: &'a ForgeWorld, service: &str) -> Option<&'a str> {
         "workbench" => &world.workbench_url,
         "daybook" => &world.daybook_url,
         "gauge" => &world.gauge_url,
+        "gantry" => &world.gantry_url,
         "mailroom" => &world.mailroom_url,
         "gatehouse" => &world.gatehouse_url,
         _ => return None,
@@ -139,6 +140,7 @@ async fn fuzzing_finds_nothing(world: &mut ForgeWorld, service: String) {
     options.checks = vec!["fuzz".to_string()];
     options.client_ip = Some("198.51.100.20".to_string());
     options.forge_root = Some(root());
+    options.fuzz = true;
     if let Some(grants) = spec.grants_of(&service) {
         options.binds = seeds(world, &service, &grants.writer).await;
     }
@@ -563,6 +565,8 @@ async fn generic_checks(world: &mut ForgeWorld, service: String) {
     options.rps = 500;
     options.active = true;
     options.client_ip = Some("198.51.100.30".to_string());
+    // The documents tell the `auth` check what a route that rejected its probe needs.
+    options.forge_root = Some(root());
     options.checks = [
         "auth",
         "tokens",
@@ -609,9 +613,12 @@ async fn generic_checks(world: &mut ForgeWorld, service: String) {
     for note in findings.iter().filter(|f| f.severity < Severity::High) {
         println!("{note}");
     }
+    // Gatehouse in test mode mints a token for anyone who asks (`POST /api/v1/test/token`): it is how this suite signs people in,
+    // and it does not exist in a deployment. It is not in the shared baseline, so that the nightly would flag it if it ever did.
+    let in_test_mode = |f: &Finding| f.service == "gatehouse" && f.path == "/api/v1/test/token";
     let serious: Vec<String> = findings
         .iter()
-        .filter(|f: &&Finding| f.severity >= Severity::High)
+        .filter(|f: &&Finding| f.severity >= Severity::High && !in_test_mode(f))
         .map(ToString::to_string)
         .collect();
     assert!(

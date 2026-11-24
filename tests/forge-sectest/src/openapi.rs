@@ -29,6 +29,8 @@ pub struct Operation {
     pub params: Vec<Param>,
     /// The JSON request body's schema, `$ref`s resolved.
     pub body: Option<Value>,
+    /// The document says a request body is required (of any content type): an empty request is not a valid one.
+    pub body_required: bool,
     pub example: Option<Value>,
 }
 
@@ -77,6 +79,11 @@ pub fn parse(text: &str) -> Result<Vec<Operation>, String> {
                     .unwrap_or_default()
                     .to_string(),
                 params,
+                body_required: op
+                    .get("requestBody")
+                    .map(|b| resolve(&root, b, 0))
+                    .and_then(|b| b.get("required").and_then(Value::as_bool))
+                    .unwrap_or(false),
                 body: content
                     .as_ref()
                     .and_then(|c| c.get("schema"))

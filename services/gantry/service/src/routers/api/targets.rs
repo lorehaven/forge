@@ -35,6 +35,9 @@ impl From<PlanError> for ApiError {
             PlanError::Registry(_) | PlanError::Cluster(_) => StatusCode::BAD_GATEWAY,
             PlanError::Store(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
+        if status == StatusCode::BAD_GATEWAY {
+            quench_log::warn!("gantry: {error}");
+        }
         Self::new(status, error.to_string())
     }
 }

@@ -72,6 +72,12 @@ name = "gauge"
 reader = "gauge:read"
 writer = "user gauge:read"
 
+# What gantry may do to the cluster is granted deliberately: the fuzzer and the writer hold every action it has.
+[[service]]
+name = "gantry"
+reader = "gantry:read"
+writer = "gantry:read gantry:deploy gantry:scale gantry:activate gantry:rollback"
+
 # One user's object, and what another user must not be able to do with it.
 [[resource]]
 name = "a daybook task"

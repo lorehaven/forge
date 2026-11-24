@@ -13,6 +13,9 @@ pub struct Route {
     pub method: String,
     pub pattern: String,
     pub source: String,
+    /// What the route's document says it needs in the query before it will look at anything (`token=...`), once a check
+    /// found that out: later checks then ask the route a question it can answer.
+    pub hint_query: Option<String>,
 }
 
 impl Route {
@@ -23,6 +26,7 @@ impl Route {
             method: method.to_ascii_uppercase(),
             pattern: pattern.to_string(),
             source: String::new(),
+            hint_query: None,
         }
     }
 
@@ -51,6 +55,16 @@ impl Route {
     #[must_use]
     pub fn sample_path(&self) -> String {
         render(&self.pieces(), None)
+    }
+
+    /// [`sample_path`](Self::sample_path) with the query the route's document requires, when a check found out what it is:
+    /// what a check that wants the route to *look at* its request (forged credentials, a grant) should ask.
+    #[must_use]
+    pub fn probe_path(&self) -> String {
+        self.hint_query.as_ref().map_or_else(
+            || self.sample_path(),
+            |query| format!("{}?{query}", self.sample_path()),
+        )
     }
 }
 

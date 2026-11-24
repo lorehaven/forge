@@ -116,6 +116,18 @@ credential), an unknown user against a wrong password (same answer, same time), 
 that must end the sessions it was meant to and be good once, and a reset email built from a forged `Host`. Not asserted, because the
 design accepts it: the owner's refresh token keeps working after a replay inside the grace window.
 
+### Routes the probe cannot judge, and mutating routes in a deployment
+
+* A route that answers 400/422 to the plain probe (a link target such as `/ui/verify` needs its `token`) is asked again with the query its
+  `OpenAPI` document requires, so its answer can be judged; with `--active`, a `POST` is also given a body of the right shape. A route
+  whose answer was decided with a query keeps it for the later checks (forged tokens, grants), which otherwise get a 400 from it. What stays
+  undecided (a login with a made-up client, a body that has to name something real) is listed, with the reason.
+* A deployment is scanned read-only, which left every mutating route unprobed. `--probe-mutating <services>` (the nightly: `FORGE_SECTEST_PROBE_MUTATING`)
+  probes those services' mutating routes anonymously, but only where an empty request cannot be a valid one: a route with a path id (the
+  sentinel names nothing) or a required body (sent empty, so a hole answers with a validation error). A route with neither (rotate the
+  keys, collect garbage) could simply run and is never asked. Those requests carry no credential, forged or not. Name a service that can act on the
+  cluster (gantry) on purpose; the nightly leaves it off.
+
 ### Public-route baseline
 
 The first run lists every anonymous route as a finding. Review them, then freeze the list:

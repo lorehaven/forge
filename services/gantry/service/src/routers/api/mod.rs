@@ -57,10 +57,26 @@ pub fn register_routes() {
 
 impl From<GantryError> for ApiError {
     fn from(error: GantryError) -> Self {
+        if error.is_unstorable_value() {
+            return Self::new(
+                StatusCode::BAD_REQUEST,
+                "a value in the request cannot be stored: it is too long, out of range, or holds a character that is not allowed",
+            );
+        }
+
         if error.is_unique_violation() {
             return Self::new(
                 StatusCode::CONFLICT,
                 "a record with that identity already exists",
+            );
+        }
+
+        // The database's own words (a column, a constraint, a SQLSTATE) stay in the log.
+        if let GantryError::Sql(_) = &error {
+            quench_log::error!("gantry: database error: {error}");
+            return Self::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "the database could not complete the request",
             );
         }
 

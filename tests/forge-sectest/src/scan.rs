@@ -23,6 +23,10 @@ pub const ALL_CHECKS: [&str; 10] = [
 ];
 
 #[derive(Debug, Clone)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent switches of a command line, not a state"
+)]
 pub struct Options {
     pub targets: Vec<Target>,
     pub routes: Vec<Route>,
@@ -42,9 +46,17 @@ pub struct Options {
     pub authz: Option<crate::identity::Spec>,
     /// Gatehouse's base URL, where the `authz` identities are minted (overrides the spec's).
     pub mint: Option<String>,
-    /// A forge checkout: where the `fuzz` check reads `docs/services/<name>/openapi.yaml` from. Without it that check
-    /// does not run.
+    /// A forge checkout, where the services' `docs/services/<name>/openapi.yaml` are read from: the `auth` check gives a
+    /// route that rejected its probe as malformed the parameters its document requires, and decides which mutating
+    /// routes are safe to probe without `active`.
     pub forge_root: Option<std::path::PathBuf>,
+    /// Run the `fuzz` check (needs `forge_root`). Off unless asked: knowing where the documents are is not a wish to fuzz.
+    pub fuzz: bool,
+    /// The services whose mutating routes are probed anonymously even without `active` (`*` for all), but only where an empty
+    /// request cannot be a valid one: a route with a path id (the sentinel one names nothing) or a required body. Routes with
+    /// neither (key rotation, a garbage collection) are left alone. For a scan of a deployment, where `active` is not an
+    /// option; a service that can act on the cluster is one to name on purpose.
+    pub probe_mutating: Vec<String>,
     /// The most mutated requests the `fuzz` check sends per operation.
     pub fuzz_budget: usize,
     /// The client address every request claims (`X-Real-IP`), as a reverse proxy would send it. Without it a service that
@@ -71,10 +83,20 @@ impl Options {
             authz: None,
             mint: None,
             forge_root: None,
+            fuzz: false,
+            probe_mutating: Vec::new(),
             fuzz_budget: 150,
             binds: Vec::new(),
             client_ip: None,
         }
+    }
+
+    /// Whether this service's mutating routes may be probed without `active`.
+    #[must_use]
+    pub fn probes_mutating_of(&self, service: &str) -> bool {
+        self.probe_mutating
+            .iter()
+            .any(|name| name == "*" || name == service)
     }
 
     #[must_use]
@@ -191,7 +213,7 @@ pub async fn run(opts: Options) -> Result<(Vec<Finding>, u64), String> {
                 .to_string(),
         );
     }
-    if opts.forge_root.is_none() && opts.checks.iter().any(|c| c == "fuzz") {
+    if opts.forge_root.is_none() && (opts.fuzz || opts.checks.iter().any(|c| c == "fuzz")) {
         return Err(
             "--checks fuzz needs a forge checkout to read the OpenAPI documents from (--forge)"
                 .to_string(),
@@ -242,7 +264,7 @@ async fn run_target(ctx: &Ctx, target: &Target) -> Vec<Finding> {
     if authz {
         findings.extend(checks::authz::run(ctx, target, &protected).await);
     }
-    if ctx.opts.forge_root.is_some() && ctx.opts.wants("fuzz") {
+    if ctx.opts.fuzz && ctx.opts.forge_root.is_some() && ctx.opts.wants("fuzz") {
         findings.extend(checks::fuzz::run(ctx, target).await);
     }
     if ctx.opts.wants("traversal") {

@@ -53,3 +53,42 @@ async fn info_reports_only_what_the_token_grants() {
     assert_eq!(body["actor"], "ci");
     assert_eq!(body["can"], quench_serde::json!(["read", "scale"]));
 }
+
+fn database_error(code: &str) -> gantry_service::domain::db::GantryError {
+    gantry_service::domain::db::GantryError::Sql(quench_pg::Error::Server(Box::new(
+        quench_pg::ServerError {
+            code: code.to_string(),
+            message: "invalid byte sequence for encoding UTF8: 0x00".to_string(),
+            ..Default::default()
+        },
+    )))
+}
+
+#[quench_test::test]
+async fn a_value_the_database_cannot_store_is_a_bad_request_and_says_nothing_of_the_database() {
+    for code in ["22021", "22P02", "22001", "54000"] {
+        let response =
+            gantry_service::routers::api::ApiError::from(database_error(code)).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{code}");
+        assert!(
+            !support::json_body(response)
+                .await
+                .to_string()
+                .contains("UTF8"),
+            "{code}"
+        );
+    }
+}
+
+#[quench_test::test]
+async fn any_other_database_error_is_a_500_that_keeps_its_words_in_the_log() {
+    let response =
+        gantry_service::routers::api::ApiError::from(database_error("42P01")).into_response();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(
+        !support::json_body(response)
+            .await
+            .to_string()
+            .contains("UTF8")
+    );
+}

@@ -167,6 +167,14 @@ pub struct Reply {
 }
 
 impl Reply {
+    /// The service failed on what it was sent: a 5xx that is not a gateway's. A 502, 503 or 504 says something the
+    /// service depends on (a cluster, a registry, a database) did not answer, which hostile input did not cause; the
+    /// request is not a finding, only an unanswered one.
+    #[must_use]
+    pub const fn crashed(&self) -> bool {
+        self.status >= 500 && !matches!(self.status, 502..=504)
+    }
+
     #[must_use]
     pub fn header(&self, name: &str) -> Option<&str> {
         self.headers

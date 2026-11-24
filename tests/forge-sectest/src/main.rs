@@ -26,6 +26,9 @@ SCAN OPTIONS
   --write-baseline FILE write the current public routes there and exit 0
   --checks a,b,c        subset of: auth,tokens,authz,traversal,headers,cors,injection,protocol,throttle
   --fuzz                mutate each OpenAPI operation of docs/services/<name>/openapi.yaml (see --forge); with --active it also creates objects and fuzzes mutating routes
+  --probe-mutating LIST without --active: still probe the mutating routes of these services (comma separated, or `all`) anonymously, where an
+                        empty request cannot be a valid one (a route with a
+                        path id, or a required body per its OpenAPI document); routes with neither are left alone. For a deployment
   --fuzz-budget N       most mutated requests per operation                      [default: 150]
   --authz FILE          identities and ownership recipes for the `authz` check (see authz.toml); without it that check does not run
   --mint URL            gatehouse's base URL, where `authz` mints its identities (a stack in GATEHOUSE_TEST_MODE only)
@@ -129,11 +132,21 @@ fn identities_and_fuzz(args: &Args, options: &mut Options) -> Result<(), String>
             .parse()
             .map_err(|_| "--fuzz-budget: not a number".to_string())?;
     }
-    if args.flag("--fuzz") || options.checks.iter().any(|c| c == "fuzz") {
-        options.forge_root = Some(PathBuf::from(
-            args.value("--forge").unwrap_or_else(|| ".".to_string()),
-        ));
-    }
+    // The documents are always at hand (they decide which routes can be probed); fuzzing them is asked for.
+    options.forge_root = Some(PathBuf::from(
+        args.value("--forge").unwrap_or_else(|| ".".to_string()),
+    ));
+    options.fuzz = args.flag("--fuzz") || options.checks.iter().any(|c| c == "fuzz");
+    options.probe_mutating = args
+        .value("--probe-mutating")
+        .map(|list| {
+            list.split(',')
+                .map(str::trim)
+                .map(|name| if name == "all" { "*" } else { name })
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
     if let Some(path) = args.value("--authz") {
         let text = fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
         options.authz = Some(Spec::parse(&text)?);

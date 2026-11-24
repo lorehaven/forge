@@ -69,7 +69,7 @@ pub async fn run(ctx: &Ctx, target: &Target) -> Vec<Finding> {
                         &route.pattern,
                         format!("PATH TRAVERSAL: {what} returned for parameter value {payload:?}"),
                     ));
-                } else if reply.status >= 500 {
+                } else if reply.crashed() {
                     findings.push(Finding::new(
                         Severity::Medium,
                         "traversal",

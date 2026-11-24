@@ -1,6 +1,7 @@
 pub mod common;
 pub mod conveyor;
 pub mod daybook;
+pub mod gantry;
 pub mod gatehouse;
 pub mod gatehouse_attacks;
 pub mod gauge;

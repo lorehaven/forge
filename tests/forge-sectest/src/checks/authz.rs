@@ -258,7 +258,7 @@ async fn identities(
                     return findings;
                 }
             };
-            let mut probe = Probe::new(&route.method, &route.sample_path());
+            let mut probe = Probe::new(&route.method, &route.probe_path());
             if let Some(body) = body_for(&route.method) {
                 probe = probe.json(body);
             }

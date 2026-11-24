@@ -74,6 +74,11 @@ path = "tests/fuzz.rs"
 harness = false
 
 [[test]]
+name = "probe"
+path = "tests/probe.rs"
+harness = false
+
+[[test]]
 name = "census"
 path = "tests/census.rs"
 harness = false
