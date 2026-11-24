@@ -952,9 +952,24 @@ fn preview_mode_is_a_tree_and_a_file_with_neighbours() {
     );
     l.send(Msg::Browse(Box::new(browse_of("readable"))));
     assert!(present(&l.r, "no-preview"));
-    // the tree holds every file; the listing's columns are gone
+    // the tree holds the files on the way to this one and the top level; the listing's columns are gone
     let _ = find(&l.r, "a", ("data-tree-file", "top.txt"));
-    let _ = find(&l.r, "a", ("data-tree-file", "docs/img/logo.png"));
+    let _ = find(&l.r, "a", ("data-tree-file", "docs/readme.md"));
+    // a folder off that way is built when it is opened: a big storage is not tens of thousands of nodes
+    let logo = |l: &Live| {
+        l.r.document_order()
+            .into_iter()
+            .any(|n| l.r.attr(n, "data-tree-file").as_deref() == Some("docs/img/logo.png"))
+    };
+    assert!(!logo(&l), "a closed folder has no entries yet");
+    let img =
+        l.r.document_order()
+            .into_iter()
+            .find(|n| l.r.attr(*n, "data-path").as_deref() == Some("docs/img"))
+            .expect("the folder is in the tree");
+    let summary = l.r.children(img)[0];
+    l.r.fire(summary, &Event::Click);
+    assert!(logo(&l), "opening the folder builds its entries");
     // data.bin is first of the two files in docs (directories do not count)
     assert!(l.text().contains("1 / 2"), "{}", l.text());
     assert!(present(&l.r, "next"));

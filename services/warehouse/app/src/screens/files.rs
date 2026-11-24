@@ -1113,17 +1113,44 @@ fn tree_node(
         );
     }
     let mut details = element("details").attr("data-path", full.clone());
-    if selected.starts_with(&format!("{full}/")) {
+    let on_path = selected.starts_with(&format!("{full}/"));
+    if on_path {
         details = details.attr("open", "open");
     }
-    let mut list = ul().class("wh-tree");
-    for (child, child_node) in node.sorted_children() {
-        list = list.child(tree_node(env, storage, child, child_node, &full, selected));
-    }
+    // A folder's entries are built when it is open (on the way to the shown file) or when it is first opened: a storage
+    // of tens of thousands of files must not become tens of thousands of nodes just to show one photo.
+    let built = create_signal(on_path);
+    let opened = built.clone();
+    let children = {
+        let (env, storage, node, full, selected) = (
+            env.clone(),
+            storage.to_string(),
+            node.clone(),
+            full,
+            selected.to_string(),
+        );
+        View::dynamic(move || {
+            if !built.get() {
+                return View::Empty;
+            }
+            let mut list = ul().class("wh-tree");
+            for (child, child_node) in node.sorted_children() {
+                list = list.child(tree_node(
+                    &env, &storage, child, child_node, &full, &selected,
+                ));
+            }
+            list.into_view()
+        })
+    };
     li().child(
         details
-            .child(element("summary").class("wh-folder").text(name.to_string()))
-            .child(list),
+            .child(
+                element("summary")
+                    .class("wh-folder")
+                    .on_click(move || opened.set(true))
+                    .text(name.to_string()),
+            )
+            .child(children),
     )
 }
 
