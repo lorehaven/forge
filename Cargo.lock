@@ -450,7 +450,7 @@ dependencies = [
 
 [[package]]
 name = "gantry"
-version = "0.2.18"
+version = "0.2.19"
 dependencies = [
  "forge-web",
  "gantry-core",
