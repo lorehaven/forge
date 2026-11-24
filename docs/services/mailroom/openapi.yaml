@@ -19,6 +19,8 @@ tags:
     description: How a service writes to people.
   - name: admin
     description: The administrator's panel.
+  - name: ui
+    description: The browser client and its sign-in.
 paths:
   /api/v1/me:
     get:
@@ -221,8 +223,301 @@ paths:
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 200}}
       responses:
         '200': {description: A page.}
+  /api/v1/uploads:
+    post:
+      tags: [mail]
+      operationId: upload
+      summary: Upload a file to attach to a message
+      description: A multipart form with the file in the field `file`. The id it returns goes in a message's `attachments`.
+      x-permission: mailroom:write
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+      responses:
+        '201': {description: 'Kept until it is sent or deleted: its `id`, `filename` and `size`.'}
+        '400': {description: No file in the upload, or it could not be read (too large).}
+        '403': {description: The token lacks the grant.}
+  /api/v1/uploads/{id}:
+    delete:
+      tags: [mail]
+      operationId: deleteUpload
+      summary: Drop an upload that was not sent
+      x-permission: mailroom:write
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Gone.}
+        '404': {description: No such upload of the caller's.}
+  /api/v1/admin/mailboxes/{owner}:
+    delete:
+      tags: [admin]
+      operationId: deleteMailbox
+      summary: Delete a mailbox with everything in it
+      description: The deletion is written to the audit log. Nothing else of the person's is touched.
+      x-permission: mailroom:admin
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Deleted.}
+        '403': {description: Not an administrator.}
+        '404': {description: No such mailbox.}
+  /api/v1/admin/mailboxes/{owner}/disable:
+    post:
+      tags: [admin]
+      operationId: disableMailbox
+      summary: Switch a mailbox off
+      description: A disabled mailbox still receives mail, but its owner cannot open it or send from it.
+      x-permission: mailroom:admin
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Disabled.}
+        '403': {description: Not an administrator.}
+        '404': {description: No such mailbox.}
+  /api/v1/admin/mailboxes/{owner}/enable:
+    post:
+      tags: [admin]
+      operationId: enableMailbox
+      summary: Switch a mailbox on again
+      x-permission: mailroom:admin
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Enabled.}
+        '403': {description: Not an administrator.}
+        '404': {description: No such mailbox.}
+  /ui:
+    get:
+      tags: [ui]
+      operationId: uiRoot
+      summary: Redirect to the home page, or to login without a session
+      security: []
+      responses:
+        '302': {description: 'To {base}/ui/home, or {base}/ui/login when not signed in.'}
+  /ui/:
+    get:
+      tags: [ui]
+      operationId: uiRootSlash
+      summary: Same as /ui
+      security: []
+      responses:
+        '302': {description: 'To {base}/ui/home, or {base}/ui/login when not signed in.'}
+  /ui/home:
+    get:
+      tags: [ui]
+      operationId: uiHome
+      summary: Client page, the inbox
+      security: []
+      responses:
+        '200': {$ref: '#/components/responses/ClientPage'}
+        '302': {description: 'To {base}/ui/login without a valid session cookie.'}
+        '404': {$ref: '#/components/responses/ClientMissing'}
+  /ui/home/:
+    get:
+      tags: [ui]
+      operationId: uiHomeSlash
+      summary: Same as /ui/home
+      security: []
+      responses:
+        '200': {$ref: '#/components/responses/ClientPage'}
+        '302': {description: 'To {base}/ui/login without a valid session cookie.'}
+        '404': {$ref: '#/components/responses/ClientMissing'}
+  /ui/folder/{id}:
+    get:
+      tags: [ui]
+      operationId: uiFolder
+      summary: Client page, one folder
+      security: []
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {$ref: '#/components/responses/ClientPage'}
+        '302': {description: 'To {base}/ui/login without a valid session cookie.'}
+        '404': {$ref: '#/components/responses/ClientMissing'}
+  /ui/message/{id}:
+    get:
+      tags: [ui]
+      operationId: uiMessage
+      summary: Client page, one message
+      security: []
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {$ref: '#/components/responses/ClientPage'}
+        '302': {description: 'To {base}/ui/login without a valid session cookie.'}
+        '404': {$ref: '#/components/responses/ClientMissing'}
+  /ui/compose:
+    get:
+      tags: [ui]
+      operationId: uiCompose
+      summary: Client page, a new message
+      security: []
+      responses:
+        '200': {$ref: '#/components/responses/ClientPage'}
+        '302': {description: 'To {base}/ui/login without a valid session cookie.'}
+        '404': {$ref: '#/components/responses/ClientMissing'}
+  /ui/compose/{mode}/{id}:
+    get:
+      tags: [ui]
+      operationId: uiComposeFrom
+      summary: Client page, a reply or a forward of a message
+      security: []
+      parameters:
+        - {name: mode, in: path, required: true, schema: {type: string, enum: [reply, forward]}}
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {$ref: '#/components/responses/ClientPage'}
+        '302': {description: 'To {base}/ui/login without a valid session cookie.'}
+        '404': {$ref: '#/components/responses/ClientMissing'}
+  /ui/admin:
+    get:
+      tags: [ui]
+      operationId: uiAdmin
+      summary: Client page, the administrator's panel
+      security: []
+      responses:
+        '200': {$ref: '#/components/responses/ClientPage'}
+        '302': {description: 'To {base}/ui/login without a valid session cookie.'}
+        '404': {$ref: '#/components/responses/ClientMissing'}
+  /ui/admin/{section}:
+    get:
+      tags: [ui]
+      operationId: uiAdminSection
+      summary: Client page, one section of the panel
+      security: []
+      parameters:
+        - {name: section, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {$ref: '#/components/responses/ClientPage'}
+        '302': {description: 'To {base}/ui/login without a valid session cookie.'}
+        '404': {$ref: '#/components/responses/ClientMissing'}
+  /ui/assets/app.css:
+    get:
+      tags: [ui]
+      operationId: uiAssetStyle
+      summary: The shell stylesheet followed by Mailroom's
+      security: []
+      responses:
+        '200': {description: The file., content: {text/css: {schema: {type: string, format: binary}}}}
+  /ui/assets/quench.js:
+    get:
+      tags: [ui]
+      operationId: uiAssetLoader
+      summary: The client loader
+      security: []
+      responses:
+        '200': {description: The file., content: {text/javascript: {schema: {type: string, format: binary}}}}
+  /ui/assets/shell.js:
+    get:
+      tags: [ui]
+      operationId: uiAssetShell
+      summary: The page shell's script
+      security: []
+      responses:
+        '200': {description: The file., content: {text/javascript: {schema: {type: string, format: binary}}}}
+  /ui/assets/favicon.png:
+    get:
+      tags: [ui]
+      operationId: uiAssetIcon
+      summary: The icon
+      security: []
+      responses:
+        '200': {description: The file., content: {image/png: {schema: {type: string, format: binary}}}}
+  /ui/assets/app.wasm:
+    get:
+      tags: [ui]
+      operationId: uiAssetModule
+      summary: The browser client module
+      security: []
+      responses:
+        '200': {description: The file., content: {application/wasm: {schema: {type: string, format: binary}}}}
+        '404': {$ref: '#/components/responses/ClientMissing'}
+  /ui/login:
+    get:
+      tags: [ui]
+      operationId: uiLogin
+      summary: Start sign-in (SSO redirect to Gatehouse)
+      security: []
+      responses:
+        '302': {description: "To {base}/ui/home (refresh cookie accepted) or to Gatehouse's /api/v1/authorize; sets the state cookie."}
+        '503': {description: 'Text `gatehouse is not configured`.'}
+  /ui/login/:
+    get:
+      tags: [ui]
+      operationId: uiLoginSlash
+      summary: Same as /ui/login
+      security: []
+      responses:
+        '302': {description: See /ui/login.}
+        '503': {description: 'Text `gatehouse is not configured`.'}
+  /ui/auth/callback:
+    get:
+      tags: [ui]
+      operationId: uiAuthCallback
+      summary: Complete the authorization-code exchange
+      security: []
+      parameters:
+        - {name: code, in: query, required: false, schema: {type: string}}
+        - {name: state, in: query, required: false, schema: {type: string}}
+      responses:
+        '302': {description: "To {base}/ui/home with session cookies, or to {base}/ui/login on any failure."}
+        '503': {description: 'Text `gatehouse is not configured`.'}
+  /ui/logout:
+    get:
+      tags: [ui]
+      operationId: uiLogout
+      summary: Realm logout through Gatehouse
+      security: []
+      responses:
+        '302': {description: "To Gatehouse's /ui/logout with a redirect back to {base}/ui/login."}
+        '503': {description: 'Text `gatehouse is not configured`.'}
+  /ui/status:
+    get:
+      tags: [ui]
+      operationId: uiStatus
+      summary: Session status for the page shell
+      security: []
+      responses:
+        '200':
+          description: Always 200.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthStatus'}
+  /ui/refresh:
+    post:
+      tags: [ui]
+      operationId: uiRefresh
+      summary: Exchange the refresh cookie for new cookies
+      security: []
+      responses:
+        '200':
+          description: New session and refresh cookies set.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthStatus'}
+        '401': {description: No refresh cookie, or Gatehouse refused it. Empty body.}
 components:
+  responses:
+    ClientPage:
+      description: The HTML page that starts the browser client (cache-control no-store, nonce CSP).
+      content:
+        text/html: {schema: {type: string}}
+    ClientMissing:
+      description: app.wasm is not in WEB_DIR ("the browser client is not installed on this server").
   schemas:
+    AuthStatus:
+      type: object
+      required: [authenticated]
+      properties:
+        authenticated: {type: boolean}
+        username: {type: [string, 'null']}
+        roles: {type: array, items: {type: string}}
     Compose:
       type: object
       required: [to, subject, text]
