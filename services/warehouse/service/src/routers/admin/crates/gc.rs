@@ -33,7 +33,12 @@ pub async fn garbage_collect() -> std::io::Result<CratesGcReport> {
     let root = PathBuf::from(crates_storage_root());
     let mut report = CratesGcReport::default();
 
-    let mut crate_dirs = tokio::fs::read_dir(&root).await?;
+    // A registry nothing has been published to yet has no directory: there is nothing to collect, which is not a failure.
+    let mut crate_dirs = match tokio::fs::read_dir(&root).await {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(report),
+        Err(e) => return Err(e),
+    };
 
     while let Some(entry) = crate_dirs.next_entry().await? {
         let crate_dir = entry.path();

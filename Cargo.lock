@@ -288,6 +288,7 @@ dependencies = [
 name = "forge-bdd"
 version = "0.1.0"
 dependencies = [
+ "forge-sectest",
  "quench-args",
  "quench-client",
  "quench-core",

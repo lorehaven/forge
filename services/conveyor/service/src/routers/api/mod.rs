@@ -125,6 +125,19 @@ impl From<QueueError> for ApiError {
             return Self::new(quench_http::http::StatusCode::BAD_REQUEST, message);
         }
 
+        // A value the database cannot store (a NUL byte, text that is not UTF-8, out of range, too long for its column or
+        // index: SQLSTATE class 22, or 54000) is the caller's fault, not a 500 that quotes the database.
+        if let QueueError::Sql(database) = &error
+            && database
+                .code()
+                .is_some_and(|c| c.starts_with("22") || c == "54000")
+        {
+            return Self::new(
+                quench_http::http::StatusCode::BAD_REQUEST,
+                "a value in the request cannot be stored: it is too long, out of range, or holds a character that is not allowed",
+            );
+        }
+
         if let QueueError::Sql(database) = &error
             && database.code() == Some("23505")
         {
@@ -145,6 +158,12 @@ impl From<QueueError> for ApiError {
             }
         };
 
+        // The database's own words (a column, a constraint, a SQLSTATE) stay in the log; the caller is told only that it
+        // was not their request.
+        if matches!(error, QueueError::Sql(_) | QueueError::BadRow(_)) {
+            quench_log::error!("conveyor: {error}");
+            return Self::new(status, "internal error");
+        }
         Self::new(status, error.to_string())
     }
 }

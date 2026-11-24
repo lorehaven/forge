@@ -64,6 +64,12 @@ fn run_scan() -> Result<Scan, String> {
     options.token = env("FORGE_SECTEST_TOKEN");
     options.active = env("FORGE_SECTEST_ACTIVE").is_some();
     options.allow_remote = env("FORGE_SECTEST_ALLOW_REMOTE").is_some();
+    // Opt-in: the identities are minted from a gatehouse in test mode, which production never is.
+    if let Some(path) = env("FORGE_SECTEST_AUTHZ") {
+        let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+        options.authz = Some(forge_sectest::identity::Spec::parse(&text)?);
+        options.mint = env("FORGE_SECTEST_MINT");
+    }
     if let Some(rps) = env("FORGE_SECTEST_RPS") {
         options.rps = rps
             .parse()
@@ -176,6 +182,18 @@ fn live_auth_anonymous_routes_match_the_reviewed_baseline() {
 #[quench_test::test]
 fn live_tokens_forged_credentials_are_refused() {
     check("tokens");
+}
+/// Only when `FORGE_SECTEST_AUTHZ` names a spec: with none there are no identities, and the findings list has none
+/// of this check's, so the case would pass having tested nothing - which is why it is not a case of every run.
+#[quench_test::test]
+fn live_authz_tokens_hold_no_more_than_they_were_given() {
+    if env("FORGE_SECTEST_AUTHZ").is_none() {
+        println!(
+            "skipped: FORGE_SECTEST_AUTHZ is not set (identities need a gatehouse in test mode)"
+        );
+        return;
+    }
+    check("authz");
 }
 #[quench_test::test]
 fn live_traversal_paths_cannot_escape() {

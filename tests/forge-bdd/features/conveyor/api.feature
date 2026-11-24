@@ -43,6 +43,7 @@ Feature: Conveyor's API
 
   # The suite runs on an in-memory store on purpose. Conveyor says so rather
   # than looking healthy and losing every queued run on restart.
+  @memory
   Scenario: The queue refuses an in-memory database
     Given I am authenticated against conveyor
     When an authenticated GET is sent to "/api/v1/runs"

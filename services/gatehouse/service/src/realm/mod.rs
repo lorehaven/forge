@@ -643,6 +643,18 @@ fn lockout_policy() -> (i32, quench_core::time::Duration) {
     )
 }
 
+/// Verifies `password` against a hash nobody can match, for the same cost as a real user's check.
+async fn spend_the_hash_time(password: &str) {
+    static DECOY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let plain = password.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        let decoy =
+            DECOY.get_or_init(|| User::hash_password("gatehouse-decoy").unwrap_or_default());
+        quench_crypto::argon2::verify_password(&plain, decoy).unwrap_or(false)
+    })
+    .await;
+}
+
 /// Gatehouse's own login (write access) - stops short of a session when MFA is enabled.
 pub async fn authenticate(db: &Db, username: &str, password: &str) -> RealmResult<AuthOutcome> {
     let repo = repo(db);
@@ -651,6 +663,9 @@ pub async fn authenticate(db: &Db, username: &str, password: &str) -> RealmResul
         .await
         .map_err(|err| internal("failed to look up user for login", err))?
     else {
+        // The answer is the same as for a wrong password, and so must be the time it takes: an early return that skips
+        // the hash tells anyone with a stopwatch which names are accounts.
+        spend_the_hash_time(password).await;
         return Ok(AuthOutcome::NotFound);
     };
 

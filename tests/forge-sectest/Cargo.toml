@@ -24,7 +24,7 @@ tokio = { workspace = true }
 quench-core = { workspace = true }
 quench-crypto = { workspace = true }
 quench-proto = { workspace = true, features = ["tls"] }
-quench-serde = { workspace = true }
+quench-serde = { workspace = true, features = ["yaml"] }
 
 [dev-dependencies]
 quench-http = { workspace = true }
@@ -58,6 +58,16 @@ required-features = ["gate"]
 [[test]]
 name = "selftest"
 path = "tests/selftest.rs"
+harness = false
+
+[[test]]
+name = "authz"
+path = "tests/authz.rs"
+harness = false
+
+[[test]]
+name = "fuzz"
+path = "tests/fuzz.rs"
 harness = false
 
 [[test]]

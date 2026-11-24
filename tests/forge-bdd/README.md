@@ -13,3 +13,17 @@ Conveyor runs the whole suite every day at 6 am Warsaw time (`bdd` stage of `.co
 
 ## Documentation
 Full documentation: [guides/testing.md](../../docs/guides/testing.md)
+
+## Security scenarios
+
+`features/<service>/authz.feature` (`@authz`) runs forge-sectest's authorisation check against each service (identities minted from gatehouse's
+test endpoint; spec in `tests/forge-sectest/authz.toml`), and `features/gatehouse/attacks.feature` (`@security`) attacks gatehouse's
+sign-in flows. Both pass when the defence holds. See `tests/forge-sectest/README.md`.
+
+`features/<service>/fuzz.feature` (`@fuzz`, `@serial`) runs forge-sectest's fuzzer on the service's own OpenAPI document and fails on a 500, a leaked
+error, a stall or a client-settable privileged field.
+
+`features/<service>/scan.feature` (`@scan`, `@serial`) runs the rest of forge-sectest's checks (anonymous access, forged tokens, traversal, headers, CORS, hostile
+input, request smuggling, password-guess throttling) against the service. The authz and fuzz features need `FORGE_BDD_DATABASE_URL` for the
+recipes that touch tables (`foundry apply --install conveyor --install daybook --install sage --install warehouse --install workbench`): with it
+conveyor, sage and warehouse run on it too, so their whole APIs are real.

@@ -1361,13 +1361,7 @@ pub(crate) async fn owned_conversation(
         Ok(Some(conv)) if conv.owner == username => Ok(Some(conv)),
         Ok(Some(_)) => Err(Response::new(StatusCode::FORBIDDEN)),
         Ok(None) => Ok(None),
-        Err(err) => {
-            quench_log::error!("Internal error: {}", err);
-            Err(Response::text(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "api_error_internal",
-            ))
-        }
+        Err(err) => Err(super::failure(err)),
     }
 }
 

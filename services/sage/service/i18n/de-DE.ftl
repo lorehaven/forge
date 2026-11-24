@@ -94,6 +94,7 @@ ui_init_embedding_tag = (Embedding)
 # ── API-Fehlercodes ──────────────────────────────────────────────────────────
 
 api_error_internal = Etwas ist schiefgelaufen. Bitte versuche es erneut.
+api_error_invalid_value = Ein Wert in der Anfrage kann nicht gespeichert werden: er ist zu lang oder enthält ein nicht erlaubtes Zeichen.
 api_error_instance_not_found = Modellinstanz nicht gefunden
 api_error_embedding_model_chat = Das ausgewählte Modell ist ein Embedding-Modell und kann nicht zum Chatten verwendet werden
 api_error_switchboard_unavailable = Der Modelldienst ist nicht erreichbar

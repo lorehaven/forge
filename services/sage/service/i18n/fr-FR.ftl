@@ -94,6 +94,7 @@ ui_init_embedding_tag = (embedding)
 # ── Codes d'erreur API ───────────────────────────────────────────────────────
 
 api_error_internal = Une erreur s'est produite. Veuillez réessayer.
+api_error_invalid_value = Une valeur de la requête ne peut pas être enregistrée : elle est trop longue ou contient un caractère non autorisé.
 api_error_instance_not_found = Instance de modèle introuvable
 api_error_embedding_model_chat = Le modèle sélectionné est un modèle d'embedding et ne peut pas être utilisé pour discuter
 api_error_switchboard_unavailable = Le service de modèles est indisponible

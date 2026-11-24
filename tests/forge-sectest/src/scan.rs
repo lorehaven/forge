@@ -9,9 +9,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
-pub const ALL_CHECKS: [&str; 8] = [
+pub const ALL_CHECKS: [&str; 10] = [
     "auth",
     "tokens",
+    "authz",
+    "fuzz",
     "traversal",
     "headers",
     "cors",
@@ -36,6 +38,17 @@ pub struct Options {
     pub baseline: Option<HashSet<String>>,
     /// Empty means every check.
     pub checks: Vec<String>,
+    /// The identities and ownership recipes of the `authz` check. Without it that check does not run.
+    pub authz: Option<crate::identity::Spec>,
+    /// Gatehouse's base URL, where the `authz` identities are minted (overrides the spec's).
+    pub mint: Option<String>,
+    /// A forge checkout: where the `fuzz` check reads `docs/services/<name>/openapi.yaml` from. Without it that check
+    /// does not run.
+    pub forge_root: Option<std::path::PathBuf>,
+    /// The most mutated requests the `fuzz` check sends per operation.
+    pub fuzz_budget: usize,
+    /// Path-parameter values a caller already knows (objects it made before the scan), added to the spec's `[[bind]]`s.
+    pub binds: Vec<crate::identity::Bind>,
 }
 
 impl Options {
@@ -51,6 +64,11 @@ impl Options {
             rps: 20,
             baseline: None,
             checks: Vec::new(),
+            authz: None,
+            mint: None,
+            forge_root: None,
+            fuzz_budget: 150,
+            binds: Vec::new(),
         }
     }
 
@@ -151,6 +169,18 @@ pub async fn run(opts: Options) -> Result<(Vec<Finding>, u64), String> {
             ));
         }
     }
+    if opts.authz.is_none() && opts.checks.iter().any(|c| c == "authz") {
+        return Err(
+            "--checks authz needs --authz FILE: with no identities it would test nothing"
+                .to_string(),
+        );
+    }
+    if opts.forge_root.is_none() && opts.checks.iter().any(|c| c == "fuzz") {
+        return Err(
+            "--checks fuzz needs a forge checkout to read the OpenAPI documents from (--forge)"
+                .to_string(),
+        );
+    }
     let ctx = Ctx::new(opts);
     let mut findings = Vec::new();
     for target in &ctx.opts.targets {
@@ -180,7 +210,8 @@ pub async fn run(opts: Options) -> Result<(Vec<Finding>, u64), String> {
 
 async fn run_target(ctx: &Ctx, target: &Target) -> Vec<Finding> {
     let mut findings = Vec::new();
-    let protected = if ctx.opts.wants("auth") || ctx.opts.wants("tokens") {
+    let authz = ctx.opts.authz.is_some() && ctx.opts.wants("authz");
+    let protected = if ctx.opts.wants("auth") || ctx.opts.wants("tokens") || authz {
         let outcome = checks::auth::run(ctx, target).await;
         if ctx.opts.wants("auth") {
             findings.extend(outcome.findings);
@@ -191,6 +222,12 @@ async fn run_target(ctx: &Ctx, target: &Target) -> Vec<Finding> {
     };
     if ctx.opts.wants("tokens") {
         findings.extend(checks::tokens::run(ctx, target, &protected).await);
+    }
+    if authz {
+        findings.extend(checks::authz::run(ctx, target, &protected).await);
+    }
+    if ctx.opts.forge_root.is_some() && ctx.opts.wants("fuzz") {
+        findings.extend(checks::fuzz::run(ctx, target).await);
     }
     if ctx.opts.wants("traversal") {
         findings.extend(checks::traversal::run(ctx, target).await);

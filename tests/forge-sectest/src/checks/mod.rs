@@ -1,7 +1,9 @@
 //! The individual attack families. Each takes the shared [`Ctx`](crate::scan::Ctx) and one target.
 
 pub mod auth;
+pub mod authz;
 pub mod cors;
+pub mod fuzz;
 pub mod headers;
 pub mod injection;
 pub mod protocol;

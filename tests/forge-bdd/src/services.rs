@@ -221,6 +221,17 @@ impl Fixture {
     /// webhook endpoint's refusals. Everything that does touch the queue is
     /// covered by `services/conveyor/service/tests/integration`, against a real
     /// Postgres.
+    /// Points `command` at the suite's Postgres (`FORGE_BDD_DATABASE_URL`), in the schema the service's module owns.
+    fn use_database(command: &mut Command, schema: &str) {
+        if let Some(url) = database_url() {
+            command
+                .env("DATABASE_URL", &url)
+                .env("POSTGRES_URL", url)
+                .env("DB_SCHEMA", schema)
+                .env("ALLOW_IN_MEMORY_DB", "false");
+        }
+    }
+
     async fn start_conveyor(&self) -> Service {
         self.build("conveyor-service").await;
         println!("Starting conveyor-service...");
@@ -243,6 +254,8 @@ impl Fixture {
             // Set, so the webhook endpoint's "not configured" path is the one
             // scenario that has to turn it off rather than the default.
             .env("CONVEYOR_WEBHOOK_SECRET", "conveyor-bdd-secret");
+        // Its queue needs one: with a database the whole API is real, without one every route says so (503).
+        Self::use_database(&mut command, "conveyor");
 
         Service {
             target: Target::Conveyor,
@@ -422,6 +435,9 @@ impl Fixture {
             // Exercise the graceful default-model teardown on shutdown.
             .env("SAGE_STOP_MODELS_ON_SHUTDOWN", "true");
 
+        // Files and the conversations' history are kept in it; without one the files API answers 501.
+        Self::use_database(&mut command, "sage");
+
         Service {
             target: Target::Sage,
             child: command.spawn().expect("failed to start sage-service"),
@@ -495,6 +511,9 @@ impl Fixture {
                 format!("test={}", storage_dir.join("files").display()),
             );
 
+        // Dynamic storages and the registries' metadata live in it; without one the files API cannot provision a storage.
+        Self::use_database(&mut command, "warehouse");
+
         Service {
             target: Target::Warehouse,
             child: command.spawn().expect("failed to start warehouse-service"),
@@ -517,6 +536,9 @@ impl Fixture {
             // Emailed links come from configuration, never the request's Host
             // header - pin it to the address this suite reaches gatehouse on.
             .env("PUBLIC_BASE_URL", "http://127.0.0.1:5443")
+            // The estate's daily cap on mail (250 by default). The security scenarios fuzz and scan every route that sends
+            // some - registration, resets, invitations - and would use the day up before the functional ones had theirs.
+            .env("MAIL_DAILY_LIMIT", "1000000")
             .env("SERVICE_AUTH_ENABLED", "true")
             // Plain HTTP, deterministically: gatehouse ships no certificate of
             // its own, but the dev environment (foreman) symlinks one in, and the
@@ -633,6 +655,17 @@ pub fn database_url() -> Option<String> {
     std::env::var("FORGE_BDD_DATABASE_URL")
         .ok()
         .filter(|url| !url.trim().is_empty())
+}
+
+/// `ensure_user`, once per name for the whole run: every token the suite mints names a subject, and a service whose
+/// tables point at `auth.users` refuses a subject that is not in it.
+pub async fn ensure_user_once(username: &str) {
+    static SEEN: OnceLock<tokio::sync::Mutex<std::collections::HashSet<String>>> = OnceLock::new();
+    // Held across the insert: a second scenario that needs the same name waits for the row instead of racing past it.
+    let mut seen = SEEN.get_or_init(Default::default).lock().await;
+    if seen.insert(username.to_string()) {
+        ensure_user(username).await;
+    }
 }
 
 /// Makes sure `username` has a row in the database's `auth.users`, which a service's own tables point at (a task's owner is a

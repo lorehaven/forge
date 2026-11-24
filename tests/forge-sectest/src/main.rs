@@ -2,6 +2,7 @@
 
 use forge_sectest::census;
 use forge_sectest::finding::{Severity, report_json};
+use forge_sectest::identity::Spec;
 use forge_sectest::scan::{self, ALL_CHECKS, Options};
 use forge_sectest::wire::Target;
 use std::collections::HashSet;
@@ -23,7 +24,11 @@ SCAN OPTIONS
   --token TOKEN         a valid bearer token, to test behaviour behind the auth wall
   --baseline FILE       reviewed public routes; only routes not listed are reported
   --write-baseline FILE write the current public routes there and exit 0
-  --checks a,b,c        subset of: auth,tokens,traversal,headers,cors,injection,protocol,throttle
+  --checks a,b,c        subset of: auth,tokens,authz,traversal,headers,cors,injection,protocol,throttle
+  --fuzz                mutate each OpenAPI operation of docs/services/<name>/openapi.yaml (see --forge); with --active it also creates objects and fuzzes mutating routes
+  --fuzz-budget N       most mutated requests per operation                      [default: 150]
+  --authz FILE          identities and ownership recipes for the `authz` check (see authz.toml); without it that check does not run
+  --mint URL            gatehouse's base URL, where `authz` mints its identities (a stack in GATEHOUSE_TEST_MODE only)
   --active              also send mutating verbs and credential bursts (state-changing)
   --slow                also run the 60s slowloris hold test
   --rps N               request rate limit                            [default: 20]
@@ -116,6 +121,27 @@ async fn real_main(raw: Vec<String>) -> Result<ExitCode, String> {
     }
 }
 
+/// The options of the `authz` and `fuzz` checks: which gatehouse to mint from, the spec, the fuzzer's checkout and budget.
+fn identities_and_fuzz(args: &Args, options: &mut Options) -> Result<(), String> {
+    options.mint = args.value("--mint");
+    if let Some(n) = args.value("--fuzz-budget") {
+        options.fuzz_budget = n
+            .parse()
+            .map_err(|_| "--fuzz-budget: not a number".to_string())?;
+    }
+    if args.flag("--fuzz") || options.checks.iter().any(|c| c == "fuzz") {
+        options.forge_root = Some(PathBuf::from(
+            args.value("--forge").unwrap_or_else(|| ".".to_string()),
+        ));
+    }
+    if let Some(path) = args.value("--authz") {
+        let text = fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+        options.authz = Some(Spec::parse(&text)?);
+    }
+    options.allow_remote = args.flag("--allow-remote");
+    Ok(())
+}
+
 async fn scan_command(args: &Args, routes: Vec<census::Route>) -> Result<ExitCode, String> {
     let mut targets = Vec::new();
     for spec in args.values("--target") {
@@ -130,7 +156,7 @@ async fn scan_command(args: &Args, routes: Vec<census::Route>) -> Result<ExitCod
     options.token = args.value("--token");
     options.active = args.flag("--active");
     options.slow = args.flag("--slow");
-    options.allow_remote = args.flag("--allow-remote");
+    identities_and_fuzz(args, &mut options)?;
     if let Some(rps) = args.value("--rps") {
         options.rps = rps.parse().map_err(|_| "--rps: not a number".to_string())?;
     }

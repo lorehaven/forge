@@ -12,5 +12,7 @@ pub mod census;
 pub mod checks;
 pub mod finding;
 pub mod gate;
+pub mod identity;
+pub mod openapi;
 pub mod scan;
 pub mod wire;

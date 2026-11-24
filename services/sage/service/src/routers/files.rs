@@ -149,8 +149,7 @@ pub(crate) async fn parse_upload_form(mut form: Multipart) -> Result<FileUploadF
 
 /// Log the underlying error and return the generic `api_error_*` code the UI resolves via i18n.
 fn internal_error<E: std::fmt::Display>(e: E) -> Response {
-    quench_log::error!("Internal error: {}", e);
-    Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
+    super::failure(e)
 }
 
 /// The conversation / project an upload targets must exist and belong to the requesting user.
@@ -344,11 +343,7 @@ pub async fn create_uploaded_file(
             let result = insert_file_with_blob(pg_db, &file, form.file_data.as_ref()).await;
 
             if let Err(e) = result {
-                quench_log::error!("Failed to store uploaded file: {}", e);
-                return Err(Response::text(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "api_error_internal",
-                ));
+                return Err(super::failure(e));
             }
 
             if !is_image {

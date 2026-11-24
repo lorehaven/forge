@@ -55,3 +55,20 @@ pub fn register_routes() {
     turns::register_routes();
     ui::register_routes();
 }
+
+/// An unexpected failure: the detail goes to the log, the caller gets a key the UI translates.
+///
+/// A value the database cannot store (a NUL byte, text that is not UTF-8, out of range, too long for its column or index:
+/// SQLSTATE class 22, or 54000) is the caller's fault and answers 400.
+pub(crate) fn failure(detail: impl std::fmt::Display) -> quench_http::response::Response {
+    use quench_http::prelude::http::StatusCode;
+    let detail = detail.to_string();
+    if detail.contains("SQLSTATE 22") || detail.contains("SQLSTATE 54000") {
+        return quench_http::response::Response::text(
+            StatusCode::BAD_REQUEST,
+            "api_error_invalid_value",
+        );
+    }
+    quench_log::error!("Internal error: {detail}");
+    quench_http::response::Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
+}

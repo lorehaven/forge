@@ -12,11 +12,25 @@ pub fn from_domain(error: DaybookError) -> ApiError {
             StatusCode::BAD_REQUEST,
             "a referenced project or label does not exist for this user",
         ),
+        // A value the database cannot store (a NUL byte, text that is not UTF-8, out of range, too long for its column or
+        // index: SQLSTATE class 22, or 54000) is the caller's fault, not a 500 that quotes the database.
+        DaybookError::Sql(error)
+            if error
+                .code()
+                .is_some_and(|c| c.starts_with("22") || c == "54000") =>
+        {
+            ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "a value in the request cannot be stored: it is too long, out of range, or holds a character that is not allowed",
+            )
+        }
         DaybookError::Sql(error) if error.is_unique_violation() => {
             ApiError::new(StatusCode::CONFLICT, "that name is already in use")
         }
+        // The database's own words (a column, a constraint, a SQLSTATE) stay in the log.
         DaybookError::Sql(error) => {
-            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+            quench_log::error!("daybook: database error: {error}");
+            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
         }
     }
 }

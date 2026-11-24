@@ -21,8 +21,7 @@ fn json<T: quench_serde::Serialize>(status: StatusCode, value: &T) -> Response {
 }
 
 fn internal(err: impl std::fmt::Display) -> Response {
-    quench_log::error!("Internal error: {}", err);
-    Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
+    super::failure(err)
 }
 
 pub async fn get_conversation_messages(
@@ -470,8 +469,7 @@ pub async fn switch_branch(
         Err(err) => return internal(err),
     }
     if let Err(err) = switch_active_message(&db, &id, &body.target_message_id).await {
-        quench_log::error!("Failed to switch active branch: {}", err);
-        return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
+        return super::failure(err);
     }
     Response::new(StatusCode::NO_CONTENT)
 }

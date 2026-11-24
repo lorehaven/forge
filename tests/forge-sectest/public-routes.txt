@@ -122,3 +122,22 @@ workbench GET /ui/assets/favicon.png
 workbench GET /ui/assets/quench.js
 workbench GET /ui/assets/shell.js
 workbench GET /ui/status
+# gauge and mailroom: health, swagger, the application shell and its assets, the status probe (reviewed 2026-11-24).
+gauge GET /health
+gauge GET /health/live
+gauge GET /health/ready
+gauge GET /swagger-ui
+gauge GET /swagger-ui/
+gauge GET /ui/status
+mailroom GET /
+mailroom GET /health
+mailroom GET /health/live
+mailroom GET /health/ready
+mailroom GET /swagger-ui
+mailroom GET /swagger-ui/
+mailroom GET /ui/assets/app.css
+mailroom GET /ui/assets/app.wasm
+mailroom GET /ui/assets/favicon.png
+mailroom GET /ui/assets/quench.js
+mailroom GET /ui/assets/shell.js
+mailroom GET /ui/status

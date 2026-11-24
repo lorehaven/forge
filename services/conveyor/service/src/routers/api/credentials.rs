@@ -213,11 +213,30 @@ fn credential_error(error: &CredentialError) -> Response {
         CredentialError::Queue(crate::scheduler::QueueError::NotPostgres) => {
             StatusCode::SERVICE_UNAVAILABLE
         }
+        // A value the database cannot store (a NUL byte, too long for its column or index: SQLSTATE class 22, or 54000)
+        // is the caller's fault.
+        CredentialError::Queue(crate::scheduler::QueueError::Sql(database))
+            if database
+                .code()
+                .is_some_and(|c| c.starts_with("22") || c == "54000") =>
+        {
+            StatusCode::BAD_REQUEST
+        }
         CredentialError::Queue(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
 
     if status.is_server_error() {
         quench_log::error!("credential store: {error}");
+    }
+    // The queue's own words (a column, a constraint) stay in the log.
+    if status == StatusCode::INTERNAL_SERVER_ERROR {
+        return json_error(status, "internal error");
+    }
+    if matches!(error, CredentialError::Queue(_)) && status == StatusCode::BAD_REQUEST {
+        return json_error(
+            status,
+            "a value in the request cannot be stored: it is too long, out of range, or holds a character that is not allowed",
+        );
     }
     json_error(status, &error.to_string())
 }

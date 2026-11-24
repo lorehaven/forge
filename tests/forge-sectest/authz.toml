@@ -1,0 +1,188 @@
+# Identities and ownership recipes for forge-sectest's `authz` check.
+#
+#   forge-sectest scan --target daybook=http://127.0.0.1:12443/daybook ... \
+#       --authz tests/forge-sectest/authz.toml --mint http://127.0.0.1:5443/gatehouse --active
+#
+# Tokens are minted from gatehouse's test endpoint (`GATEHOUSE_TEST_MODE`), so this runs against the BDD stack or a
+# staging copy, never production. `--active` is needed: a hole means the request really runs.
+
+# Routes any signed-in user may reach without a grant of this service. Each line is a reviewed decision.
+#   "<service> <METHOD> <pattern>"
+open = [
+  "daybook GET /api/v1/me",
+  "workbench GET /api/v1/me",
+  "sage GET /api/v1/me",
+  "mailroom GET /api/v1/me",
+  "conveyor GET /api/v1/me",
+  "gauge GET /api/v1/me",
+  "warehouse GET /api/v1/me",
+  # A person's own subscriptions (docs/services/conveyor/permissions.md: "any authenticated caller; always the caller's own").
+  "conveyor GET /api/v1/subscriptions",
+  "conveyor DELETE /api/v1/repos/{id}/subscription",
+  "conveyor DELETE /api/v1/projects/{id}/subscription",
+  # A POST that only lists: it takes a filter in the body and changes nothing.
+  "switchboard POST /api/v1/models/list",
+]
+
+# What each service's scope strings look like: `reader` may look, `writer` may do everything a normal user may.
+[[service]]
+name = "daybook"
+reader = "daybook:read"
+writer = "user daybook:read daybook:write"
+
+[[service]]
+name = "workbench"
+reader = "workbench:read"
+writer = "user workbench:read workbench:write"
+
+[[service]]
+name = "sage"
+reader = "sage:read"
+writer = "user sage:read sage:write"
+
+[[service]]
+name = "switchboard"
+reader = "switchboard:read"
+writer = "user switchboard:read switchboard:launch switchboard:stop switchboard:delete-model"
+
+[[service]]
+name = "warehouse"
+reader = "warehouse:read"
+writer = "user warehouse:read warehouse:write"
+
+[[service]]
+name = "conveyor"
+reader = "conveyor:read"
+writer = "user conveyor:read conveyor:write"
+
+[[service]]
+name = "mailroom"
+reader = "mailroom:read"
+writer = "user mailroom:read mailroom:write"
+# The fuzzer also needs the service-to-service route (`POST /api/v1/send`), which a person does not hold.
+fuzz = "user mailroom:read mailroom:write mailroom:send"
+
+[[service]]
+name = "gatehouse"
+reader = "gatehouse:read-users"
+writer = "user"
+
+[[service]]
+name = "gauge"
+reader = "gauge:read"
+writer = "user gauge:read"
+
+# One user's object, and what another user must not be able to do with it.
+[[resource]]
+name = "a daybook task"
+requires = "database"
+service = "daybook"
+owner = "sectest-alice"
+other = "sectest-bob"
+create = 'POST /api/v1/tasks :: {"content":"{canary}"}'
+id_at = "id"
+list = ["GET /api/v1/tasks"]
+write = [
+  'PUT /api/v1/tasks/{id} :: {"content":"tampered","is_completed":true}',
+  "DELETE /api/v1/tasks/{id}",
+]
+cleanup = "DELETE /api/v1/tasks/{id}"
+
+# Workbench grants per project: each user may work in their own project and nowhere else. The setup identity makes both
+# projects (a blanket grant is needed to create one), then it is cleaned up.
+[[resource]]
+name = "a workbench issue"
+requires = "database"
+service = "workbench"
+owner = "sectest-alice"
+other = "sectest-bob"
+setup = 'POST /api/v1/projects :: {"key":"S{nonce}","name":"sectest owner"}'
+setup2 = 'POST /api/v1/projects :: {"key":"T{nonce}","name":"sectest other"}'
+owner_scope = "user workbench:project:{setup}:read workbench:project:{setup}:write"
+other_scope = "user workbench:project:{setup2}:read workbench:project:{setup2}:write"
+create = 'POST /api/v1/projects/{setup}/issues :: {"title":"{canary}"}'
+read = ["GET /api/v1/issues/{id}", "GET /api/v1/issues/{id}/comments"]
+list = ["GET /api/v1/projects/{setup}/issues"]
+write = [
+  'POST /api/v1/issues/{id}/transition :: {"status":"in-progress"}',
+  'POST /api/v1/issues/{id}/comments :: {"body":"tampered"}',
+  "DELETE /api/v1/issues/{id}",
+]
+cleanup = "DELETE /api/v1/issues/{id}"
+teardown = ["DELETE /api/v1/projects/{setup}", "DELETE /api/v1/projects/{setup2}"]
+
+# Sage keeps each user's projects to themselves (a record that is someone else's answers 403).
+[[resource]]
+name = "a sage project"
+service = "sage"
+owner = "sectest-alice"
+other = "sectest-bob"
+create = 'POST /api/v1/projects :: {"name":"{canary}"}'
+list = ["GET /api/v1/projects"]
+
+# Mailroom: each person's mail is theirs alone, administrators included (see docs/services/mailroom/security.md).
+[[resource]]
+name = "a mailroom message"
+service = "mailroom"
+owner = "sectest-alice"
+other = "sectest-bob"
+prepare = ["GET /api/v1/me"]
+create = 'POST /api/v1/outgoing :: {"to":["sectest-alice"],"subject":"{canary}","text":"{canary}"}'
+id_at = "id"
+read = ["GET /api/v1/messages/{id}", "GET /api/v1/messages/{id}/html"]
+list = ["GET /api/v1/messages?folder=inbox&limit=100"]
+
+# What the fuzzer cannot discover for itself: a path parameter that names a fixed thing rather than something that was made.
+# Anything left out is fuzzed against a stand-in id (and the report says which operations those are).
+[[bind]]
+service = "sage"
+param = "profile"
+value = "web_assistant"
+
+[[bind]]
+service = "sage"
+param = "user_id"
+value = "sectest-fuzz"
+
+[[resource]]
+name = "a daybook project"
+requires = "database"
+service = "daybook"
+owner = "sectest-alice"
+other = "sectest-bob"
+create = 'POST /api/v1/projects :: {"name":"{canary}","sort_order":0}'
+list = ["GET /api/v1/projects"]
+write = [
+  'PUT /api/v1/projects/{id} :: {"name":"tampered","sort_order":1}',
+  "DELETE /api/v1/projects/{id}",
+]
+cleanup = "DELETE /api/v1/projects/{id}"
+
+[[resource]]
+name = "a daybook label"
+requires = "database"
+service = "daybook"
+owner = "sectest-alice"
+other = "sectest-bob"
+create = 'POST /api/v1/labels :: {"name":"{canary}","color":"#22c55e"}'
+list = ["GET /api/v1/labels"]
+write = [
+  'PUT /api/v1/labels/{id} :: {"name":"tampered","color":"#000000"}',
+  "DELETE /api/v1/labels/{id}",
+]
+cleanup = "DELETE /api/v1/labels/{id}"
+
+# A dynamic storage is private to its owner: another person holding the blanket `warehouse:read`/`write` is not let in
+# (docs/services/warehouse/openapi.yaml, `GET /api/v1/files/{storage}`). The setup identity provisions it, for alice.
+[[resource]]
+name = "a warehouse dynamic storage"
+requires = "database"
+service = "warehouse"
+owner = "sectest-alice"
+other = "sectest-bob"
+setup = 'POST /api/v1/files :: {"name":"sec{nonce}","owner":"sectest-alice"}'
+setup_at = "name"
+create = 'PATCH /api/v1/files/{setup} :: {"sync_enabled":true}'
+id_at = "name"
+read = ["GET /api/v1/files/{setup}"]
+teardown = ["DELETE /api/v1/files/{setup}"]

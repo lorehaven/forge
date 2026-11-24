@@ -76,6 +76,10 @@ pub async fn create(
         Err(problem) if problem.is_foreign_key_violation() => {
             error(StatusCode::BAD_REQUEST, "no such user to own this storage")
         }
+        Err(problem) if problem.is_unstorable_value() => error(
+            StatusCode::BAD_REQUEST,
+            "a value in the request cannot be stored: it is too long, out of range, or holds a character that is not allowed",
+        ),
         Err(problem) => {
             quench_log::error!("creating dynamic storage failed: {problem}");
             error(
@@ -128,6 +132,10 @@ pub async fn patch(
         Ok(Some(storage)) => Response::json(StatusCode::OK, &storage)
             .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Ok(None) => not_found("no such dynamic storage"),
+        Err(problem) if problem.is_unstorable_value() => error(
+            StatusCode::BAD_REQUEST,
+            "a value in the request cannot be stored: it is too long, out of range, or holds a character that is not allowed",
+        ),
         Err(problem) => {
             quench_log::error!("updating dynamic storage failed: {problem}");
             error(

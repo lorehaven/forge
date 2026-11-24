@@ -6,10 +6,10 @@ use quench_test_bdd::{given, then, when};
 
 /// Cookie names are realm-wide; a service-specific name here would mean SSO is
 /// not actually happening.
-const SESSION_COOKIE: &str = "forge_session";
+pub const SESSION_COOKIE: &str = "forge_session";
 const REFRESH_COOKIE: &str = "forge_refresh";
 
-fn no_redirect_client() -> quench_client::transport::Client {
+pub fn no_redirect_client() -> quench_client::transport::Client {
     quench_client::transport::Client::builder()
         .danger_accept_invalid_certs(true)
         .redirect(quench_client::transport::Redirect::None)
@@ -404,7 +404,7 @@ fn set_cookie_header(world: &ForgeWorld) -> String {
         .join("; ")
 }
 
-fn cookie_value(
+pub fn cookie_value(
     headers: &quench_client::transport::header::HeaderMap,
     name: &str,
 ) -> Option<String> {
@@ -1044,7 +1044,7 @@ fn offers_control(world: &mut ForgeWorld, service: String) {
 /// (20 an hour) as well as per account and per address; without this every scenario shares the one bucket of
 /// a harness that sends no address, and a full run of the suite uses it up. The per-account and per-address
 /// limits, which are what the scenarios exercise, are untouched.
-fn fresh_client_ip() -> String {
+pub fn fresh_client_ip() -> String {
     static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     format!("10.{}.{}.{}", (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff)
@@ -1273,7 +1273,7 @@ async fn emailed(_world: &mut ForgeWorld, email: String, kind: String) {
 }
 
 /// Pulls the URL out of a `LoggingSender` line: `"...: visit {link} to ..."`.
-fn extract_link(line: &str) -> String {
+pub fn extract_link(line: &str) -> String {
     let after_visit = line
         .split_once("visit ")
         .expect("log line had no 'visit <link>'")

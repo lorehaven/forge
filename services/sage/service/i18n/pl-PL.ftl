@@ -94,6 +94,7 @@ ui_init_embedding_tag = (embedding)
 # ── Kody błędów API ──────────────────────────────────────────────────────────
 
 api_error_internal = Coś poszło nie tak. Spróbuj ponownie.
+api_error_invalid_value = Wartości z żądania nie można zapisać: jest za długa lub zawiera niedozwolony znak.
 api_error_instance_not_found = Nie znaleziono instancji modelu
 api_error_embedding_model_chat = Wybrany model jest modelem embedding i nie może służyć do czatu
 api_error_switchboard_unavailable = Usługa modeli jest niedostępna

@@ -24,6 +24,7 @@ quench-crypto = { workspace = true }
 quench-serde = { workspace = true }
 quench-test-bdd = { workspace = true }
 quench-pg = { workspace = true }
+forge-sectest = { path = "../forge-sectest" }
 
 [lints]
 workspace = true

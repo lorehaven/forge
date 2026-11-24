@@ -63,6 +63,13 @@ impl From<WorkbenchError> for ApiError {
             );
         }
 
+        if error.is_unstorable_value() {
+            return Self::new(
+                StatusCode::BAD_REQUEST,
+                "a value in the request cannot be stored: it is too long, out of range, or holds a character that is not allowed",
+            );
+        }
+
         if error.is_unique_violation() {
             return Self::new(
                 StatusCode::CONFLICT,
@@ -76,6 +83,12 @@ impl From<WorkbenchError> for ApiError {
             WorkbenchError::Sql(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
+        // The database's own words (a column, a constraint, a SQLSTATE) stay in the log; the caller is told only that it
+        // was not their request.
+        if let WorkbenchError::Sql(_) = &error {
+            quench_log::error!("workbench: database error: {error}");
+            return Self::new(status, "internal error");
+        }
         Self::new(status, error.to_string())
     }
 }

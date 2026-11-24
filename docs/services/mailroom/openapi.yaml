@@ -1,0 +1,263 @@
+openapi: 3.1.0
+info:
+  title: Mailroom
+  version: 0.1.2
+  description: >
+    The estate's own mail. Everything under /api/v1 is behind the realm's Auth middleware (bearer token or session cookie, audience
+    mailroom); each route checks the grant it needs (read, write, send or admin) itself. Mail stays inside the estate: nothing is
+    delivered to an address outside it, and an administrator sees the mailboxes and their size, never what is in them.
+servers:
+  - url: '{base}'
+    variables:
+      base:
+        default: /mailroom
+        description: BASE_PATH of the deployment.
+tags:
+  - name: mail
+    description: A person's own mailbox.
+  - name: services
+    description: How a service writes to people.
+  - name: admin
+    description: The administrator's panel.
+paths:
+  /api/v1/me:
+    get:
+      tags: [mail]
+      operationId: me
+      summary: Who the caller is, and their address
+      x-permission: mailroom:read
+      responses:
+        '200': {description: The caller's mailbox, created on first use.}
+        '401': {description: No valid token or session.}
+        '403': {description: The token lacks the grant, or the mailbox is disabled.}
+  /api/v1/folders:
+    get:
+      tags: [mail]
+      operationId: listFolders
+      summary: The three folders with their counts
+      x-permission: mailroom:read
+      responses:
+        '200': {description: Inbox, sent and trash.}
+        '401': {description: No valid token or session.}
+        '403': {description: The token lacks the grant.}
+  /api/v1/messages:
+    get:
+      tags: [mail]
+      operationId: listMessages
+      summary: Messages in a folder, newest first
+      x-permission: mailroom:read
+      parameters:
+        - {name: folder, in: query, required: false, schema: {type: string, enum: [inbox, sent, trash]}}
+        - {name: q, in: query, required: false, schema: {type: string}, description: Search in subject, sender and text.}
+        - {name: unread, in: query, required: false, schema: {type: string}}
+        - {name: flagged, in: query, required: false, schema: {type: string}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 200}}
+      responses:
+        '200': {description: A page of summaries.}
+        '400': {description: A parameter is not acceptable.}
+        '401': {description: No valid token or session.}
+        '403': {description: The token lacks the grant.}
+  /api/v1/messages/{id}:
+    get:
+      tags: [mail]
+      operationId: getMessage
+      summary: One message of the caller's, and mark it seen
+      x-permission: mailroom:read
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: The message.}
+        '404': {description: No such message in the caller's mailbox (someone else's looks the same).}
+  /api/v1/messages/{id}/html:
+    get:
+      tags: [mail]
+      operationId: getMessageHtml
+      summary: The sanitised HTML of a message, for a sandboxed frame
+      x-permission: mailroom:read
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: remote, in: query, required: false, schema: {type: string}, description: Allow remote images when `1`.}
+      responses:
+        '200': {description: HTML with its own content-security-policy, never cached.}
+        '404': {description: No such message, or it has no HTML part.}
+  /api/v1/messages/{id}/attachments/{index}:
+    get:
+      tags: [mail]
+      operationId: getAttachment
+      summary: One attachment of a message
+      x-permission: mailroom:read
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: index, in: path, required: true, schema: {type: integer, minimum: 0}}
+      responses:
+        '200': {description: The file, as a download.}
+        '404': {description: No such message or attachment.}
+  /api/v1/people:
+    get:
+      tags: [mail]
+      operationId: listPeople
+      summary: Addresses that start like what is being typed
+      x-permission: mailroom:read
+      parameters:
+        - {name: q, in: query, required: false, schema: {type: string}}
+      responses:
+        '200': {description: Matching addresses, never mailboxes' contents.}
+  /api/v1/outgoing:
+    post:
+      tags: [mail]
+      operationId: compose
+      summary: A person writes to people
+      x-permission: mailroom:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Compose'
+            example: {to: [sectest-alice], subject: Hello, text: Hello there}
+      responses:
+        '201': {description: Sent; a copy is in the sender's sent folder.}
+        '400': {description: A recipient outside the estate, a header injection, a body over the limit.}
+        '403': {description: The token lacks the grant.}
+  /api/v1/send:
+    post:
+      tags: [services]
+      operationId: sendFromService
+      summary: A service writes to a person
+      x-permission: mailroom:send
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendRequest'
+            example: {to: [sectest-alice], subject: Notice, text: Something happened, kind: notification}
+      responses:
+        '201': {description: Delivered.}
+        '200': {description: A retry with the same idempotency key; nothing was delivered twice.}
+        '400': {description: A recipient that is not a mailbox of this estate.}
+        '403': {description: The token lacks the grant.}
+  /api/v1/message-changes:
+    post:
+      tags: [mail]
+      operationId: changeMessages
+      summary: Mark, star, move or delete messages
+      x-permission: mailroom:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Change'
+            example: {ids: [m1], seen: true}
+      responses:
+        '204': {description: Done.}
+        '400': {description: An unknown folder, or a delete outside the trash.}
+        '404': {description: A message that is not the caller's.}
+  /api/v1/admin/settings:
+    get:
+      tags: [admin]
+      operationId: getSettings
+      summary: The limits
+      x-permission: mailroom:admin
+      responses:
+        '200': {description: The settings.}
+        '403': {description: Not an administrator.}
+    put:
+      tags: [admin]
+      operationId: putSettings
+      summary: Change the limits
+      x-permission: mailroom:admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingsInput'
+            example: {daily_budget: 250}
+      responses:
+        '200': {description: The settings after the change.}
+        '400': {description: A value that is not acceptable; nothing changed.}
+        '403': {description: Not an administrator.}
+  /api/v1/admin/stats:
+    get:
+      tags: [admin]
+      operationId: stats
+      summary: What is there, never what is in it
+      x-permission: mailroom:admin
+      responses:
+        '200': {description: Counts.}
+  /api/v1/admin/mailboxes:
+    get:
+      tags: [admin]
+      operationId: listMailboxes
+      summary: The mailboxes with their size
+      x-permission: mailroom:admin
+      parameters:
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 200}}
+      responses:
+        '200': {description: A page.}
+  /api/v1/admin/deliveries:
+    get:
+      tags: [admin]
+      operationId: listDeliveries
+      summary: What the services delivered
+      x-permission: mailroom:admin
+      parameters:
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 200}}
+      responses:
+        '200': {description: A page; mail between people is not listed.}
+  /api/v1/admin/audit:
+    get:
+      tags: [admin]
+      operationId: audit
+      summary: What the administrators did
+      x-permission: mailroom:admin
+      parameters:
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 200}}
+      responses:
+        '200': {description: A page.}
+components:
+  schemas:
+    Compose:
+      type: object
+      required: [to, subject, text]
+      properties:
+        to: {type: array, items: {type: string}}
+        cc: {type: array, items: {type: string}}
+        bcc: {type: array, items: {type: string}}
+        subject: {type: string}
+        text: {type: string}
+        in_reply_to: {type: [string, 'null'], description: The id of the message being answered.}
+        attachments: {type: array, items: {type: string}, description: Ids from the upload endpoint.}
+    SendRequest:
+      type: object
+      required: [to, subject, text]
+      properties:
+        to: {type: array, items: {type: string}, description: Usernames or `username@<domain>`; nothing outside the estate.}
+        subject: {type: string}
+        text: {type: string}
+        html: {type: [string, 'null']}
+        unsubscribe: {type: [string, 'null'], description: The link that stops this kind of mail.}
+        kind: {type: [string, 'null']}
+        idempotency_key: {type: [string, 'null'], description: A retry with the same key does not deliver twice.}
+    Change:
+      type: object
+      required: [ids]
+      properties:
+        ids: {type: array, items: {type: string}}
+        seen: {type: [boolean, 'null']}
+        flagged: {type: [boolean, 'null']}
+        move_to: {type: [string, 'null'], description: '`inbox` or `trash`.'}
+        delete: {type: boolean, description: Delete for good (only from the trash).}
+    SettingsInput:
+      type: object
+      properties:
+        daily_budget: {type: [integer, 'null'], minimum: 0}
+        hourly_per_source: {type: [integer, 'null'], minimum: 0}
+        hourly_per_person: {type: [integer, 'null'], minimum: 0}
+        quota_mb: {type: [integer, 'null'], minimum: 0}

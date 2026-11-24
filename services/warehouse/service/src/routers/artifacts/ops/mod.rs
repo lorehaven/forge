@@ -156,6 +156,12 @@ pub fn json_ok<T: Serialize>(value: &T) -> Response {
 
 #[must_use]
 pub fn error(status: StatusCode, message: &str) -> Response {
+    // A 500 here quotes whatever failed, often the database: it goes to the log, not to the client.
+    let (status, message) = if status == StatusCode::INTERNAL_SERVER_ERROR {
+        crate::domain::db::failure(message)
+    } else {
+        (status, message.to_string())
+    };
     Response::json(status, &json!({ "error": message }))
         .unwrap_or_else(|_| Response::text(status, message))
 }

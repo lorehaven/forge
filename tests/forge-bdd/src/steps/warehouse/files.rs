@@ -8,6 +8,10 @@ use quench_test_bdd::{given, then, when};
 
 #[given(expr = "I hold a token scoped {string}")]
 async fn hold_token(world: &mut ForgeWorld, scope: String) {
+    // Warehouse's tables point at `auth.users`, which gatehouse writes in the estate: the account acting must be in it.
+    if crate::services::database_url().is_some() {
+        crate::services::ensure_user_once("bdd-user").await;
+    }
     world.token = Some(
         mint_test_token(
             &world.client,
