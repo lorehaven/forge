@@ -1675,36 +1675,36 @@ fn the_inbox_can_archive_and_read_everything_and_the_trash_asks_twice_before_emp
 #[quench_test::test]
 fn the_page_looks_again_every_half_minute_and_the_tab_says_what_is_unread() {
     alone(|| {
-    let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
-    quench_ui::platform::install(clock.clone());
-    let l = live("/mailroom/ui/folder/inbox");
-    l.send(Msg::Folders(folders()));
-    assert!(
-        l.r.html().contains("data-fui-badge=\"2\""),
-        "{}",
-        l.r.html()
-    );
-    let before = l.asked().len();
-    clock.advance(29_000.0);
-    assert_eq!(l.asked().len(), before, "not yet");
-    clock.advance(2_000.0);
-    let again = l.asked()[before..].to_vec();
-    assert!(again.contains(&Request::Folders), "{again:?}");
-    assert!(
-        again
-            .iter()
-            .any(|r| matches!(r, Request::List(q) if q.folder == "inbox")),
-        "{again:?}"
-    );
-    // Writing a message is not interrupted by a new list under it.
-    l.click("a", "nav-compose");
-    let mark = l.asked().len();
-    clock.advance(31_000.0);
-    let later = l.asked()[mark..].to_vec();
-    assert!(
-        !later.iter().any(|r| matches!(r, Request::List(_))),
-        "{later:?}"
-    );
+        let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
+        quench_ui::platform::install(clock.clone());
+        let l = live("/mailroom/ui/folder/inbox");
+        l.send(Msg::Folders(folders()));
+        assert!(
+            l.r.html().contains("data-fui-badge=\"2\""),
+            "{}",
+            l.r.html()
+        );
+        let before = l.asked().len();
+        clock.advance(29_000.0);
+        assert_eq!(l.asked().len(), before, "not yet");
+        clock.advance(2_000.0);
+        let again = l.asked()[before..].to_vec();
+        assert!(again.contains(&Request::Folders), "{again:?}");
+        assert!(
+            again
+                .iter()
+                .any(|r| matches!(r, Request::List(q) if q.folder == "inbox")),
+            "{again:?}"
+        );
+        // Writing a message is not interrupted by a new list under it.
+        l.click("a", "nav-compose");
+        let mark = l.asked().len();
+        clock.advance(31_000.0);
+        let later = l.asked()[mark..].to_vec();
+        assert!(
+            !later.iter().any(|r| matches!(r, Request::List(_))),
+            "{later:?}"
+        );
     });
 }
 
@@ -1750,100 +1750,100 @@ fn kept(id: &str, subject: &str) -> Draft {
 #[quench_test::test]
 fn what_is_typed_is_kept_a_moment_later_and_sent_with_the_draft_it_came_from() {
     alone(|| {
-    let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
-    quench_ui::platform::install(clock.clone());
-    let l = live("/mailroom/ui/compose");
-    start(&l, false);
-    // Nothing typed, nothing kept.
-    clock.advance(5_000.0);
-    assert!(
-        !l.asked()
-            .iter()
-            .any(|r| matches!(r, Request::SaveDraft { .. }))
-    );
-    l.type_into("input", "compose-to", "bob");
-    l.type_into("input", "compose-subject", "Hello");
-    l.type_into("textarea", "compose-body", "dear bob");
-    clock.advance(1_000.0);
-    assert!(
-        !l.asked()
-            .iter()
-            .any(|r| matches!(r, Request::SaveDraft { .. })),
-        "not yet: the typing may go on"
-    );
-    clock.advance(1_000.0);
-    assert_eq!(
-        l.last(),
-        Request::SaveDraft {
-            id: None,
-            input: DraftInput {
-                to: "bob".into(),
-                subject: "Hello".into(),
-                text: "dear bob".into(),
-                ..DraftInput::default()
+        let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
+        quench_ui::platform::install(clock.clone());
+        let l = live("/mailroom/ui/compose");
+        start(&l, false);
+        // Nothing typed, nothing kept.
+        clock.advance(5_000.0);
+        assert!(
+            !l.asked()
+                .iter()
+                .any(|r| matches!(r, Request::SaveDraft { .. }))
+        );
+        l.type_into("input", "compose-to", "bob");
+        l.type_into("input", "compose-subject", "Hello");
+        l.type_into("textarea", "compose-body", "dear bob");
+        clock.advance(1_000.0);
+        assert!(
+            !l.asked()
+                .iter()
+                .any(|r| matches!(r, Request::SaveDraft { .. })),
+            "not yet: the typing may go on"
+        );
+        clock.advance(1_000.0);
+        assert_eq!(
+            l.last(),
+            Request::SaveDraft {
+                id: None,
+                input: DraftInput {
+                    to: "bob".into(),
+                    subject: "Hello".into(),
+                    text: "dear bob".into(),
+                    ..DraftInput::default()
+                }
             }
-        }
-    );
-    // The service answers with the id; a later change goes to that draft, not to a new one.
-    l.send(Msg::DraftSaved(kept("d1", "Hello")));
-    assert!(present(&l.r, "draft-status"));
-    l.type_into("textarea", "compose-body", "dear bob, hello");
-    clock.advance(2_000.0);
-    assert!(
-        matches!(l.last(), Request::SaveDraft { id: Some(id), .. } if id == "d1"),
-        "{:?}",
-        l.last()
-    );
-    l.send(Msg::DraftSaved(kept("d1", "Hello")));
-    // Sending says which draft it was, after a few seconds in which it can be taken back.
-    l.submit("compose");
-    assert!(present(&l.r, "undo-send"));
-    clock.advance(5_100.0);
-    let Request::Send(compose) = l.last() else {
-        panic!("{:?}", l.asked())
-    };
-    assert_eq!(compose.draft.as_deref(), Some("d1"));
-    // And a message on its way is not kept again.
-    let before = l.asked().len();
-    l.type_into("textarea", "compose-body", "changed after sending");
-    clock.advance(3_000.0);
-    assert_eq!(l.asked().len(), before);
+        );
+        // The service answers with the id; a later change goes to that draft, not to a new one.
+        l.send(Msg::DraftSaved(kept("d1", "Hello")));
+        assert!(present(&l.r, "draft-status"));
+        l.type_into("textarea", "compose-body", "dear bob, hello");
+        clock.advance(2_000.0);
+        assert!(
+            matches!(l.last(), Request::SaveDraft { id: Some(id), .. } if id == "d1"),
+            "{:?}",
+            l.last()
+        );
+        l.send(Msg::DraftSaved(kept("d1", "Hello")));
+        // Sending says which draft it was, after a few seconds in which it can be taken back.
+        l.submit("compose");
+        assert!(present(&l.r, "undo-send"));
+        clock.advance(5_100.0);
+        let Request::Send(compose) = l.last() else {
+            panic!("{:?}", l.asked())
+        };
+        assert_eq!(compose.draft.as_deref(), Some("d1"));
+        // And a message on its way is not kept again.
+        let before = l.asked().len();
+        l.type_into("textarea", "compose-body", "changed after sending");
+        clock.advance(3_000.0);
+        assert_eq!(l.asked().len(), before);
     });
 }
 
 #[quench_test::test]
 fn a_draft_opens_with_everything_it_kept_and_is_not_saved_again_unchanged() {
     alone(|| {
-    let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
-    quench_ui::platform::install(clock.clone());
-    let l = live("/mailroom/ui/compose/draft/d1");
-    start(&l, false);
-    assert!(l.asked().contains(&Request::OpenDraft("d1".into())));
-    assert!(!present(&l.r, "compose"), "waiting for the draft");
-    let mut d = kept("d1", "Hello");
-    d.cc = "cy".into();
-    d.bcc = "dee".into();
-    d.in_reply_to = Some("m9".into());
-    l.send(Msg::Draft(d));
-    let html = l.r.html();
-    for want in [
-        "value=\"bob\"",
-        "value=\"Hello\"",
-        "value=\"cy\"",
-        "value=\"dee\"",
-        "dear bob",
-    ] {
-        assert!(html.contains(want), "{want}: {html}");
-    }
-    clock.advance(5_000.0);
-    assert!(
-        !l.asked()
-            .iter()
-            .any(|r| matches!(r, Request::SaveDraft { .. }))
-    );
-    // Throwing it away deletes it.
-    l.click("a", "discard");
-    assert_eq!(l.last(), Request::DeleteDraft("d1".into()));
+        let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
+        quench_ui::platform::install(clock.clone());
+        let l = live("/mailroom/ui/compose/draft/d1");
+        start(&l, false);
+        assert!(l.asked().contains(&Request::OpenDraft("d1".into())));
+        assert!(!present(&l.r, "compose"), "waiting for the draft");
+        let mut d = kept("d1", "Hello");
+        d.cc = "cy".into();
+        d.bcc = "dee".into();
+        d.in_reply_to = Some("m9".into());
+        l.send(Msg::Draft(d));
+        let html = l.r.html();
+        for want in [
+            "value=\"bob\"",
+            "value=\"Hello\"",
+            "value=\"cy\"",
+            "value=\"dee\"",
+            "dear bob",
+        ] {
+            assert!(html.contains(want), "{want}: {html}");
+        }
+        clock.advance(5_000.0);
+        assert!(
+            !l.asked()
+                .iter()
+                .any(|r| matches!(r, Request::SaveDraft { .. }))
+        );
+        // Throwing it away deletes it.
+        l.click("a", "discard");
+        assert_eq!(l.last(), Request::DeleteDraft("d1".into()));
     });
 }
 
@@ -1932,34 +1932,34 @@ fn a_message_in_a_conversation_shows_the_rest_of_it_as_links() {
 #[quench_test::test]
 fn a_message_waits_a_few_seconds_and_can_be_taken_back() {
     alone(|| {
-    let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
-    quench_ui::platform::install(clock.clone());
-    let l = live("/mailroom/ui/compose");
-    start(&l, false);
-    l.type_into("input", "compose-to", "bob");
-    l.type_into("textarea", "compose-body", "hello");
-    l.submit("compose");
-    assert!(present(&l.r, "undo-send"));
-    clock.advance(2_000.0);
-    assert!(
-        !l.asked().iter().any(|r| matches!(r, Request::Send(_))),
-        "still held"
-    );
-    l.click("button", "undo-send");
-    clock.advance(10_000.0);
-    assert!(
-        !l.asked().iter().any(|r| matches!(r, Request::Send(_))),
-        "taken back"
-    );
-    assert!(!present(&l.r, "undo-send"));
-    // The form is still there and the draft keeps being kept; sending again goes through after the wait.
-    l.submit("compose");
-    clock.advance(5_100.0);
-    assert!(
-        matches!(l.last(), Request::Send(c) if c.text == "hello"),
-        "{:?}",
-        l.last()
-    );
+        let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
+        quench_ui::platform::install(clock.clone());
+        let l = live("/mailroom/ui/compose");
+        start(&l, false);
+        l.type_into("input", "compose-to", "bob");
+        l.type_into("textarea", "compose-body", "hello");
+        l.submit("compose");
+        assert!(present(&l.r, "undo-send"));
+        clock.advance(2_000.0);
+        assert!(
+            !l.asked().iter().any(|r| matches!(r, Request::Send(_))),
+            "still held"
+        );
+        l.click("button", "undo-send");
+        clock.advance(10_000.0);
+        assert!(
+            !l.asked().iter().any(|r| matches!(r, Request::Send(_))),
+            "taken back"
+        );
+        assert!(!present(&l.r, "undo-send"));
+        // The form is still there and the draft keeps being kept; sending again goes through after the wait.
+        l.submit("compose");
+        clock.advance(5_100.0);
+        assert!(
+            matches!(l.last(), Request::Send(c) if c.text == "hello"),
+            "{:?}",
+            l.last()
+        );
     });
 }
 

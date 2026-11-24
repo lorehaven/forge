@@ -4,7 +4,7 @@ parent: Guides
 nav_order: 7
 ---
 
-Forge is tested at four levels: unit tests per crate, Postgres-backed integration tests per service, the cross-service BDD suite `forge-bdd`, and the security suite `forge-sectest`. Continuous integration (`.conveyor.toml`) runs them and a coverage job. This page is checked against the sources of `tests/`, `scripts/` and `.conveyor.toml`.
+Forge is tested at four levels: unit tests per crate, Postgres-backed integration tests per service, the cross-service BDD suite `forge-bdd`, and the security suite `forge-sectest`. Continuous integration (`.conveyor.toml`) runs them, with their coverage, in one job. This page is checked against the sources of `tests/`, `scripts/` and `.conveyor.toml`.
 
 ## Test harness and layout
 
@@ -177,22 +177,23 @@ The live test reads `FORGE_SECTEST_TARGETS` (required; space-separated `name=url
 |---|---|---|
 | `check` | `format` (`anvil format --check`), `lint` (`anvil lint --all-targets --deny-warnings --json`), `deps` (`anvil machete --json`, `audit --json`, `deny`) | not on schedule |
 | `build` | `workspace` (`anvil build --all`) | not on schedule |
-| `test` | `unit` (`anvil test --all`), `coverage` | not on schedule |
+| `test` | `unit` (the tests and their coverage in one run, with a database) | not on schedule |
 | `security` | `nightly` (the three `forge-sectest` runs with live targets on cluster DNS, `FORGE_SECTEST_FAIL_ON=medium`, timeout 3600) | schedule only |
 | `bdd` | `daily` (`cargo run -p forge-bdd`, every suite, timeout 7200, a `postgres` sidecar: Mailroom's suite through `MAILROOM_BDD_DATABASE_URL`, and daybook and workbench on it through `FORGE_BDD_DATABASE_URL` after a `foundry apply`) | the 6 am schedule only |
 
-### Coverage job
+### The test job (tests and coverage)
 
-The `coverage` job gives the integration tests a database so their code is counted. It has a sidecar `postgres` (`pgvector/pgvector:pg18`, `POSTGRES_PASSWORD=postgres`, ready when `pg_isready -h 127.0.0.1 -U postgres`) declared with `[[stage.job.service]]`. Its `env` sets `<SERVICE>_TEST_DATABASE_URL` for conveyor, daybook, foundry, gantry, gatehouse, sage, warehouse and workbench to `postgres://postgres:postgres@127.0.0.1:5432/postgres`. Steps:
+The `unit` job runs the tests once, under `cargo llvm-cov`, so the same run gives the pass/fail totals and the coverage. It gives the integration tests a database so they run (and their code is counted). It has a sidecar `postgres` (`pgvector/pgvector:pg18`, `POSTGRES_PASSWORD=postgres`, ready when `pg_isready -h 127.0.0.1 -U postgres`) declared with `[[stage.job.service]]`. Its `env` sets `<SERVICE>_TEST_DATABASE_URL` for conveyor, daybook, foundry, gantry, gatehouse, sage, warehouse and workbench to `postgres://postgres:postgres@127.0.0.1:5432/postgres`. Steps:
 
 ```toml
 steps = [
   { run = "cargo run -q -p foundry -- apply --catalog services/foundry/service/migrations --database-url postgres://postgres:postgres@127.0.0.1:5432/postgres --install conveyor --install daybook --install gantry --install gatehouse --install sage --install switchboard --install warehouse --install workbench" },
-  { run = "cargo llvm-cov --workspace --no-fail-fast --no-report" },
+  { run = "QUENCH_TEST_REPORT_DIR=\"$PWD/target/debug/quench-test\" cargo llvm-cov --workspace --no-fail-fast --no-report" },
   { run = "cargo llvm-cov report --lcov --output-path lcov.info" },
   { run = "cargo llvm-cov report" },
+  { run = "cargo test --workspace --doc --no-fail-fast" },
 ]
 artifacts = ["lcov.info"]
 ```
 
-The run is report-less; the two reports are made from its profile data. The plain `report` is the table conveyor parses for the repository's scan page.
+The run is report-less; the two reports are made from its profile data. The plain `report` is the table conveyor parses for the repository's scan page. `cargo llvm-cov` builds under `target/llvm-cov-target`, where the `quench-test` harness would put its report, so `QUENCH_TEST_REPORT_DIR` (an absolute path: tests run in their crate's directory) sends it to `target/debug/quench-test`, where conveyor keeps `summary.json` and `index.html`. Doctests are not part of the llvm-cov run, so a last step runs them.

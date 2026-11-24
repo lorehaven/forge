@@ -803,25 +803,53 @@ fn an_unknown_service_key_is_rejected_rather_than_ignored() {
 
 /// A typo in `.conveyor.toml` fails the pipeline for every push, and only a push would say so.
 #[quench_test::test]
-fn this_repositorys_own_pipeline_parses_and_gives_the_coverage_job_a_database() {
+fn this_repositorys_own_pipeline_parses_and_runs_tests_and_coverage_in_one_job_with_a_database() {
     use conveyor_pipeline::spec::Readiness;
 
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.conveyor.toml");
     let source = std::fs::read_to_string(&path).expect("the repository's .conveyor.toml");
     let spec = parse(&source).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
 
-    let coverage = spec
+    // the tests and their coverage are one run, in one job of the test stage
+    let stage = spec
         .stages
         .iter()
-        .flat_map(|stage| &stage.jobs)
-        .find(|job| job.name == "coverage")
-        .expect("a coverage job");
+        .find(|stage| stage.name == "test")
+        .expect("a test stage");
+    assert_eq!(
+        stage.jobs.len(),
+        1,
+        "one job for the tests and the coverage"
+    );
+    let coverage = &stage.jobs[0];
+    let commands: Vec<String> = coverage
+        .steps
+        .iter()
+        .map(|s| s.command().to_string())
+        .collect();
+    let run = commands
+        .iter()
+        .find(|c| c.contains("llvm-cov") && c.contains("--no-report"))
+        .expect("the run under llvm-cov");
+    // where conveyor looks for the harness's report, however cargo llvm-cov lays out its own target directory
+    assert!(
+        run.contains("QUENCH_TEST_REPORT_DIR=") && run.contains("target/debug/quench-test"),
+        "{run}"
+    );
+    assert!(
+        commands.iter().any(|c| c == "cargo llvm-cov report"),
+        "the table conveyor reads"
+    );
+    assert!(
+        commands.iter().any(|c| c.contains("--doc")),
+        "the doctests still run"
+    );
 
     let database = coverage
         .services
         .iter()
         .find(|service| service.name == "postgres")
-        .expect("the coverage job runs a database beside its steps");
+        .expect("the job runs a database beside its steps");
     // checked over TCP, which the image's temporary start-up server does not answer on
     assert!(
         matches!(&database.ready, Readiness::Command(command) if command.contains("-h 127.0.0.1")),

@@ -671,23 +671,24 @@ fn the_deployment_can_tune_how_long_pods_and_services_get() {
 // This repository's own pipeline, as a pod
 // ---------------------------------------------------------------------------
 
-/// The repository's `coverage` job, from the file on disk to the Job conveyor would create: the parser, the
+/// The repository's test job (tests and coverage in one run), from the file on disk to the Job conveyor would create: the parser, the
 /// job as the scheduler hands it to an executor, and the manifest.
 #[quench_test::test]
-fn the_coverage_job_of_this_repository_becomes_a_pod_with_a_database_beside_its_steps() {
+fn the_test_job_of_this_repository_becomes_a_pod_with_a_database_beside_its_steps() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../.conveyor.toml");
     let source = std::fs::read_to_string(&path).expect("the repository's .conveyor.toml");
     let pipeline = conveyor_service::pipeline::parse(&source).expect("it parses");
     let job = pipeline
         .stages
         .iter()
+        .filter(|stage| stage.name == "test")
         .flat_map(|stage| &stage.jobs)
-        .find(|job| job.name == "coverage")
-        .expect("a coverage job");
+        .next()
+        .expect("a job in the test stage");
 
     let spec = JobSpec {
         id: "0f8f0e0e-1111-2222-3333-444455556666".to_string(),
-        name: "test/coverage".to_string(),
+        name: "test/unit".to_string(),
         steps: job.steps.clone(),
         env: job.env.clone(),
         timeout: Duration::from_mins(60),
