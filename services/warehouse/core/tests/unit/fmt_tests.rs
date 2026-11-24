@@ -34,3 +34,15 @@ fn a_file_is_previewed_by_its_extension() {
     assert_eq!(preview_kind("dir.d/noext"), PreviewKind::None);
     assert_eq!(content_type("x.svg"), "image/svg+xml");
 }
+
+#[quench_test::test]
+fn a_document_or_spreadsheet_opens_in_the_office_app_for_its_kind() {
+    use warehouse_core::fmt::office_app;
+    assert_eq!(office_app("a/Report.DOCX"), Some("docs"));
+    assert_eq!(office_app("budget.xlsx"), Some("sheets"));
+    assert_eq!(office_app("old.xls"), Some("sheets"));
+    assert_eq!(office_app("calc.ods"), Some("sheets"));
+    assert_eq!(office_app("notes.md"), None);
+    assert_eq!(office_app("docx"), None);
+    assert_eq!(office_app("dir.docx/readme"), None);
+}

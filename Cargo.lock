@@ -2088,6 +2088,7 @@ dependencies = [
  "quench-crypto",
  "quench-db",
  "quench-http",
+ "quench-image",
  "quench-log",
  "quench-pg",
  "quench-serde",

@@ -2,7 +2,9 @@
 
 use quench_ui::form::Field;
 use quench_ui::prelude::*;
-use warehouse_core::fmt::{PreviewKind, content_type, encode, format_bytes, percent, preview_kind};
+use warehouse_core::fmt::{
+    PreviewKind, content_type, encode, format_bytes, office_app, percent, preview_kind,
+};
 use warehouse_core::tree::{
     FileNode, Selection, file_tree, last_segment, normalize_path, parent_dir,
 };
@@ -597,6 +599,24 @@ fn browse_at(env: &Env, storage: &str, path: &str) -> String {
     }
 }
 
+/// Where lore-office opens a document kept here: it copies the file into the person's own cloud and opens it in the app
+/// for its kind. A sibling service of the same host, so the address is a path.
+fn office_url(app: &str, storage: &str, path: &str) -> String {
+    format!(
+        "/lore-office/open?app={app}&storage={}&path={}",
+        encode(storage),
+        encode(path)
+    )
+}
+
+/// The link that opens a file: documents and spreadsheets go to lore-office, anything else to the preview.
+fn file_open(env: &Env, storage: &str, path: &str) -> Element {
+    office_app(path).map_or_else(
+        || nav(env, &preview_mode_at(env, storage, path)),
+        |app| a().attr("href", office_url(app, storage, path)),
+    )
+}
+
 fn preview_at(env: &Env, storage: &str, path: &str) -> String {
     format!(
         "{}?storage={}&path={}",
@@ -706,7 +726,7 @@ fn listing(
                         .attr("alt", name.clone())
                         .attr(
                             "src",
-                            file_url(env, storage, &child_path, "&disposition=inline"),
+                            file_url(env, storage, &child_path, "&disposition=inline&thumb=360"),
                         ),
                     _ => div()
                         .class("wh-fm-thumb wh-fm-glyph")
@@ -716,7 +736,7 @@ fn listing(
                     div()
                         .class("wh-fm-card")
                         .child(
-                            nav(env, &preview_mode_at(env, storage, &child_path))
+                            file_open(env, storage, &child_path)
                                 .class("wh-fm-card-open")
                                 .attr("data-entry", child_path.clone())
                                 .child(thumb)
@@ -730,7 +750,7 @@ fn listing(
             row = row
                 .child(span().class("wh-faint").text("▫"))
                 .child(
-                    nav(env, &preview_mode_at(env, storage, &child_path))
+                    file_open(env, storage, &child_path)
                         .class("wh-file-name")
                         .attr("data-entry", child_path.clone())
                         .text(name.clone()),
@@ -1082,7 +1102,7 @@ fn tree_node(
     };
     if node.is_leaf() {
         return li().child(
-            nav(env, &preview_mode_at(env, storage, &full))
+            file_open(env, storage, &full)
                 .class(if selected == full {
                     "wh-link active"
                 } else {

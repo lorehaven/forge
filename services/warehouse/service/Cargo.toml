@@ -43,6 +43,7 @@ tokio = { workspace = true }
 
 
 quench-archive = { workspace = true }
+quench-image = { workspace = true }
 
 [dev-dependencies]
 quench-test = { workspace = true }

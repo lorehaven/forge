@@ -227,6 +227,26 @@ pub struct FileQuery {
     pub path: String,
     #[serde(default)]
     pub disposition: Option<String>,
+    /// `?thumb=320` - an image as a small PNG that fits in that many pixels, for a grid of previews.
+    #[serde(default)]
+    pub thumb: Option<u32>,
+}
+
+/// The request headers a download answers: which bytes (`Range`) and what the browser already holds (`If-None-Match`).
+#[derive(Debug, Default, Clone)]
+pub struct FetchHeaders {
+    pub range: Option<String>,
+    pub if_none_match: Option<String>,
+}
+
+#[async_trait]
+impl FromRequest for FetchHeaders {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        Ok(Self {
+            range: req.header("range").map(str::to_string),
+            if_none_match: req.header("if-none-match").map(str::to_string),
+        })
+    }
 }
 
 /// `?prefix=&n=&last=&desc=` - subtree, page size, last key (exclusive), and

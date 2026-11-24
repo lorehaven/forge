@@ -111,6 +111,18 @@ pub fn content_type(path: &str) -> &'static str {
     }
 }
 
+/// The lore-office app that opens a document by its extension (`docs` for a Word file, `sheets` for a spreadsheet), if one does.
+#[must_use]
+pub fn office_app(path: &str) -> Option<&'static str> {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let ext = name.rsplit_once('.')?.1.to_ascii_lowercase();
+    match ext.as_str() {
+        "docx" => Some("docs"),
+        "xlsx" | "xls" | "ods" => Some("sheets"),
+        _ => None,
+    }
+}
+
 #[must_use]
 pub fn preview_kind(path: &str) -> PreviewKind {
     let content_type = content_type(path);
