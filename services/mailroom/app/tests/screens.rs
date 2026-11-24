@@ -558,13 +558,19 @@ fn selecting_messages_offers_what_can_be_done_with_them() {
         3,
         0,
     )));
-    assert!(idle(&l), "nothing is selected yet: the buttons are there and wait");
+    assert!(
+        idle(&l),
+        "nothing is selected yet: the buttons are there and wait"
+    );
     l.click_attr("input", ("data-select", "m1"));
     l.click_attr("input", ("data-select", "m2"));
     l.click_attr("input", ("data-select", "m3"));
     // Clicking again takes a message out of the selection.
     l.click_attr("input", ("data-select", "m3"));
-    assert!(present(&l.r, "bulk") && !idle(&l), "something chosen: the buttons work");
+    assert!(
+        present(&l.r, "bulk") && !idle(&l),
+        "something chosen: the buttons work"
+    );
     assert!(
         l.r.text_of(find(&l.r, "span", ("id", "selected-count")))
             .starts_with('2')
@@ -653,7 +659,10 @@ fn a_new_search_or_page_forgets_the_selection() {
         0,
     )));
     l.click_attr("input", ("data-select", "m1"));
-    assert!(present(&l.r, "bulk") && !idle(&l), "something chosen: the buttons work");
+    assert!(
+        present(&l.r, "bulk") && !idle(&l),
+        "something chosen: the buttons work"
+    );
     l.submit("search-form");
     assert!(idle(&l));
     l.click_attr("input", ("data-select", "m1"));
@@ -2108,23 +2117,53 @@ fn alone(test: impl FnOnce() + Send + 'static) {
 
 /// The bulk bar is always there; with nothing chosen its buttons are disabled.
 fn idle(l: &Live) -> bool {
-    present(&l.r, "bulk") && l.r.attr(find(&l.r, "button", ("id", "bulk-read")), "disabled").is_some()
+    present(&l.r, "bulk")
+        && l.r
+            .attr(find(&l.r, "button", ("id", "bulk-read")), "disabled")
+            .is_some()
 }
 
 #[quench_test::test]
 fn the_buttons_are_always_there_with_the_box_beside_them_and_wait_for_a_choice() {
     let l = live("/mailroom/ui/home");
-    l.send(Msg::Messages(list(vec![message("m1", "One", true), message("m2", "Two", true)], 2, 0)));
+    l.send(Msg::Messages(list(
+        vec![message("m1", "One", true), message("m2", "Two", true)],
+        2,
+        0,
+    )));
     let html = l.r.html();
     // One line: the box first, then the buttons, whatever is chosen.
-    let at = |needle: &str| html.find(needle).unwrap_or_else(|| panic!("{needle}: {html}"));
+    let at = |needle: &str| {
+        html.find(needle)
+            .unwrap_or_else(|| panic!("{needle}: {html}"))
+    };
     assert!(at("id=\"select-page\"") < at("id=\"bulk-read\""));
-    for id in ["bulk-read", "bulk-unread", "bulk-star", "bulk-archive", "bulk-trash"] {
-        assert!(l.r.attr(find(&l.r, "button", ("id", id)), "disabled").is_some(), "{id} waits");
+    for id in [
+        "bulk-read",
+        "bulk-unread",
+        "bulk-star",
+        "bulk-archive",
+        "bulk-trash",
+    ] {
+        assert!(
+            l.r.attr(find(&l.r, "button", ("id", id)), "disabled")
+                .is_some(),
+            "{id} waits"
+        );
     }
     l.click("input", "select-page");
-    for id in ["bulk-read", "bulk-unread", "bulk-star", "bulk-archive", "bulk-trash"] {
-        assert!(l.r.attr(find(&l.r, "button", ("id", id)), "disabled").is_none(), "{id} works");
+    for id in [
+        "bulk-read",
+        "bulk-unread",
+        "bulk-star",
+        "bulk-archive",
+        "bulk-trash",
+    ] {
+        assert!(
+            l.r.attr(find(&l.r, "button", ("id", id)), "disabled")
+                .is_none(),
+            "{id} works"
+        );
     }
     assert!(l.r.html().contains("2 selected"));
     // Letting go of everything disables them again.
