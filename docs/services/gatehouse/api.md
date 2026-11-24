@@ -26,7 +26,7 @@ Token API: password login, refresh, logout, userinfo. JSON in and out; the crede
 
 Password login
 
-Checks the credentials and returns a token pair. An account with a second factor, a disabled or locked account, and an unconfirmed address are refused with a code in the body; the second-factor step exists only on the browser path (`POST /ui/login/mfa`). A wrong password counts toward the lockout (`GATEHOUSE_LOGIN_MAX_ATTEMPTS`, `GATEHOUSE_LOCKOUT_DURATION_SECS`).
+Checks the credentials and returns a token pair. An account with a second factor, a disabled or locked account, and an unconfirmed address are refused with a code in the body; the second-factor step exists only on the browser path (`POST /ui/login/mfa`). A wrong password counts toward the lockout (`GATEHOUSE_LOGIN_MAX_ATTEMPTS`, `GATEHOUSE_LOCKOUT_DURATION_SECS`). A client address (`X-Real-IP`) that has failed `LOGIN_FAILURES_PER_IP` times (30) in ten minutes, across any names, is answered 429 with `Retry-After` before anything is checked, the right password included. A lockout protects one account and does not see one guess at each of many. Only failures count.
 
 **Authentication:** none (public).
 
@@ -50,6 +50,7 @@ Checks the credentials and returns a token pair. An account with a second factor
 |---|---|---|
 | 200 | Tokens issued. | `application/json` [TokenResponse](#schema-tokenresponse) |
 | 401 | Refused; the code says why. | `application/json` [LoginError](#schema-loginerror) |
+| 429 | This address has failed to sign in too often; `Retry-After` says when the window ends. | `application/json` [LoginError](#schema-loginerror) |
 | 400 | Malformed JSON (text body). |  |
 | 500 | The user store failed. |  |
 

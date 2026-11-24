@@ -334,3 +334,95 @@ async fn reset_link_host(world: &mut ForgeWorld, username: String, email: String
         "PASSWORD RESET POISONING: the emailed link is {link}"
     );
 }
+
+/// Password spraying is one guess at each of many names, so no account ever collects the failures a lockout counts. What
+/// sees it is the address: past its failures, a client is turned away before anything is checked - the right password
+/// included - and told when to come back. Another address, and signing in correctly, are not touched.
+#[then(
+    expr = "gatehouse turns away an address that keeps failing to sign in, and signs {string} in with {string} from another"
+)]
+async fn spraying_is_throttled(world: &mut ForgeWorld, username: String, password: String) {
+    let spray_from = "198.51.100.200";
+    let attempt = |client: quench_client::transport::Client,
+                   url: String,
+                   user: String,
+                   password: String,
+                   ip: String| async move {
+        let res = client
+            .post(url)
+            .header("x-real-ip", ip)
+            .json(&json!({ "username": user, "password": password }))
+            .send()
+            .await
+            .expect("login request failed");
+        let status = res.status().as_u16();
+        let retry = res
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        (status, retry)
+    };
+    let url = format!("{}/api/v1/auth/login", world.gatehouse_url);
+
+    // A guess at a different name each time, from one address, in tens: more than the suite's limit (100).
+    let mut limited = None;
+    for batch in 0..14 {
+        let mut handles = Vec::new();
+        for n in 0..10 {
+            let (client, url) = (world.client.clone(), url.clone());
+            let user = format!("spray-{batch}-{n}");
+            handles.push(tokio::spawn(attempt(
+                client,
+                url,
+                user,
+                "Spring2026!".to_string(),
+                spray_from.to_string(),
+            )));
+        }
+        for handle in handles {
+            let (status, retry) = handle.await.expect("attempt");
+            if status == 429 {
+                limited = limited.or(retry);
+            } else {
+                assert_eq!(
+                    status, 401,
+                    "a wrong guess is a 401 until the address is over its limit"
+                );
+            }
+        }
+    }
+    let retry = limited.expect("PASSWORD SPRAYING NOT THROTTLED: 140 failed sign-ins from one address were never answered 429");
+    assert!(
+        retry.parse::<u64>().is_ok_and(|s| (1..=600).contains(&s)),
+        "the refusal must say when to come back (Retry-After), got {retry:?}"
+    );
+
+    // Over its limit the address gets nothing, the right password included.
+    let (status, _) = attempt(
+        world.client.clone(),
+        url.clone(),
+        username.clone(),
+        password.clone(),
+        spray_from.to_string(),
+    )
+    .await;
+    assert_eq!(
+        status, 429,
+        "a blocked address was let in with the right password"
+    );
+
+    // And one address's trouble is not another's.
+    let (status, _) = attempt(
+        world.client.clone(),
+        url,
+        username,
+        password,
+        "198.51.100.201".to_string(),
+    )
+    .await;
+    assert_eq!(
+        status, 200,
+        "a client that was never over its limit was refused"
+    );
+}

@@ -183,16 +183,15 @@ fn live_auth_anonymous_routes_match_the_reviewed_baseline() {
 fn live_tokens_forged_credentials_are_refused() {
     check("tokens");
 }
-/// Only when `FORGE_SECTEST_AUTHZ` names a spec: with none there are no identities, and the findings list has none
-/// of this check's, so the case would pass having tested nothing - which is why it is not a case of every run.
+/// Only built with `--features authz-live`, and then it needs `FORGE_SECTEST_AUTHZ` (and a gatehouse in test mode to mint from):
+/// without identities there is nothing to check, and a case that reports "ok" having done nothing is worse than no case.
+#[cfg(feature = "authz-live")]
 #[quench_test::test]
 fn live_authz_tokens_hold_no_more_than_they_were_given() {
-    if env("FORGE_SECTEST_AUTHZ").is_none() {
-        println!(
-            "skipped: FORGE_SECTEST_AUTHZ is not set (identities need a gatehouse in test mode)"
-        );
-        return;
-    }
+    assert!(
+        env("FORGE_SECTEST_AUTHZ").is_some(),
+        "built with authz-live but FORGE_SECTEST_AUTHZ is not set: there are no identities to act as"
+    );
     check("authz");
 }
 #[quench_test::test]

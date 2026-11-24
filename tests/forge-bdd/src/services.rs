@@ -539,6 +539,10 @@ impl Fixture {
             // The estate's daily cap on mail (250 by default). The security scenarios fuzz and scan every route that sends
             // some - registration, resets, invitations - and would use the day up before the functional ones had theirs.
             .env("MAIL_DAILY_LIMIT", "1000000")
+            // Failed sign-ins one address may make in ten minutes (30 by default). Scenarios that do not send an address
+            // share one bucket, and the suite signs in wrongly on purpose in a hundred places; the throttle's own
+            // scenario sends an address of its own and goes over this.
+            .env("LOGIN_FAILURES_PER_IP", "100")
             .env("SERVICE_AUTH_ENABLED", "true")
             // Plain HTTP, deterministically: gatehouse ships no certificate of
             // its own, but the dev environment (foreman) symlinks one in, and the

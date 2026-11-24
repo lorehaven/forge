@@ -273,3 +273,62 @@ fn client_ip_without_a_usable_header_is_the_shared_unknown_bucket() {
 
 // A compile-time check: the default must stay under the relay's 300 a day.
 const _: () = assert!(policy::DEFAULT_DAILY_MAIL < 300);
+
+#[quench_test::test]
+async fn asking_whether_a_client_is_over_its_limit_does_not_count_a_hit() {
+    let (limiter, _) = limiter_at(1_000_000);
+    for _ in 0..50 {
+        assert!(
+            limiter
+                .exhausted("t", "alice", THREE_PER_HOUR)
+                .await
+                .is_allowed(),
+            "looking must not use the allowance up"
+        );
+    }
+    for _ in 0..3 {
+        limiter.check("t", "alice", THREE_PER_HOUR).await;
+    }
+    assert!(matches!(
+        limiter.exhausted("t", "alice", THREE_PER_HOUR).await,
+        Verdict::Limited { .. }
+    ));
+    // Someone else's allowance is their own.
+    assert!(
+        limiter
+            .exhausted("t", "bob", THREE_PER_HOUR)
+            .await
+            .is_allowed()
+    );
+}
+
+#[quench_test::test]
+async fn failed_sign_ins_block_the_address_after_thirty_and_only_for_the_window() {
+    let (limiter, now) = limiter_at(1_000_000);
+    let ip = ClientIp("203.0.113.7".to_string());
+    for n in 1..=30 {
+        assert!(limiter.login_blocked(&ip).await.is_allowed(), "attempt {n}");
+        limiter.login_failed(&ip).await;
+    }
+    let Verdict::Limited { retry_after_secs } = limiter.login_blocked(&ip).await else {
+        panic!("the thirty-first attempt must be refused");
+    };
+    assert!(retry_after_secs <= 600, "the window is ten minutes");
+    // Another address is not touched.
+    assert!(
+        limiter
+            .login_blocked(&ClientIp("203.0.113.8".to_string()))
+            .await
+            .is_allowed()
+    );
+    // And the next window starts clean.
+    now.store(1_000_000 + 600, Ordering::SeqCst);
+    assert!(limiter.login_blocked(&ip).await.is_allowed());
+}
+
+#[quench_test::test]
+fn the_failed_sign_in_limit_is_thirty_in_ten_minutes_unless_the_deployment_says_otherwise() {
+    let limit = gatehouse_service::ratelimit::login_failures_limit();
+    assert_eq!(limit.window_secs, 600);
+    assert_eq!(limit.max, 30);
+}

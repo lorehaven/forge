@@ -81,6 +81,7 @@ All settings are environment variables read at start (unless noted), plus two TO
 | `MAIL_FROM` | **required with `SMTP_HOST`** | a valid address |
 | `MAIL_FROM_NAME` | `Forge` | display name; set blank for none |
 | `SMTP_TIMEOUT_SECS` | `15` | per-step timeout, a positive number; one delivery is capped at three times this |
+| `LOGIN_FAILURES_PER_IP` | `30` | failed sign-ins (wrong password, unknown name, wrong second-factor code) one client address may make in ten minutes, positive, across all names; over it, sign-in is refused (JSON login: 429 with `Retry-After`; the form: `/ui/login?err=ui_login_rate_limited`) before anything is checked. The address is `X-Real-IP`, else the last `X-Forwarded-For` entry; clients with none share one bucket. A lockout protects one account; this is what notices one guess at each of many |
 | `MAIL_DAILY_LIMIT` | `250` | emails per UTC day for the whole estate, positive; over it sends fail (transient) |
 
 Invalid mail settings (including `MAIL_DAILY_LIMIT`) are a start-up failure.

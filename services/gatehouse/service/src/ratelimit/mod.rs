@@ -51,6 +51,24 @@ impl Limit {
 
 /// The limits in force. Deliberately not configurable per deployment: they
 /// exist to protect the mail quota, and a knob invites turning it off.
+/// The scope failed sign-ins are counted under.
+const LOGIN_FAILURES: &str = "login-failures";
+
+/// How many failed sign-ins one client address may make in ten minutes: `LOGIN_FAILURES_PER_IP`, 30 by default.
+///
+/// A lockout protects an account that exists; it does nothing against one guess at each of a thousand names, which is
+/// what password spraying is. Only failures count, so signing in is never slowed. Behind a reverse proxy the address is
+/// the proxy's `X-Real-IP` (see [`ClientIp`]): clients that cannot be told apart share a bucket.
+#[must_use]
+pub fn login_failures_limit() -> Limit {
+    let max = quench_core::env::get_or("LOGIN_FAILURES_PER_IP", "30")
+        .parse::<usize>()
+        .ok()
+        .filter(|n| *n > 0)
+        .unwrap_or(30);
+    Limit::new(max, 10 * 60)
+}
+
 pub mod policy {
     use super::Limit;
 
@@ -178,6 +196,41 @@ impl RateLimiter {
         } else {
             Verdict::Limited { retry_after_secs }
         })
+    }
+
+    /// Whether `subject` has already used up `limit` under `scope`, without counting a hit: the question to ask *before*
+    /// doing the work, so a client already over the limit is refused without the work being done (and without growing
+    /// the set). Fails closed like [`check`](Self::check).
+    pub async fn exhausted(&self, scope: &str, subject: &str, limit: Limit) -> Verdict {
+        let now = (self.clock)();
+        let window = limit.window_secs.max(1);
+        let index = now / window;
+        let retry_after_secs = (index + 1) * window - now;
+        let key = format!("ratelimit:{scope}:{}:{index}", fingerprint(subject));
+        match self.store.set_members(&key).await {
+            Ok(held) if held.len() < limit.max => Verdict::Allowed,
+            Ok(_) => Verdict::Limited { retry_after_secs },
+            Err(err) => {
+                quench_log::error!("rate limit store failed for {scope}, refusing: {err}");
+                Verdict::Limited {
+                    retry_after_secs: limit.window_secs,
+                }
+            }
+        }
+    }
+
+    /// Whether this client has used up its failed sign-ins (see [`login_failures_limit`]). Asked before a password or a
+    /// code is checked at all.
+    pub async fn login_blocked(&self, ip: &ClientIp) -> Verdict {
+        self.exhausted(LOGIN_FAILURES, &ip.0, login_failures_limit())
+            .await
+    }
+
+    /// Counts one failed sign-in (a wrong password, an unknown name, a wrong code) against this client.
+    pub async fn login_failed(&self, ip: &ClientIp) {
+        let _ = self
+            .check(LOGIN_FAILURES, &ip.0, login_failures_limit())
+            .await;
     }
 
     /// All of `checks` must pass. Every one is counted even after a failure -

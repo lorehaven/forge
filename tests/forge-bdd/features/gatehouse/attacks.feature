@@ -42,3 +42,8 @@ Feature: Gatehouse resists attacks on its sign-in flows
     When I register as "atk-host" with password "Atk-host-pass-1" and email "atk-host@example.com"
     And I follow the verification link emailed to "atk-host@example.com"
     Then the reset email for "atk-host" at "atk-host@example.com" names gatehouse, whatever Host the request claimed
+
+  Scenario: One guess at each of many names from one address is throttled
+    Given no user "atk-spray" exists
+    And a user "atk-spray" with password "Atk-spray-1" and no permissions
+    Then gatehouse turns away an address that keeps failing to sign in, and signs "atk-spray" in with "Atk-spray-1" from another

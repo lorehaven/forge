@@ -47,6 +47,10 @@ pub struct Options {
     pub forge_root: Option<std::path::PathBuf>,
     /// The most mutated requests the `fuzz` check sends per operation.
     pub fuzz_budget: usize,
+    /// The client address every request claims (`X-Real-IP`), as a reverse proxy would send it. Without it a service that
+    /// keeps per-address limits counts the scanner with every other caller that has no address; with it, the scan has a
+    /// bucket of its own (and a throttle it trips is its own).
+    pub client_ip: Option<String>,
     /// Path-parameter values a caller already knows (objects it made before the scan), added to the spec's `[[bind]]`s.
     pub binds: Vec<crate::identity::Bind>,
 }
@@ -69,6 +73,7 @@ impl Options {
             forge_root: None,
             fuzz_budget: 150,
             binds: Vec::new(),
+            client_ip: None,
         }
     }
 
@@ -127,7 +132,18 @@ impl Ctx {
     /// For checks whose point is speed (rate-limit detection); only reachable under `--active`.
     pub async fn send_unthrottled(&self, target: &Target, probe: &Probe) -> Option<Reply> {
         self.sent.fetch_add(1, Ordering::Relaxed);
-        let reply = wire::send(target, probe).await.ok();
+        let reply = match &self.opts.client_ip {
+            Some(ip)
+                if !probe
+                    .headers
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case("x-real-ip")) =>
+            {
+                wire::send(target, &probe.clone().header("X-Real-IP", ip)).await
+            }
+            _ => wire::send(target, probe).await,
+        }
+        .ok();
         if reply.is_none() {
             self.failed.fetch_add(1, Ordering::Relaxed);
         }

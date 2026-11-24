@@ -41,7 +41,8 @@ fn classify(reply: &Reply) -> Class {
     match reply.status {
         401 | 403 => Class::Protected,
         404 | 405 => Class::NotRouted,
-        400 | 422 => Class::Inconclusive,
+        // 429: throttled, which says nothing about whether the route is guarded.
+        400 | 422 | 429 => Class::Inconclusive,
         301 | 302 | 303 | 307 | 308 => {
             if redirects_to_login(reply) {
                 Class::Protected

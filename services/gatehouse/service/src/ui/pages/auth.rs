@@ -3,6 +3,7 @@
 //! Credential check and cookies live here; relying parties only ever redirect a browser to `/ui/login`. The form is drawn by the client; it posts here and the answer is a redirect with the cookies set.
 
 use crate::api::auth::{issue_token_pair, refresh_session};
+use crate::ratelimit::{ClientIp, RateLimiter};
 use crate::realm::{self as gh_realm, AuthOutcome};
 use crate::ui::common::ui_path;
 use crate::ui::locale::{LocaleCookie, default_locale_cookie};
@@ -93,12 +94,18 @@ pub async fn login_slash(ctx: LoginContext) -> Response {
 #[post("/ui/login")]
 pub async fn login_submit(
     locale_cookie: LocaleCookie,
+    ip: ClientIp,
     Form(form): Form<LoginForm>,
     Inject(config): Inject<JwtConfig>,
     Inject(db): Inject<Db>,
     Inject(session_db): Inject<SessionDb>,
+    Inject(limiter): Inject<RateLimiter>,
 ) -> Response {
     quench_log::info!("login attempt for {}", form.username);
+    if !limiter.login_blocked(&ip).await.is_allowed() {
+        return Response::new(StatusCode::FOUND)
+            .header("Location", ui_path("/login?err=ui_login_rate_limited"));
+    }
 
     let outcome = match gh_realm::authenticate(&db, &form.username, &form.password).await {
         Ok(outcome) => outcome,
@@ -133,6 +140,7 @@ pub async fn login_submit(
         }
         AuthOutcome::NotFound | AuthOutcome::WrongPassword => {
             quench_log::warn!("invalid credentials for {}", form.username);
+            limiter.login_failed(&ip).await;
             return Response::new(StatusCode::FOUND).header("Location", ui_path("/login?err=1"));
         }
     };
@@ -192,11 +200,17 @@ pub struct MfaForm {
 #[post("/ui/login/mfa")]
 pub async fn login_mfa_submit(
     locale_cookie: LocaleCookie,
+    ip: ClientIp,
     Form(form): Form<MfaForm>,
     Inject(config): Inject<JwtConfig>,
     Inject(db): Inject<Db>,
     Inject(session_db): Inject<SessionDb>,
+    Inject(limiter): Inject<RateLimiter>,
 ) -> Response {
+    if !limiter.login_blocked(&ip).await.is_allowed() {
+        return Response::new(StatusCode::FOUND)
+            .header("Location", ui_path("/login?err=ui_login_rate_limited"));
+    }
     let outcome = match gh_realm::authenticate_mfa(&db, &form.pending, &form.code).await {
         Ok(outcome) => outcome,
         Err(err) => {
@@ -220,6 +234,7 @@ pub async fn login_mfa_submit(
         | AuthOutcome::EmailUnverified
         | AuthOutcome::NotFound
         | AuthOutcome::WrongPassword => {
+            limiter.login_failed(&ip).await;
             return Response::new(StatusCode::FOUND).header(
                 "Location",
                 mfa_challenge_url(&form.pending, form.redirect.as_deref(), true),
@@ -368,9 +383,9 @@ pub fn login_redirect() -> Response {
 pub fn register_routes() {
     let _ = login as fn(_) -> _;
     let _ = login_slash as fn(_) -> _;
-    let _ = login_submit as fn(_, _, _, _, _) -> _;
+    let _ = login_submit as fn(_, _, _, _, _, _, _) -> _;
     let _ = login_mfa as fn(_) -> _;
-    let _ = login_mfa_submit as fn(_, _, _, _, _) -> _;
+    let _ = login_mfa_submit as fn(_, _, _, _, _, _, _) -> _;
     let _ = status as fn(_) -> _;
     let _ = refresh as fn(_) -> _;
     let _ = logout as fn(_, _) -> _;

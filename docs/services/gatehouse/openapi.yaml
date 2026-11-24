@@ -43,7 +43,10 @@ paths:
       description: Checks the credentials and returns a token pair. An account with a second factor, a
         disabled or locked account, and an unconfirmed address are refused with a code in the body; the
         second-factor step exists only on the browser path (`POST /ui/login/mfa`). A wrong password counts
-        toward the lockout (`GATEHOUSE_LOGIN_MAX_ATTEMPTS`, `GATEHOUSE_LOCKOUT_DURATION_SECS`).
+        toward the lockout (`GATEHOUSE_LOGIN_MAX_ATTEMPTS`, `GATEHOUSE_LOCKOUT_DURATION_SECS`). A client address
+        (`X-Real-IP`) that has failed `LOGIN_FAILURES_PER_IP` times (30) in ten minutes, across any names, is
+        answered 429 with `Retry-After` before anything is checked, the right password included. A lockout
+        protects one account and does not see one guess at each of many. Only failures count.
       security: []
       requestBody:
         required: true
@@ -74,6 +77,18 @@ paths:
                 $ref: '#/components/schemas/LoginError'
               example:
                 error: invalid_credentials
+        '429':
+          description: This address has failed to sign in too often; `Retry-After` says when the window ends.
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginError'
+              example:
+                error: too_many_attempts
         '400':
           description: Malformed JSON (text body).
         '500':

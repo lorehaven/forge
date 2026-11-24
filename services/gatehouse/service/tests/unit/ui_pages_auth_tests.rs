@@ -1,3 +1,4 @@
+use gatehouse_service::ratelimit::{ClientIp, RateLimiter};
 use gatehouse_service::realm;
 use gatehouse_service::ui::locale::{LocaleCookie, default_locale_cookie};
 use gatehouse_service::ui::pages::auth::{
@@ -70,6 +71,7 @@ fn login_redirect_points_at_the_login_page() {
 async fn login_submit_redirects_with_an_error_for_unknown_credentials() {
     let resp = login_submit(
         LocaleCookie(false),
+        ClientIp("203.0.113.1".to_string()),
         Form(LoginForm {
             username: "nobody".to_string(),
             password: "whatever".to_string(),
@@ -78,6 +80,7 @@ async fn login_submit_redirects_with_an_error_for_unknown_credentials() {
         Inject(Arc::new(JwtConfig::for_tests())),
         Inject(Arc::new(db().await)),
         Inject(sessions()),
+        Inject(Arc::new(RateLimiter::in_memory())),
     )
     .await;
     assert_eq!(resp.status(), StatusCode::FOUND);
@@ -110,6 +113,7 @@ async fn login_submit_succeeds_and_sets_session_cookies_for_the_right_password()
 
     let resp = login_submit(
         LocaleCookie(false),
+        ClientIp("203.0.113.1".to_string()),
         Form(LoginForm {
             username: "alice".to_string(),
             password: "correct-horse".to_string(),
@@ -118,6 +122,7 @@ async fn login_submit_succeeds_and_sets_session_cookies_for_the_right_password()
         Inject(Arc::new(JwtConfig::for_tests_with_signing())),
         Inject(Arc::new(db)),
         Inject(sessions()),
+        Inject(Arc::new(RateLimiter::in_memory())),
     )
     .await;
     assert_eq!(resp.status(), StatusCode::FOUND);
@@ -202,6 +207,7 @@ async fn login_sets_the_preferred_locale_cookie_only_without_an_existing_one() {
     for (has_cookie, expected) in [(false, true), (true, false)] {
         let resp = login_submit(
             LocaleCookie(has_cookie),
+            ClientIp("203.0.113.1".to_string()),
             Form(LoginForm {
                 username: "bob".to_string(),
                 password: "correct-horse".to_string(),
@@ -210,6 +216,7 @@ async fn login_sets_the_preferred_locale_cookie_only_without_an_existing_one() {
             Inject(Arc::new(JwtConfig::for_tests_with_signing())),
             Inject(Arc::new(db.clone())),
             Inject(sessions()),
+            Inject(Arc::new(RateLimiter::in_memory())),
         )
         .await;
         let has_locale = resp
@@ -225,6 +232,7 @@ async fn login_sets_the_preferred_locale_cookie_only_without_an_existing_one() {
 async fn login_mfa_submit_redirects_with_an_error_for_an_unknown_pending_token() {
     let resp = login_mfa_submit(
         LocaleCookie(false),
+        ClientIp("203.0.113.1".to_string()),
         Form(MfaForm {
             pending: "not-a-real-token".to_string(),
             code: "000000".to_string(),
@@ -233,6 +241,7 @@ async fn login_mfa_submit_redirects_with_an_error_for_an_unknown_pending_token()
         Inject(Arc::new(JwtConfig::for_tests())),
         Inject(Arc::new(db().await)),
         Inject(sessions()),
+        Inject(Arc::new(RateLimiter::in_memory())),
     )
     .await;
     assert_eq!(resp.status(), StatusCode::FOUND);
@@ -255,6 +264,7 @@ async fn app(
     let container = ContainerBuilder::new()
         .provide(jwt_config)
         .provide(db)
+        .provide(RateLimiter::in_memory())
         .provide_arc(sessions)
         .build()
         .await
@@ -517,5 +527,60 @@ async fn an_app_keeps_its_refresh_token_and_has_one_session() {
                 .await
                 .is_some()
         );
+    }
+}
+
+#[quench_test::test]
+async fn thirty_failed_sign_ins_from_one_address_turn_the_thirty_first_away_unchecked() {
+    let db = db().await;
+    realm::create(
+        &db,
+        &realm_catalog(),
+        true,
+        "carol",
+        "correct-horse",
+        vec![Role::User],
+        Permissions::new(),
+        None,
+    )
+    .await
+    .expect("seed user");
+    let limiter = Arc::new(RateLimiter::in_memory());
+    let attempt = |username: &str, password: &str, ip: &str| {
+        login_submit(
+            LocaleCookie(false),
+            ClientIp(ip.to_string()),
+            Form(LoginForm {
+                username: username.to_string(),
+                password: password.to_string(),
+                redirect: None,
+            }),
+            Inject(Arc::new(JwtConfig::for_tests_with_signing())),
+            Inject(Arc::new(db.clone())),
+            Inject(sessions()),
+            Inject(limiter.clone()),
+        )
+    };
+    let location = |resp: quench_http::response::Response| {
+        resp.into_inner()
+            .headers
+            .get("location")
+            .map(|v| v.to_str().unwrap().to_string())
+            .unwrap_or_default()
+    };
+
+    // One guess at each of thirty names: password spraying, which no account lockout sees.
+    for n in 0..30 {
+        let resp = attempt(&format!("nobody-{n}"), "Spring2026!", "203.0.113.50").await;
+        assert!(!location(resp).contains("rate_limited"), "attempt {n}");
+    }
+    // The thirty-first is refused before anyone looks at the password - even the right one.
+    let resp = attempt("carol", "correct-horse", "203.0.113.50").await;
+    assert!(location(resp).contains("ui_login_rate_limited"));
+    // Another address is untouched, and succeeding is never counted.
+    for _ in 0..40 {
+        let resp = attempt("carol", "correct-horse", "203.0.113.51").await;
+        let to = location(resp);
+        assert!(!to.contains("err="), "{to}");
     }
 }

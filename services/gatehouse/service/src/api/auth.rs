@@ -1,6 +1,7 @@
 //! The realm's token API - lives here, not `quench-auth`, since only
 //! gatehouse issues tokens; relying parties only verify them.
 
+use crate::ratelimit::{ClientIp, RateLimiter, Verdict};
 use crate::realm::{self as gh_realm, AuthOutcome};
 use quench_auth::domain::auth::{Permissions, User, UserDb};
 use quench_auth::domain::jwt::{Claims, JwtConfig};
@@ -73,11 +74,26 @@ impl LoginError {
 
 #[post("/api/v1/auth/login")]
 async fn login(
+    ip: ClientIp,
     Json(request): Json<LoginRequest>,
     Inject(config): Inject<JwtConfig>,
     Inject(db): Inject<Db>,
     Inject(sessions): Inject<SessionDb>,
+    Inject(limiter): Inject<RateLimiter>,
 ) -> Response {
+    // Refused before a password is looked at: a client over its failures gets nothing to learn from.
+    if let Verdict::Limited { retry_after_secs } = limiter.login_blocked(&ip).await {
+        return Response::json(
+            StatusCode::TOO_MANY_REQUESTS,
+            &LoginError {
+                error: "too_many_attempts",
+            },
+        )
+        .map_or_else(
+            |_| Response::new(StatusCode::TOO_MANY_REQUESTS),
+            |r| r.header("Retry-After", retry_after_secs.to_string()),
+        );
+    }
     let outcome = match gh_realm::authenticate(&db, &request.username, &request.password).await {
         Ok(outcome) => outcome,
         Err(err) => {
@@ -92,6 +108,7 @@ async fn login(
         AuthOutcome::Locked => return LoginError::response("account_locked"),
         AuthOutcome::EmailUnverified => return LoginError::response("email_unverified"),
         AuthOutcome::NotFound | AuthOutcome::WrongPassword => {
+            limiter.login_failed(&ip).await;
             return LoginError::response("invalid_credentials");
         }
     };
@@ -256,7 +273,7 @@ async fn userinfo(MaybeAccessClaims(claims): MaybeAccessClaims) -> Response {
 }
 
 pub fn register_routes() {
-    let _ = login as fn(_, _, _, _) -> _;
+    let _ = login as fn(_, _, _, _, _, _) -> _;
     let _ = refresh as fn(_, _, _, _, _) -> _;
     let _ = logout as fn(_, _) -> _;
     let _ = userinfo as fn(_) -> _;

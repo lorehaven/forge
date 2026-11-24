@@ -37,6 +37,9 @@ workspace = true
 # The nightly gate: shells out to cargo-deny/cargo-audit (network) and nested `cargo test`, and scans a
 # live estate. Off by default so `cargo test --workspace` never starts it.
 gate = []
+# The live `authz` case, which needs identities minted from a gatehouse in test mode (never production). A scan that has no
+# identities has no such case at all, rather than one that passes having tested nothing.
+authz-live = ["gate"]
 
 [[test]]
 name = "scanners"

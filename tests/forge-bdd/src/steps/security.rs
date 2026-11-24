@@ -86,6 +86,7 @@ async fn authorisation_holds(world: &mut ForgeWorld, service: String) {
     options.rps = 500;
     options.active = true;
     options.checks = vec!["authz".to_string()];
+    options.client_ip = Some("198.51.100.10".to_string());
     options.authz = Some(spec);
     options.mint = Some(world.gatehouse_url.clone());
 
@@ -136,6 +137,7 @@ async fn fuzzing_finds_nothing(world: &mut ForgeWorld, service: String) {
     options.rps = 500;
     options.active = true;
     options.checks = vec!["fuzz".to_string()];
+    options.client_ip = Some("198.51.100.20".to_string());
     options.forge_root = Some(root());
     if let Some(grants) = spec.grants_of(&service) {
         options.binds = seeds(world, &service, &grants.writer).await;
@@ -560,6 +562,7 @@ async fn generic_checks(world: &mut ForgeWorld, service: String) {
     let mut options = Options::new(vec![target], routes().to_vec());
     options.rps = 500;
     options.active = true;
+    options.client_ip = Some("198.51.100.30".to_string());
     options.checks = [
         "auth",
         "tokens",
