@@ -173,6 +173,43 @@ impl Store {
         Ok((rows.iter().map(from_row).collect::<Result<_>>()?, total))
     }
 
+    /// The messages of the owner's that answer, or are answered by, the ones linked to `keys` (message ids), one step.
+    pub async fn messages_linked_to(
+        &self,
+        owner: &str,
+        key: &str,
+        limit: i64,
+    ) -> Result<Vec<MessageRow>> {
+        let rows = self
+            .pool
+            .query(
+                &format!(
+                    "SELECT {COLUMNS} FROM messages WHERE owner = $1 AND (message_id = $2 OR in_reply_to = $2) \
+                     ORDER BY date, seq LIMIT $3"
+                ),
+                &[&owner, &key, &limit],
+            )
+            .await?;
+        rows.iter().map(from_row).collect()
+    }
+
+    /// The ids of a folder's messages, newest first, at most `limit`.
+    pub async fn message_ids_in(
+        &self,
+        owner: &str,
+        folder: &str,
+        limit: i64,
+    ) -> Result<Vec<String>> {
+        let rows = self
+            .pool
+            .query(
+                "SELECT id FROM messages WHERE owner = $1 AND folder = $2 ORDER BY date DESC, seq DESC LIMIT $3",
+                &[&owner, &folder, &limit],
+            )
+            .await?;
+        rows.iter().map(|r| Ok(r.get("id")?)).collect()
+    }
+
     /// `(folder, unread, total)` for the folders that hold anything.
     pub async fn folder_counts(&self, owner: &str) -> Result<Vec<(String, i64, i64)>> {
         let rows = self

@@ -69,7 +69,12 @@ fn routes(request: &HttpRequest) -> (u16, String) {
         ("GET", "/api/v1/admin/stats") => r#"{"mailboxes":3,"messages":9,"bytes":2097152,"delivered_24h":3,"failed_24h":0,"budget_left":497}"#.to_string(),
         ("GET" | "PUT", "/api/v1/admin/settings") => r#"{"domain":"home.example","daily_budget":500,"hourly_per_source":120,"hourly_per_person":60,"quota_mb":500}"#.to_string(),
         ("GET", "/api/v1/admin/mailboxes") | ("GET", "/api/v1/admin/deliveries") | ("GET", "/api/v1/admin/audit") => r#"{"items":[],"total":0}"#.to_string(),
-        ("POST" | "DELETE", _) => return OK,
+        ("GET", "/api/v1/drafts") => r#"[{"id":"d1","to":"bob","cc":"","bcc":"","subject":"Hi","text":"dear","in_reply_to":null,"updated":5}]"#.to_string(),
+        ("GET", "/api/v1/drafts/d1") | ("PUT", "/api/v1/drafts/d1") | ("POST", "/api/v1/drafts") => r#"{"id":"d1","to":"bob","cc":"","bcc":"","subject":"Hi","text":"dear","in_reply_to":null,"updated":5}"#.to_string(),
+        ("GET", "/api/v1/messages/m1/thread") => format!("[{SUMMARY}]"),
+        ("GET", "/api/v1/mutes") => r#"["bob@home.example"]"#.to_string(),
+        ("PUT", "/api/v1/signature") => r#"{"text":"Ann"}"#.to_string(),
+        ("POST" | "DELETE" | "PUT", _) => return OK,
         _ => return (404, String::new()),
     };
     (200, body)
@@ -442,3 +447,127 @@ fn run_down(client: &Client<impl Transport>, request: Request) -> Vec<Msg> {
 }
 
 quench_test::main!();
+
+#[quench_test::test]
+fn drafts_are_listed_opened_kept_and_deleted() {
+    let (client, seen, bodies) = client(routes);
+    let list = run(&client, Request::Drafts);
+    assert!(matches!(&list[..], [Msg::Drafts(l)] if l.len() == 1 && l[0].id == "d1"));
+    assert!(
+        matches!(&run(&client, Request::OpenDraft("d1".into()))[..], [Msg::Draft(d)] if d.subject == "Hi")
+    );
+    let input = mailroom_core::DraftInput {
+        to: "bob".into(),
+        subject: "Hi".into(),
+        text: "dear".into(),
+        ..Default::default()
+    };
+    // No id yet: created. With an id: changed.
+    assert!(
+        matches!(&run(&client, Request::SaveDraft { id: None, input: input.clone() })[..], [Msg::DraftSaved(d)] if d.id == "d1")
+    );
+    assert!(matches!(
+        &run(
+            &client,
+            Request::SaveDraft {
+                id: Some("d1".into()),
+                input
+            }
+        )[..],
+        [Msg::DraftSaved(_)]
+    ));
+    assert_eq!(
+        run(&client, Request::DeleteDraft("d1".into())),
+        vec![Msg::DraftDeleted]
+    );
+    let calls = seen.borrow().clone();
+    for want in [
+        ("POST", "/api/v1/drafts"),
+        ("PUT", "/api/v1/drafts/d1"),
+        ("DELETE", "/api/v1/drafts/d1"),
+    ] {
+        assert!(
+            calls.iter().any(|(m, p)| (m.as_str(), p.as_str()) == want),
+            "{want:?} in {calls:?}"
+        );
+    }
+    assert!(
+        bodies
+            .borrow()
+            .iter()
+            .flatten()
+            .any(|b| b.contains("\"subject\":\"Hi\""))
+    );
+}
+
+#[quench_test::test]
+fn senders_are_muted_and_let_back_in() {
+    let (client, seen, _) = client(routes);
+    assert_eq!(
+        run(&client, Request::Mutes),
+        vec![Msg::Mutes(vec!["bob@home.example".into()])]
+    );
+    assert_eq!(
+        run(&client, Request::Mute("bob@home.example".into())),
+        vec![Msg::MuteChanged {
+            address: "bob@home.example".into(),
+            muted: true
+        }]
+    );
+    assert_eq!(
+        run(&client, Request::Unmute("bob@home.example".into())),
+        vec![Msg::MuteChanged {
+            address: "bob@home.example".into(),
+            muted: false
+        }]
+    );
+    let calls = seen.borrow().clone();
+    assert!(
+        calls
+            .iter()
+            .any(|(m, p)| m == "PUT" && p.starts_with("/api/v1/mutes/bob")),
+        "{calls:?}"
+    );
+    assert!(
+        calls
+            .iter()
+            .any(|(m, p)| m == "DELETE" && p.starts_with("/api/v1/mutes/bob")),
+        "{calls:?}"
+    );
+}
+
+#[quench_test::test]
+fn the_conversation_of_a_message_is_asked_for_and_its_absence_is_not_an_error() {
+    let (client, seen, _) = client(routes);
+    assert!(
+        matches!(&run(&client, Request::Thread("m1".into()))[..], [Msg::Thread(l)] if l.len() == 1)
+    );
+    assert!(
+        seen.borrow()
+            .iter()
+            .any(|(_, p)| p == "/api/v1/messages/m1/thread")
+    );
+    // Not found, or broken: the message is shown alone and nothing is said.
+    assert!(run(&client, Request::Thread("gone".into())).is_empty());
+}
+
+#[quench_test::test]
+fn the_signature_is_saved_and_the_saved_text_comes_back() {
+    let (client, seen, bodies) = client(routes);
+    assert_eq!(
+        run(&client, Request::SaveSignature("Ann".into())),
+        vec![Msg::SignatureSaved("Ann".into())]
+    );
+    assert!(
+        seen.borrow()
+            .iter()
+            .any(|(m, p)| m == "PUT" && p == "/api/v1/signature")
+    );
+    assert!(
+        bodies
+            .borrow()
+            .iter()
+            .flatten()
+            .any(|b| b.contains("\"text\":\"Ann\""))
+    );
+}

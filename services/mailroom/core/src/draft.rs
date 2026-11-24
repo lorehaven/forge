@@ -74,6 +74,8 @@ pub struct ComposeDraft {
     pub text: String,
     pub in_reply_to: Option<String>,
     pub attachments: Vec<String>,
+    /// The saved draft this form came from, removed when the message is sent.
+    pub draft: Option<String>,
 }
 
 impl ComposeDraft {
@@ -115,6 +117,7 @@ impl ComposeDraft {
             text: self.text.clone(),
             in_reply_to: self.in_reply_to.clone(),
             attachments: self.attachments.clone(),
+            draft: self.draft.clone(),
         })
     }
 }

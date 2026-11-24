@@ -6,7 +6,7 @@ use std::pin::Pin;
 
 use mailroom_app::{ListQuery, Msg, Request};
 use mailroom_core::admin::{AdminMailbox, AuditEntry, Delivery, Page, Settings, Stats};
-use mailroom_core::{Contact, Folder, Me, MessageList, MessageView};
+use mailroom_core::{Contact, Draft, Folder, Me, MessageList, MessageSummary, MessageView};
 use quench_serde::json;
 use quench_serde::{Deserialize, Serialize};
 
@@ -230,6 +230,17 @@ impl<T: Transport> Client<T> {
                 Ok(view) => Msg::Message(Box::new(view)),
                 Err(failure) => failure.read(),
             }],
+            Request::Thread(id) => {
+                // A convenience: without it the message is simply shown alone.
+                match self
+                    .get::<Vec<MessageSummary>>(format!("/api/v1/messages/{}/thread", segment(&id)))
+                    .await
+                {
+                    Ok(list) => vec![Msg::Thread(list)],
+                    Err(Failure::SignedOut) => vec![Msg::SignedOut],
+                    Err(_) => vec![],
+                }
+            }
             Request::Change(change) => {
                 let moved = change.move_to.is_some() || change.delete;
                 match self
@@ -263,6 +274,96 @@ impl<T: Transport> Client<T> {
                     Ok(list) => vec![Msg::People(list)],
                     Err(Failure::SignedOut) => vec![Msg::SignedOut],
                     Err(_) => vec![],
+                }
+            }
+            Request::Drafts => vec![
+                match self.get::<Vec<Draft>>("/api/v1/drafts".into()).await {
+                    Ok(list) => Msg::Drafts(list),
+                    Err(failure) => failure.read(),
+                },
+            ],
+            Request::OpenDraft(id) => vec![match self
+                .get::<Draft>(format!("/api/v1/drafts/{}", segment(&id)))
+                .await
+            {
+                Ok(draft) => Msg::Draft(draft),
+                Err(failure) => failure.read(),
+            }],
+            Request::SaveDraft { id, input } => {
+                // Keeping a draft is a convenience: a failure is told, never a reason to lose the page.
+                let sent = match &id {
+                    Some(id) => {
+                        self.send::<_, Draft>(
+                            "PUT",
+                            format!("/api/v1/drafts/{}", segment(id)),
+                            &input,
+                        )
+                        .await
+                    }
+                    None => {
+                        self.send::<_, Draft>("POST", "/api/v1/drafts".into(), &input)
+                            .await
+                    }
+                };
+                match sent {
+                    Ok(draft) => vec![Msg::DraftSaved(draft)],
+                    Err(failure) => vec![failure.write()],
+                }
+            }
+            Request::DeleteDraft(id) => {
+                match self
+                    .act::<()>("DELETE", format!("/api/v1/drafts/{}", segment(&id)), None)
+                    .await
+                {
+                    Ok(()) => vec![Msg::DraftDeleted],
+                    Err(failure) => vec![failure.write()],
+                }
+            }
+            Request::Mutes => vec![
+                match self.get::<Vec<String>>("/api/v1/mutes".into()).await {
+                    Ok(list) => Msg::Mutes(list),
+                    Err(failure) => failure.read(),
+                },
+            ],
+            Request::SaveSignature(text) => {
+                match self
+                    .send::<_, mailroom_core::Signature>(
+                        "PUT",
+                        "/api/v1/signature".into(),
+                        &mailroom_core::Signature { text },
+                    )
+                    .await
+                {
+                    Ok(saved) => vec![Msg::SignatureSaved(saved.text)],
+                    Err(failure) => vec![failure.write()],
+                }
+            }
+            Request::Mute(address) => {
+                match self
+                    .act::<()>("PUT", format!("/api/v1/mutes/{}", segment(&address)), None)
+                    .await
+                {
+                    Ok(()) => vec![Msg::MuteChanged {
+                        address,
+                        muted: true,
+                    }],
+                    Err(failure) => vec![failure.write()],
+                }
+            }
+            Request::Unmute(address) => {
+                match self
+                    .act::<()>(
+                        "DELETE",
+                        format!("/api/v1/mutes/{}", segment(&address)),
+                        None,
+                    )
+                    .await
+                {
+                    Ok(()) => vec![Msg::MuteChanged {
+                        address,
+                        muted: false,
+                    }],
+                    Err(failure) => vec![failure.write()],
                 }
             }
             Request::Stats => vec![

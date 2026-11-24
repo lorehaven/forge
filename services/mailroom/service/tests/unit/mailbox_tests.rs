@@ -23,7 +23,7 @@ fn spec(folder: &str) -> ListSpec {
 }
 
 #[quench_test::test]
-async fn the_mailbox_is_made_on_first_use_with_three_folders() {
+async fn the_mailbox_is_made_on_first_use_with_its_folders() {
     db!();
     let env = env().await;
     let me = mailbox::me(&env.app, "Ann", true, false).await;
@@ -38,7 +38,7 @@ async fn the_mailbox_is_made_on_first_use_with_three_folders() {
     );
     let folders = mailbox::folders(&env.app, "ann").await.unwrap();
     let ids: Vec<_> = folders.iter().map(|f| f.id.as_str()).collect();
-    assert_eq!(ids, ["inbox", "sent", "trash"]);
+    assert_eq!(ids, ["inbox", "drafts", "archive", "sent", "trash"]);
     assert!(folders.iter().all(|f| f.unread == 0 && f.total == 0));
     // Names that cannot be addresses have no mailbox.
     for bad in ["", "a b", "a@b", "../x"] {
@@ -210,7 +210,7 @@ async fn a_message_is_opened_only_by_its_owner() {
             Error::NotFound
         ));
         assert!(matches!(
-            mailbox::html(&env.app, stranger, &id, false)
+            mailbox::html(&env.app, stranger, &id, false, false)
                 .await
                 .unwrap_err(),
             Error::NotFound
@@ -270,13 +270,25 @@ async fn html_is_sanitised_with_remote_images_held_back() {
     let view = mailbox::open(&env.app, "ann", &id).await.unwrap();
     assert!(view.has_html);
     assert_eq!(view.remote_images, 1);
-    let page = mailbox::html(&env.app, "ann", &id, false).await.unwrap();
+    let page = mailbox::html(&env.app, "ann", &id, false, false)
+        .await
+        .unwrap();
     assert!(page.contains("<p>hi</p>"));
     for bad in ["<script", "onclick", "t.example", "javascript:"] {
         assert!(!page.contains(bad), "{bad}: {page}");
     }
-    let remote = mailbox::html(&env.app, "ann", &id, true).await.unwrap();
+    let remote = mailbox::html(&env.app, "ann", &id, true, false)
+        .await
+        .unwrap();
     assert!(remote.contains("https://t.example/p.gif"));
+    // Light is the page as written; dark turns it round and keeps pictures as they were.
+    assert!(!page.contains("invert("));
+    let dark = mailbox::html(&env.app, "ann", &id, false, true)
+        .await
+        .unwrap();
+    assert!(dark.contains("html{color-scheme:dark;filter:invert(.92) hue-rotate(180deg)}"));
+    assert!(dark.contains("img,video,svg{filter:invert(.92) hue-rotate(180deg)}"));
+    assert!(dark.contains("<p>hi</p>"));
     // A message without HTML has none to show.
     env.people(&["bob"]).await;
     env.write("bob", &["ann"], "text", "just text").await;
@@ -287,7 +299,7 @@ async fn html_is_sanitised_with_remote_images_held_back() {
         .find(|m| m.subject == "text")
         .unwrap();
     assert!(matches!(
-        mailbox::html(&env.app, "ann", &plain.id, false)
+        mailbox::html(&env.app, "ann", &plain.id, false, false)
             .await
             .unwrap_err(),
         Error::NotFound
@@ -489,4 +501,156 @@ async fn people_are_found_by_the_start_of_their_name() {
         found("").await.is_empty(),
         "the whole directory is not handed out in one request"
     );
+}
+
+#[quench_test::test]
+async fn the_archive_keeps_mail_and_whole_folder_changes_reach_everything_in_it() {
+    db!();
+    let env = env().await;
+    env.people(&["ann", "bob"]).await;
+    for subject in ["one", "two", "three"] {
+        env.write("bob", &["ann"], subject, "t").await;
+    }
+    let ids: Vec<String> = env
+        .folder("ann", "inbox")
+        .await
+        .iter()
+        .map(|m| m.id.clone())
+        .collect();
+    let archive = Change {
+        ids: ids[..2].to_vec(),
+        move_to: Some("archive".into()),
+        ..Change::default()
+    };
+    mailbox::change(&env.app, "ann", &archive).await.unwrap();
+    assert_eq!(env.folder("ann", "archive").await.len(), 2);
+    assert_eq!(env.folder("ann", "inbox").await.len(), 1);
+    let folders = mailbox::folders(&env.app, "ann").await.unwrap();
+    assert_eq!(
+        folders.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(),
+        ["inbox", "drafts", "archive", "sent", "trash"]
+    );
+    // Everything in a folder, with no ids: read it all.
+    let read_all = Change {
+        all_in: Some("archive".into()),
+        seen: Some(true),
+        ..Change::default()
+    };
+    mailbox::change(&env.app, "ann", &read_all).await.unwrap();
+    assert!(env.folder("ann", "archive").await.iter().all(|m| m.seen));
+    assert!(env.folder("ann", "inbox").await.iter().all(|m| !m.seen));
+    // A folder and ids together, or an unknown folder, are refused.
+    for bad in [
+        Change {
+            all_in: Some("archive".into()),
+            ids: ids.clone(),
+            seen: Some(true),
+            ..Change::default()
+        },
+        Change {
+            all_in: Some("nowhere".into()),
+            seen: Some(true),
+            ..Change::default()
+        },
+    ] {
+        assert!(matches!(
+            mailbox::change(&env.app, "ann", &bad).await.unwrap_err(),
+            Error::Invalid(_)
+        ));
+    }
+    // Emptying the trash: only what is in it goes.
+    let trash = Change {
+        ids: ids.clone(),
+        move_to: Some("trash".into()),
+        ..Change::default()
+    };
+    mailbox::change(&env.app, "ann", &trash).await.unwrap();
+    let empty = Change {
+        all_in: Some("trash".into()),
+        delete: true,
+        ..Change::default()
+    };
+    mailbox::change(&env.app, "ann", &empty).await.unwrap();
+    assert!(env.folder("ann", "trash").await.is_empty());
+    // Something sent never lands in the archive or the inbox, even when asked.
+    let sent = env.folder("bob", "sent").await;
+    let to_archive = Change {
+        ids: vec![sent[0].id.clone()],
+        move_to: Some("archive".into()),
+        ..Change::default()
+    };
+    mailbox::change(&env.app, "bob", &to_archive).await.unwrap();
+    assert!(env.folder("bob", "archive").await.is_empty());
+}
+
+#[quench_test::test]
+async fn a_conversation_is_found_by_the_links_in_the_headers_and_not_by_the_subject() {
+    db!();
+    let env = env().await;
+    env.people(&["ann", "bob"]).await;
+    env.write("ann", &["bob"], "topic", "first").await;
+    let asked = env.folder("bob", "inbox").await[0].id.clone();
+    // Bob answers it, then Ann answers the answer.
+    outgoing::send_user(
+        &env.app,
+        "bob",
+        &mailroom_core::Compose {
+            to: vec!["ann".into()],
+            subject: "Re: topic".into(),
+            text: "second".into(),
+            in_reply_to: Some(asked),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let reply = env.folder("ann", "inbox").await[0].id.clone();
+    outgoing::send_user(
+        &env.app,
+        "ann",
+        &mailroom_core::Compose {
+            to: vec!["bob".into()],
+            subject: "Re: Re: topic".into(),
+            text: "third".into(),
+            in_reply_to: Some(reply.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    env.write("ann", &["bob"], "something else", "unrelated")
+        .await;
+    let sent = env.folder("ann", "sent").await;
+    let first = sent
+        .iter()
+        .find(|m| m.subject == "topic")
+        .unwrap()
+        .id
+        .clone();
+    // From the reply, the rest of the conversation: what it answers and what answered it, oldest first.
+    let around = mailbox::thread(&env.app, "ann", &reply).await.unwrap();
+    let subjects: Vec<&str> = around.iter().map(|m| m.subject.as_str()).collect();
+    assert_eq!(subjects.len(), 2, "{subjects:?}");
+    assert!(
+        subjects.contains(&"topic") && subjects.contains(&"Re: Re: topic"),
+        "{subjects:?}"
+    );
+    assert!(around.iter().all(|m| m.id != reply));
+    // From the first message, the same conversation without it.
+    let from_first = mailbox::thread(&env.app, "ann", &first).await.unwrap();
+    assert_eq!(from_first.len(), 2);
+    // Mail with a subject in common but no link is not one.
+    env.write("ann", &["bob"], "topic", "again").await;
+    assert_eq!(
+        mailbox::thread(&env.app, "ann", &first)
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+    // Someone else's message is not found.
+    assert!(matches!(
+        mailbox::thread(&env.app, "bob", &first).await.unwrap_err(),
+        Error::NotFound
+    ));
 }

@@ -289,6 +289,15 @@ pub fn topbar(bar: &Bar, t: &Rc<I18n>) -> Element {
     header()
         .class("fui-topbar")
         .child(
+            button()
+                .attr("type", "button")
+                .attr("id", "nav-menu")
+                .attr("data-fui-drawer-toggle", "")
+                .attr("aria-label", "Menu")
+                .class("fui-icon-btn fui-menu-btn")
+                .child(icon("menu")),
+        )
+        .child(
             div()
                 .class("fui-topbar-nav")
                 .child(bar.dashboard.then(|| {

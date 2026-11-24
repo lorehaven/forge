@@ -18,3 +18,9 @@
   .fui-client-web:has(.dbk-signed-out) .fui-topbar { left: 0; }
   .fui-client-web:has(.dbk-signed-out) .fui-topbar .fui-brand { display: inline-flex; }
 }
+
+/* Narrow: the bar's hamburger opens the lists (the app's own drawer), in place of the menu button the app draws. */
+@media (max-width: 839.98px) {
+  .fui-client-web:not(:has(.dbk-signed-out)) .fui-menu-btn { display: inline-flex; }
+  .fui-client-web .dbk-menu { display: none; }
+}

@@ -15,12 +15,17 @@
 .fui-brand-image { background: transparent; box-shadow: none; }
 .fui-brand-image img { width: 2rem; height: 2rem; border-radius: var(--fui-radius-md); display: block; }
 @media (min-width: 1024px) { .fui-hide-desktop { display: none !important; } }
+/* Narrow screens: the side panel is a drawer behind the hamburger button, not a block above the page. */
+.fui-menu-btn { display: none; }
 @media (max-width: 1023.98px) {
-  .fui-client { flex-direction: column; }
-  .fui-sidebar { position: static; width: auto; height: auto; flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--fui-border); }
-  .fui-sidebar-head { display: none; }
+  .fui-client:has(.fui-sidebar) .fui-menu-btn { display: inline-flex; }
+  .fui-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 50; width: min(20rem, 86vw); height: 100dvh; transform: translateX(-102%); visibility: hidden; transition: transform .22s ease, visibility 0s linear .22s; box-shadow: var(--fui-shadow-xl); border-right: 1px solid var(--fui-border); }
+  html.fui-drawer-open .fui-sidebar { transform: none; visibility: visible; transition: transform .22s ease; }
+  .fui-client::before { content: ""; position: fixed; inset: 0; z-index: 45; background: rgba(0,0,0,.45); opacity: 0; pointer-events: none; transition: opacity .22s ease; }
+  html.fui-drawer-open .fui-client::before { opacity: 1; pointer-events: auto; }
+  html.fui-drawer-open body { overflow: hidden; }
 }
-.fui-topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 0.75rem; height: var(--fui-topbar-h); padding: 0 1.5rem; background: var(--fui-bg); border-bottom: 1px solid var(--fui-border); position: relative; z-index: 30; }
+.fui-topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 0.75rem; height: var(--fui-topbar-h); padding: 0 1.5rem; background: var(--fui-bg); border-bottom: 1px solid var(--fui-border); position: sticky; top: 0; z-index: 30; }
 .fui-topbar-title { font-size: 1rem; font-weight: 600; color: var(--fui-text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
 .fui-topbar-spacer { flex: 1 1 auto; }
 .fui-topbar-actions { display: flex; align-items: center; gap: 0.5rem; }
@@ -30,6 +35,7 @@
 .fui-brand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fui-client-main { flex: 1 1 auto; min-height: 0; }
 @media (max-width: 639.98px) { :root { --fui-topbar-h: 3.5rem; } .fui-topbar { padding: 0 1rem; } .fui-topbar-nav { display: none; } }
+@media (max-width: 1023.98px) { .fui-topbar { padding-left: 0.75rem; } }
 
 [data-drag-id] { cursor: grab; }
 .fui-dragging { opacity: .5; }
@@ -40,6 +46,7 @@
 .fui-icon-btn .fui-ico, .fui-dropdown-item .fui-ico, .fui-avatar .fui-ico { color: inherit; }
 .fui-dropdown-item .fui-ico { margin-right: 0; color: var(--fui-text-tertiary); }
 .fui-avatar img { display: none; }
+.fui-ico-menu { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18M3 12h18M3 18h18'/%3E%3C/svg%3E"); }
 .fui-ico-grid { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='7' height='7'/%3E%3Crect x='14' y='3' width='7' height='7'/%3E%3Crect x='14' y='14' width='7' height='7'/%3E%3Crect x='3' y='14' width='7' height='7'/%3E%3C/svg%3E"); }
 .fui-ico-house { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/%3E%3Cpath d='M9 22V12h6v10'/%3E%3C/svg%3E"); }
 .fui-ico-palette { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.3A3.7 3.7 0 0 0 21 10.7C21 6.4 16.9 3 12 3z'/%3E%3Ccircle cx='7.5' cy='11' r='.6'/%3E%3Ccircle cx='10' cy='7' r='.6'/%3E%3Ccircle cx='14.5' cy='7' r='.6'/%3E%3C/svg%3E"); }
@@ -87,3 +94,18 @@
   html[data-fui-nav="folded"] .fui-nav :not(.fui-nav-item):not(.fui-nav-item *):not(:has(.fui-nav-item)) { display: none; }
   html[data-fui-nav="folded"] .fui-sidebar-foot { justify-content: center; padding: 0.5rem; }
 }
+
+/* Mail icons (feather-style). */
+.fui-ico-star { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2'/%3E%3C/svg%3E"); }
+.fui-ico-paperclip { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48'/%3E%3C/svg%3E"); }
+.fui-ico-pen { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z'/%3E%3C/svg%3E"); }
+.fui-ico-envelope { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z'/%3E%3Cpath d='M22 6l-10 7L2 6'/%3E%3C/svg%3E"); }
+.fui-ico-inbox { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-6l-2 3h-4l-2-3H2'/%3E%3Cpath d='M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'/%3E%3C/svg%3E"); }
+.fui-ico-send { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 2L11 13M22 2l-7 20-4-9-9-4z'/%3E%3C/svg%3E"); }
+.fui-ico-trash { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6'/%3E%3Cpath d='M10 11v6M14 11v6'/%3E%3C/svg%3E"); }
+.fui-ico-reply { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 14L4 9l5-5'/%3E%3Cpath d='M20 20v-7a4 4 0 0 0-4-4H4'/%3E%3C/svg%3E"); }
+.fui-ico-refresh { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M23 4v6h-6M1 20v-6h6'/%3E%3Cpath d='M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15'/%3E%3C/svg%3E"); }
+.fui-ico-star-fill { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2'/%3E%3C/svg%3E"); }
+.fui-cursor { outline: 2px solid var(--fui-brand-500); outline-offset: -2px; }
+@media (max-width: 479.98px) { .fui-topbar > .fui-brand .fui-brand-name { display: none; } }
+.fui-ico-arrow-left { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 12H5M12 19l-7-7 7-7'/%3E%3C/svg%3E"); }

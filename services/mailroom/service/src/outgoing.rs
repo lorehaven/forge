@@ -244,6 +244,10 @@ pub async fn send_user(app: &App, owner: &str, compose: &Compose) -> Result<Sent
     if let Some(original) = original {
         app.store.message_mark_answered(&original.id, owner).await?;
     }
+    // What was written is sent: the draft it was written in goes.
+    if let Some(draft) = compose.draft.as_deref().filter(|d| !d.is_empty()) {
+        app.store.draft_delete(draft, owner).await?;
+    }
     Ok(Sent {
         id: outcome.sent_id.unwrap_or_default(),
         status: "delivered".into(),

@@ -24,8 +24,8 @@ refused with a clear message; mail from outside cannot arrive. No port is opened
 
 ## Addresses and folders
 
-A person's address is `<user name>@<MAILROOM_DOMAIN>` (the Gatehouse user name; only lower-case letters, digits, `.`, `-`, `_` can have a mailbox, and the names of the estate's services are reserved). A mailbox has three folders:
-**inbox**, **sent** and **trash** (emptied after 30 days). A message to three people is stored once per mailbox, with the
+A person's address is `<user name>@<MAILROOM_DOMAIN>` (the Gatehouse user name; only lower-case letters, digits, `.`, `-`, `_` can have a mailbox, and the names of the estate's services are reserved). A mailbox has four folders:
+**inbox**, **archive**, **sent** and **trash** (emptied after 30 days). A change can name a folder (`all_in`) instead of messages: read everything in it, empty the trash (up to 5000 at a time). A message to three people is stored once per mailbox, with the
 attachment bytes shared. A mailbox is made the first time the person opens Mailroom or a service first writes to them; a person
 cannot write to someone who has neither (they have to sign in once). Writing `ann` and `ann@<domain>` is the same; any other
 domain is refused. Quota per mailbox: 500 MB by default (panel).

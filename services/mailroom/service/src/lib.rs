@@ -24,6 +24,7 @@ pub mod app;
 pub mod boot;
 pub mod config;
 pub mod delivery;
+pub mod drafts;
 pub mod error;
 pub mod limits;
 pub mod mailbox;

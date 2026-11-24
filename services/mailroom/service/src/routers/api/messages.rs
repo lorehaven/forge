@@ -1,15 +1,16 @@
 //! `/api/v1/me`, `/folders`, `/people` and `/messages`: who is asking, the mailbox, one message, its safe HTML, its attachments,
 //! changes, and sending.
 
-use super::{Caller, created, done, reply};
+use super::{Caller, PrefersDark, created, done, reply};
 use crate::app::App;
+use crate::drafts;
 use crate::error::Error;
 use crate::mailbox::{self, ListSpec};
 use crate::outgoing;
-use mailroom_core::{Change, Compose};
+use mailroom_core::{Change, Compose, DraftInput, Signature};
 use quench_http::multipart::Multipart;
 use quench_http::prelude::{
-    Inject, Json, Limited, Path, Query, Response, delete, get, http::StatusCode, post,
+    Inject, Json, Limited, Path, Query, Response, delete, get, http::StatusCode, post, put,
 };
 use quench_serde::Deserialize;
 
@@ -103,6 +104,9 @@ pub async fn open(Inject(app): Inject<App>, caller: Caller, Path(id): Path<Strin
 pub struct HtmlQuery {
     #[serde(default)]
     pub remote: Option<String>,
+    /// `dark` or `light`: the look to draw the message in, over the person's theme.
+    #[serde(default)]
+    pub theme: Option<String>,
 }
 
 /// The sanitised HTML of a message, for a sandboxed frame: its own content-security-policy, never cached.
@@ -112,9 +116,15 @@ pub async fn html(
     caller: Caller,
     Path(id): Path<String>,
     Query(q): Query<HtmlQuery>,
+    PrefersDark(prefers_dark): PrefersDark,
 ) -> Response {
     let remote = truthy(q.remote.as_deref());
-    match mailbox::html(&app, &caller.name, &id, remote).await {
+    let dark = match q.theme.as_deref() {
+        Some("dark") => true,
+        Some("light") => false,
+        _ => prefers_dark,
+    };
+    match mailbox::html(&app, &caller.name, &id, remote, dark).await {
         Ok(document) => Response::html(StatusCode::OK, document)
             .header("content-security-policy", mailbox::html_policy(remote))
             .header("cache-control", "private, no-store")
@@ -220,7 +230,101 @@ pub async fn remove_upload(
     )
 }
 
+#[get("/api/v1/drafts")]
+pub async fn drafts_list(Inject(app): Inject<App>, caller: Caller) -> Response {
+    reply(drafts::list(&app, &caller.name).await)
+}
+
+#[post("/api/v1/drafts")]
+pub async fn draft_create(
+    Inject(app): Inject<App>,
+    caller: Caller,
+    Limited(Json(body)): Limited<Json<DraftInput>, { super::JSON_LIMIT }>,
+) -> Response {
+    created(drafts::save(&app, &caller.name, None, &body).await)
+}
+
+#[get("/api/v1/drafts/{id}")]
+pub async fn draft_open(
+    Inject(app): Inject<App>,
+    caller: Caller,
+    Path(id): Path<String>,
+) -> Response {
+    reply(drafts::get(&app, &caller.name, &id).await)
+}
+
+#[put("/api/v1/drafts/{id}")]
+pub async fn draft_save(
+    Inject(app): Inject<App>,
+    caller: Caller,
+    Path(id): Path<String>,
+    Limited(Json(body)): Limited<Json<DraftInput>, { super::JSON_LIMIT }>,
+) -> Response {
+    reply(drafts::save(&app, &caller.name, Some(&id), &body).await)
+}
+
+#[delete("/api/v1/drafts/{id}")]
+pub async fn draft_delete(
+    Inject(app): Inject<App>,
+    caller: Caller,
+    Path(id): Path<String>,
+) -> Response {
+    done(drafts::delete(&app, &caller.name, &id).await)
+}
+
+#[get("/api/v1/mutes")]
+pub async fn mutes_list(Inject(app): Inject<App>, caller: Caller) -> Response {
+    reply(drafts::mutes(&app, &caller.name).await)
+}
+
+#[put("/api/v1/mutes/{address}")]
+pub async fn mute_add(
+    Inject(app): Inject<App>,
+    caller: Caller,
+    Path(address): Path<String>,
+) -> Response {
+    done(drafts::mute(&app, &caller.name, &address).await)
+}
+
+#[delete("/api/v1/mutes/{address}")]
+pub async fn mute_remove(
+    Inject(app): Inject<App>,
+    caller: Caller,
+    Path(address): Path<String>,
+) -> Response {
+    done(drafts::unmute(&app, &caller.name, &address).await)
+}
+
+/// The other messages of the conversation a message belongs to.
+#[get("/api/v1/messages/{id}/thread")]
+pub async fn thread(Inject(app): Inject<App>, caller: Caller, Path(id): Path<String>) -> Response {
+    reply(mailbox::thread(&app, &caller.name, &id).await)
+}
+
+#[put("/api/v1/signature")]
+pub async fn signature_save(
+    Inject(app): Inject<App>,
+    caller: Caller,
+    Limited(Json(body)): Limited<Json<Signature>, { super::JSON_LIMIT }>,
+) -> Response {
+    reply(
+        drafts::set_signature(&app, &caller.name, &body.text)
+            .await
+            .map(|text| Signature { text }),
+    )
+}
+
 pub fn register_routes() {
+    let _ = signature_save as fn(_, _, _) -> _;
+    let _ = thread as fn(_, _, _) -> _;
+    let _ = drafts_list as fn(_, _) -> _;
+    let _ = draft_create as fn(_, _, _) -> _;
+    let _ = draft_open as fn(_, _, _) -> _;
+    let _ = draft_save as fn(_, _, _, _) -> _;
+    let _ = draft_delete as fn(_, _, _) -> _;
+    let _ = mutes_list as fn(_, _) -> _;
+    let _ = mute_add as fn(_, _, _) -> _;
+    let _ = mute_remove as fn(_, _, _) -> _;
     let _ = me as fn(_, _) -> _;
     let _ = folders as fn(_, _) -> _;
     let _ = people as fn(_, _, _) -> _;
@@ -228,7 +332,7 @@ pub fn register_routes() {
     let _ = change as fn(_, _, _) -> _;
     let _ = send as fn(_, _, _) -> _;
     let _ = open as fn(_, _, _) -> _;
-    let _ = html as fn(_, _, _, _) -> _;
+    let _ = html as fn(_, _, _, _, _) -> _;
     let _ = attachment as fn(_, _, _) -> _;
     let _ = upload as fn(_, _, _) -> _;
     let _ = remove_upload as fn(_, _, _) -> _;

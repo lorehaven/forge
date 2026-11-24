@@ -14,6 +14,11 @@ use mailroom_core::{
 pub const MAX_PAGE: u32 = 100;
 /// Most ids in one change.
 pub const MAX_CHANGE: usize = 200;
+/// How many messages "all of this folder" reaches in one go.
+pub const MAX_ALL: i64 = 5000;
+/// How many other messages a conversation shows, and how many links are followed to find them.
+pub const MAX_THREAD: i64 = 30;
+const MAX_THREAD_KEYS: usize = 60;
 /// Most people the address completion offers.
 pub const MAX_PEOPLE: i64 = 20;
 
@@ -59,6 +64,7 @@ pub async fn me(app: &App, owner: &str, can_write: bool, admin: bool) -> Result<
         address: mailbox.address,
         can_write,
         admin,
+        signature: app.store.signature_get(owner).await?,
     })
 }
 
@@ -94,7 +100,8 @@ pub fn summary_model(row: &MessageRow) -> MessageSummary {
 pub async fn folders(app: &App, owner: &str) -> Result<Vec<Folder>> {
     open_mailbox(app, owner).await?;
     let counts = app.store.folder_counts(owner).await?;
-    Ok(FOLDERS
+    let drafts = app.store.draft_count(owner).await?;
+    let mut all: Vec<Folder> = FOLDERS
         .iter()
         .map(|id| {
             let (unread, total) = counts
@@ -107,7 +114,17 @@ pub async fn folders(app: &App, owner: &str) -> Result<Vec<Folder>> {
                 total: u32::try_from(total).unwrap_or(0),
             }
         })
-        .collect())
+        .collect();
+    // Drafts are not messages of the mailbox: they come after the folders, as one more entry to count.
+    all.insert(
+        1,
+        Folder {
+            id: "drafts".into(),
+            unread: 0,
+            total: u32::try_from(drafts).unwrap_or(0),
+        },
+    );
+    Ok(all)
 }
 
 /// What a list asks for.
@@ -225,12 +242,17 @@ pub fn html_policy(remote: bool) -> String {
     )
 }
 
+/// What turns the (light, as senders write it) document dark: the page is inverted and turned half way round the colour wheel
+/// so hues stay what they were, and pictures are inverted back. It is the usual way to dim mail that sets its own colours.
+const DARK_STYLE: &str = "html{color-scheme:dark;filter:invert(.92) hue-rotate(180deg)}html,body{background:#fff}\
+    img,video,svg{filter:invert(.92) hue-rotate(180deg)}";
+
 /// The message's HTML, sanitised, as a complete document for a sandboxed frame.
 ///
 /// # Errors
 ///
 /// [`Error::NotFound`] when there is no such message or it has no HTML.
-pub async fn html(app: &App, owner: &str, id: &str, remote: bool) -> Result<String> {
+pub async fn html(app: &App, owner: &str, id: &str, remote: bool, dark: bool) -> Result<String> {
     let row = owned(app, owner, id).await?;
     let body = app.store.message_body(&row.id).await?;
     let html = body
@@ -250,10 +272,54 @@ pub async fn html(app: &App, owner: &str, id: &str, remote: bool) -> Result<Stri
         "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"no-referrer\">\
          <base target=\"_blank\"><style>body{{margin:0;padding:12px;font:14px/1.5 system-ui,sans-serif;color:#222;background:#fff;\
          overflow-wrap:anywhere}}img{{max-width:100%;height:auto}}table{{max-width:100%}}blockquote{{margin:.5em 0 .5em .5em;\
-         padding-left:.8em;border-left:3px solid #ccc;color:#555}}pre{{white-space:pre-wrap}}a{{color:#1a5fb4}}</style></head>\
+         padding-left:.8em;border-left:3px solid #ccc;color:#555}}pre{{white-space:pre-wrap}}a{{color:#1a5fb4}}{}</style></head>\
          <body>{}</body></html>",
+        if dark { DARK_STYLE } else { "" },
         clean.html
     ))
+}
+
+/// The other messages of the conversation `id` belongs to, oldest first: the ones that answer it, the ones it answers and so on
+/// (linked by the message ids in the headers, not by the subject: automated mail with one subject is not a conversation).
+///
+/// # Errors
+///
+/// [`Error::NotFound`] when there is no such message.
+pub async fn thread(app: &App, owner: &str, id: &str) -> Result<Vec<MessageSummary>> {
+    let first = owned(app, owner, id).await?;
+    let mut keys: Vec<String> = Vec::new();
+    for key in [&first.message_id, &first.in_reply_to] {
+        if !key.is_empty() && !keys.contains(key) {
+            keys.push(key.clone());
+        }
+    }
+    let mut found: Vec<MessageRow> = Vec::new();
+    let mut at = 0;
+    // Follow the links a few steps each way; a conversation of more than this is shown as far as it goes.
+    while at < keys.len() && keys.len() < MAX_THREAD_KEYS {
+        let key = keys[at].clone();
+        at += 1;
+        for row in app
+            .store
+            .messages_linked_to(owner, &key, MAX_THREAD)
+            .await?
+        {
+            if row.id == first.id || found.iter().any(|f| f.id == row.id) {
+                continue;
+            }
+            for next in [&row.message_id, &row.in_reply_to] {
+                if !next.is_empty() && !keys.contains(next) {
+                    keys.push(next.clone());
+                }
+            }
+            found.push(row);
+            if found.len() as i64 >= MAX_THREAD {
+                break;
+            }
+        }
+    }
+    found.sort_by_key(|row| (row.date, row.id.clone()));
+    Ok(found.iter().map(summary_model).collect())
 }
 
 /// One attachment: its file name and bytes.
@@ -277,7 +343,15 @@ pub async fn attachment(app: &App, owner: &str, id: &str, index: u32) -> Result<
 /// [`Error::NotFound`] for an unknown message, [`Error::Invalid`] for a change that cannot be made.
 pub async fn change(app: &App, owner: &str, change: &Change) -> Result<()> {
     open_mailbox(app, owner).await?;
-    if change.ids.is_empty() || change.ids.len() > MAX_CHANGE {
+    let every = change.all_in.as_deref();
+    if let Some(folder) = every
+        && (!FOLDERS.contains(&folder) || !change.ids.is_empty())
+    {
+        return Err(Error::Invalid(
+            "name a folder or choose messages, not both".into(),
+        ));
+    }
+    if every.is_none() && (change.ids.is_empty() || change.ids.len() > MAX_CHANGE) {
         return Err(Error::Invalid(format!("choose 1 to {MAX_CHANGE} messages")));
     }
     if change.seen.is_none()
@@ -291,14 +365,18 @@ pub async fn change(app: &App, owner: &str, change: &Change) -> Result<()> {
         return Err(Error::Invalid("delete or move, not both".into()));
     }
     if let Some(target) = &change.move_to
-        && !matches!(target.as_str(), "inbox" | "trash")
+        && !matches!(target.as_str(), "inbox" | "archive" | "trash")
     {
         return Err(Error::Invalid(
-            "messages move to the inbox or the trash".into(),
+            "messages move to the inbox, the archive or the trash".into(),
         ));
     }
+    let ids = match every {
+        Some(folder) => app.store.message_ids_in(owner, folder, MAX_ALL).await?,
+        None => change.ids.clone(),
+    };
     let mut rows = Vec::new();
-    for id in &change.ids {
+    for id in &ids {
         rows.push(
             app.store
                 .message_get_owned(id, owner)
@@ -324,11 +402,12 @@ pub async fn change(app: &App, owner: &str, change: &Change) -> Result<()> {
         if let Some(target) = &change.move_to {
             // Taking something out of the trash puts it back where it came from: a copy of what the person sent belongs in
             // "sent", never in the inbox.
-            let target = if target == "inbox" && row.from_address == own {
-                "sent"
-            } else {
-                target.as_str()
-            };
+            let target =
+                if matches!(target.as_str(), "inbox" | "archive") && row.from_address == own {
+                    "sent"
+                } else {
+                    target.as_str()
+                };
             if target != row.folder {
                 app.store
                     .message_move(&row.id, owner, target, stamp)

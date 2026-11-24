@@ -72,5 +72,5 @@ fn models_round_trip_through_json() {
 
 #[quench_test::test]
 fn a_mailbox_has_three_folders() {
-    assert_eq!(FOLDERS, ["inbox", "sent", "trash"]);
+    assert_eq!(FOLDERS, ["inbox", "archive", "sent", "trash"]);
 }

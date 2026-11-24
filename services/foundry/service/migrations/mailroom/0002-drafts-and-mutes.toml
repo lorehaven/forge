@@ -1,0 +1,44 @@
+[[migrations]]
+id = "0002-drafts-and-mutes"
+author = "mailroom-service"
+since = "0.1.0"
+
+# A message being written and not sent yet: the recipients as typed (not checked until it is sent), the text, and the message it
+# answers. Attachments are not kept: an upload belongs to the sitting that made it.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.drafts (
+    id TEXT PRIMARY KEY,
+    owner TEXT NOT NULL,
+    to_text TEXT NOT NULL DEFAULT '',
+    cc_text TEXT NOT NULL DEFAULT '',
+    bcc_text TEXT NOT NULL DEFAULT '',
+    subject TEXT NOT NULL DEFAULT '',
+    text TEXT NOT NULL DEFAULT '',
+    in_reply_to TEXT,
+    updated BIGINT NOT NULL
+);
+"""
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS drafts_owner_updated ON ${schema}.drafts (owner, updated DESC);"
+
+# A sender whose mail goes straight to the archive (read) for this person.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.mutes (
+    owner TEXT NOT NULL,
+    address TEXT NOT NULL,
+    created BIGINT NOT NULL,
+    PRIMARY KEY (owner, address)
+);
+"""
+
+# What is added to the end of a new message, per person.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.signatures (
+    owner TEXT PRIMARY KEY,
+    text TEXT NOT NULL DEFAULT ''
+);
+"""

@@ -342,7 +342,21 @@ pub async fn deliver(app: &App, author: &Author, letter: &Letter) -> Result<Outc
         size,
         search: search.clone(),
     };
-    let mut rows: Vec<MessageRow> = targets.iter().map(|o| row_for(o, "inbox", false)).collect();
+    // A muted sender's mail is put away, read: kept, but not in the way.
+    let muted = app
+        .store
+        .muted_among(&targets, &from.address.to_ascii_lowercase())
+        .await?;
+    let mut rows: Vec<MessageRow> = targets
+        .iter()
+        .map(|o| {
+            if muted.contains(o) {
+                row_for(o, "archive", true)
+            } else {
+                row_for(o, "inbox", false)
+            }
+        })
+        .collect();
     let delivered = u32::try_from(rows.len()).unwrap_or(u32::MAX);
     let mut sent_id = None;
     if let Some(owner) = &author.owner {

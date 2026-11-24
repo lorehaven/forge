@@ -90,6 +90,22 @@ impl FromRequest for Caller {
     }
 }
 
+/// The look the person picked in the shell's theme menu (its `qtheme` cookie): dark unless they chose light, as the shell itself does.
+#[derive(Debug, Clone, Copy)]
+pub struct PrefersDark(pub bool);
+
+#[async_trait]
+impl FromRequest for PrefersDark {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let light = req.header("cookie").is_some_and(|raw| {
+            raw.split(';')
+                .filter_map(|pair| pair.trim().split_once('='))
+                .any(|(name, value)| name == "qtheme" && value.contains("light"))
+        });
+        Ok(Self(!light))
+    }
+}
+
 /// `200` with `value` as JSON, or the error as the API sends it.
 #[must_use]
 pub fn reply<T: Serialize>(result: crate::error::Result<T>) -> Response {

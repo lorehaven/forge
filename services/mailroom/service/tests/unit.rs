@@ -19,6 +19,8 @@ mod admin_tests;
 mod api_tests;
 #[path = "unit/delivery_tests.rs"]
 mod delivery_tests;
+#[path = "unit/drafts_tests.rs"]
+mod drafts_tests;
 #[path = "unit/mailbox_tests.rs"]
 mod mailbox_tests;
 #[path = "unit/outgoing_tests.rs"]

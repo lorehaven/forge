@@ -53,6 +53,8 @@ fn the_bar_has_everything_the_old_pages_had() {
         "data-gh-src=\"/ui/account/avatar\"",
         "href=\"/gauge/ui/logout\"",
         "Log out",
+        "data-fui-drawer-toggle",
+        "fui-menu-btn",
     ] {
         assert!(html.contains(needle), "{needle}: {html}");
     }
@@ -102,3 +104,22 @@ fn the_script_has_the_scroll_and_upload_hooks() {
 }
 
 quench_test::main!();
+
+#[quench_test::test]
+fn the_top_bar_stays_and_the_side_panel_is_a_drawer_on_narrow_screens() {
+    let css = forge_shell::STYLE;
+    assert!(css.contains("position: sticky; top: 0; z-index: 30"));
+    assert!(css.contains("html.fui-drawer-open .fui-sidebar"));
+    assert!(css.contains(".fui-client:has(.fui-sidebar) .fui-menu-btn"));
+    assert!(forge_shell::SCRIPT.contains("data-fui-drawer-toggle"));
+    assert!(forge_shell::SCRIPT.contains("data-fui-drawer-proxy"));
+    // New mail while the tab is in the background: a notification, once the person allowed it.
+    for needle in [
+        "data-fui-badge-text",
+        "Notification.permission === 'granted'",
+        "data-fui-notify-enable",
+        "requestPermission",
+    ] {
+        assert!(forge_shell::SCRIPT.contains(needle), "{needle}");
+    }
+}

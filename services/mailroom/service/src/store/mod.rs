@@ -3,6 +3,7 @@
 pub mod attachments;
 pub mod audit;
 pub mod deliveries;
+pub mod drafts;
 pub mod mailboxes;
 pub mod messages;
 pub mod settings;

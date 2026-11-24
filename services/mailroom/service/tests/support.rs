@@ -12,9 +12,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-const MIGRATIONS: [&str; 1] = [include_str!(
-    "../../../foundry/service/migrations/mailroom/0001-mail.toml"
-)];
+const MIGRATIONS: [&str; 2] = [
+    include_str!("../../../foundry/service/migrations/mailroom/0001-mail.toml"),
+    include_str!("../../../foundry/service/migrations/mailroom/0002-drafts-and-mutes.toml"),
+];
 
 pub fn database_url() -> Option<String> {
     std::env::var("MAILROOM_TEST_DATABASE_URL")

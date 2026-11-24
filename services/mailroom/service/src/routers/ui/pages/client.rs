@@ -36,6 +36,16 @@ pub(super) async fn message(who: ActorOrRedirect, Path(_id): Path<String>) -> Re
     page(who)
 }
 
+#[get("/ui/drafts")]
+pub(super) async fn drafts(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
+#[get("/ui/muted")]
+pub(super) async fn muted(who: ActorOrRedirect) -> Response {
+    page(who)
+}
+
 #[get("/ui/compose")]
 pub(super) async fn compose(who: ActorOrRedirect) -> Response {
     page(who)
@@ -90,6 +100,8 @@ pub(super) fn register_routes() {
     let _ = home_slash as fn(_) -> _;
     let _ = folder as fn(_, _) -> _;
     let _ = message as fn(_, _) -> _;
+    let _ = drafts as fn(_) -> _;
+    let _ = muted as fn(_) -> _;
     let _ = compose as fn(_) -> _;
     let _ = compose_from as fn(_, _) -> _;
     let _ = admin as fn(_) -> _;

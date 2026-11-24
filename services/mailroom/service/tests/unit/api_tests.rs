@@ -910,8 +910,11 @@ async fn the_pages_need_a_session_and_serve_the_client() {
         "/ui/home/",
         "/ui/folder/inbox",
         "/ui/message/abc",
+        "/ui/drafts",
+        "/ui/muted",
         "/ui/compose",
         "/ui/compose/reply/abc",
+        "/ui/compose/draft/abc",
         "/ui/admin",
         "/ui/admin/deliveries",
     ] {

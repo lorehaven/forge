@@ -1,12 +1,12 @@
 //! The JSON the API speaks. Times are Unix seconds.
 //!
 //! Mailroom is the estate's own mail: every Gatehouse user has one mailbox (`username@<domain>`), services write to people
-//! through it, and nothing leaves the cluster. A mailbox has three folders, `inbox`, `sent` and `trash`.
+//! through it, and nothing leaves the cluster. A mailbox has four folders, `inbox`, `archive`, `sent` and `trash`.
 
 use quench_serde::{Deserialize, Serialize};
 
 /// The folders of a mailbox, in the order they are shown.
-pub const FOLDERS: [&str; 3] = ["inbox", "sent", "trash"];
+pub const FOLDERS: [&str; 4] = ["inbox", "archive", "sent", "trash"];
 
 /// Who the signed-in person is to Mailroom, for the client to decide what to show.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -16,12 +16,21 @@ pub struct Me {
     pub address: String,
     pub can_write: bool,
     pub admin: bool,
+    /// What goes at the end of the messages they start.
+    #[serde(default)]
+    pub signature: String,
+}
+
+/// A signature as saved.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Signature {
+    pub text: String,
 }
 
 /// A mailbox folder with its counts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Folder {
-    /// `inbox`, `sent` or `trash`.
+    /// `inbox`, `archive`, `sent` or `trash`.
     pub id: String,
     pub unread: u32,
     pub total: u32,
@@ -134,6 +143,44 @@ pub struct Compose {
     /// Uploaded files to attach (ids from the upload endpoint).
     #[serde(default)]
     pub attachments: Vec<String>,
+    /// The draft this was written in, removed once the message is sent.
+    #[serde(default)]
+    pub draft: Option<String>,
+}
+
+/// A message being written: what was typed, as typed (recipients are checked when it is sent).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Draft {
+    pub id: String,
+    pub to: String,
+    #[serde(default)]
+    pub cc: String,
+    #[serde(default)]
+    pub bcc: String,
+    pub subject: String,
+    pub text: String,
+    /// The message being answered (its id here).
+    #[serde(default)]
+    pub in_reply_to: Option<String>,
+    /// Unix seconds of the last change.
+    pub updated: i64,
+}
+
+/// What a person saves as a draft: the same as the draft, without the id and the time the service gives it.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct DraftInput {
+    #[serde(default)]
+    pub to: String,
+    #[serde(default)]
+    pub cc: String,
+    #[serde(default)]
+    pub bcc: String,
+    #[serde(default)]
+    pub subject: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub in_reply_to: Option<String>,
 }
 
 /// The answer to a send.
@@ -158,12 +205,17 @@ pub struct Upload {
 /// A change to one or more messages.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Change {
+    /// The messages to change. Empty when `all_in` says which folder.
+    #[serde(default)]
     pub ids: Vec<String>,
+    /// Every message of this folder instead of `ids` (read them all, empty the trash, archive the lot).
+    #[serde(default)]
+    pub all_in: Option<String>,
     #[serde(default)]
     pub seen: Option<bool>,
     #[serde(default)]
     pub flagged: Option<bool>,
-    /// Move to `inbox` or `trash`.
+    /// Move to `inbox`, `archive` or `trash`.
     #[serde(default)]
     pub move_to: Option<String>,
     /// Delete for good (only from the trash).

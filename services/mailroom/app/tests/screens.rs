@@ -17,7 +17,8 @@ use mailroom_core::admin::{
     AdminMailbox, AuditEntry, Delivery, Page, Settings, SettingsInput, Stats,
 };
 use mailroom_core::{
-    AttachmentInfo, Change, Contact, Folder, Me, MessageList, MessageSummary, MessageView, Upload,
+    AttachmentInfo, Change, Contact, Draft, DraftInput, Folder, Me, MessageList, MessageSummary,
+    MessageView, Upload,
 };
 use quench_ui::Event;
 use quench_ui::prelude::*;
@@ -187,6 +188,7 @@ fn start(l: &Live, admin: bool) {
         address: "ann@home.example".into(),
         can_write: true,
         admin,
+        signature: String::new(),
     }));
     l.send(Msg::Folders(folders()));
 }
@@ -1619,4 +1621,473 @@ fn switching_admin_tabs_shows_the_tab_without_a_reload() {
         let current = find(&l.r, "a", ("data-section", section));
         assert!(l.r.attr(current, "aria-current").is_some(), "{section}");
     }
+}
+
+#[quench_test::test]
+fn the_inbox_can_archive_and_read_everything_and_the_trash_asks_twice_before_emptying() {
+    let l = live("/mailroom/ui/home");
+    l.send(Msg::Messages(list(vec![message("m1", "Hi", false)], 1, 0)));
+    l.click_attr("input", ("data-select", "m1"));
+    l.click("button", "bulk-archive");
+    assert_eq!(
+        l.last(),
+        Request::Change(Change {
+            ids: vec!["m1".into()],
+            move_to: Some("archive".into()),
+            ..Change::default()
+        })
+    );
+    l.click("button", "mark-all-read");
+    assert_eq!(
+        l.last(),
+        Request::Change(Change {
+            all_in: Some("inbox".into()),
+            seen: Some(true),
+            ..Change::default()
+        })
+    );
+
+    let t = live("/mailroom/ui/folder/trash");
+    let mut old = message("t1", "Old", true);
+    old.folder = "trash".into();
+    t.send(Msg::Messages(list(vec![old], 1, 0)));
+    t.click("button", "empty-trash");
+    assert_ne!(
+        t.last(),
+        Request::Change(Change {
+            all_in: Some("trash".into()),
+            delete: true,
+            ..Change::default()
+        }),
+        "one click only asks"
+    );
+    t.click("button", "empty-trash");
+    assert_eq!(
+        t.last(),
+        Request::Change(Change {
+            all_in: Some("trash".into()),
+            delete: true,
+            ..Change::default()
+        })
+    );
+}
+
+#[quench_test::test]
+fn the_page_looks_again_every_half_minute_and_the_tab_says_what_is_unread() {
+    let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
+    quench_ui::platform::install(clock.clone());
+    let l = live("/mailroom/ui/folder/inbox");
+    l.send(Msg::Folders(folders()));
+    assert!(
+        l.r.html().contains("data-fui-badge=\"2\""),
+        "{}",
+        l.r.html()
+    );
+    let before = l.asked().len();
+    clock.advance(29_000.0);
+    assert_eq!(l.asked().len(), before, "not yet");
+    clock.advance(2_000.0);
+    let again = l.asked()[before..].to_vec();
+    assert!(again.contains(&Request::Folders), "{again:?}");
+    assert!(
+        again
+            .iter()
+            .any(|r| matches!(r, Request::List(q) if q.folder == "inbox")),
+        "{again:?}"
+    );
+    // Writing a message is not interrupted by a new list under it.
+    l.click("a", "nav-compose");
+    let mark = l.asked().len();
+    clock.advance(31_000.0);
+    let later = l.asked()[mark..].to_vec();
+    assert!(
+        !later.iter().any(|r| matches!(r, Request::List(_))),
+        "{later:?}"
+    );
+}
+
+#[quench_test::test]
+fn a_row_says_who_and_when_then_the_subject_with_its_tags_then_the_first_words() {
+    let l = live("/mailroom/ui/home");
+    let mut m = message("m1", "Build failed", false);
+    m.preview = "The run on main failed at the tests".into();
+    m.automated = true;
+    m.attachments = true;
+    l.send(Msg::Messages(list(vec![m], 1, 0)));
+    let html = l.r.html();
+    let at = |needle: &str| {
+        html.find(needle)
+            .unwrap_or_else(|| panic!("{needle}: {html}"))
+    };
+    let (from, time, subject, tag, clip, preview) = (
+        at("mr-from"),
+        at("mr-time"),
+        at("mr-subject-text"),
+        at("mr-badge"),
+        at("fui-ico-paperclip"),
+        at("The run on main failed"),
+    );
+    assert!(from < time && time < subject && subject < tag.max(clip) && tag.max(clip) < preview);
+    assert!(
+        !html.contains(" — The run"),
+        "the preview is a line of its own"
+    );
+}
+
+fn kept(id: &str, subject: &str) -> Draft {
+    Draft {
+        id: id.into(),
+        to: "bob".into(),
+        subject: subject.into(),
+        text: "dear bob".into(),
+        updated: NOW - 60,
+        ..Draft::default()
+    }
+}
+
+#[quench_test::test]
+fn what_is_typed_is_kept_a_moment_later_and_sent_with_the_draft_it_came_from() {
+    let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
+    quench_ui::platform::install(clock.clone());
+    let l = live("/mailroom/ui/compose");
+    start(&l, false);
+    // Nothing typed, nothing kept.
+    clock.advance(5_000.0);
+    assert!(
+        !l.asked()
+            .iter()
+            .any(|r| matches!(r, Request::SaveDraft { .. }))
+    );
+    l.type_into("input", "compose-to", "bob");
+    l.type_into("input", "compose-subject", "Hello");
+    l.type_into("textarea", "compose-body", "dear bob");
+    clock.advance(1_000.0);
+    assert!(
+        !l.asked()
+            .iter()
+            .any(|r| matches!(r, Request::SaveDraft { .. })),
+        "not yet: the typing may go on"
+    );
+    clock.advance(1_000.0);
+    assert_eq!(
+        l.last(),
+        Request::SaveDraft {
+            id: None,
+            input: DraftInput {
+                to: "bob".into(),
+                subject: "Hello".into(),
+                text: "dear bob".into(),
+                ..DraftInput::default()
+            }
+        }
+    );
+    // The service answers with the id; a later change goes to that draft, not to a new one.
+    l.send(Msg::DraftSaved(kept("d1", "Hello")));
+    assert!(present(&l.r, "draft-status"));
+    l.type_into("textarea", "compose-body", "dear bob, hello");
+    clock.advance(2_000.0);
+    assert!(
+        matches!(l.last(), Request::SaveDraft { id: Some(id), .. } if id == "d1"),
+        "{:?}",
+        l.last()
+    );
+    l.send(Msg::DraftSaved(kept("d1", "Hello")));
+    // Sending says which draft it was, after a few seconds in which it can be taken back.
+    l.submit("compose");
+    assert!(present(&l.r, "undo-send"));
+    clock.advance(5_100.0);
+    let Request::Send(compose) = l.last() else {
+        panic!("{:?}", l.asked())
+    };
+    assert_eq!(compose.draft.as_deref(), Some("d1"));
+    // And a message on its way is not kept again.
+    let before = l.asked().len();
+    l.type_into("textarea", "compose-body", "changed after sending");
+    clock.advance(3_000.0);
+    assert_eq!(l.asked().len(), before);
+}
+
+#[quench_test::test]
+fn a_draft_opens_with_everything_it_kept_and_is_not_saved_again_unchanged() {
+    let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
+    quench_ui::platform::install(clock.clone());
+    let l = live("/mailroom/ui/compose/draft/d1");
+    start(&l, false);
+    assert!(l.asked().contains(&Request::OpenDraft("d1".into())));
+    assert!(!present(&l.r, "compose"), "waiting for the draft");
+    let mut d = kept("d1", "Hello");
+    d.cc = "cy".into();
+    d.bcc = "dee".into();
+    d.in_reply_to = Some("m9".into());
+    l.send(Msg::Draft(d));
+    let html = l.r.html();
+    for want in [
+        "value=\"bob\"",
+        "value=\"Hello\"",
+        "value=\"cy\"",
+        "value=\"dee\"",
+        "dear bob",
+    ] {
+        assert!(html.contains(want), "{want}: {html}");
+    }
+    clock.advance(5_000.0);
+    assert!(
+        !l.asked()
+            .iter()
+            .any(|r| matches!(r, Request::SaveDraft { .. }))
+    );
+    // Throwing it away deletes it.
+    l.click("a", "discard");
+    assert_eq!(l.last(), Request::DeleteDraft("d1".into()));
+}
+
+#[quench_test::test]
+fn the_drafts_are_listed_with_a_way_to_open_and_delete_them_and_counted_in_the_panel() {
+    let l = live("/mailroom/ui/drafts");
+    l.send(Msg::Folders({
+        let mut f = folders();
+        f.insert(
+            1,
+            Folder {
+                id: "drafts".into(),
+                unread: 0,
+                total: 2,
+            },
+        );
+        f
+    }));
+    assert!(l.asked().contains(&Request::Drafts));
+    l.send(Msg::Drafts(vec![kept("d1", "Hello"), kept("d2", "")]));
+    let html = l.r.html();
+    assert!(
+        html.contains("href=\"/mailroom/ui/compose/draft/d1\""),
+        "{html}"
+    );
+    assert!(html.contains("(no subject)"));
+    assert!(html.contains("data-folder=\"drafts\""));
+    l.click_attr("button", ("data-delete-draft", "d2"));
+    assert_eq!(l.last(), Request::DeleteDraft("d2".into()));
+    l.send(Msg::Drafts(vec![]));
+    assert!(present(&l.r, "empty"));
+}
+
+#[quench_test::test]
+fn a_sender_is_muted_from_the_reader_and_let_back_in_from_the_list() {
+    let l = live("/mailroom/ui/message/m1");
+    start(&l, false);
+    l.send(Msg::Message(Box::new(open_view("m1", true))));
+    l.click_attr("button", ("data-action", "mute"));
+    assert_eq!(l.last(), Request::Mute("alice@home.example".into()));
+    l.send(Msg::MuteChanged {
+        address: "alice@home.example".into(),
+        muted: true,
+    });
+    assert!(present(&l.r, "done"));
+    assert!(l.r.html().contains("alice@home.example"), "{}", l.r.html());
+    assert_eq!(
+        l.last(),
+        Request::Mutes,
+        "the list of muted senders is asked for again"
+    );
+
+    let m = live("/mailroom/ui/muted");
+    start(&m, false);
+    assert!(m.asked().contains(&Request::Mutes));
+    m.send(Msg::Mutes(vec!["alice@home.example".into()]));
+    m.click_attr("button", ("data-unmute", "alice@home.example"));
+    assert_eq!(m.last(), Request::Unmute("alice@home.example".into()));
+    m.send(Msg::Mutes(vec![]));
+    assert!(present(&m.r, "empty"));
+}
+
+#[quench_test::test]
+fn a_message_in_a_conversation_shows_the_rest_of_it_as_links() {
+    let l = live("/mailroom/ui/message/m1");
+    start(&l, false);
+    assert!(l.asked().contains(&Request::Thread("m1".into())));
+    l.send(Msg::Message(Box::new(open_view("m1", true))));
+    assert!(!present(&l.r, "conversation"), "alone: nothing to show");
+    let mut earlier = message("m0", "Hello there", true);
+    earlier.folder = "sent".into();
+    l.send(Msg::Thread(vec![
+        earlier,
+        message("m2", "Re: Hello there", false),
+    ]));
+    let html = l.r.html();
+    assert!(present(&l.r, "conversation"), "{html}");
+    assert!(
+        html.contains("href=\"/mailroom/ui/message/m0\"")
+            && html.contains("href=\"/mailroom/ui/message/m2\"")
+    );
+    // What the person wrote shows who it went to.
+    assert!(html.contains("data-thread=\"m0\""));
+}
+
+#[quench_test::test]
+fn a_message_waits_a_few_seconds_and_can_be_taken_back() {
+    let clock = Rc::new(quench_ui::platform::ManualPlatform::new());
+    quench_ui::platform::install(clock.clone());
+    let l = live("/mailroom/ui/compose");
+    start(&l, false);
+    l.type_into("input", "compose-to", "bob");
+    l.type_into("textarea", "compose-body", "hello");
+    l.submit("compose");
+    assert!(present(&l.r, "undo-send"));
+    clock.advance(2_000.0);
+    assert!(
+        !l.asked().iter().any(|r| matches!(r, Request::Send(_))),
+        "still held"
+    );
+    l.click("button", "undo-send");
+    clock.advance(10_000.0);
+    assert!(
+        !l.asked().iter().any(|r| matches!(r, Request::Send(_))),
+        "taken back"
+    );
+    assert!(!present(&l.r, "undo-send"));
+    // The form is still there and the draft keeps being kept; sending again goes through after the wait.
+    l.submit("compose");
+    clock.advance(5_100.0);
+    assert!(
+        matches!(l.last(), Request::Send(c) if c.text == "hello"),
+        "{:?}",
+        l.last()
+    );
+}
+
+#[quench_test::test]
+fn a_signature_ends_what_is_started_and_is_kept_from_the_settings() {
+    let l = live("/mailroom/ui/compose");
+    l.send(Msg::Me(Me {
+        username: "ann".into(),
+        address: "ann@home.example".into(),
+        can_write: true,
+        admin: false,
+        signature: "Ann, estate office".into(),
+    }));
+    assert!(
+        l.r.html().contains("-- \nAnn, estate office"),
+        "{}",
+        l.r.html()
+    );
+
+    let s = live("/mailroom/ui/muted");
+    start(&s, false);
+    s.send(Msg::Mutes(vec![]));
+    s.type_into("textarea", "signature", "Ann");
+    s.submit("signature-form");
+    assert_eq!(s.last(), Request::SaveSignature("Ann".into()));
+    s.send(Msg::SignatureSaved("Ann".into()));
+    assert!(present(&s.r, "done"));
+}
+
+#[quench_test::test]
+fn a_message_opens_on_its_own_with_an_arrow_back_to_its_folder() {
+    let l = live("/mailroom/ui/message/m1");
+    start(&l, false);
+    l.send(Msg::Message(Box::new(open_view("m1", true))));
+    let html = l.r.html();
+    assert!(!html.contains("id=\"messages\""), "no list beside it");
+    assert!(
+        html.contains("href=\"/mailroom/ui/folder/inbox\""),
+        "{html}"
+    );
+    assert!(html.contains("fui-ico-arrow-left") && html.contains("id=\"back\""));
+    l.click("a", "back");
+    assert_eq!(l.path(), "/mailroom/ui/folder/inbox");
+    // The notice for a muted sender names them.
+    l.send(Msg::MuteChanged {
+        address: "alice@home.example".into(),
+        muted: true,
+    });
+    assert!(l.r.html().contains("alice@home.example"));
+}
+
+#[quench_test::test]
+fn the_page_is_chosen_with_one_box_and_the_whole_folder_with_one_more_click() {
+    let l = live("/mailroom/ui/home");
+    let page = |n: usize| {
+        (0..n)
+            .map(|i| message(&format!("m{i}"), "x", true))
+            .collect::<Vec<_>>()
+    };
+    l.send(Msg::Messages(list(page(50), 80, 0)));
+    assert!(!present(&l.r, "select-note"));
+    l.click("input", "select-page");
+    assert!(l.r.html().contains("50 selected"), "{}", l.r.html());
+    assert!(
+        present(&l.r, "select-everything"),
+        "more than the page: offered"
+    );
+    assert!(l.r.html().contains("Select all 80 in this folder"));
+    l.click("button", "select-everything");
+    assert!(l.r.html().contains("80 selected"), "{}", l.r.html());
+    l.click("button", "bulk-archive");
+    assert_eq!(
+        l.last(),
+        Request::Change(Change {
+            all_in: Some("inbox".into()),
+            move_to: Some("archive".into()),
+            ..Change::default()
+        })
+    );
+    assert!(!present(&l.r, "bulk"), "the choice is spent");
+    // The box again takes the choice away; a short folder has nothing more to offer.
+    l.click("input", "select-page");
+    assert!(!l.r.html().contains("80 selected"), "back to the page");
+    l.click("input", "select-page");
+    assert!(!present(&l.r, "bulk"), "chosen again, then not");
+    l.send(Msg::Messages(list(page(3), 3, 0)));
+    l.click("input", "select-page");
+    assert!(!present(&l.r, "select-everything"));
+    assert!(l.r.html().contains("3 selected"));
+}
+
+#[quench_test::test]
+fn the_whole_folder_is_not_offered_for_a_search_which_lists_only_part_of_it() {
+    let l = live("/mailroom/ui/home");
+    l.type_into("input", "search", "alice");
+    l.submit("search-form");
+    let page = (0..50)
+        .map(|i| message(&format!("m{i}"), "x", true))
+        .collect::<Vec<_>>();
+    l.send(Msg::Messages(list(page, 80, 0)));
+    l.click("input", "select-page");
+    assert!(!present(&l.r, "select-everything"), "{}", l.r.html());
+    assert!(l.r.html().contains("50 selected"));
+}
+
+#[quench_test::test]
+fn the_tab_carries_what_a_notification_would_say_and_the_settings_offer_to_allow_them() {
+    let l = live("/mailroom/ui/home");
+    l.send(Msg::Folders(folders()));
+    assert!(
+        l.r.html()
+            .contains("data-fui-badge-text=\"2 unread messages\""),
+        "{}",
+        l.r.html()
+    );
+    let s = live("/mailroom/ui/muted");
+    start(&s, false);
+    s.send(Msg::Mutes(vec![]));
+    let html = s.r.html();
+    assert!(
+        html.contains("id=\"notify-enable\"") && html.contains("data-fui-notify-enable"),
+        "{html}"
+    );
+    for state in ["mr-notify-on", "mr-notify-denied", "mr-notify-unsupported"] {
+        assert!(html.contains(state), "{state}");
+    }
+}
+
+#[quench_test::test]
+fn the_tab_says_nothing_until_the_counts_are_known() {
+    let l = live("/mailroom/ui/home");
+    assert!(
+        !l.r.html().contains("data-fui-badge"),
+        "no count yet: {}",
+        l.r.html()
+    );
+    l.send(Msg::Folders(folders()));
+    assert!(l.r.html().contains("data-fui-badge=\"2\""));
 }

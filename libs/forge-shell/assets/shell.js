@@ -44,6 +44,15 @@
       folded(on);
       try { localStorage.setItem('fui-nav', on ? 'folded' : 'open'); } catch (err) { /* storage may be blocked */ }
     }
+    // The drawer: opened by the hamburger, closed by the backdrop, a link in it, or the button again.
+    // A page whose panel is its own marks the button that opens it: the hamburger presses that one.
+    var proxy = document.querySelector('[data-fui-drawer-proxy]');
+    if (t.closest('[data-fui-drawer-toggle]') && proxy) proxy.click();
+    else if (t.closest('[data-fui-drawer-toggle]')) root.classList.toggle('fui-drawer-open');
+    else if (root.classList.contains('fui-drawer-open') && (t.closest('.fui-sidebar a, .fui-sidebar [data-nav]') || (!t.closest('.fui-sidebar') && !t.closest('.fui-topbar')))) root.classList.remove('fui-drawer-open');
+    if (t.closest('[data-fui-notify-enable]') && window.Notification) {
+      Notification.requestPermission().then(notifyState, notifyState);
+    }
     var m = t.closest('[data-fui-mode]');
     if (m) { put('qtheme', 'default-' + m.getAttribute('data-fui-mode')); apply(); }
     var p = t.closest('[data-fui-palette]');
@@ -52,8 +61,66 @@
     document.querySelectorAll('details.fui-dropdown[open]').forEach(function (d) { if (d !== keep) d.removeAttribute('open'); });
   });
   document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') root.classList.remove('fui-drawer-open');
     if (e.key === 'Escape') document.querySelectorAll('details.fui-dropdown[open]').forEach(function (d) { d.removeAttribute('open'); });
   });
+  // A page that has something waiting says so in its tab: `<span data-fui-badge="3">` makes the title "(3) Mailroom".
+  var plainTitle = null;
+  var lastCount = null;
+  function badge() {
+    var el = document.querySelector('[data-fui-badge]');
+    var n = el ? parseInt(el.getAttribute('data-fui-badge'), 10) || 0 : 0;
+    var shown = /^\(\d+\+?\) /.test(document.title) ? document.title.replace(/^\(\d+\+?\) /, '') : document.title;
+    if (plainTitle === null || shown !== plainTitle) plainTitle = shown;
+    var wanted = n > 0 ? '(' + (n > 99 ? '99+' : n) + ') ' + plainTitle : plainTitle;
+    if (document.title !== wanted) document.title = wanted;
+    // More than there was, in a tab nobody is looking at, and the person allowed it: say so once.
+    if (el && lastCount !== null && n > lastCount && document.hidden && window.Notification && Notification.permission === 'granted') {
+      try { new Notification(plainTitle, { body: el.getAttribute('data-fui-badge-text') || String(n), tag: 'fui-badge' }); } catch (e) { /* not allowed here */ }
+    }
+    if (el) lastCount = n;
+  }
+  // What the person decided about notifications, for a page that offers the choice (`data-fui-notify` on <html>).
+  function notifyState() {
+    root.setAttribute('data-fui-notify', window.Notification ? Notification.permission : 'unsupported');
+  }
+  notifyState();
+  if (window.MutationObserver) {
+    new MutationObserver(badge).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-fui-badge'] });
+  }
+  badge();
+
+  // Keys for a page that asks for them: a button or link with `data-hotkey="r"` is clicked by that key (an input with it is
+  // focused), and a list with `data-fui-cursor` is walked with j and k, opened with Enter or o, ticked with x, starred with s.
+  // Nothing happens while typing in a field, or with Ctrl, Alt or Cmd held.
+  function typing(t) { return t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)); }
+  function rows() { return Array.prototype.slice.call(document.querySelectorAll('[data-fui-cursor] [data-fui-row]')); }
+  function moveCursor(step) {
+    var all = rows(); if (!all.length) return false;
+    var at = all.findIndex(function (r) { return r.classList.contains('fui-cursor'); });
+    all.forEach(function (r) { r.classList.remove('fui-cursor'); });
+    var to = at < 0 ? (step > 0 ? 0 : all.length - 1) : Math.max(0, Math.min(all.length - 1, at + step));
+    all[to].classList.add('fui-cursor');
+    all[to].scrollIntoView({ block: 'nearest' });
+    return true;
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.altKey || e.metaKey || e.defaultPrevented) return;
+    if (typing(e.target)) { if (e.key === 'Escape') e.target.blur(); return; }
+    var key = e.key;
+    var cur = document.querySelector('[data-fui-cursor] [data-fui-row].fui-cursor');
+    if (key === 'j' && moveCursor(1)) { e.preventDefault(); return; }
+    if (key === 'k' && moveCursor(-1)) { e.preventDefault(); return; }
+    if (cur && (key === 'Enter' || key === 'o')) { var l = cur.querySelector('[data-fui-open]'); if (l) { e.preventDefault(); l.click(); return; } }
+    if (cur && key === 'x') { var c = cur.querySelector('[data-fui-select]'); if (c) { e.preventDefault(); c.click(); return; } }
+    if (cur && key === 's') { var st = cur.querySelector('[data-fui-star]'); if (st) { e.preventDefault(); st.click(); return; } }
+    var hot = document.querySelector('[data-hotkey="' + key.replace(/["\\]/g, '') + '"]');
+    if (hot && !hot.disabled) {
+      e.preventDefault();
+      if (hot.tagName === 'INPUT') hot.focus(); else hot.click();
+    }
+  });
+  window.addEventListener('resize', function () { if (window.innerWidth >= 1024) root.classList.remove('fui-drawer-open'); });
   document.addEventListener('change', function (e) {
     if (e.target && e.target.id === 'language') { put('qlocale', e.target.value); put('qlocale_chosen', '1'); }
   });

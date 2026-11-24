@@ -5,7 +5,7 @@ use quench_ui::prelude::*;
 use quench_ui::router::link;
 use std::rc::Rc;
 
-use super::{Env, badge, person, problem_view, waiting};
+use super::{Env, badge, folder_name, person, problem_view, waiting};
 use crate::live::{Request, State};
 
 /// The first `https` address in what the sender gave to stop its mail (`<mailto:...>, <https://...>` or a bare link), if there is one. Only `https` is
@@ -45,6 +45,14 @@ fn actions(env: &Env, view: &MessageView, remote: &Signal<bool>) -> Element {
         link(&env.path(&format!("/compose/{mode}/{id}")))
             .class("mr-btn")
             .attr("data-action", mode)
+            .attr(
+                "data-hotkey",
+                match mode {
+                    "reply" => "r",
+                    "replyall" => "a",
+                    _ => "f",
+                },
+            )
     };
     let seen = view.summary.seen;
     let flagged = view.summary.flagged;
@@ -58,6 +66,16 @@ fn actions(env: &Env, view: &MessageView, remote: &Signal<bool>) -> Element {
                 "mr-btn"
             })
             .attr("data-action", key)
+            .attr(
+                "data-hotkey",
+                match key {
+                    "star" => "s",
+                    "unread" => "I",
+                    "archive" => "e",
+                    "delete" => "#",
+                    _ => "",
+                },
+            )
             .on_click(move || {
                 ask(Request::Change(Change {
                     ids: vec![id.clone()],
@@ -87,6 +105,29 @@ fn actions(env: &Env, view: &MessageView, remote: &Signal<bool>) -> Element {
             ..Change::default()
         },
     );
+    // Not for what the person wrote themselves: a sender is muted so that their next mail goes to the archive, read.
+    let mute =
+        (view.summary.folder != "sent" && !view.summary.from.address.is_empty()).then(|| {
+            let (ask, address) = (Rc::clone(&env.ask), view.summary.from.address.clone());
+            button()
+                .attr("type", "button")
+                .class("mr-btn")
+                .attr("data-action", "mute")
+                .attr("data-hotkey", "m")
+                .on_click(move || ask(Request::Mute(address.clone())))
+                .text(env.t.t("mr_mute"))
+        });
+    // Out of the way but kept: not for what is already there, in the trash, or written by the person themselves.
+    let archive = (matches!(view.summary.folder.as_str(), "inbox")).then(|| {
+        change(
+            "archive",
+            env.t.t("mr_to_archive"),
+            Change {
+                move_to: Some("archive".into()),
+                ..Change::default()
+            },
+        )
+    });
     let restore = in_trash.then(|| {
         change(
             "restore",
@@ -142,6 +183,8 @@ fn actions(env: &Env, view: &MessageView, remote: &Signal<bool>) -> Element {
         .child(go("forward").text(env.t.t("mr_forward")))
         .child(toggle_unread)
         .child(star)
+        .child(archive)
+        .child(mute)
         .child(restore)
         .child(remove)
         .child(images)
@@ -149,8 +192,8 @@ fn actions(env: &Env, view: &MessageView, remote: &Signal<bool>) -> Element {
 
 /// The sandboxed frame the sanitised HTML is shown in: no script, no same-origin access, links open elsewhere. The address it
 /// loads answers with a policy of its own that says the same, so a bug in one is not a bug in both.
-fn html_frame(env: &Env, id: &str, remote: &Signal<bool>) -> Element {
-    let (api, id, remote) = (env.api(""), id.to_string(), remote.clone());
+fn html_frame(env: &Env, id: &str, remote: &Signal<bool>, look: &Signal<Option<bool>>) -> Element {
+    let (api, id, remote, look) = (env.api(""), id.to_string(), remote.clone(), look.clone());
     element("iframe")
         .attr("id", "message-html")
         .class("mr-frame")
@@ -158,10 +201,21 @@ fn html_frame(env: &Env, id: &str, remote: &Signal<bool>) -> Element {
         .attr("referrerpolicy", "no-referrer")
         .attr("title", "message")
         .attr_fn("src", move || {
-            format!(
-                "{api}/messages/{id}/html{}",
-                if remote.get() { "?remote=1" } else { "" }
-            )
+            // No `theme`: the service follows the person's own (the shell's cookie). A pick overrides it for this message.
+            let mut query = Vec::new();
+            if remote.get() {
+                query.push("remote=1");
+            }
+            match look.get() {
+                Some(true) => query.push("theme=dark"),
+                Some(false) => query.push("theme=light"),
+                None => {}
+            }
+            if query.is_empty() {
+                format!("{api}/messages/{id}/html")
+            } else {
+                format!("{api}/messages/{id}/html?{}", query.join("&"))
+            }
         })
 }
 
@@ -172,6 +226,8 @@ pub(crate) fn page(env: &Env, state: &State, id: String) -> View {
     let remote = create_signal(false);
     let marked = create_signal(false);
     let show_text = create_signal(false);
+    // How the message is drawn: with the theme (None), or light or dark whatever the theme is.
+    let look = create_signal::<Option<bool>>(None);
     View::dynamic(move || -> View {
         if let Some(view) = problem_view(&env, &state) {
             return view;
@@ -205,7 +261,7 @@ pub(crate) fn page(env: &Env, state: &State, id: String) -> View {
         let has_attachments = !message.attachments.is_empty();
         let unsubscribe = unsubscribe_link(&message.unsubscribe);
         let body: View = if message.has_html && !show_text.get() {
-            html_frame(&env, &id, &remote).into_view()
+            html_frame(&env, &id, &remote, &look).into_view()
         } else {
             pre()
                 .attr("id", "message-text")
@@ -229,12 +285,42 @@ pub(crate) fn page(env: &Env, state: &State, id: String) -> View {
                 .on_click(move || flip.update(|t| *t = !*t))
                 .text(label)
         });
+        let looks = (message.has_html && !show_text.get()).then(|| {
+            let pick = |id: &'static str, key: &str, value: Option<bool>| {
+                let look = look.clone();
+                button()
+                    .attr("type", "button")
+                    .attr("id", id)
+                    .class("mr-btn mr-small")
+                    .attr(
+                        "aria-pressed",
+                        if look.get() == value { "true" } else { "false" },
+                    )
+                    .on_click(move || look.set(value))
+                    .text(env.t.t(key))
+            };
+            div()
+                .class("mr-actions mr-looks")
+                .attr("role", "group")
+                .attr("aria-label", env.t.t("mr_look"))
+                .child(span().class("mr-hint").text(env.t.t("mr_look")))
+                .child(pick("look-auto", "mr_look_auto", None))
+                .child(pick("look-light", "mr_look_light", Some(false)))
+                .child(pick("look-dark", "mr_look_dark", Some(true)))
+        });
         div()
             .class("mr-page mr-reader")
             .child(
-                div()
-                    .class("mr-crumbs")
-                    .child(link(&back).text(env.t.t("mr_back"))),
+                div().class("mr-crumbs").child(
+                    link(&back)
+                        .class("mr-back")
+                        .attr("id", "back")
+                        .attr("data-hotkey", "u")
+                        .attr("aria-label", env.t.t("mr_back"))
+                        .attr("title", env.t.t("mr_back"))
+                        .child(forge_shell::icon("arrow-left"))
+                        .child(span().text(folder_name(&env, &message.summary.folder))),
+                ),
             )
             .child(
                 h1().attr("id", "subject")
@@ -284,7 +370,9 @@ pub(crate) fn page(env: &Env, state: &State, id: String) -> View {
                     ),
             )
             .child(switch)
+            .child(looks)
             .child(div().class("mr-card mr-body").child(body))
+            .child(conversation(&env, &state))
             .child(if has_attachments {
                 div()
                     .class("mr-card")
@@ -294,6 +382,45 @@ pub(crate) fn page(env: &Env, state: &State, id: String) -> View {
             } else {
                 div()
             })
+            .into_view()
+    })
+}
+
+/// The rest of the conversation, when the message is part of one: who wrote what, oldest first, each a link.
+fn conversation(env: &Env, state: &State) -> View {
+    let (env, thread) = (env.clone(), state.thread.clone());
+    View::dynamic(move || {
+        let list = thread.get();
+        if list.is_empty() {
+            return View::Empty;
+        }
+        div()
+            .class("mr-card")
+            .attr("id", "conversation")
+            .child(div().class("mr-subtitle").text(env.t.t("mr_conversation")))
+            .child(div().class("mr-list").children(list.iter().map(|m| {
+                let who = if m.folder == "sent" {
+                    m.to.first().map_or_else(|| "—".to_string(), person)
+                } else {
+                    person(&m.from)
+                };
+                div()
+                    .class(if m.seen { "mr-row" } else { "mr-row mr-unread" })
+                    .attr("data-thread", m.id.clone())
+                    .child(
+                        link(&env.path(&format!("/message/{}", m.id)))
+                            .class("mr-row-link")
+                            .child(span().class("mr-from").text(who))
+                            .child(span().class("mr-time").text(env.when(m.date)))
+                            .child(
+                                span()
+                                    .class("mr-subject")
+                                    .child(span().class("mr-subject-text").text(m.subject.clone())),
+                            )
+                            .child(span().class("mr-preview").text(m.preview.clone())),
+                    )
+                    .into_view()
+            })))
             .into_view()
     })
 }

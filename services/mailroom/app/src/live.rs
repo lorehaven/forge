@@ -10,7 +10,10 @@ use std::rc::Rc;
 use mailroom_core::admin::{
     AdminMailbox, AuditEntry, Delivery, Page, Settings, SettingsInput, Stats,
 };
-use mailroom_core::{Change, Compose, Contact, Folder, Me, MessageList, MessageView, Upload};
+use mailroom_core::{
+    Change, Compose, Contact, Draft, DraftInput, Folder, Me, MessageList, MessageSummary,
+    MessageView, Upload,
+};
 use quench_ui::i18n::I18n;
 use quench_ui::prelude::*;
 use quench_ui::router::{History, RouteContext, Router, Routes};
@@ -36,11 +39,26 @@ pub enum Request {
     Folders,
     List(ListQuery),
     Open(String),
+    /// The rest of the conversation a message belongs to.
+    Thread(String),
     Change(Change),
     Send(Compose),
     RemoveUpload(String),
     /// Addresses that start with these letters, to complete a recipient.
     People(String),
+    // Drafts and muted senders.
+    Drafts,
+    OpenDraft(String),
+    /// Keep what was typed: a new draft with `None`, else the draft of that id.
+    SaveDraft {
+        id: Option<String>,
+        input: DraftInput,
+    },
+    DeleteDraft(String),
+    Mutes,
+    Mute(String),
+    Unmute(String),
+    SaveSignature(String),
     // The panel.
     Stats,
     Settings,
@@ -70,6 +88,7 @@ pub enum Msg {
     Folders(Vec<Folder>),
     Messages(MessageList),
     Message(Box<MessageView>),
+    Thread(Vec<MessageSummary>),
     /// A change was made (read, starred): the app asks for the list, and for the message when one is open.
     Changed,
     /// Messages were moved or deleted: they are not where they were.
@@ -77,6 +96,19 @@ pub enum Msg {
     Sent,
     Uploaded(Upload),
     People(Vec<Contact>),
+    Drafts(Vec<Draft>),
+    /// A draft opened for writing on.
+    Draft(Draft),
+    /// What was typed is kept (with the id it has now).
+    DraftSaved(Draft),
+    DraftDeleted,
+    Mutes(Vec<String>),
+    SignatureSaved(String),
+    /// A sender was muted or let back in.
+    MuteChanged {
+        address: String,
+        muted: bool,
+    },
     Stats(Stats),
     Settings(Box<Settings>),
     SettingsSaved(Box<Settings>),
@@ -167,8 +199,16 @@ pub(crate) struct State {
     /// What the list on screen was asked for: a change asks for it again.
     pub asked: Signal<Option<ListQuery>>,
     pub message: Signal<Option<MessageView>>,
+    /// The other messages of the open message's conversation, oldest first.
+    pub thread: Signal<Vec<MessageSummary>>,
     pub uploads: Signal<Vec<Upload>>,
     pub people: Signal<Vec<Contact>>,
+    pub drafts: Signal<Option<Vec<Draft>>>,
+    /// The draft opened to write on.
+    pub draft: Signal<Option<Draft>>,
+    /// The last draft the service kept (the page writing it reads the id from here).
+    pub saved: Signal<Option<Draft>>,
+    pub mutes: Signal<Option<Vec<String>>>,
     pub stats: Signal<Option<Stats>>,
     pub settings: Signal<Option<Settings>>,
     pub mailboxes: Signal<Option<Page<AdminMailbox>>>,
@@ -208,6 +248,7 @@ fn receive(
     match m {
         Msg::Me(me) => state.me.set(Some(me)),
         Msg::Folders(list) => state.folders.set(list),
+        Msg::Thread(list) => state.thread.set(list),
         Msg::Messages(list) => {
             state.problem.set(None);
             state.list.set(Some(list));
@@ -249,6 +290,41 @@ fn receive(
         }
         Msg::Uploaded(upload) => state.uploads.update(|list| list.push(upload)),
         Msg::People(list) => state.people.set(list),
+        Msg::Drafts(list) => state.drafts.set(Some(list)),
+        Msg::Draft(draft) => state.draft.set(Some(draft)),
+        Msg::DraftSaved(draft) => {
+            state.notice.set(None);
+            state.saved.set(Some(draft));
+            requests(Request::Folders);
+        }
+        Msg::DraftDeleted => {
+            requests(Request::Folders);
+            if router.location().path == format!("{base}/ui/drafts") {
+                requests(Request::Drafts);
+            }
+        }
+        Msg::Mutes(list) => state.mutes.set(Some(list)),
+        Msg::SignatureSaved(text) => {
+            state.notice.set(None);
+            state.me.update(|me| {
+                if let Some(me) = me {
+                    me.signature = text;
+                }
+            });
+            state.done.set(Some(i18n.t("mr_signature_saved")));
+        }
+        Msg::MuteChanged { address, muted } => {
+            state.notice.set(None);
+            state.done.set(Some(
+                i18n.t(if muted {
+                    "mr_muted_done"
+                } else {
+                    "mr_unmuted_done"
+                })
+                .replace("ADDRESS", &address),
+            ));
+            requests(Request::Mutes);
+        }
         Msg::Stats(stats) => state.stats.set(Some(stats)),
         Msg::Settings(settings) => state.settings.set(Some(*settings)),
         Msg::SettingsSaved(settings) => {
@@ -266,6 +342,33 @@ fn receive(
     }
 }
 
+/// How often the page asks again for what may have arrived.
+pub const REFRESH_MS: u32 = 30_000;
+
+/// Looks again every [`REFRESH_MS`]: the folder counts always, and the list on screen while the person is on a list page
+/// (not while reading, writing or administering, where a refresh would be in the way).
+fn refresh(requests: &Rc<dyn Fn(Request)>, state: &State, router: &Router, base: String) {
+    fn tick(requests: Rc<dyn Fn(Request)>, state: State, router: Router, base: String) {
+        let _ = quench_ui::platform::after(REFRESH_MS, move || {
+            if state.problem.get_untracked() != Some(Problem::SignedOut) {
+                requests(Request::Folders);
+                let path = router.location().path;
+                let browsing = path.starts_with(&format!("{base}/ui/folder/"))
+                    || path == format!("{base}/ui/home")
+                    || path == format!("{base}/ui/");
+                if browsing && let Some(query) = state.asked.get_untracked() {
+                    requests(Request::List(query));
+                }
+                tick(requests, state, router, base);
+            }
+        });
+    }
+    // A page built with no host (a server render, a test) has no clock, and would look again at once, for ever.
+    if quench_ui::platform::installed() {
+        tick(Rc::clone(requests), state.clone(), router.clone(), base);
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     let i18n = Rc::new(I18n::new(&LOCALES, &setup.language).expect("the translations parse"));
@@ -275,8 +378,13 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         list: create_signal(None),
         asked: create_signal(None),
         message: create_signal(None),
+        thread: create_signal(Vec::new()),
         uploads: create_signal(Vec::new()),
         people: create_signal(Vec::new()),
+        drafts: create_signal(None),
+        draft: create_signal(None),
+        saved: create_signal(None),
+        mutes: create_signal(None),
         stats: create_signal(None),
         settings: create_signal(None),
         mailboxes: create_signal(None),
@@ -351,7 +459,9 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             let id = ctx.param("id").unwrap_or_default();
             fresh(&state);
             state.message.set(None);
+            state.thread.set(Vec::new());
             (env.ask)(Request::Open(id.clone()));
+            (env.ask)(Request::Thread(id.clone()));
             screens::reader::page(&env, &state, id)
         }
     };
@@ -362,11 +472,33 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
             let id = ctx.param("id").unwrap_or_default();
             fresh(&state);
             state.uploads.set(Vec::new());
-            if mode != "new" {
+            state.draft.set(None);
+            state.saved.set(None);
+            if mode == "draft" {
+                (env.ask)(Request::OpenDraft(id.clone()));
+            } else if mode != "new" {
                 state.message.set(None);
                 (env.ask)(Request::Open(id.clone()));
             }
             screens::compose::page(&env, &state, &mode, id)
+        }
+    };
+    let drafts = {
+        let (env, state) = (env.clone(), state.clone());
+        move |_: &RouteContext| -> View {
+            fresh(&state);
+            state.drafts.set(None);
+            (env.ask)(Request::Drafts);
+            screens::drafts::drafts_page(&env, &state)
+        }
+    };
+    let muted = {
+        let (env, state) = (env.clone(), state.clone());
+        move |_: &RouteContext| -> View {
+            fresh(&state);
+            state.mutes.set(None);
+            (env.ask)(Request::Mutes);
+            screens::drafts::muted_page(&env, &state)
         }
     };
     // An admin section nobody links to: the overview.
@@ -409,6 +541,8 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
     let pages = pages
         .route(&format!("{base}/ui/folder/:id"), folder)
         .route(&format!("{base}/ui/message/:id"), message)
+        .route(&format!("{base}/ui/drafts"), drafts)
+        .route(&format!("{base}/ui/muted"), muted)
         .route(&format!("{base}/ui/compose"), compose.clone())
         .route(&format!("{base}/ui/compose/:mode/:id"), compose)
         .route(&format!("{base}/ui/admin/:section"), admin)
@@ -479,9 +613,37 @@ fn shell(requests: &Rc<dyn Fn(Request)>, setup: &Setup, inbox: &Inbox) -> View {
         })
     };
 
+    // The tab says how much is waiting (the shell's script reads this), and the page looks again now and then.
+    let waiting_badge = {
+        let (state, i18n) = (state.clone(), Rc::clone(&i18n));
+        View::dynamic(move || {
+            let folders = state.folders.get();
+            // Until the counts are known there is nothing to say (a count of nothing is not "no mail": the first real count must
+            // not look like mail that arrived).
+            let Some(inbox) = folders.iter().find(|f| f.id == "inbox") else {
+                return span()
+                    .attr("id", "unread-badge")
+                    .attr("hidden", "")
+                    .into_view();
+            };
+            let unread = inbox.unread;
+            span()
+                .attr("id", "unread-badge")
+                .attr("data-fui-badge", unread.to_string())
+                .attr(
+                    "data-fui-badge-text",
+                    format!("{unread} {}", i18n.t("mr_notify_unread")),
+                )
+                .attr("hidden", "")
+                .into_view()
+        })
+    };
+    refresh(requests, &state, &router, base.clone());
+
     div()
         .attr("id", "mailroom")
         .class("fui-app fui-client")
+        .child(waiting_badge)
         .child(forge_shell::sidebar(
             &bar,
             vec![screens::sidebar(&env, &state, &router)],

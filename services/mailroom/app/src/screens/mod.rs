@@ -2,6 +2,7 @@
 
 pub mod admin;
 pub mod compose;
+pub mod drafts;
 pub mod inbox;
 pub mod reader;
 
@@ -104,6 +105,7 @@ pub(crate) fn sidebar(env: &Env, state: &State, router: &Router) -> View {
             link(&env.path("/compose"))
                 .class("fui-nav-item mr-write")
                 .attr("id", "nav-compose")
+                .attr("data-hotkey", "c")
                 .child(forge_shell::icon("pen"))
                 .child(span().text(env.t.t("mr_nav_compose"))),
         );
@@ -124,8 +126,34 @@ pub(crate) fn sidebar(env: &Env, state: &State, router: &Router) -> View {
                 item = item.attr("aria-current", "page").class("mr-current");
             }
             subs = subs.child(item);
+            // Drafts are not a folder of the mailbox, but they sit among them.
+            if id == "inbox" {
+                let href = env.path("/drafts");
+                let kept = counts
+                    .iter()
+                    .find(|f| f.id == "drafts")
+                    .map_or(0, |f| f.total);
+                let mut item = link(&href)
+                    .class("fui-nav-subitem")
+                    .attr("data-folder", "drafts")
+                    .child(span().text(folder_name(&env, "drafts")));
+                if kept > 0 {
+                    item = item.child(span().class("mr-count").text(kept.to_string()));
+                }
+                if current(&href) {
+                    item = item.attr("aria-current", "page").class("mr-current");
+                }
+                subs = subs.child(item);
+            }
         }
         nav = nav.child(subs);
+        nav = nav.child(
+            link(&env.path("/muted"))
+                .class("fui-nav-item")
+                .attr("id", "nav-muted")
+                .child(forge_shell::icon("list"))
+                .child(span().text(env.t.t("mr_nav_muted"))),
+        );
         if state.me.get().is_some_and(|me| me.admin) {
             nav = nav.child(
                 link(&env.path("/admin"))

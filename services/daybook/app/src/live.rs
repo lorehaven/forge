@@ -572,6 +572,8 @@ fn tasks_screen(s: &Screen) -> View {
                 .attr("type", "button")
                 .attr("id", "menu")
                 .attr("aria-label", "Lists")
+                // A page with a top bar of its own (the web frame) opens this drawer from the bar's hamburger button.
+                .attr("data-fui-drawer-proxy", "")
                 .class("q-iconbtn dbk-menu")
                 .child(crate::icons::menu("q-icon"))
                 .on_click(move || drawer.set(true))

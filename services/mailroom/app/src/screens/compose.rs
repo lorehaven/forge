@@ -2,10 +2,11 @@
 
 use mailroom_core::draft::ComposeDraft;
 use mailroom_core::time::{forward_subject, quote, reply_subject};
-use mailroom_core::{Contact, MessageView, Upload};
+use mailroom_core::{Contact, Draft, MessageView, Upload};
 use quench_ui::form::Field;
 use quench_ui::prelude::*;
 use quench_ui::router::link;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use super::{Env, area, form_error, labelled, problem_view, text_box, waiting};
@@ -43,6 +44,7 @@ pub fn upload_outcome(raw: &str) -> Uploaded {
 pub struct Prefill {
     pub to: String,
     pub cc: String,
+    pub bcc: String,
     pub subject: String,
     pub body: String,
     pub in_reply_to: Option<String>,
@@ -97,6 +99,7 @@ pub fn prefill(mode: &str, original: Option<&MessageView>, me: &str, offset: i32
                 subject: reply_subject(&m.summary.subject),
                 body: quoted,
                 in_reply_to: Some(m.summary.id.clone()),
+                ..Prefill::default()
             }
         }
         _ => Prefill {
@@ -107,6 +110,24 @@ pub fn prefill(mode: &str, original: Option<&MessageView>, me: &str, offset: i32
             ..Prefill::default()
         },
     }
+}
+
+/// What a saved draft starts from: everything it kept.
+#[must_use]
+pub fn from_draft(d: &Draft) -> Prefill {
+    Prefill {
+        to: d.to.clone(),
+        cc: d.cc.clone(),
+        bcc: d.bcc.clone(),
+        subject: d.subject.clone(),
+        body: d.text.clone(),
+        in_reply_to: d.in_reply_to.clone(),
+    }
+}
+
+/// The text of a form as one string, to tell whether anything changed since it was last kept.
+fn snapshot(fields: [&str; 5]) -> String {
+    fields.join("\u{1}")
 }
 
 /// `text` with its last recipient (after the last comma) replaced by `address`, ready for the next one.
@@ -127,6 +148,9 @@ pub fn typing(text: &str) -> Option<String> {
     (!token.is_empty() && !token.contains(['@', '<', '>', ' ', '"'])).then(|| token.to_string())
 }
 
+/// How long a message waits before it goes, in milliseconds.
+pub const UNDO_MS: u32 = 5000;
+
 /// The compose page.
 #[must_use]
 pub(crate) fn page(env: &Env, state: &State, mode: &str, id: String) -> View {
@@ -138,15 +162,27 @@ pub(crate) fn page(env: &Env, state: &State, mode: &str, id: String) -> View {
         let Some(me) = state.me.get() else {
             return waiting(&env);
         };
-        let original = if mode == "new" {
+        let opened = (mode == "draft")
+            .then(|| state.draft.get().filter(|d| d.id == id))
+            .flatten();
+        let original = if mode == "new" || mode == "draft" {
             None
         } else {
             state.message.get().filter(|m| m.summary.id == id)
         };
-        if mode != "new" && original.is_none() {
+        if (mode == "draft" && opened.is_none())
+            || (!matches!(mode.as_str(), "new" | "draft") && original.is_none())
+        {
             return waiting(&env);
         }
-        let start = prefill(&mode, original.as_ref(), &me.address, env.offset);
+        let mut start = opened.as_ref().map_or_else(
+            || prefill(&mode, original.as_ref(), &me.address, env.offset),
+            from_draft,
+        );
+        // What the person signs with goes at the end of what they start (a saved draft has its own).
+        if opened.is_none() && !me.signature.trim().is_empty() {
+            start.body = format!("{}\n\n-- \n{}", start.body, me.signature.trim_end());
+        }
         let domain = me
             .address
             .split_once('@')
@@ -154,12 +190,135 @@ pub(crate) fn page(env: &Env, state: &State, mode: &str, id: String) -> View {
             .to_string();
         let to = Field::new("compose-to", &start.to);
         let cc = Field::new("compose-cc", &start.cc);
-        let bcc = Field::new("compose-bcc", "");
+        let bcc = Field::new("compose-bcc", &start.bcc);
         let subject = Field::new("compose-subject", &start.subject);
         let body = Field::new("compose-body", &start.body);
         let error: Signal<Option<&'static str>> = create_signal(None);
-        let more = create_signal(!start.cc.is_empty());
+        let more = create_signal(!start.cc.is_empty() || !start.bcc.is_empty());
         let in_reply_to = start.in_reply_to.clone();
+
+        // Keeping what is typed: a moment after the last key, the text goes to the service as a draft, and the id it answers with
+        // is used for the next save. One save at a time; a message being sent or thrown away is not kept.
+        let draft_id: Signal<Option<String>> = create_signal(opened.as_ref().map(|d| d.id.clone()));
+        let last_kept = Rc::new(RefCell::new(snapshot([
+            &start.to,
+            &start.cc,
+            &start.bcc,
+            &start.subject,
+            &start.body,
+        ])));
+        let in_flight = Rc::new(Cell::new(false));
+        let finished = Rc::new(Cell::new(false));
+        let generation = Rc::new(Cell::new(0_u32));
+        let save_now: Rc<dyn Fn()> = {
+            let (ask, draft_id, last_kept, in_flight, finished) = (
+                Rc::clone(&env.ask),
+                draft_id.clone(),
+                Rc::clone(&last_kept),
+                Rc::clone(&in_flight),
+                Rc::clone(&finished),
+            );
+            let (to, cc, bcc, subject, body, in_reply_to) = (
+                to.clone(),
+                cc.clone(),
+                bcc.clone(),
+                subject.clone(),
+                body.clone(),
+                in_reply_to.clone(),
+            );
+            Rc::new(move || {
+                let fields = [
+                    to.value_untracked(),
+                    cc.value_untracked(),
+                    bcc.value_untracked(),
+                    subject.value_untracked(),
+                    body.value_untracked(),
+                ];
+                let now = snapshot([&fields[0], &fields[1], &fields[2], &fields[3], &fields[4]]);
+                let blank = fields.iter().all(|f| f.trim().is_empty());
+                if finished.get() || in_flight.get() || blank || now == *last_kept.borrow() {
+                    return;
+                }
+                *last_kept.borrow_mut() = now;
+                in_flight.set(true);
+                let [to, cc, bcc, subject, text] = fields;
+                ask(Request::SaveDraft {
+                    id: draft_id.get_untracked(),
+                    input: mailroom_core::DraftInput {
+                        to,
+                        cc,
+                        bcc,
+                        subject,
+                        text,
+                        in_reply_to: in_reply_to.clone(),
+                    },
+                });
+            })
+        };
+        // The service kept it: remember its id, and keep what was typed meanwhile.
+        create_effect({
+            let (saved, draft_id, in_flight, save_now) = (
+                state.saved.clone(),
+                draft_id.clone(),
+                Rc::clone(&in_flight),
+                Rc::clone(&save_now),
+            );
+            move || {
+                if let Some(kept) = saved.get() {
+                    draft_id.set(Some(kept.id));
+                    in_flight.set(false);
+                    save_now();
+                }
+            }
+        });
+        // A refused change (the save, or a send) ends the wait: the next key tries again.
+        create_effect({
+            let (notice, in_flight, finished) = (
+                state.notice.clone(),
+                Rc::clone(&in_flight),
+                Rc::clone(&finished),
+            );
+            move || {
+                if notice.get().is_some() {
+                    in_flight.set(false);
+                    finished.set(false);
+                }
+            }
+        });
+        create_effect({
+            let (fields, generation, save_now) = (
+                [
+                    to.clone(),
+                    cc.clone(),
+                    bcc.clone(),
+                    subject.clone(),
+                    body.clone(),
+                ],
+                Rc::clone(&generation),
+                Rc::clone(&save_now),
+            );
+            move || {
+                for field in &fields {
+                    let _ = field.value();
+                }
+                generation.set(generation.get() + 1);
+                let (mine, generation, save_now) = (
+                    generation.get(),
+                    Rc::clone(&generation),
+                    Rc::clone(&save_now),
+                );
+                let _ = quench_ui::platform::after(1500, move || {
+                    if generation.get() == mine {
+                        save_now();
+                    }
+                });
+            }
+        });
+        // Leaving the page keeps the last words too.
+        on_cleanup({
+            let save_now = Rc::clone(&save_now);
+            move || save_now()
+        });
 
         // As the last recipient is typed, ask who it could be.
         state.people.set(Vec::new());
@@ -197,8 +356,26 @@ pub(crate) fn page(env: &Env, state: &State, mode: &str, id: String) -> View {
             })
         };
 
+        // A message is held for a few seconds, so that it can be taken back; leaving the page sends it at once.
+        let held: Rc<RefCell<Option<mailroom_core::Compose>>> = Rc::default();
+        let holding = create_signal(false);
+        let release: Rc<dyn Fn()> = {
+            let (ask, held, holding) = (Rc::clone(&env.ask), Rc::clone(&held), holding.clone());
+            Rc::new(move || {
+                let taken = held.borrow_mut().take();
+                if let Some(compose) = taken {
+                    holding.set(false);
+                    ask(Request::Send(compose));
+                }
+            })
+        };
+        on_cleanup({
+            let release = Rc::clone(&release);
+            move || release()
+        });
         let send = {
-            let (env, state, error) = (env.clone(), state.clone(), error.clone());
+            let (hold, holding, release) = (Rc::clone(&held), holding.clone(), Rc::clone(&release));
+            let (state, error) = (state.clone(), error.clone());
             let (to, cc, bcc, subject, body) = (
                 to.clone(),
                 cc.clone(),
@@ -206,8 +383,10 @@ pub(crate) fn page(env: &Env, state: &State, mode: &str, id: String) -> View {
                 subject.clone(),
                 body.clone(),
             );
+            let (draft_id, finished) = (draft_id.clone(), Rc::clone(&finished));
             move || {
                 let draft = ComposeDraft {
+                    draft: draft_id.get_untracked(),
                     to: to.value_untracked(),
                     cc: cc.value_untracked(),
                     bcc: bcc.value_untracked(),
@@ -224,7 +403,11 @@ pub(crate) fn page(env: &Env, state: &State, mode: &str, id: String) -> View {
                 match draft.validate() {
                     Ok(compose) => {
                         error.set(None);
-                        (env.ask)(Request::Send(compose));
+                        finished.set(true);
+                        *hold.borrow_mut() = Some(compose);
+                        holding.set(true);
+                        let release = Rc::clone(&release);
+                        let _ = quench_ui::platform::after(UNDO_MS, move || release());
                     }
                     Err(why) => error.set(Some(why.message())),
                 }
@@ -363,18 +546,82 @@ pub(crate) fn page(env: &Env, state: &State, mode: &str, id: String) -> View {
                                     .child(picker),
                             )
                             .child(upload_report)
-                            .child(
+                            .child({
+                                let (ask, draft_id, finished, held) = (
+                                    Rc::clone(&env.ask),
+                                    draft_id.clone(),
+                                    Rc::clone(&finished),
+                                    Rc::clone(&held),
+                                );
                                 link(&env.path("/home"))
                                     .class("mr-btn")
-                                    .text(env.t.t("mr_compose_discard")),
-                            )
+                                    .attr("id", "discard")
+                                    .on_click(move || {
+                                        // Thrown away: nothing is kept (nor a message waiting to go), and a draft made already goes.
+                                        finished.set(true);
+                                        held.borrow_mut().take();
+                                        if let Some(id) = draft_id.get_untracked() {
+                                            ask(Request::DeleteDraft(id));
+                                        }
+                                    })
+                                    .text(env.t.t("mr_compose_discard"))
+                            })
+                            .child({
+                                let (saved, t) = (state.saved.clone(), Rc::clone(&env.t));
+                                View::dynamic(move || {
+                                    if saved.get().is_some() {
+                                        span()
+                                            .attr("id", "draft-status")
+                                            .class("mr-muted")
+                                            .text(t.t("mr_draft_saved"))
+                                            .into_view()
+                                    } else {
+                                        View::Empty
+                                    }
+                                })
+                            })
                             .child(
                                 button()
                                     .attr("type", "submit")
                                     .attr("id", "send")
                                     .class("mr-btn mr-primary")
+                                    .attr_bool("disabled", {
+                                        let holding = holding.clone();
+                                        move || holding.get()
+                                    })
                                     .text(env.t.t("mr_compose_send")),
-                            ),
+                            )
+                            .child({
+                                let (t, holding, held, finished) = (
+                                    Rc::clone(&env.t),
+                                    holding.clone(),
+                                    Rc::clone(&held),
+                                    Rc::clone(&finished),
+                                );
+                                View::dynamic(move || {
+                                    if !holding.get() {
+                                        return View::Empty;
+                                    }
+                                    let (holding, held, finished) =
+                                        (holding.clone(), Rc::clone(&held), Rc::clone(&finished));
+                                    span()
+                                        .class("mr-actions")
+                                        .child(span().class("mr-muted").text(t.t("mr_sending")))
+                                        .child(
+                                            button()
+                                                .attr("type", "button")
+                                                .attr("id", "undo-send")
+                                                .class("mr-btn")
+                                                .on_click(move || {
+                                                    held.borrow_mut().take();
+                                                    holding.set(false);
+                                                    finished.set(false);
+                                                })
+                                                .text(t.t("mr_send_undo")),
+                                        )
+                                        .into_view()
+                                })
+                            }),
                     ),
             )
             .into_view()
