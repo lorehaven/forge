@@ -1,5 +1,6 @@
 use crate::config::{Config, Job};
 use crate::job_log;
+use crate::paths;
 use crate::rsync::{self, Output};
 use crate::source::{self, Availability};
 use crate::state::{Outcome, Recording};
@@ -97,7 +98,9 @@ pub fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
 pub fn group_by_dest(jobs: &[(Job, Duration)]) -> Vec<Vec<(Job, Duration)>> {
     let mut groups: Vec<(String, Vec<(Job, Duration)>)> = Vec::new();
     for (job, interval) in jobs {
-        let key = job.dest.trim_end_matches('/').to_string();
+        let key = paths::for_rsync(&job.dest)
+            .trim_end_matches('/')
+            .to_string();
         match groups.iter_mut().find(|(found, _)| *found == key) {
             Some((_, group)) => group.push((job.clone(), *interval)),
             None => groups.push((key, vec![(job.clone(), *interval)])),

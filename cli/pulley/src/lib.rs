@@ -2,6 +2,7 @@ pub mod cli;
 pub mod config;
 pub mod daemon;
 pub mod job_log;
+pub mod paths;
 pub mod repl;
 pub mod rsync;
 pub mod service;

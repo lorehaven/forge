@@ -28,9 +28,6 @@ quench-tz = { workspace = true }
 quench-args = { workspace = true }
 quench-cli = { workspace = true }
 
-[target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true }
-
 [dev-dependencies]
 quench-test = { workspace = true }
 

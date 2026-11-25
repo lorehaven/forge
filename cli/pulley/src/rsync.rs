@@ -1,12 +1,18 @@
 use crate::config::Job;
+use crate::paths;
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
 use std::thread::JoinHandle;
 
 /// Whether rsync reads `path` as a remote location (`user@host:/dir`, `host:dir`, `rsync://host/module`) rather
 /// than a local directory: a `:` before the first `/`, as rsync itself decides.
+///
+/// A drive on Windows (`C:\data`) is local, and rsync is given it as [`paths::for_rsync`] spells it.
 #[must_use]
 pub fn is_remote(path: &str) -> bool {
+    if cfg!(windows) && paths::drive_to_cygdrive(path).is_some() {
+        return false;
+    }
     path.starts_with("rsync://")
         || path
             .split('/')
@@ -18,7 +24,7 @@ pub fn is_remote(path: &str) -> bool {
 /// none to enter, and spawning in it fails with `ENOENT`.
 fn pin_working_dir(cmd: &mut Command, src: &str) {
     if !is_remote(src) {
-        cmd.current_dir(src);
+        cmd.current_dir(paths::native(src).as_ref());
     }
 }
 
@@ -121,8 +127,8 @@ pub fn scan(job: &Job, output: Output) -> Result<Changes, Box<dyn std::error::Er
         cmd.arg(format!("--exclude={skip}"));
     }
 
-    cmd.arg(format!("{}/", job.src));
-    cmd.arg(format!("{}/", job.dest));
+    cmd.arg(format!("{}/", paths::for_rsync(&job.src)));
+    cmd.arg(format!("{}/", paths::for_rsync(&job.dest)));
 
     let mut changes = Changes::default();
     run_streaming(&mut cmd, |line| match classify_line(line) {
@@ -222,8 +228,8 @@ fn update_command(job: &Job, output: Output) -> Command {
         cmd.arg(format!("--exclude={skip}"));
     }
 
-    cmd.arg(format!("{}/", job.src));
-    cmd.arg(format!("{}/", job.dest));
+    cmd.arg(format!("{}/", paths::for_rsync(&job.src)));
+    cmd.arg(format!("{}/", paths::for_rsync(&job.dest)));
     cmd
 }
 

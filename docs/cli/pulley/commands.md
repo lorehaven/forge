@@ -99,7 +99,7 @@ Per job: the run in progress (its phase, how long, bytes copied so far with the 
 pulley daemon
 ```
 
-Foreground loop. Requires `rsync`. Only jobs with `interval` are watched; with none: `daemon no jobs have interval set; nothing to watch. add interval = <seconds> to a job to include it.` and exit 0. Otherwise prints `daemon watching N job(s)` and `  <id> - every <N>s`, then runs the jobs as follows. It never exits on its own (stop with Ctrl-C or the service manager); it does exit, with an error, if a worker dies, so a service manager restarts it rather than leaving jobs unwatched. On Windows the console window is hidden first.
+Foreground loop. Requires `rsync`. Only jobs with `interval` are watched; with none: `daemon no jobs have interval set; nothing to watch. add interval = <seconds> to a job to include it.` and exit 0. Otherwise prints `daemon watching N job(s)` and `  <id> - every <N>s`, then runs the jobs as follows. It never exits on its own (stop with Ctrl-C or the service manager); it does exit, with an error, if a worker dies, so a service manager restarts it rather than leaving jobs unwatched.
 
 **Jobs run at the same time.** Each job has a worker of its own, so a copy that takes hours (the first sync of a big drive) does not hold up the others. Jobs that share a **destination** share a worker and run one after another, in the order of the files, because two rsyncs must not write to one destination at once; the daemon says so when it starts. Give jobs distinct destinations if they should run side by side.
 
@@ -123,7 +123,7 @@ Manages a background service that runs `pulley daemon`. The backend is detected 
 |---|---|---|---|
 | systemd (user) | Writes `~/.config/systemd/user/pulley.service`, `systemctl --user daemon-reload`, `systemctl --user enable --now pulley.service`; warns `user services only start at login by default; to start pulley at boot run: loginctl enable-linger <user>` if linger is off | `systemctl --user disable --now pulley.service`, removes the unit, `daemon-reload` | `systemctl --user status pulley.service` |
 | runit | **Needs root** (`re-run as: sudo <exe> service install`): writes `/etc/sv/pulley/run` (`#!/bin/sh` / `exec chpst -u <user> <exe> daemon`, mode 0755, `<user>` = `$SUDO_USER`, else `$USER`, else `root`), symlinks it into the first existing of `/var/service`, `/etc/service`, `/run/runit/service`, runs `sv up` | `sv down`, removes the link and `/etc/sv/pulley` (root) | `sv status <link>` |
-| Windows | `schtasks /Create /TN Pulley /TR "<exe> daemon" /SC ONLOGON /RL LIMITED /F`, then `/Run` | `/End` then `/Delete /TN Pulley /F` | `schtasks /Query /TN Pulley /V /FO LIST` |
+| Windows | `schtasks /Create /TN Pulley /TR "conhost.exe --headless <exe> daemon" /SC ONLOGON /RL LIMITED /F`, then `/Run` | `/End` then `/Delete /TN Pulley /F` | `schtasks /Query /TN Pulley /V /FO LIST` |
 
 The systemd unit (`unit_file_contents`):
 
@@ -142,6 +142,8 @@ RestartSec=5
 [Install]
 WantedBy=default.target
 ```
+
+On Windows `conhost.exe --headless` keeps the task from opening a console window; `pulley daemon` started by hand stays in its terminal. A task registered by an earlier pulley keeps its old command until `pulley service install` is run again.
 
 The unit records the absolute path of the binary that ran `install`; reinstall after moving or upgrading it. Requires `systemctl` (`pulley service management needs a systemd user session`), `sv` and `chpst` for runit, `schtasks` on Windows.
 

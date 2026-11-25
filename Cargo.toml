@@ -203,7 +203,6 @@ rivet-package = { path = "libs/rivet-package", registry = "ennor", version = "0.
 kube-cluster = { path = "libs/kube-cluster", registry = "ennor", version = "0.1.0" }
 docs-book = { path = "libs/docs-book", registry = "ennor", version = "0.1.0" }
 tokio = { version = "1.54", features = ["full"] }
-windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 strip = "debuginfo"

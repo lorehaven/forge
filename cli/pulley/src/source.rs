@@ -13,7 +13,7 @@
 //! ports and jump hosts mean what they do for the sync. A local source is looked at directly.
 
 use crate::config::Job;
-use crate::rsync;
+use crate::{paths, rsync};
 use std::path::{Component, Path};
 use std::process::{Command, Stdio};
 
@@ -87,7 +87,8 @@ fn empty_source(src: &str) -> Availability {
 }
 
 fn check_local(job: &Job) -> Availability {
-    let src = Path::new(&job.src);
+    let native = paths::native(&job.src);
+    let src = Path::new(native.as_ref());
     if !src.is_dir() {
         return Availability::NotReady(format!("source directory {} does not exist", job.src));
     }

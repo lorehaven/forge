@@ -16,10 +16,6 @@ pub trait Backend {
     fn status(&self) -> Result<(), Box<dyn std::error::Error>>;
 }
 
-/// No-op here: journald/runit's own log chain already captures a service's
-/// output, so there's no console window to hide.
-pub const fn hide_console_window() {}
-
 pub fn install() -> Result<(), Box<dyn std::error::Error>> {
     detect()?.install()
 }

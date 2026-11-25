@@ -6,24 +6,10 @@ const TASK_NAME: &str = "Pulley";
 const SCHTASKS_HINT: &str =
     "pulley service management needs schtasks.exe, which ships with Windows";
 
-/// The `ONLOGON` scheduled task launches `pulley.exe` attached to a console,
-/// which otherwise pops a visible cmd window on every logon.
-pub fn hide_console_window() {
-    use windows_sys::Win32::System::Console::GetConsoleWindow;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindow};
-
-    unsafe {
-        let hwnd = GetConsoleWindow();
-        if !hwnd.is_null() {
-            ShowWindow(hwnd, SW_HIDE);
-        }
-    }
-}
-
 pub fn install() -> Result<(), Box<dyn std::error::Error>> {
     require_binary("schtasks", SCHTASKS_HINT)?;
     let exe = std::env::current_exe()?;
-    let task_run = format!("\"{}\" daemon", exe.display());
+    let task_run = super::task_command(&exe);
 
     run_schtasks(&[
         "/Create", "/TN", TASK_NAME, "/TR", &task_run, "/SC", "ONLOGON", "/RL", "LIMITED", "/F",

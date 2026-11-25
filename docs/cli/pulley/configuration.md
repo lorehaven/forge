@@ -43,6 +43,13 @@ marker = "projects"               # optional: a path in `src` that must exist (n
 
 The top level must contain `jobs` (a file without `[[jobs]]` fails to parse). Unknown keys are ignored. The sample is `forge/cli/pulley/example.pulley.toml`.
 
+## Windows paths
+
+A local `src` or `dest` may be written either way: `C:\Users\me\Documents` (or `C:/Users/me/Documents`) or `/cygdrive/c/Users/me/Documents`. Pulley hands rsync the `/cygdrive` form, which is what a Cygwin rsync (Chocolatey's `rsync`, cwRsync) reads, and looks at the source itself under the drive-letter form. In TOML, put backslashes in single quotes (`src = 'C:\Users\me'`).
+
+* A drive is a letter and a colon followed by `\`, `/` or nothing. `c:data` is still the path `data` on the host `c`.
+* MSYS2's rsync mounts drives as `/c`, not `/cygdrive/c`, so pulley's translation does not suit it. Its own `/c/...` form is not understood either.
+
 ## Sources that are sometimes absent
 
 A source can be absent in two ways, and the second is the dangerous one with `delete = true`:

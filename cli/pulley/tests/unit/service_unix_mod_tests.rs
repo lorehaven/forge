@@ -1,9 +1,4 @@
-use pulley::service::unix::{detect, hide_console_window, is_pid1, status};
-
-#[quench_test::test]
-const fn hide_console_window_does_nothing_and_does_not_panic() {
-    hide_console_window();
-}
+use pulley::service::unix::{detect, is_pid1, status};
 
 #[quench_test::test]
 fn is_pid1_is_false_for_a_name_that_is_almost_certainly_not_pid_1() {

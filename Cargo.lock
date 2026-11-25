@@ -1030,7 +1030,6 @@ dependencies = [
  "quench-serde",
  "quench-test",
  "quench-tz",
- "windows-sys 0.61.2",
 ]
 
 [[package]]

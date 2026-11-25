@@ -11,10 +11,14 @@ mod daemon_tests;
 mod env_support;
 #[path = "unit/job_log_tests.rs"]
 mod job_log_tests;
+#[path = "unit/paths_tests.rs"]
+mod paths_tests;
 #[path = "unit/repl_tests.rs"]
 mod repl_tests;
 #[path = "unit/rsync_tests.rs"]
 mod rsync_tests;
+#[path = "unit/service_tests.rs"]
+mod service_tests;
 #[cfg(unix)]
 #[path = "unit/service_unix_mod_tests.rs"]
 mod service_unix_mod_tests;
