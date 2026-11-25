@@ -15,6 +15,10 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  # anvil and its dependencies come from the warehouse registry (public reads, no token)
+  CARGO_REGISTRIES_ENNOR_INDEX: sparse+https://ennor.ddns.net/warehouse/index/
+
 jobs:
   build:
     runs-on: ubuntu-latest
