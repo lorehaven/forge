@@ -479,7 +479,8 @@ pub const SCOPED_MARKER: &str = "scoped_grants";
 /// (`perm_warehouse_storage:media:read`), and is accepted only if the catalog knows the type and the action. With the
 /// `scoped_grants` marker the form lists every scoped grant the user has (the editor shows the ones whose resource no
 /// longer exists too), so an unticked box removes one. Without the marker (an older form) the grants it cannot show
-/// survive from `existing`, as they always did. A grant on a service the catalog does not know is kept either way.
+/// survive from `existing`, as they always did. A grant on a service the catalog does not know is kept either way (and
+/// `realm::update` lets it through, since the user already holds it).
 pub fn permissions_from_form<S: std::hash::BuildHasher>(
     catalog: &PermissionCatalog,
     form: &HashMap<String, String, S>,

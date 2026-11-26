@@ -44,8 +44,8 @@ pub struct Setup {
     pub host: Rc<dyn api::Host>,
 }
 
-/// Every address of the app, under the service's prefix: `<base>/ui` is the list of trees, `<base>/ui/t/<tree>/...` a
-/// tree. Build it inside the reactive root, with the router, after the host is installed.
+/// Every address of the app, under the service's prefix: `<base>/ui/home` (and `<base>/ui`) is the list of trees,
+/// `<base>/ui/t/<tree>/...` a tree. Build it inside the reactive root, with the router, after the host is installed.
 #[must_use]
 pub fn routes_view(router: &Router) -> View {
     let sh = Shared::new();
@@ -56,6 +56,7 @@ pub fn routes_view(router: &Router) -> View {
         .layout(
             layout(&prefix, shell::page)
                 .route("", |_| home::home())
+                .route("home", |_| home::home())
                 .layout(
                     layout("t/:tree", move |ctx, inner| {
                         shell::frame(ctx, inner, &frame_sh)

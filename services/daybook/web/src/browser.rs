@@ -114,7 +114,7 @@ pub fn app() -> View {
     framed(view, &requests)
 }
 
-/// The service's path prefix from the page's own path: `/daybook/ui` is `/daybook`.
+/// The service's path prefix from the page's own path: `/daybook/ui/home` is `/daybook`.
 fn base_of(path: &str) -> String {
     let at = path
         .find("/ui/")
@@ -148,7 +148,7 @@ fn framed(app: View, requests: &Rc<dyn Fn(Request)>) -> View {
             icon: "list-check",
         },
         image: Some(format!("{base}/ui/assets/favicon.png")),
-        home: format!("{base}/ui"),
+        home: format!("{base}/ui/home"),
         spa: false,
         account: true,
         brand_in_bar: true,

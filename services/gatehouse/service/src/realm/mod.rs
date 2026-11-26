@@ -2,7 +2,7 @@
 //! so the two surfaces can't disagree about which edits are allowed.
 
 use crate::catalog::PermissionCatalog;
-use quench_auth::prelude::{Permissions, Role, SessionDb, User};
+use quench_auth::prelude::{Actions, Permissions, Role, SessionDb, User};
 use quench_db::prelude::{Crud, Db, Repository};
 use std::sync::Arc;
 
@@ -199,6 +199,28 @@ fn check_grants(catalog: &PermissionCatalog, permissions: &Permissions) -> Realm
     }
 }
 
+/// [`check_grants`] over what `wanted` adds to `held`.
+///
+/// A service taken out of the catalog leaves its grants on the users who had them, and an edit keeps what it cannot show. Those
+/// pass here: rejecting them would block every later change to such a user. Anything newly asked for must still be known.
+fn check_added_grants(
+    catalog: &PermissionCatalog,
+    held: &Permissions,
+    wanted: &Permissions,
+) -> RealmResult<()> {
+    let added: Permissions = wanted
+        .iter()
+        .filter_map(|(service, actions)| {
+            let Some(before) = held.get(service) else {
+                return Some((service.clone(), actions.clone()));
+            };
+            let new: Actions = actions.difference(before).cloned().collect();
+            (!new.is_empty()).then(|| (service.clone(), new))
+        })
+        .collect();
+    check_grants(catalog, &added)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn create(
     db: &Db,
@@ -309,7 +331,7 @@ pub async fn update(
     let mut user = get(db, username).await?;
 
     if let Some(permissions) = &changes.permissions {
-        check_grants(catalog, permissions)?;
+        check_added_grants(catalog, &user.get_permissions(), permissions)?;
     }
 
     if let Some(roles) = &changes.roles {

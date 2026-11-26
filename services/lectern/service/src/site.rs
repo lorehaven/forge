@@ -1,7 +1,8 @@
 //! The requests the service answers. All of them are `GET`s, none needs a login.
 //!
 //! ```text
-//! /                       the list of books
+//! /ui/home                the list of books
+//! /, /ui                  a redirect to /ui/home
 //! /<book>/...             the newest release of a book
 //! /api/v1/books           the same list as JSON
 //! /health, /health/live, /health/ready
@@ -20,6 +21,7 @@ use std::sync::Arc;
 /// What a route does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Handler {
+    Home,
     Index,
     Books,
     Health,
@@ -42,10 +44,30 @@ pub struct Route {
 
 /// Every route, most specific first. `{name}` is one non-empty segment; `{path}` takes the rest of the path, slashes
 /// and all, and may be empty.
-pub const ROUTES: [Route; 12] = [
+pub const ROUTES: [Route; 16] = [
     Route {
         method: Method::GET,
         pattern: "/",
+        handler: Handler::Home,
+    },
+    Route {
+        method: Method::GET,
+        pattern: "/ui",
+        handler: Handler::Home,
+    },
+    Route {
+        method: Method::GET,
+        pattern: "/ui/",
+        handler: Handler::Home,
+    },
+    Route {
+        method: Method::GET,
+        pattern: "/ui/home",
+        handler: Handler::Index,
+    },
+    Route {
+        method: Method::GET,
+        pattern: "/ui/home/",
         handler: Handler::Index,
     },
     Route {
@@ -336,6 +358,9 @@ impl Endpoint for Site {
             return Response::text(StatusCode::NOT_FOUND, "not found");
         };
         match route.handler {
+            // Temporary, unlike a book's missing slash: a browser must not remember it for good.
+            Handler::Home => Response::new(StatusCode::FOUND)
+                .header("location", format!("{}{}", self.base_path, ui::HOME_PATH)),
             Handler::Index => self.index(&request),
             Handler::Books => self.books(),
             Handler::Health => self.health(rest),

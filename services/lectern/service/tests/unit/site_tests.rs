@@ -67,7 +67,7 @@ fn header<'a>(headers: &'a HeaderMap, name: &str) -> &'a str {
 #[quench_test::test]
 async fn the_front_page_lists_the_books_in_the_frame_of_the_other_services() {
     let (site, _) = site("/").await;
-    let (status, headers, body) = get(&site, Method::GET, "/", &[]).await;
+    let (status, headers, body) = get(&site, Method::GET, "/ui/home", &[]).await;
     assert_eq!(status, StatusCode::OK);
     assert!(header(&headers, "content-type").starts_with("text/html"));
     assert!(header(&headers, "content-security-policy").contains("script-src 'self'"));
@@ -96,12 +96,25 @@ async fn the_front_page_lists_the_books_in_the_frame_of_the_other_services() {
 }
 
 #[quench_test::test]
+async fn the_root_leads_to_the_home_page() {
+    let (site, _) = site("/").await;
+    for path in ["/", "/ui", "/ui/"] {
+        let (status, headers, _) = get(&site, Method::GET, path, &[]).await;
+        assert_eq!(status, StatusCode::FOUND, "{path}");
+        assert_eq!(header(&headers, "location"), "/ui/home", "{path}");
+    }
+    let (status, _, body) = get(&site, Method::GET, "/ui/home/", &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains(r#"href="/forge/""#), "{body}");
+}
+
+#[quench_test::test]
 async fn the_page_follows_the_cookies_and_the_browsers_language() {
     let (site, _) = site("/").await;
     let (_, _, body) = get(
         &site,
         Method::GET,
-        "/",
+        "/ui/home",
         &[(
             "cookie",
             "qtheme=default-light; fui_palette=rose; qlocale=pl-PL",
@@ -124,7 +137,7 @@ async fn the_page_follows_the_cookies_and_the_browsers_language() {
     let (_, _, body) = get(
         &site,
         Method::GET,
-        "/",
+        "/ui/home",
         &[("accept-language", "de-AT,de;q=0.9,en;q=0.5")],
     )
     .await;
@@ -166,7 +179,7 @@ async fn the_pages_own_files_are_served() {
 async fn an_empty_library_says_so() {
     let library = Arc::new(Library::new("/"));
     let site = Site::new(library, "/");
-    let (status, _, body) = get(&site, Method::GET, "/", &[]).await;
+    let (status, _, body) = get(&site, Method::GET, "/ui/home", &[]).await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         body.contains("No documentation has been published yet"),
@@ -254,7 +267,15 @@ async fn under_a_base_path_everything_lives_below_it() {
         (status, header(&headers, "location")),
         (StatusCode::MOVED_PERMANENTLY, "/lectern/")
     );
-    let (status, _, body) = get(&site, Method::GET, "/lectern/", &[]).await;
+    for path in ["/lectern/", "/lectern/ui", "/lectern/ui/"] {
+        let (status, headers, _) = get(&site, Method::GET, path, &[]).await;
+        assert_eq!(
+            (status, header(&headers, "location")),
+            (StatusCode::FOUND, "/lectern/ui/home"),
+            "{path}"
+        );
+    }
+    let (status, _, body) = get(&site, Method::GET, "/lectern/ui/home", &[]).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains(r#"href="/lectern/forge/""#), "{body}");
     assert!(
@@ -344,7 +365,7 @@ async fn a_page_opened_in_the_window_comes_in_lecterns_frame_with_the_other_book
     );
     // the home button, and a menu of every book with the one being read marked
     assert!(
-        body.contains(r#"id="home""#) && body.contains(r#"href="/lectern/""#),
+        body.contains(r#"id="home""#) && body.contains(r#"href="/lectern/ui/home""#),
         "{body}"
     );
     assert!(

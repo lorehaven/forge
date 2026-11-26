@@ -69,6 +69,8 @@ Templates: `viewer` (`read` on sage, warehouse, switchboard, conveyor, workbench
 
 ## Grant syntax
 
+A grant added to a user must name a service and action of the catalog. A grant the user already holds is not checked again: when a service leaves the catalog, its grants stay on the users who had them (they take effect nowhere) and do not block later changes. `PUT` of the permissions without them removes them.
+
 A grant is `service:action`. In tokens it is a `scope` entry; in storage it is `{service: [action, ...]}`. An action is either a plain catalog name or, for a service with `resource_types`, `<resource_type>:<resource_id>:<action>` where the id is not checked and the action must be in the service's `actions` (for example `conveyor:project:7:write`, `warehouse:storage:media:read`, `gantry:target:media:deploy`). How a relying party interprets scoped grants (an ancestor walk for conveyor projects, a flat match for workbench) is up to that service.
 
 The user's page shows **Access** as a row per service with what it holds; **Edit** opens that service's popup. The popup has the whole-service checkboxes (`perm_<service>_<action>`) and, for a service with `resource_types`, one list per type with a box per action for every storage, project or target (`perm_<service>_<type>:<id>:<action>`). The popups live inside the user's form, so one **Save** sends everything.

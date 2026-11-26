@@ -93,9 +93,10 @@ Feature: Daybook's personal task API
       | {"content":"x","due_at":"2090-03-02T09:00:00Z","recurrence":{"unit":"day","interval":0}}        |
       | {"content":"x","due_at":"2090-03-02T09:00:00Z","recurrence":{"unit":"day","interval":1,"weekdays":[1]}} |
 
-  Scenario: Daybook does not expose a web interface
-    When GET request is sent to "/ui/home"
-    Then the response status should be 404
+  Scenario: The root of the web interface leads to the home page
+    When a GET request is sent to protected page "/ui" without token
+    Then response should be a redirect
+    And the redirect location should contain "/ui/home"
 
   Scenario: Health endpoints are public
     When GET request is sent to "/health"

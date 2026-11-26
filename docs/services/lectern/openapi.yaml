@@ -15,6 +15,38 @@ paths:
   /:
     get:
       tags: [books]
+      operationId: root
+      summary: Leads to the list of books
+      responses:
+        '302': {description: 'To {base}/ui/home.'}
+  /ui:
+    get:
+      tags: [books]
+      operationId: uiRoot
+      summary: Same as /
+      responses:
+        '302': {description: 'To {base}/ui/home.'}
+  /ui/:
+    get:
+      tags: [books]
+      operationId: uiRootSlash
+      summary: Same as /
+      responses:
+        '302': {description: 'To {base}/ui/home.'}
+  /ui/home/:
+    get:
+      tags: [books]
+      operationId: bookListSlash
+      summary: Same as /ui/home
+      responses:
+        '200':
+          description: An HTML page.
+          content:
+            text/html:
+              schema: {type: string}
+  /ui/home:
+    get:
+      tags: [books]
       operationId: bookList
       summary: The list of books
       description: >

@@ -152,7 +152,8 @@ Public GET routes, served by `forge_web::Client` (see [Client](client.md)):
 
 | Route | Content |
 |---|---|
-| `/ui` | The HTML page that starts the client |
+| `/ui/home`, `/ui/home/` | The HTML page that starts the client |
+| `/ui`, `/ui/` | `302` to `/ui/home` |
 | `/ui/assets/quench.js` | Loader script |
 | `/ui/assets/app.css` | `daybook_web::stylesheet()` |
 | `/ui/assets/shell.js` | forge shell script (top bar) |

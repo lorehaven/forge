@@ -380,6 +380,33 @@ paths:
   /ui:
     get:
       tags: [ui]
+      operationId: uiRoot
+      summary: Leads to the home page
+      security: []
+      responses:
+        "302": { description: "To {base}/ui/home." }
+  /ui/:
+    get:
+      tags: [ui]
+      operationId: uiRootSlash
+      summary: Same as /ui
+      security: []
+      responses:
+        "302": { description: "To {base}/ui/home." }
+  /ui/home/:
+    get:
+      tags: [ui]
+      operationId: uiPageSlash
+      summary: Same as /ui/home
+      security: []
+      responses:
+        "200":
+          description: HTML.
+          content:
+            text/html: {schema: {type: string}}
+  /ui/home:
+    get:
+      tags: [ui]
       operationId: uiPage
       summary: The browser client's page
       description: HTML with a per-response nonce in the CSP; starts the wasm module. Public.

@@ -19,7 +19,7 @@ The foundry catalog module `genevia` (schema `genevia`) owns the tables.
 
 ## Facts
 
-* Foreman: HTTPS 17443, redirect 17080, `BASE_PATH=/genevia`; the client is at `/genevia/ui`, a tree at `/genevia/ui/t/<tree>/<list|pedigree|fan>[/<person>]`. Gatehouse client `genevia`, secret `CLIENT_SECRET_GENEVIA`.
+* Foreman: HTTPS 17443, redirect 17080, `BASE_PATH=/genevia`; the client is at `/genevia/ui/home` (`/genevia/ui` redirects there), a tree at `/genevia/ui/t/<tree>/<list|pedigree|fan>[/<person>]`. Gatehouse client `genevia`, secret `CLIENT_SECRET_GENEVIA`.
 * Tests: `GENEVIA_TEST_DATABASE_URL` (module installed with foundry) enables the API tests against Postgres.
 
 ## API (`/api/v1`, behind `Auth`)

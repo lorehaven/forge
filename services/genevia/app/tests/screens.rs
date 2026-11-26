@@ -180,7 +180,7 @@ fn nodes_with_text(r: &TestRenderer, tag: &str, text: &str) -> Vec<NodeId> {
 
 #[quench_test::test]
 fn the_home_lists_the_trees_under_the_service_prefix_and_offers_the_import_to_writers() {
-    let app = live("/genevia/ui", "/genevia", true, false);
+    let app = live("/genevia/ui/home", "/genevia", true, false);
     let text = app.r.text();
     assert!(text.contains("Kowal"), "{text}");
     assert!(text.contains("Importuj plik GEDCOM"), "{text}");
@@ -201,7 +201,7 @@ fn the_home_lists_the_trees_under_the_service_prefix_and_offers_the_import_to_wr
 
 #[quench_test::test]
 fn a_reader_is_not_offered_the_import() {
-    let app = live("/genevia/ui", "/genevia", false, false);
+    let app = live("/genevia/ui/home", "/genevia", false, false);
     let text = app.r.text();
     assert!(text.contains("Kowal"), "{text}");
     assert!(!text.contains("Importuj plik GEDCOM"), "{text}");
@@ -262,7 +262,7 @@ fn the_side_panel_links_stay_under_the_service_prefix() {
     let app = live("/genevia/ui/t/kowal/pedigree", "/genevia", false, false);
     let html = app.r.html();
     assert!(html.contains(r#"href="/genevia/ui/t/kowal/fan""#), "{html}");
-    assert!(html.contains(r#"href="/genevia/ui""#), "{html}");
+    assert!(html.contains(r#"href="/genevia/ui/home""#), "{html}");
 }
 
 #[quench_test::test]
@@ -281,7 +281,7 @@ fn button(r: &TestRenderer, text: &str) -> NodeId {
 
 #[quench_test::test]
 fn only_a_manager_is_offered_to_rename_and_delete_a_tree() {
-    let app = live("/genevia/ui", "/genevia", true, false);
+    let app = live("/genevia/ui/home", "/genevia", true, false);
     let text = app.r.text();
     assert!(
         !text.contains("Zmień nazwę") && !text.contains("Usuń"),
@@ -295,7 +295,7 @@ fn a_manager_renames_and_deletes_a_tree_from_the_list() {
         ("Zmień nazwę", "Zapisz", "PUT"),
         ("Usuń", "Usuń drzewo", "DELETE"),
     ] {
-        let app = start("/genevia/ui", "/genevia", false, false, true);
+        let app = start("/genevia/ui/home", "/genevia", false, false, true);
         app.r.fire(button(&app.r, open), &Event::Click);
         assert!(
             app.r.html().contains(r#"role="dialog""#),

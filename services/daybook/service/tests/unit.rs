@@ -296,3 +296,36 @@ async fn a_valid_repeat_rule_reaches_the_postgres_requirement() {
 }
 
 quench_test::main!();
+
+#[quench_test::test]
+async fn the_browser_client_starts_at_ui_home_and_the_root_leads_there() {
+    let (app, container) = enforcing_app().await;
+    let get = |path: &str| {
+        Request::new(
+            Method::GET,
+            path.parse::<Uri>().unwrap(),
+            HeaderMap::new(),
+            quench_http::body::InboundBody::from_bytes(Bytes::new()),
+            container.clone(),
+        )
+    };
+    for path in ["/ui", "/ui/"] {
+        let response = app.call(get(path)).await.into_inner();
+        assert_eq!(response.status, StatusCode::FOUND, "{path}");
+        let location = response.headers.get("location").unwrap().to_str().unwrap();
+        assert!(location.ends_with("/ui/home"), "{path}: {location}");
+    }
+    // Public: the page signs in by itself. Without a built module it says so, which is not a missing route.
+    for path in ["/ui/home", "/ui/home/"] {
+        let response = app.call(get(path)).await.into_inner();
+        let status = response.status;
+        let body = response.body.collect_limited(usize::MAX).await.unwrap();
+        let body = String::from_utf8_lossy(&body);
+        if status == StatusCode::OK {
+            assert!(body.contains("/ui/assets/quench.js"), "{path}: {body}");
+        } else {
+            assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+            assert!(body.contains("not installed"), "{path}: {body}");
+        }
+    }
+}

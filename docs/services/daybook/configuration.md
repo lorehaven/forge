@@ -37,7 +37,7 @@ Feature flags (`FEATURE_*`): none.
 
 ## Gatehouse registration
 
-Gatehouse must know the service: its permission catalog (`services/gatehouse/service/config/permissions.toml`) lists the `daybook` actions `read` and `write`, and the realm audience list is derived from it (see [Authentication and permissions](../../guides/authentication.md)). Gatehouse's `DAYBOOK_UI_URL` (foreman: `https://localhost:12443/daybook/ui`) is the dashboard link.
+Gatehouse must know the service: its permission catalog (`services/gatehouse/service/config/permissions.toml`) lists the `daybook` actions `read` and `write`, and the realm audience list is derived from it (see [Authentication and permissions](../../guides/authentication.md)). Gatehouse's `DAYBOOK_UI_URL` (foreman: `https://localhost:12443/daybook/ui/home`) is the dashboard link.
 
 ## Secrets
 

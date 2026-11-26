@@ -11,7 +11,8 @@ Lectern answers `GET` and `HEAD` and needs no credentials. Paths are relative to
 
 | Route | Answer |
 |---|---|
-| `GET /` | An HTML page listing the books as cards: title, release and number of files, each linked to its book. The language, mode and palette follow the `qlocale`, `qtheme` and `fui_palette` cookies, else `Accept-Language`. |
+| `GET /`, `/ui`, `/ui/` | `302` to `/ui/home`. |
+| `GET /ui/home`, `/ui/home/` | An HTML page listing the books as cards: title, release and number of files, each linked to its book. The language, mode and palette follow the `qlocale`, `qtheme` and `fui_palette` cookies, else `Accept-Language`. |
 | `GET /ui/assets/style.css`, `/ui/assets/shell.js`, `/ui/assets/lectern.js`, `/ui/assets/frame.js`, `/ui/assets/favicon.png` | The pages' files: forge's stylesheet with Lectern's rules, forge's shell script, the script that reloads on a language change, the script of the frame page (address bar and title), the icon. |
 | `GET /api/v1/books` | `200` JSON array, one object per book: `name`, `title`, `version`, `built`, `files`, `url`. |
 | `GET /<book>` | `301` to `/<book>/`. |

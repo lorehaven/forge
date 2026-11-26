@@ -2,7 +2,7 @@ use gatehouse_service::catalog::PermissionCatalog;
 use gatehouse_service::realm::*;
 use quench_auth::prelude::{Permissions, Role, SessionDb, User};
 use quench_cache::CacheStore;
-use quench_db::prelude::Db;
+use quench_db::prelude::{Crud, Db};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -480,6 +480,63 @@ async fn update_rejects_unknown_grants() {
     .await
     .unwrap_err();
     assert!(matches!(error, RealmError::UnknownGrants(_)));
+}
+
+/// A user left with a grant on a service the catalog has since dropped.
+#[quench_test::test]
+async fn update_keeps_a_grant_on_a_retired_service_but_adds_none() {
+    let db = db().await;
+    let sessions = sessions();
+    seed_user(&db, "alice", "password", vec![]).await;
+    let repo = db.repository::<User>();
+    let mut alice = repo.read("alice").await.unwrap().unwrap();
+    let mut held = Permissions::new();
+    held.insert(
+        "retired".to_string(),
+        std::iter::once("read".to_string()).collect(),
+    );
+    alice.permissions = quench_serde::to_value(&held);
+    repo.update(&alice).await.unwrap();
+
+    let catalog = default_catalog();
+    let save = |permissions: Permissions| {
+        update(
+            &db,
+            &catalog,
+            &sessions,
+            "an-admin",
+            true,
+            "alice",
+            UserChanges {
+                permissions: Some(permissions),
+                ..UserChanges::default()
+            },
+        )
+    };
+
+    // A known grant added next to the old one is saved, and the old one stays.
+    let mut wanted = held.clone();
+    wanted.insert(
+        "sage".to_string(),
+        std::iter::once("read".to_string()).collect(),
+    );
+    let updated = save(wanted.clone()).await.expect("update");
+    assert_eq!(updated.get_permissions(), wanted);
+
+    // More on the retired service is still refused, and named.
+    wanted
+        .get_mut("retired")
+        .unwrap()
+        .insert("write".to_string());
+    let error = save(wanted).await.unwrap_err();
+    assert!(
+        matches!(&error, RealmError::UnknownGrants(grants) if grants == &["retired"]),
+        "{error:?}"
+    );
+
+    // And it can be taken away.
+    let updated = save(Permissions::new()).await.expect("update");
+    assert!(updated.get_permissions().is_empty());
 }
 
 #[quench_test::test]

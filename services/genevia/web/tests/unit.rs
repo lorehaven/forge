@@ -5,6 +5,7 @@ use genevia_app::api::{base_of, segment};
 #[quench_test::test]
 fn the_prefix_is_whatever_comes_before_ui() {
     assert_eq!(base_of("/genevia/ui"), "/genevia");
+    assert_eq!(base_of("/genevia/ui/home"), "/genevia");
     assert_eq!(base_of("/genevia/ui/t/kowal/list/I1"), "/genevia");
     assert_eq!(base_of("/ui"), "");
     assert_eq!(base_of("/ui/t/kowal"), "");

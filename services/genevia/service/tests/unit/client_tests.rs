@@ -24,17 +24,36 @@ async fn app(auth_enabled: bool) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Con
     )
 }
 
-async fn get(
-    path: &str,
-    app: &(Arc<dyn Endpoint>, Arc<quench_http::di::Container>),
-) -> (StatusCode, String) {
-    let request = Request::new(
+fn request(path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
         Method::GET,
         path.parse::<Uri>().unwrap(),
         HeaderMap::new(),
         quench_http::body::InboundBody::from_bytes(Bytes::new()),
-        app.1.clone(),
-    );
+        container.clone(),
+    )
+}
+
+/// The status and where it points.
+async fn redirect(
+    path: &str,
+    app: &(Arc<dyn Endpoint>, Arc<quench_http::di::Container>),
+) -> (StatusCode, String) {
+    let response = app.0.call(request(path, &app.1)).await.into_inner();
+    let location = response
+        .headers
+        .get("location")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    (response.status, location)
+}
+
+async fn get(
+    path: &str,
+    app: &(Arc<dyn Endpoint>, Arc<quench_http::di::Container>),
+) -> (StatusCode, String) {
+    let request = request(path, &app.1);
     let response = app.0.call(request).await.into_inner();
     let status = response.status;
     let body = response.body.collect_limited(usize::MAX).await.unwrap();
@@ -47,8 +66,8 @@ async fn get(
 async fn the_pages_start_the_client_for_a_signed_in_visitor() {
     let app = app(false).await;
     for path in [
-        "/ui",
-        "/ui/",
+        "/ui/home",
+        "/ui/home/",
         "/ui/t/walus",
         "/ui/t/walus/pedigree",
         "/ui/t/walus/fan/I12",
@@ -64,9 +83,19 @@ async fn the_pages_start_the_client_for_a_signed_in_visitor() {
 }
 
 #[quench_test::test]
+async fn the_root_leads_to_the_home_page() {
+    let app = app(false).await;
+    for path in ["/ui", "/ui/"] {
+        let (status, location) = redirect(path, &app).await;
+        assert_eq!(status, StatusCode::FOUND, "{path}");
+        assert!(location.ends_with("/ui/home"), "{path}: {location}");
+    }
+}
+
+#[quench_test::test]
 async fn a_visitor_with_no_session_is_sent_to_sign_in() {
     let app = app(true).await;
-    for path in ["/ui", "/ui/t/walus", "/ui/t/walus/list/I1"] {
+    for path in ["/ui/home", "/ui/t/walus", "/ui/t/walus/list/I1"] {
         let (status, _) = get(path, &app).await;
         assert!(status.is_redirection(), "{path}: {status}");
     }

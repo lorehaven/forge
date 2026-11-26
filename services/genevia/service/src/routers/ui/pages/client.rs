@@ -1,10 +1,13 @@
 //! The browser client: the pages that start it (behind the session check) and the files it loads (`forge-web` serves them).
 //!
-//! The client routes inside `/ui`: the list of trees, and `/ui/t/<tree>/<view>/<person>`.
+//! The client routes inside `/ui`: the list of trees at `/ui/home`, and `/ui/t/<tree>/<view>/<person>`. `/ui` itself
+//! sends the visitor to `/ui/home`, which is where gatehouse sends a browser after signing in.
 
 use crate::routers::ui::common::ActorOrRedirect;
 use forge_web::Client;
+use quench_http::http::StatusCode;
 use quench_http::prelude::*;
+use quench_starter::common::routes::with_base_path;
 
 static CLIENT: Client = Client::new("Genevia", genevia_web::stylesheet)
     .framed()
@@ -18,12 +21,26 @@ fn page(who: ActorOrRedirect) -> Response {
     }
 }
 
+fn to_home() -> Response {
+    Response::new(StatusCode::FOUND).header("Location", with_base_path("/ui/home"))
+}
+
 #[get("/ui")]
+pub(super) async fn root() -> Response {
+    to_home()
+}
+
+#[get("/ui/")]
+pub(super) async fn root_slash() -> Response {
+    to_home()
+}
+
+#[get("/ui/home")]
 pub(super) async fn home(who: ActorOrRedirect) -> Response {
     page(who)
 }
 
-#[get("/ui/")]
+#[get("/ui/home/")]
 pub(super) async fn home_slash(who: ActorOrRedirect) -> Response {
     page(who)
 }
@@ -76,6 +93,8 @@ pub(super) async fn module() -> Response {
 }
 
 pub(super) fn register_routes() {
+    let _ = root as fn() -> _;
+    let _ = root_slash as fn() -> _;
     let _ = home as fn(_) -> _;
     let _ = home_slash as fn(_) -> _;
     let _ = tree as fn(_, _) -> _;

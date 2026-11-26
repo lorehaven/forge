@@ -169,6 +169,8 @@ frame.addEventListener('load', sync);\n  \
 setInterval(sync, 1000);\n})();\n";
 
 /// The paths of the page's files, below the base path.
+/// The list of books: the front page, as `/ui/home` is in every service.
+pub const HOME_PATH: &str = "/ui/home";
 pub const STYLE_PATH: &str = "/ui/assets/style.css";
 pub const SHELL_PATH: &str = "/ui/assets/shell.js";
 pub const SCRIPT_PATH: &str = "/ui/assets/lectern.js";
@@ -266,8 +268,8 @@ fn topbar(base: &str, t: &Texts, books: Switcher<'_>) -> String {
     let home = escape(&t.t("ui_home_button"));
     format!(
         "<header class=\"fui-topbar\">\
-<div class=\"fui-topbar-nav\"><a id=\"home\" class=\"fui-icon-btn\" href=\"{base}/\" title=\"{home}\">{house}<span class=\"sr-only\">{home}</span></a></div>\
-<a id=\"title\" class=\"fui-brand\" href=\"{base}/\"><span class=\"fui-brand-mark fui-brand-image\"><img src=\"{base}{ICON_PATH}\" alt=\"\"></span><span class=\"fui-brand-name\">Lectern</span></a>{switcher}\
+<div class=\"fui-topbar-nav\"><a id=\"home\" class=\"fui-icon-btn\" href=\"{base}{HOME_PATH}\" title=\"{home}\">{house}<span class=\"sr-only\">{home}</span></a></div>\
+<a id=\"title\" class=\"fui-brand\" href=\"{base}{HOME_PATH}\"><span class=\"fui-brand-mark fui-brand-image\"><img src=\"{base}{ICON_PATH}\" alt=\"\"></span><span class=\"fui-brand-name\">Lectern</span></a>{switcher}\
 <div class=\"fui-topbar-spacer\"></div>\
 <div class=\"fui-topbar-actions\"><div class=\"locale-switch\"><select id=\"language\" aria-label=\"{language}\">{options}</select></div>{theme}</div>\
 </header>",

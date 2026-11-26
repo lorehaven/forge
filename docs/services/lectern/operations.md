@@ -7,7 +7,7 @@ nav_order: 3
 
 ## Running
 
-Under foreman: `foreman start lectern` (it starts Gatehouse and Warehouse first). The service listens on `https://localhost:15443/lectern/`. To have something to show, release a book to a Warehouse started with `FILE_STORAGES=docs=<directory>`: `anvil docs release forge`.
+Under foreman: `foreman start lectern` (it starts Gatehouse and Warehouse first). The service listens on `https://localhost:15443/lectern/ui/home`. To have something to show, release a book to a Warehouse started with `FILE_STORAGES=docs=<directory>`: `anvil docs release forge`.
 
 ## Health
 
@@ -36,7 +36,7 @@ All three are under `BASE_PATH`, like every other route.
 
 ## Deploying
 
-The cluster overlay is `homecloud/overlays/forge/lectern/` (deployment, service, ingress, config map, secret), listed in `overlay.yaml`, with the values in `values.yaml` (`LECTERN_*`). The pod runs the image `forge/lectern/lectern`, reads `docs` through the cluster address of Warehouse (`LECTERN_WAREHOUSE_URL`) and signs in to it as the `lectern-warehouse` client. Public address: `https://ennor.ddns.net/lectern/`, with no authentication in front of it.
+The cluster overlay is `homecloud/overlays/forge/lectern/` (deployment, service, ingress, config map, secret), listed in `overlay.yaml`, with the values in `values.yaml` (`LECTERN_*`). The pod runs the image `forge/lectern/lectern`, reads `docs` through the cluster address of Warehouse (`LECTERN_WAREHOUSE_URL`) and signs in to it as the `lectern-warehouse` client. Public address: `https://ennor.ddns.net/lectern/ui/home`, with no authentication in front of it.
 
 What has to be in place, in this order:
 

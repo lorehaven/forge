@@ -54,7 +54,7 @@ pub const fn line_of(ahn: u32) -> &'static str {
 /// The address of the list of trees.
 #[must_use]
 pub fn home_url() -> String {
-    format!("{}/ui", crate::api::base())
+    format!("{}/ui/home", crate::api::base())
 }
 
 /// The address of a view of a tree, rooted at `xref` (blank for the tree's own root).
