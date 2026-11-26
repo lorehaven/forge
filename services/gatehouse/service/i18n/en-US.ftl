@@ -149,6 +149,7 @@ ui_admin_access_save_hint = Changes are saved with the Save button below the lis
 ui_admin_resource_storage = Storages
 ui_admin_resource_project = Projects
 ui_admin_resource_target = Targets
+ui_admin_resource_tree = Trees
 ui_admin_wildcard_note = This role already grants every service; the choices above are fixed.
 ui_admin_new_password_optional = New password (leave blank to keep the current one)
 ui_admin_save = Save

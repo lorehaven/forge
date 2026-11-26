@@ -4,7 +4,9 @@ use super::authz::Access;
 use super::ok;
 use crate::import::Incoming;
 use crate::store::{self, StoreError};
-use genevia_core::wire::{FamilyEdit, Imported, Me, PersonEdit, Problem, RelativeBody, TreeInfo};
+use genevia_core::wire::{
+    FamilyEdit, Imported, Me, PersonEdit, Problem, RelativeBody, TreeInfo, TreeRename,
+};
 use quench_http::prelude::{Json, Path, Query, Response, delete, get, http::StatusCode, post, put};
 use quench_serde::Deserialize;
 
@@ -71,6 +73,10 @@ pub async fn list(access: Access) -> Response {
             let trees: Vec<TreeInfo> = trees
                 .into_iter()
                 .filter(|t| all || named.contains(&t.id))
+                .map(|t| TreeInfo {
+                    manage: access.can_manage(&t.id),
+                    ..t
+                })
                 .collect();
             ok(&trees)
         }
@@ -106,6 +112,42 @@ pub async fn import(access: Access, Incoming(upload): Incoming) -> Response {
                 replaced: done.replaced,
             })
         }
+        Err(e) => failed(&e),
+    }
+}
+
+/// Gives a tree another name. Its id stays.
+#[put("/api/v1/trees/{tree}")]
+pub async fn rename(
+    access: Access,
+    Path(tree): Path<String>,
+    Json(body): Json<TreeRename>,
+) -> Response {
+    if !access.can_manage(&tree) {
+        return forbidden();
+    }
+    match store::rename(&tree, &body.name).await {
+        Ok(true) => {
+            quench_log::info!("genevia: {} renamed {tree}", access.who());
+            Response::new(StatusCode::NO_CONTENT)
+        }
+        Ok(false) => missing("tree"),
+        Err(e) => failed(&e),
+    }
+}
+
+/// Removes a tree and everything in it.
+#[delete("/api/v1/trees/{tree}")]
+pub async fn remove(access: Access, Path(tree): Path<String>) -> Response {
+    if !access.can_manage(&tree) {
+        return forbidden();
+    }
+    match store::delete(&tree).await {
+        Ok(true) => {
+            quench_log::info!("genevia: {} deleted {tree}", access.who());
+            Response::new(StatusCode::NO_CONTENT)
+        }
+        Ok(false) => missing("tree"),
         Err(e) => failed(&e),
     }
 }
@@ -286,6 +328,8 @@ pub fn register_routes() {
     let _ = person as fn(_, _) -> _;
     let _ = person_edit as fn(_, _) -> _;
     let _ = save_person as fn(_, _, _) -> _;
+    let _ = rename as fn(_, _, _) -> _;
+    let _ = remove as fn(_, _) -> _;
     let _ = delete_person as fn(_, _) -> _;
     let _ = add_relative as fn(_, _, _) -> _;
     let _ = family_edit as fn(_, _) -> _;

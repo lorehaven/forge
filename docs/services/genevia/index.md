@@ -4,7 +4,7 @@ parent: Services
 nav_order: 16
 ---
 
-Genevia keeps family trees. A GEDCOM file is imported into Postgres; a tree is browsed as a list (Ahnentafel table by generation), a pedigree or a radial fan, and people, couples and relatives can be edited. A wedding is one record, so a change made from either spouse shows for both.
+Genevia keeps family trees. A GEDCOM file is imported into Postgres; a tree is browsed as a list (Ahnentafel table by generation), a pedigree or a radial fan, and people, couples and relatives can be edited. A tree can be renamed and deleted from the list of trees. A wedding is one record, so a change made from either spouse shows for both.
 
 ## Crates
 
@@ -27,13 +27,14 @@ The foundry catalog module `genevia` (schema `genevia`) owns the tables.
 | Route | Needs |
 |---|---|
 | `GET /me`, `GET /trees` (only the trees the caller may open) | any grant |
-| `POST /trees` (multipart `file`; a file of the same name replaces that tree) | blanket `write`, or `write` on that tree id |
+| `POST /trees` (multipart `file`; a file of the same name replaces that tree, keeping its name) | blanket `write`, or `write` on that tree id |
+| `PUT /trees/{t}` (`{"name": ...}`; the id stays), `DELETE /trees/{t}` | `manage` on the tree |
 | `GET /trees/{t}/ancestry?root=&generations=`, `/search?q=`, `/people/{x}` | `read` on the tree |
 | `GET/PUT/DELETE /trees/{t}/people/{x}[/edit]`, `POST /people/{x}/relatives`, `GET/PUT/DELETE /families/{f}[/edit]` | `write` on the tree |
 
 ## Permissions
 
-`genevia:read` and `genevia:write` cover every tree; a grant can name one tree, `genevia:tree:<id>:read|write` (the id is the import's file name, e.g. `walus`). `write` includes read. The client shows edit controls only where the API says the caller may change the tree. Trees hold names and dates of living people, so only the `editor` template carries a grant.
+`genevia:read`, `genevia:write` and `genevia:manage` cover every tree; a grant can name one tree, `genevia:tree:<id>:read|write|manage` (the id is the import's file name, e.g. `walus`). `write` includes read; `manage` (rename and delete) includes write. Gatehouse's permission editor lists the trees by asking this service (`GENEVIA_API_URL`). Deleting a tree leaves the grants naming it, so importing the same file name again gives their holders the new tree. The client shows edit controls only where the API says the caller may change the tree. Trees hold names and dates of living people, so only the `editor` template carries a grant.
 
 ## Known gap
 

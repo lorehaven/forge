@@ -13,6 +13,15 @@ pub struct TreeInfo {
     /// The person the tree is about.
     pub root: String,
     pub root_name: String,
+    /// Whether the caller may rename and delete it.
+    #[serde(default)]
+    pub manage: bool,
+}
+
+/// The new name of a tree.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct TreeRename {
+    pub name: String,
 }
 
 /// A person in brief: enough for a row, a card or a sector.

@@ -1,8 +1,9 @@
 //! Who may do what to which tree. `Auth` has already put the caller's claims on the request.
 //!
-//! The grants are `genevia:read` and `genevia:write` (every tree), or the same for one tree, `genevia:tree:<id>:<action>`.
-//! `write` also lets the holder read: nobody edits what they cannot see. With `SERVICE_AUTH_ENABLED` off, as in
-//! development, everything is allowed.
+//! The grants are `genevia:read`, `genevia:write` and `genevia:manage` (every tree), or the same for one tree,
+//! `genevia:tree:<id>:<action>`. Each includes the ones before it: `write` also lets the holder read (nobody edits what
+//! they cannot see), and `manage` (rename and delete the tree) also lets them write. With `SERVICE_AUTH_ENABLED` off, as
+//! in development, everything is allowed.
 
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_core::async_trait;
@@ -50,22 +51,28 @@ impl Access {
     /// May change `tree`, or replace it by importing a file of the same name.
     #[must_use]
     pub fn can_write(&self, tree: &str) -> bool {
-        self.holds_on(tree, "write")
+        self.can_manage(tree) || self.holds_on(tree, "write")
     }
 
-    /// May add trees and change every tree (the blanket `write`).
+    /// May rename and delete `tree`.
+    #[must_use]
+    pub fn can_manage(&self, tree: &str) -> bool {
+        self.holds_on(tree, "manage")
+    }
+
+    /// May add trees and change every tree (the blanket `write` or `manage`).
     #[must_use]
     pub fn can_write_all(&self) -> bool {
-        self.holds("write")
+        self.holds("manage") || self.holds("write")
     }
 
     /// Whether the caller sees every tree, rather than only the ones granted by name.
     #[must_use]
     pub fn can_read_all(&self) -> bool {
-        self.holds("write") || self.holds("read")
+        self.can_write_all() || self.holds("read")
     }
 
-    /// The trees granted by name (`genevia:tree:<id>:read` or `:write`).
+    /// The trees granted by name (`genevia:tree:<id>:read`, `:write` or `:manage`).
     #[must_use]
     pub fn granted_trees(&self) -> Vec<String> {
         let Some(claims) = &self.claims else {
@@ -79,7 +86,7 @@ impl Access {
             .filter_map(|entry| {
                 let rest = entry.strip_prefix("tree:")?;
                 let (id, action) = rest.rsplit_once(':')?;
-                matches!(action, "read" | "write").then(|| id.to_string())
+                matches!(action, "read" | "write" | "manage").then(|| id.to_string())
             })
             .collect()
     }

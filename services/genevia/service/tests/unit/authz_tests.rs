@@ -32,6 +32,20 @@ fn a_blanket_write_reads_and_changes_every_tree_and_may_add_trees() {
 }
 
 #[quench_test::test]
+fn only_manage_renames_and_deletes_and_it_includes_writing() {
+    let a = access("genevia:read genevia:write");
+    assert!(!a.can_manage("walus"), "write is not manage");
+    let a = access("genevia:manage");
+    assert!(a.can_manage("walus") && a.can_write("other") && a.can_read("other"));
+    assert!(a.can_write_all() && a.can_read_all());
+    let a = access("genevia:tree:walus:manage");
+    assert!(a.can_manage("walus") && a.can_write("walus") && a.can_read("walus"));
+    assert!(!a.can_manage("kowal") && !a.can_read("kowal"));
+    assert!(!a.can_write_all() && !a.can_read_all());
+    assert_eq!(a.granted_trees(), vec!["walus".to_string()]);
+}
+
+#[quench_test::test]
 fn a_grant_on_one_tree_covers_only_that_tree() {
     let a = access("genevia:tree:walus:write genevia:tree:kowal:read");
     assert!(
@@ -60,6 +74,7 @@ fn another_service_grants_nothing_here() {
 fn an_admin_may_do_everything() {
     let a = access("admin");
     assert!(a.can_read("x") && a.can_write("x") && a.can_write_all() && a.can_read_all());
+    assert!(a.can_manage("x"));
 }
 
 #[quench_test::test]

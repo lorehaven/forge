@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use genevia_core::wire::{
     Ancestry, Card, FamilyEdit, FamilyForm, Me, PersonDetail, PersonEdit, Problem, RelativeBody,
-    TreeInfo,
+    TreeInfo, TreeRename,
 };
 use quench_serde::json;
 use quench_serde::{Deserialize, Serialize};
@@ -190,6 +190,18 @@ pub async fn me() -> Result<Me, ApiError> {
 /// All the trees the person may open.
 pub async fn list_trees() -> Result<Vec<TreeInfo>, ApiError> {
     read("/api/v1/trees".to_string()).await
+}
+
+/// Gives a tree another name.
+pub async fn rename_tree(tree: String, name: String) -> Result<(), ApiError> {
+    write("PUT", trees_path(&tree), &TreeRename { name })
+        .await
+        .map(drop)
+}
+
+/// Removes a tree and everything in it.
+pub async fn delete_tree(tree: String) -> Result<(), ApiError> {
+    send("DELETE", trees_path(&tree), None).await.map(drop)
 }
 
 /// The ancestors of `root` (the tree's own root when blank), `generations` back.

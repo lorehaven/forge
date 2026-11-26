@@ -8,5 +8,5 @@ foreman start genevia      postgres, the schema (foundry), the service on https:
 foreman run web            build the browser client into service/web/app.wasm (before the first start)
 ```
 
-The trees are the `genevia` schema in Postgres (Foundry module `genevia`). Access is `genevia:read` / `genevia:write`,
-for every tree or for one (`genevia:tree:<id>:read|write`); see the docs.
+The trees are the `genevia` schema in Postgres (Foundry module `genevia`). Access is `genevia:read` / `genevia:write` /
+`genevia:manage` (rename, delete), for every tree or for one (`genevia:tree:<id>:read|write|manage`); see the docs.

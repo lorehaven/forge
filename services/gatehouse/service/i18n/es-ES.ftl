@@ -149,6 +149,7 @@ ui_admin_access_save_hint = Los cambios se guardan con el botón Guardar bajo la
 ui_admin_resource_storage = Almacenes
 ui_admin_resource_project = Proyectos
 ui_admin_resource_target = Destinos
+ui_admin_resource_tree = Árboles
 ui_admin_wildcard_note = Este rol ya concede todos los servicios; las opciones de arriba son fijas.
 ui_admin_new_password_optional = Nueva contraseña (déjala vacía para mantener la actual)
 ui_admin_save = Guardar

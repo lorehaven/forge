@@ -149,6 +149,7 @@ ui_admin_access_save_hint = Änderungen werden mit „Speichern“ unter der Lis
 ui_admin_resource_storage = Speicher
 ui_admin_resource_project = Projekte
 ui_admin_resource_target = Ziele
+ui_admin_resource_tree = Stammbäume
 ui_admin_wildcard_note = Diese Rolle gewährt bereits jeden Dienst; die Auswahl oben ist festgelegt.
 ui_admin_new_password_optional = Neues Passwort (leer lassen, um das bisherige zu behalten)
 ui_admin_save = Speichern

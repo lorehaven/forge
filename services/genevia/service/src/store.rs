@@ -372,6 +372,7 @@ pub async fn trees() -> Result<Vec<TreeInfo>, StoreError> {
             families: count(&r, "families")?,
             root: r.get::<Option<String>, _>("root")?.unwrap_or_default(),
             root_name: format!("{given} {surname}").trim().to_string(),
+            manage: false,
         });
     }
     Ok(out)
@@ -477,6 +478,49 @@ pub async fn search(tree_id: &str, query: &str) -> Result<Option<Vec<Card>>, Sto
             .map(|p| card(&tree, p))
             .collect(),
     ))
+}
+
+/// The longest name a tree may be given, in characters.
+pub const MAX_NAME: usize = 200;
+
+/// Changes the name a tree is shown by. Its id, and so its address and the grants naming it, stay.
+/// `false` when there is no such tree.
+///
+/// # Errors
+/// When the name is blank or too long, or the database fails.
+pub async fn rename(tree_id: &str, name: &str) -> Result<bool, StoreError> {
+    let name = name.trim();
+    let wrong = if name.is_empty() {
+        Some("Wpisz nazwę drzewa.")
+    } else if name.chars().count() > MAX_NAME {
+        Some("Nazwa może mieć najwyżej 200 znaków.")
+    } else if name.chars().any(char::is_control) {
+        Some("Nazwa nie może zawierać znaków sterujących.")
+    } else {
+        None
+    };
+    if let Some(message) = wrong {
+        return Err(StoreError::Invalid {
+            field: "name".to_string(),
+            message: message.to_string(),
+        });
+    }
+    let store = store()?;
+    let n = store
+        .pool()?
+        .execute(
+            &format!(
+                "UPDATE {}.trees SET name = $2, updated_at = NOW() WHERE id = $1",
+                store.schema
+            ),
+            &[&tree_id, &name],
+        )
+        .await?;
+    // The cached tree carries the old name.
+    if let Ok(mut m) = store.trees.write() {
+        m.remove(tree_id);
+    }
+    Ok(n > 0)
 }
 
 /// Removes a tree and everything in it.
@@ -811,25 +855,32 @@ async fn write_rows(
     Ok(())
 }
 
-/// Reads a GEDCOM file and stores it as a tree named after the file. A tree of the same name is
-/// replaced, in one transaction: readers see the old tree or the new one, never half of each.
+/// Reads a GEDCOM file and stores it as a tree named after the file. A tree of the same id is
+/// replaced, keeping the name it has been given, in one transaction: readers see the old tree or the
+/// new one, never half of each.
 ///
 /// # Errors
 /// When the file has no individuals, or the database fails.
 pub async fn import(file_name: &str, text: &str) -> Result<Imported, StoreError> {
     let store = store()?;
     let id = slug(file_name);
-    let name = title(&id);
+    let mut name = title(&id);
     let tree =
         Tree::parse(&name, text).map_err(|e| StoreError::BadFile(format!("{file_name}: {e}")))?;
     let s = &store.schema;
 
     let mut conn = store.pool()?.get().await?;
     let mut tx = conn.begin().await?;
-    let replaced = tx
-        .execute(&format!("DELETE FROM {s}.trees WHERE id = $1"), &[&id])
-        .await?
-        > 0;
+    let old = tx
+        .query(
+            &format!("DELETE FROM {s}.trees WHERE id = $1 RETURNING name"),
+            &[&id],
+        )
+        .await?;
+    let replaced = !old.is_empty();
+    if let Some(row) = old.first() {
+        name = row.get("name")?;
+    }
     tx.execute(
         &format!("INSERT INTO {s}.trees (id, name, source) VALUES ($1, $2, $3)"),
         &[&id, &name, &file_name],

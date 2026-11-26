@@ -62,6 +62,15 @@ pub enum Dialog {
     },
     DeletePerson(String),
     DeleteFamily(String),
+    /// The two a whole tree takes, from the list of trees.
+    RenameTree {
+        tree: String,
+        name: String,
+    },
+    DeleteTree {
+        tree: String,
+        name: String,
+    },
 }
 
 /// State that lives across pages.

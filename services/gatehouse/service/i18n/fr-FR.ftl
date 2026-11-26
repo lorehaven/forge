@@ -149,6 +149,7 @@ ui_admin_access_save_hint = Les modifications sont enregistrées avec le bouton 
 ui_admin_resource_storage = Espaces de stockage
 ui_admin_resource_project = Projets
 ui_admin_resource_target = Cibles
+ui_admin_resource_tree = Arbres
 ui_admin_wildcard_note = Ce rôle accorde déjà tous les services ; les choix ci-dessus sont fixés.
 ui_admin_new_password_optional = Nouveau mot de passe (laisser vide pour conserver l'actuel)
 ui_admin_save = Enregistrer

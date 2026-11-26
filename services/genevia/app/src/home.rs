@@ -1,4 +1,5 @@
-//! The home page: the trees there are, and the way to add one by importing a GEDCOM file.
+//! The home page: the trees there are, the way to add one by importing a GEDCOM file, and, for those who manage a tree,
+//! the buttons to rename and delete it.
 
 use crate::api::{SIGNED_OUT, list_trees, me};
 use genevia_core::wire::TreeInfo;
@@ -6,7 +7,8 @@ use quench_serde::{Deserialize, json};
 use quench_ui::prelude::*;
 use quench_ui::router::link;
 
-use crate::state::{Load, resource};
+use crate::dialogs::tree_layer;
+use crate::state::{Dialog, Load, Shared, resource};
 use crate::util::url;
 
 /// What the shell's upload script reports back: the file, the HTTP status and the body.
@@ -63,6 +65,47 @@ fn outcome_of(raw: &str) -> Outcome {
             report.name, report.status
         ))
     }
+}
+
+/// A tree on the home page: the link into it, and under it what its manager may do.
+fn entry(t: &TreeInfo, sh: &Shared) -> View {
+    let entry = div().class("gen-tree-card").child(card(t));
+    if !t.manage {
+        return entry.into_view();
+    }
+    let (rename, delete) = (sh.dialog.clone(), sh.dialog.clone());
+    let (tree, name) = (t.id.clone(), t.name.clone());
+    let (gone, called) = (tree.clone(), name.clone());
+    entry
+        .child(
+            div()
+                .class("gen-tree-actions")
+                .child(
+                    button()
+                        .attr("type", "button")
+                        .class("fui-btn fui-btn-tertiary fui-btn-sm")
+                        .text("Zmień nazwę")
+                        .on_click(move || {
+                            rename.set(Some(Dialog::RenameTree {
+                                tree: tree.clone(),
+                                name: name.clone(),
+                            }));
+                        }),
+                )
+                .child(
+                    button()
+                        .attr("type", "button")
+                        .class("fui-btn fui-btn-tertiary fui-btn-sm gen-tree-delete")
+                        .text("Usuń")
+                        .on_click(move || {
+                            delete.set(Some(Dialog::DeleteTree {
+                                tree: gone.clone(),
+                                name: called.clone(),
+                            }));
+                        }),
+                ),
+        )
+        .into_view()
 }
 
 fn card(t: &TreeInfo) -> View {
@@ -153,6 +196,9 @@ fn failure(text: &str) -> View {
 pub fn home() -> View {
     let reload = create_signal(0_u32);
     let outcome = create_signal(Outcome::Idle);
+    // Its own: a dialog left open here does not follow the person into a tree.
+    let sh = Shared::new();
+    let dialogs = tree_layer(&sh, &reload);
     let trees = resource(
         {
             let reload = reload.clone();
@@ -178,6 +224,7 @@ pub fn home() -> View {
                 .into_view(),
             _ => p().class("fui-muted").text("Wybierz drzewo.").into_view(),
         }))
+        .child(dialogs)
         .child(View::dynamic(move || match trees.get() {
             Load::Loading => p().class("fui-muted").text("Wczytywanie…").into_view(),
             Load::Failed(e) => failure(&e),
@@ -187,7 +234,7 @@ pub fn home() -> View {
                 .into_view(),
             Load::Ready(list) => div()
                 .class("fui-card-grid")
-                .children(list.iter().map(card))
+                .children(list.iter().map(|t| entry(t, &sh)))
                 .into_view(),
         }))
         .into_view()

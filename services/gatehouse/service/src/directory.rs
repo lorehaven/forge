@@ -1,6 +1,6 @@
 //! What a scoped grant can name.
 //!
-//! A grant such as `warehouse:storage:media:read` names one storage, one project, one target. The permission editor offers
+//! A grant such as `warehouse:storage:media:read` names one storage, one project, one target, one tree. The permission editor offers
 //! them as a list, so gatehouse asks the services that own them. It does so with a token of its own, made for the one call:
 //! audience the service asked, and the one grant the listing needs (`<service>:read`), so what it can see is no more than
 //! the service's own read-only listing. Nothing is cached and nothing is stored; a service that cannot answer is reported
@@ -44,7 +44,7 @@ enum Label {
 }
 
 /// What each service lists. A scoped type with no row here still gets its held grants shown; it just offers no list.
-const SOURCES: [Source; 4] = [
+const SOURCES: [Source; 5] = [
     Source {
         service: "warehouse",
         resource_type: "storage",
@@ -71,6 +71,13 @@ const SOURCES: [Source; 4] = [
         resource_type: "target",
         path: "/api/v1/targets",
         id: Field::Name,
+        label: Label::Name,
+    },
+    Source {
+        service: "genevia",
+        resource_type: "tree",
+        path: "/api/v1/trees",
+        id: Field::Id,
         label: Label::Name,
     },
 ];

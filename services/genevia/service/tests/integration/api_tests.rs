@@ -4,7 +4,7 @@
 use crate::support::{self, Api, read};
 use genevia_core::wire::{
     Ancestry, Card, EventEdit, FactEdit, FamilyEdit, FamilyForm, Imported, Me, PersonDetail,
-    PersonEdit, Problem, RelativeBody, TreeInfo,
+    PersonEdit, Problem, RelativeBody, TreeInfo, TreeRename,
 };
 use quench_http::http::{Method, StatusCode};
 
@@ -375,6 +375,76 @@ async fn permissions(api: &Api, open: &Api) {
     }
 }
 
+/// Renaming and deleting a tree: the `manage` grant alone, and a new name outlives a re-import.
+async fn managing(api: &Api, open: &Api) {
+    let (id, file) = ("genevia_test_managed", "Genevia test managed.ged");
+    clean(id).await;
+    assert_eq!(open.import(file, FAMILY, None).await.0, StatusCode::OK);
+    let path = format!("/api/v1/trees/{id}");
+    let writer = Some("genevia:write");
+    let manager = Some("genevia:tree:genevia_test_managed:manage");
+    let new_name = |name: &str| TreeRename { name: name.into() };
+    let found = |scope: Option<&'static str>| async move {
+        let (status, body) = api.call(Method::GET, "/api/v1/trees", scope, None).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        read::<Vec<TreeInfo>>(&body)
+            .into_iter()
+            .find(|t| t.id == id)
+            .expect("the tree is listed")
+    };
+
+    assert!(!found(writer).await.manage);
+    assert!(found(manager).await.manage);
+    for scope in [writer, Some("genevia:tree:genevia_test_other:manage"), None] {
+        let renamed = api
+            .send_json(Method::PUT, &path, scope, &new_name("No"))
+            .await;
+        assert_eq!(renamed.0, StatusCode::FORBIDDEN, "{scope:?}");
+        let deleted = api.call(Method::DELETE, &path, scope, None).await;
+        assert_eq!(deleted.0, StatusCode::FORBIDDEN, "{scope:?}");
+    }
+
+    for bad in ["   ".to_string(), "x".repeat(201), "a\nb".to_string()] {
+        let (status, body) = api
+            .send_json(Method::PUT, &path, manager, &new_name(&bad))
+            .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(read::<Problem>(&body).field, "name");
+    }
+    // Read it first, so that the cached copy has to be dropped by the rename.
+    let ancestry = format!("{path}/ancestry");
+    assert_eq!(
+        api.call(Method::GET, &ancestry, manager, None).await.0,
+        StatusCode::OK
+    );
+    let (status, body) = api
+        .send_json(Method::PUT, &path, manager, &new_name("  Rodzina Żółć  "))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    assert_eq!(found(manager).await.name, "Rodzina Żółć");
+    let (status, body) = open.import(file, FAMILY, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(read::<Imported>(&body).name, "Rodzina Żółć");
+    assert_eq!(found(manager).await.name, "Rodzina Żółć");
+
+    let (status, body) = api.call(Method::DELETE, &path, manager, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    assert_eq!(
+        api.call(Method::GET, &ancestry, manager, None).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        api.call(Method::DELETE, &path, manager, None).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        api.send_json(Method::PUT, &path, manager, &new_name("Gone"))
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn database_tests() {
     let Some(url) = support::url() else {
@@ -386,6 +456,7 @@ async fn database_tests() {
     import_and_read(&open).await;
     editing(&open).await;
     permissions(&enforced, &open).await;
+    managing(&enforced, &open).await;
 }
 
 #[quench_test::test]

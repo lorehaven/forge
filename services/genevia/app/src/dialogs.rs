@@ -10,8 +10,8 @@ use quench_ui::prelude::*;
 use quench_ui::router::RouteContext;
 
 use crate::api::{
-    ApiError, add_relative, delete_family, delete_person, family_edit, person, person_edit,
-    save_family, save_person, search, spawn_local,
+    ApiError, add_relative, delete_family, delete_person, delete_tree, family_edit, person,
+    person_edit, rename_tree, save_family, save_person, search, spawn_local,
 };
 use crate::shell::at;
 use crate::state::{Dialog, Load, Shared, resource};
@@ -1196,6 +1196,100 @@ fn delete_family_dialog(tree: String, family: String, sh: &Shared) -> View {
     )
 }
 
+// ---------------------------------------------------------------------------------------------
+// A whole tree
+// ---------------------------------------------------------------------------------------------
+
+fn rename_tree_dialog(tree: String, name: &str, sh: &Shared, changed: &Signal<u32>) -> View {
+    let value = create_signal(name.to_string());
+    let errors: Errors = create_signal(Vec::new());
+    let saving = create_signal(false);
+    let body = div()
+        .class("dlg-form")
+        .child(text(
+            "Nazwa drzewa",
+            &value,
+            &errors,
+            "name",
+            "Adres drzewa się nie zmienia.",
+        ))
+        // A failure that is not about the field: no access, no such tree, no network.
+        .child(error_view(&errors, ""))
+        .into_view();
+    let (shared, changed, busy) = (sh.clone(), changed.clone(), saving.clone());
+    let footer = button_row(
+        sh,
+        "Zapisz",
+        &saving,
+        move || {
+            let (t, shared, changed) = (tree.clone(), shared.clone(), changed.clone());
+            let (value, errors, busy) = (value.get(), errors.clone(), busy.clone());
+            busy.set(true);
+            spawn_local(async move {
+                match rename_tree(t, value).await {
+                    Ok(()) => {
+                        shared.dialog.set(None);
+                        changed.update(|n| *n += 1);
+                    }
+                    Err(err) => {
+                        busy.set(false);
+                        errors.set(errors_of(&err));
+                    }
+                }
+            });
+        },
+        None,
+    );
+    modal("Zmień nazwę drzewa", body, footer, sh)
+}
+
+fn delete_tree_dialog(tree: String, name: String, sh: &Shared, changed: &Signal<u32>) -> View {
+    let (sh, changed) = (sh.clone(), changed.clone());
+    let failed = create_signal(String::new());
+    View::dynamic(move || {
+        let why = failed.get();
+        let warning = if why.is_empty() {
+            "Znikną wszystkie osoby, rodziny i notatki, razem ze zmianami zrobionymi w aplikacji. Tego nie można cofnąć."
+                .to_string()
+        } else {
+            why
+        };
+        let (t, shared, changed, failed) =
+            (tree.clone(), sh.clone(), changed.clone(), failed.clone());
+        confirm(
+            "Usuń drzewo",
+            format!("Usunąć drzewo „{name}”?"),
+            &warning,
+            &sh,
+            move || {
+                let (t, shared, changed, failed) =
+                    (t.clone(), shared.clone(), changed.clone(), failed.clone());
+                spawn_local(async move {
+                    match delete_tree(t).await {
+                        Ok(()) => {
+                            shared.dialog.set(None);
+                            changed.update(|n| *n += 1);
+                        }
+                        Err(err) => failed.set(err.message().to_string()),
+                    }
+                });
+            },
+            "Usuń drzewo",
+        )
+    })
+}
+
+/// Whatever dialog is open over the list of trees; `changed` counts up when one has changed it.
+#[must_use]
+pub fn tree_layer(sh: &Shared, changed: &Signal<u32>) -> View {
+    let (sh, changed) = (sh.clone(), changed.clone());
+    View::dynamic(move || match sh.dialog.get() {
+        Some(Dialog::RenameTree { tree, name }) => rename_tree_dialog(tree, &name, &sh, &changed),
+        Some(Dialog::DeleteTree { tree, name }) => delete_tree_dialog(tree, name, &sh, &changed),
+        _ => View::Empty,
+    })
+}
+
 /// Whatever dialog is open, over the tree whose address this is.
 #[must_use]
 pub fn layer(ctx: &RouteContext, sh: &Shared) -> View {
@@ -1215,6 +1309,8 @@ pub fn layer(ctx: &RouteContext, sh: &Shared) -> View {
             } => add_relative_dialog(tree, of, relation, family, &sh),
             Dialog::DeletePerson(x) => delete_person_dialog(tree, x, &sh),
             Dialog::DeleteFamily(f) => delete_family_dialog(tree, f, &sh),
+            // Those belong to the list of trees.
+            Dialog::RenameTree { .. } | Dialog::DeleteTree { .. } => View::Empty,
         }
     })
 }

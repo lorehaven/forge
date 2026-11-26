@@ -115,14 +115,15 @@ home = true
 description = "Mail: your mailboxes at any provider, in one place; (admin) the estate's sending server and queue."
 actions = ["read", "write", "admin", "send"]
 
-# Family trees: `read` opens them, `write` imports GEDCOM files and edits people and families. A grant can name one tree
-# (`genevia:tree:<id>:read|write`, the id being the file name of the import), so someone sees their branch and no other.
-# `write` also lets the holder read. Trees hold names and dates of living people: in no template but `editor`.
+# Family trees: `read` opens them, `write` imports GEDCOM files and edits people and families, `manage` renames and
+# deletes trees. A grant can name one tree (`genevia:tree:<id>:read|write|manage`, the id being the file name of the
+# import), so someone sees their branch and no other. `write` also lets the holder read, `manage` also write. Trees hold
+# names and dates of living people: in no template but `editor`, and `manage` not even there.
 [services.genevia]
 label = "Genevia"
 home = true
 description = "Family trees: GEDCOM import, list, pedigree and fan views, and editing."
-actions = ["read", "write"]
+actions = ["read", "write", "manage"]
 resource_types = ["tree"]
 
 # No page of its own: the app (on a phone or a desktop) reads the public app catalogue. A service that is not

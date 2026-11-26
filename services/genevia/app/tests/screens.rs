@@ -23,6 +23,7 @@ struct Fake {
     asked: RefCell<Vec<(String, String)>>,
     me: Me,
     editable: bool,
+    manage: bool,
 }
 
 fn card(xref: &str, name: &str, ahn_parents: bool) -> Card {
@@ -50,6 +51,7 @@ fn tree() -> TreeInfo {
         families: 1,
         root: "I1".into(),
         root_name: "Jan Kowal".into(),
+        manage: false,
     }
 }
 
@@ -103,8 +105,15 @@ impl Host for Fake {
             .push((request.method.to_string(), request.path.clone()));
         let path = request.path.split('?').next().unwrap().to_string();
         let (status, body) = match path.as_str() {
+            "/api/v1/trees/kowal" => (204, String::new()),
             "/api/v1/me" => (200, json::to_string(&self.me)),
-            "/api/v1/trees" => (200, json::to_string(&vec![tree()])),
+            "/api/v1/trees" => (
+                200,
+                json::to_string(&vec![TreeInfo {
+                    manage: self.manage,
+                    ..tree()
+                }]),
+            ),
             "/api/v1/trees/kowal/ancestry" => (200, json::to_string(&ancestry())),
             "/api/v1/trees/kowal/people/I1" => (200, json::to_string(&detail(self.editable))),
             "/api/v1/trees/secret/ancestry" => {
@@ -136,6 +145,10 @@ struct Live {
 }
 
 fn live(path: &str, base: &str, write: bool, editable: bool) -> Live {
+    start(path, base, write, editable, false)
+}
+
+fn start(path: &str, base: &str, write: bool, editable: bool, manage: bool) -> Live {
     let host = Rc::new(Fake {
         base: base.into(),
         asked: RefCell::default(),
@@ -144,6 +157,7 @@ fn live(path: &str, base: &str, write: bool, editable: bool) -> Live {
             write,
         },
         editable,
+        manage,
     });
     let r = Rc::new(TestRenderer::new());
     let root = r.root();
@@ -256,6 +270,51 @@ fn a_tree_the_person_may_not_open_says_so() {
     let app = live("/genevia/ui/t/secret/list", "/genevia", false, false);
     let text = app.r.text();
     assert!(text.contains("Brak uprawnień do tego drzewa."), "{text}");
+}
+
+fn button(r: &TestRenderer, text: &str) -> NodeId {
+    nodes_with_text(r, "button", text)
+        .into_iter()
+        .next_back()
+        .unwrap_or_else(|| panic!("no button {text}: {}", r.html()))
+}
+
+#[quench_test::test]
+fn only_a_manager_is_offered_to_rename_and_delete_a_tree() {
+    let app = live("/genevia/ui", "/genevia", true, false);
+    let text = app.r.text();
+    assert!(
+        !text.contains("Zmień nazwę") && !text.contains("Usuń"),
+        "{text}"
+    );
+}
+
+#[quench_test::test]
+fn a_manager_renames_and_deletes_a_tree_from_the_list() {
+    for (open, confirm, method) in [
+        ("Zmień nazwę", "Zapisz", "PUT"),
+        ("Usuń", "Usuń drzewo", "DELETE"),
+    ] {
+        let app = start("/genevia/ui", "/genevia", false, false, true);
+        app.r.fire(button(&app.r, open), &Event::Click);
+        assert!(
+            app.r.html().contains(r#"role="dialog""#),
+            "{}",
+            app.r.html()
+        );
+        app.host.asked.borrow_mut().clear();
+        app.r.fire(button(&app.r, confirm), &Event::Click);
+        let asked = app.host.asked.borrow().clone();
+        assert_eq!(
+            asked,
+            [
+                (method.to_string(), "/api/v1/trees/kowal".to_string()),
+                ("GET".to_string(), "/api/v1/trees".to_string()),
+            ],
+            "the change is sent and the list read again"
+        );
+        assert!(!app.r.html().contains(r#"role="dialog""#));
+    }
 }
 
 quench_test::main!();

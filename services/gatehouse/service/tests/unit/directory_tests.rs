@@ -40,6 +40,16 @@ fn conveyor_projects_and_gantry_targets_are_listed() {
 }
 
 #[quench_test::test]
+fn genevia_trees_are_chosen_by_id_and_read_by_name() {
+    let body = r#"[{"id":"walus","name":"Rodzina Walus","people":3,"manage":false}]"#;
+    let found = parse_listing("genevia", body).unwrap();
+    assert_eq!(
+        (found[0].id.as_str(), found[0].label.as_str()),
+        ("walus", "Rodzina Walus")
+    );
+}
+
+#[quench_test::test]
 fn an_entry_without_an_id_is_left_out_and_a_bad_body_says_so() {
     let found = parse_listing(
         "workbench",

@@ -149,6 +149,7 @@ ui_admin_access_save_hint = Zmiany zapisuje przycisk Zapisz pod listą.
 ui_admin_resource_storage = Magazyny
 ui_admin_resource_project = Projekty
 ui_admin_resource_target = Cele
+ui_admin_resource_tree = Drzewa
 ui_admin_wildcard_note = Ta rola daje już dostęp do wszystkich usług; wybory powyżej są ustalone.
 ui_admin_new_password_optional = Nowe hasło (pozostaw puste, aby zachować obecne)
 ui_admin_save = Zapisz
