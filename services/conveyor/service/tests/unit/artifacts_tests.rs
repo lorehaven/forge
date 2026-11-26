@@ -461,6 +461,38 @@ async fn a_bdd_report_is_kept_under_its_own_names_beside_the_tests_and_the_secur
 }
 
 #[quench_test::test]
+async fn the_security_findings_are_kept_without_being_declared() {
+    use quench_test::mock::matchers::{method, path, query_param};
+    use quench_test::mock::{Mock, MockServer, ResponseTemplate};
+
+    // What a job has in its checkout whether it passed or failed: nothing here depends on the outcome.
+    let (_dir, ws) = workspace(&[("target/security-findings.json", b"[]")]);
+
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/api/v1/files/artifacts/file"))
+        .and(query_param(
+            "path",
+            "conveyor/run-1/job-1/security-findings.json",
+        ))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let store = WarehouseStore::new(&server.uri(), "artifacts", None);
+
+    let (kept, problems) = collect_test_reports(Some(&store), &ws, "run-1", "job-1").await;
+
+    assert!(problems.is_empty(), "{problems:?}");
+    let names: Vec<_> = kept.iter().map(|c| c.artifact.name.as_str()).collect();
+    assert_eq!(names, ["security-findings.json"]);
+    assert!(
+        conveyor_service::artifacts::exports(&declared(&[]))
+            .contains(&"target/security-findings.json".to_string())
+    );
+}
+
+#[quench_test::test]
 fn the_runner_is_asked_to_hand_back_the_bdd_report_too() {
     let exports = conveyor_service::artifacts::exports(&declared(&[]));
     assert!(exports.contains(&"target/bdd/summary.json".to_string()));

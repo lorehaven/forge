@@ -2,6 +2,7 @@
 //! With no warehouse configured, nothing is recorded rather than a row promising a file that isn't there.
 
 use crate::domain::Artifact;
+use crate::scan::findings::FINDINGS_ARTIFACT;
 use crate::workspace::Workspace;
 use quench_core::time::Time;
 use quench_core::uuid::Uuid;
@@ -306,12 +307,12 @@ impl WarehouseStore {
 
 /// Where a job leaves a report conveyor keeps without being told to, and what the kept copy is called.
 ///
-/// `(directory under the checkout, file, artifact name)`. The first four are what a `quench-test` run
-/// writes under `target/<profile>/quench-test`. The last two are the security gate's report - the same
-/// format, written to `target/security` by a run with `QUENCH_TEST_REPORT_DIR` pointed there - kept
-/// under names of their own so the scan page can tell it from the unit tests'. The last two are the same for the
-/// BDD suite's report, written to `target/bdd`.
-const REPORTS: [(&str, &str, &str); 8] = [
+/// `(directory under the checkout, file, artifact name)`. The `quench-test` ones are what a run writes under
+/// `target/<profile>/quench-test`. `target/security` holds the security gate's report - the same format, written
+/// there by a run with `QUENCH_TEST_REPORT_DIR` pointed there - kept under names of its own so the scan page can
+/// tell it from the unit tests'; `target/bdd` is the same for the BDD suite's report. The security scanner's
+/// findings are a file of their own, wanted most from the run that failed on them.
+const REPORTS: [(&str, &str, &str); 9] = [
     ("target/debug/quench-test", "summary.json", TESTS_SUMMARY),
     ("target/debug/quench-test", "index.html", TESTS_REPORT_PAGE),
     ("target/release/quench-test", "summary.json", TESTS_SUMMARY),
@@ -322,6 +323,7 @@ const REPORTS: [(&str, &str, &str); 8] = [
     ),
     ("target/security", "summary.json", SECURITY_SUMMARY),
     ("target/security", "index.html", SECURITY_REPORT_PAGE),
+    ("target", FINDINGS_ARTIFACT, FINDINGS_ARTIFACT),
     ("target/bdd", "summary.json", BDD_SUMMARY),
     ("target/bdd", "index.html", BDD_REPORT_PAGE),
 ];

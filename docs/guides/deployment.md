@@ -105,7 +105,7 @@ Signing the APK uses the project's `release.keystore`; `anvil keystore-password`
 | `check` | `format` (`anvil format --check`), `lint` (`anvil lint --all-targets --deny-warnings --json`), `deps` (`machete`, `audit`, `deny`) |
 | `build` | `workspace` (`anvil build --all`) |
 | `test` | `unit` (`anvil test --all`), `coverage` (Foundry applies the schemas to a `pgvector/pgvector:pg18` sidecar, then `cargo llvm-cov`; artifact `lcov.info`) |
-| `security` (schedule only) | `nightly`: `forge-sectest` scanners, gate and live tests against the in-cluster services; artifact `target/security-findings.json` |
+| `security` (schedule only) | `nightly`: `forge-sectest` scanners, gate and live tests against the in-cluster services; conveyor keeps the report and `target/security-findings.json` whatever the outcome |
 
 The pipeline has no release stage: releases are run by hand with Anvil.
 

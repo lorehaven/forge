@@ -181,7 +181,7 @@ One case per stage:
 * `tests/live.rs` (`--features gate`): one case per check (the `authz` case only with `--features authz-live`, which also needs `FORGE_SECTEST_AUTHZ`; against production there are no identities to mint, so the case is absent and the card does not count it as passed) against `FORGE_SECTEST_TARGETS`
   (`name=URL`, space separated), configured by `FORGE_SECTEST_TOKEN`, `_ACTIVE`, `_FAIL_ON` (default `high`),
   `_BASELINE`, `_RPS`. With no targets every case **fails**: a nightly that scanned nothing is not a pass.
-  Every finding is also written to `target/security-findings.json`.
+  Every finding is also written to `target/security-findings.json`, which conveyor keeps whatever the outcome.
 * `tests/scanners.rs` (always on): the gate's scanners shown known-bad input.
 
 `src/gate.rs` is a copy of `quench-security`'s scanners (that crate is unpublished and forge builds against
