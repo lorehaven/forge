@@ -2,5 +2,3 @@
 # scripts/security.fish fails on unsafe in any file NOT listed here: new unsafe needs a conscious review.
 # Keep each entry justified.
 
-# Windows service FFI.
-cli/pulley/src/service/windows.rs

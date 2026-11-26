@@ -6,6 +6,8 @@
 //! links are read back from gatehouse's log, as the logging sender writes them). Without it gatehouse logs its mail as before
 //! and the Mailroom scenarios are left out.
 
+use std::path::{Path, PathBuf};
+
 pub const SCHEMA: &str = "bdd_mailroom";
 /// The part of every address in the suite.
 pub const DOMAIN: &str = "bdd.example";
@@ -24,7 +26,7 @@ pub fn enabled() -> bool {
     database_url().is_some()
 }
 
-/// Makes the schema Mailroom runs in, from the Foundry migration, dropping what an earlier run left.
+/// Makes the schema Mailroom runs in, from the Foundry migrations, dropping what an earlier run left.
 ///
 /// # Panics
 ///
@@ -39,13 +41,32 @@ pub async fn prepare_schema() {
     ))
     .await
     .expect("make the schema");
-    let migration =
-        include_str!("../../../services/foundry/service/migrations/mailroom/0001-mail.toml");
-    for sql in statements(migration) {
-        pool.batch_execute(&sql.replace("${schema}", SCHEMA))
-            .await
-            .expect("apply the migration");
+    for file in migrations() {
+        let migration = std::fs::read_to_string(&file)
+            .unwrap_or_else(|e| panic!("read {}: {e}", file.display()));
+        for sql in statements(&migration) {
+            pool.batch_execute(&sql.replace("${schema}", SCHEMA))
+                .await
+                .unwrap_or_else(|e| panic!("apply {}: {e}", file.display()));
+        }
     }
+}
+
+/// Every migration of Mailroom's Foundry module, in the order of their numbers. Read from the directory, so that a new one is
+/// in the suite without being named here.
+fn migrations() -> Vec<PathBuf> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../services/foundry/service/migrations/mailroom");
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter(|p| {
+            p.extension().is_some_and(|e| e == "toml")
+                && p.file_name().is_some_and(|n| n != "module.toml")
+        })
+        .collect();
+    files.sort();
+    files
 }
 
 /// The SQL statements of a Foundry migration file (`sql = "..."` or `sql = """..."""`).
