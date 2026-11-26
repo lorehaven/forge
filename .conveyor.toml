@@ -186,8 +186,8 @@ env = { RUST_BACKTRACE = "1", FORGE_SECTEST_FAIL_ON = "medium", FORGE_SECTEST_PR
 steps = [
   { run = "export QUENCH_TEST_REPORT_DIR=$PWD/target/security; rc=0; cargo test -p forge-sectest --test scanners || rc=1; cargo test -p forge-sectest --features gate --test gate -- --test-threads=1 || rc=1; cargo test -p forge-sectest --features gate --test live -- --test-threads=1 || rc=1; exit $rc" },
 ]
-# Every finding, not only the failing ones. Kept when the job is green; a red run's findings are in the report.
-artifacts = ["target/security-findings.json"]
+# Every finding, not only the failing ones, is in target/security-findings.json: conveyor keeps it with the report,
+# whatever the outcome, without it being declared here.
 
 # ---------------------------------------------------------------- bdd (daily)
 # Started by the 6 am clock (`on.schedule`), never by a push. The whole `forge-bdd` suite: every service's
