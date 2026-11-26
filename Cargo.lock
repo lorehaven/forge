@@ -506,7 +506,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse"
-version = "0.4.27"
+version = "0.4.28"
 dependencies = [
  "forge-web",
  "gatehouse-core",
@@ -651,7 +651,7 @@ dependencies = [
 
 [[package]]
 name = "genevia"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "forge-web",
  "genevia-core",

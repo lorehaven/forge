@@ -1,6 +1,6 @@
 [package]
 name = "genevia"
-version = "0.1.1"
+version = "0.1.2"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Genevia - family trees imported from GEDCOM, viewed as a list, a pedigree and a fan"
