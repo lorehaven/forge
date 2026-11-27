@@ -23,6 +23,12 @@ then `http://localhost:11444/gauge/ui/home`. Install the `gauge` schema first fo
 
 Image `gauge` built from `images/Dockerfile.alpine` with `RESOURCE_DIR=web` and `WASM_PACKAGE=gauge-web` (`.anvil/docker.toml`; registries `ossiriand.arda:8080/forge` and `ennor.ddns.net/forge`). The Dockerfile copies the service's `config` directory (so `config/targets.toml`) and the `web` directory into `/app`, and the entrypoint is `./service`. Deployment manifests are not in this repository. Needs: Gatehouse reachable (`GATEHOUSE_URL`), the three scrape targets reachable from the pod, optional Redis and Postgres. Foundry must have installed the module `gauge` into the database before history works.
 
+## PCP watchdog on the hosts
+
+`pmproxy` on a `pcp` host can stay `active (running)` while it answers every `/metrics` request with `400 Bad Request`; `pmcd.log` fills with `DoFetch: no profile for ctxnum=...`. Restarting `pmproxy` clears it. `helpers/gauge-pmproxy-watchdog.sh` does that on the host itself: a systemd timer asks `http://localhost:44322` once a minute, restarts `pmproxy` after three failed requests, then `pmcd` too if that was not enough, and after a failed repair waits 15 minutes before restarting again. A disabled or masked `pmproxy` is left alone.
+
+`sudo bash helpers/gauge-pmproxy-watchdog.sh install` (the Arch and Debian setup scripts run it with `--pcp` when it lies next to them); `uninstall` removes it. What it did: `journalctl -u gauge-pmproxy-watchdog`.
+
 ## Health
 
 `/health`, `/health/live`, `/health/ready` ([Common service runtime](../common-runtime.md)). The service is ready after Gatehouse's `/health/ready` answers 2xx. Scrape failures do not affect readiness.
@@ -38,6 +44,7 @@ Image `gauge` built from `images/Dockerfile.alpine` with `RESOURCE_DIR=web` and 
 | Panic `configuration: <path>: <error>` at start | targets file missing or invalid, or a repeated or empty target name. |
 | Panic `session store` | `SessionDb::from_env` failed (Redis URL set but unreachable, or built without the redis feature). |
 | Host card shows "unreachable" and an error | last scrape failed; the card keeps the last numbers dimmed. |
+| A `pcp` host stays unreachable with `400 Bad Request` | broken `pmproxy`; see [PCP watchdog on the hosts](#pcp-watchdog-on-the-hosts). |
 | History endpoints `503`, screens say history unavailable | no `DATABASE_URL`, or the first connect has not succeeded yet (retried every 30 s). |
 | Warnings `history: <host>: could not store a minute` | schema `gauge` missing or wrong `DB_SCHEMA`. |
 | `404` page "the browser client is not installed on this server" | `app.wasm` not in `WEB_DIR`. |

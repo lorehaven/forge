@@ -8,6 +8,7 @@
 #   * nvme-cli + nvme_metrics.py on a 5-minute timer, when the host has NVMe drives: wear, spare, hours, errors.
 #   * with --pcp: PCP's pmcd and pmproxy on :44322 (plus the nvidia/amdgpu PMDAs when such a GPU is present), for
 #     a `kind = "pcp"` target. Such a target still needs node_exporter as its `also` for sensors and SMART.
+#     Also installs gauge-pmproxy-watchdog.sh (same directory), which restarts PCP when pmproxy stops answering.
 #
 # Usage:  sudo bash helpers/gauge-host-setup-arch.sh [--pcp] [--no-nvme]
 #
@@ -197,6 +198,12 @@ if [ "$PCP" = 1 ]; then
   systemctl enable --now pmcd pmproxy >/dev/null
   [ "$has_nvidia" = 1 ] && pmda nvidia
   [ "$has_amd" = 1 ] && pmda amdgpu
+  watchdog="$(dirname "$0")/gauge-pmproxy-watchdog.sh"
+  if [ -f "$watchdog" ]; then
+    bash "$watchdog" install
+  else
+    note "no watchdog: copy helpers/gauge-pmproxy-watchdog.sh next to this script and run this again"
+  fi
 fi
 
 # ── Check ────────────────────────────────────────────────────────────────────────────────────────
